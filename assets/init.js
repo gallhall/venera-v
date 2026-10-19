@@ -1129,6 +1129,52 @@ function ImageLoadingConfig({url, method, data, headers, onResponse, modifyImage
     this.onLoadFailed = onLoadFailed;
 }
 
+/**
+ * Create a playable stream of a video episode. Used by video sources.
+ * @param url {string}
+ * @param name {string?} - label shown in the source picker, e.g. "1080P" or "Line 2"
+ * @param type {string?} - "auto" | "mp4" | "hls" | "dash". A hint, the player detects the format by itself.
+ * @param headers {Object?} - request headers for this stream, merged over `VideoPlayInfo.headers`
+ * @param audioUrl {string?} - external audio stream, for sites that serve audio and video separately
+ * @constructor
+ * @since 2.0.0
+ */
+function VideoPlaySource({url, name, type, headers, audioUrl}) {
+    this.url = url;
+    this.name = name;
+    this.type = type;
+    this.headers = headers;
+    this.audioUrl = audioUrl;
+}
+
+/**
+ * Create an external subtitle (WebVTT, SRT, ASS...). Used by video sources.
+ * @param url {string}
+ * @param name {string?}
+ * @param language {string?} - e.g. "en", "zh-CN"
+ * @constructor
+ * @since 2.0.0
+ */
+function VideoSubtitle({url, name, language}) {
+    this.url = url;
+    this.name = name;
+    this.language = language;
+}
+
+/**
+ * Create the play info of a video episode, the result of `video.loadPlayInfo`.
+ * @param sources {VideoPlaySource[]} - at least one. The player starts with the first one.
+ * @param subtitles {VideoSubtitle[]?}
+ * @param headers {Object?} - request headers shared by all streams and subtitles
+ * @constructor
+ * @since 2.0.0
+ */
+function VideoPlayInfo({sources, subtitles, headers}) {
+    this.sources = sources;
+    this.subtitles = subtitles;
+    this.headers = headers;
+}
+
 class ComicSource {
     name = ""
 
@@ -1139,6 +1185,12 @@ class ComicSource {
     minAppVersion = ""
 
     url = ""
+
+    /**
+     * "comic" or "video". A video source must implement `video.loadPlayInfo`.
+     * @since 2.0.0
+     */
+    mediaType = "comic"
 
     /**
      * load data with its key

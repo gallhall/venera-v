@@ -32,6 +32,8 @@ part 'models.dart';
 
 part 'types.dart';
 
+part 'video.dart';
+
 class ComicSourceManager with ChangeNotifier, Init {
   final List<ComicSource> _sources = [];
 
@@ -203,6 +205,15 @@ class ComicSource {
 
   final ArchiveDownloader? archiveDownloader;
 
+  /// What this source provides. Video sources reuse the comic list and
+  /// details APIs; their chapters are episodes.
+  final SourceMediaType mediaType;
+
+  bool get isVideoSource => mediaType == SourceMediaType.video;
+
+  /// Load the streams of an episode. Only set for video sources.
+  final LoadVideoPlayInfoFunc? loadVideoPlayInfo;
+
   Future<void> loadData() async {
     var file = File("${App.dataPath}/comic_source/$key.data");
     if (await file.exists()) {
@@ -308,8 +319,10 @@ class ComicSource {
     this.enableTagsSuggestions,
     this.enableTagsTranslate,
     this.starRatingFunc,
-    this.archiveDownloader,
-  );
+    this.archiveDownloader, [
+    this.mediaType = SourceMediaType.comic,
+    this.loadVideoPlayInfo,
+  ]);
 }
 
 class AccountConfig {

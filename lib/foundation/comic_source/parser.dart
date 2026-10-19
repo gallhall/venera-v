@@ -110,7 +110,7 @@ class ComicSourceParser {
         (throw ComicSourceParseException('version is required'));
     var minAppVersion = JsEngine().runCode("this['temp'].minAppVersion");
     var url = JsEngine().runCode("this['temp'].url");
-    if (minAppVersion != null) {
+    if (minAppVersion != null && minAppVersion != "") {
       if (compareSemVer(minAppVersion, App.version.split('-').first)) {
         throw ComicSourceParseException(
           "minAppVersion @version is required".tlParams({
@@ -126,6 +126,18 @@ class ComicSourceParser {
     }
     _key = key;
     _checkKeyValidation();
+    var mediaType = SourceMediaType.parse(
+      JsEngine().runCode("this['temp'].mediaType"),
+    );
+    if (mediaType == SourceMediaType.video &&
+        JsEngine().runCode(
+              "typeof this['temp'].video?.loadPlayInfo === 'function'",
+            ) !=
+            true) {
+      throw ComicSourceParseException(
+        "video.loadPlayInfo is required for video sources",
+      );
+    }
 
     JsEngine().runCode("""
       ComicSource.sources.$_key = this['temp'];
@@ -165,6 +177,8 @@ class ComicSourceParser {
       _getValue("comic.enableTagsTranslate") ?? false,
       _parseStarRatingFunc(),
       _parseArchiveDownloader(),
+      mediaType,
+      mediaType == SourceMediaType.video ? _parseLoadVideoPlayInfoFunc() : null,
     );
 
     await source.loadData();
@@ -787,6 +801,20 @@ class ComicSourceParser {
           ComicSource.sources.$_key.comic.loadEp(${jsonEncode(id)}, ${jsonEncode(ep)})
         """);
         return Res(List.from(res["images"]));
+      } catch (e, s) {
+        Log.error("Network", "$e\n$s");
+        return Res.error(e.toString());
+      }
+    };
+  }
+
+  LoadVideoPlayInfoFunc _parseLoadVideoPlayInfoFunc() {
+    return (id, epId) async {
+      try {
+        var res = await JsEngine().runCode("""
+          ComicSource.sources.$_key.video.loadPlayInfo(${jsonEncode(id)}, ${jsonEncode(epId)})
+        """);
+        return Res(VideoPlayInfo.fromJson(res));
       } catch (e, s) {
         Log.error("Network", "$e\n$s");
         return Res.error(e.toString());

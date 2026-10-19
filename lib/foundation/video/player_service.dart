@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -22,14 +23,25 @@ class VideoStreamRequest {
   final String? audioUrl;
 
   /// External subtitle files (WebVTT, SRT, ASS...).
-  final List<String> subtitleUrls;
+  final List<VideoSubtitle> subtitles;
 
   const VideoStreamRequest(
     this.url, {
     this.headers = const {},
     this.audioUrl,
-    this.subtitleUrls = const [],
+    this.subtitles = const [],
   });
+
+  /// Request for the [index]-th stream of a video source's play info.
+  factory VideoStreamRequest.fromPlayInfo(VideoPlayInfo info, [int index = 0]) {
+    var source = info.sources[index];
+    return VideoStreamRequest(
+      source.url,
+      headers: info.headersFor(source),
+      audioUrl: source.audioUrl,
+      subtitles: info.subtitles,
+    );
+  }
 }
 
 class PlayerTrack {
@@ -165,7 +177,7 @@ class PlayerService {
       start: start,
     );
     await _player.open(media, play: play);
-    if (request.audioUrl == null && request.subtitleUrls.isEmpty) {
+    if (request.audioUrl == null && request.subtitles.isEmpty) {
       return;
     }
     // External tracks can only be added once the file is loaded.
@@ -178,9 +190,13 @@ class PlayerService {
         AudioTrack.uri(request.audioUrl!, title: 'External'),
       );
     }
-    for (var url in request.subtitleUrls) {
+    for (var s in request.subtitles) {
       await _player.setSubtitleTrack(
-        SubtitleTrack.uri(url, title: 'External'),
+        SubtitleTrack.uri(
+          s.url,
+          title: s.name ?? 'External',
+          language: s.language,
+        ),
       );
     }
   }
