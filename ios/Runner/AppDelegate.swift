@@ -23,7 +23,10 @@ import Foundation // 添加此行
           fatalError("rootViewController is not of type FlutterViewController")
     }
 
-    nativeVideoPlayer = NativeVideoPlayer(host: controller)
+    let videoPlayer = NativeVideoPlayer(host: controller)
+    nativeVideoPlayer = videoPlayer
+    registrar(forPlugin: "NativeVideoPlayer")?.register(
+      NativePlayerViewFactory(owner: videoPlayer), withId: "venera/native_player_view")
 
     let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
     methodChannel.setMethodCallHandler { (call, result) in

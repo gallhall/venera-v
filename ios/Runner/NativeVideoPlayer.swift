@@ -3,9 +3,10 @@ import AVKit
 import Flutter
 import UIKit
 
-/// Plays videos in the system player (AVPlayerViewController), presented
-/// fullscreen over the Flutter view. Driven by `NativeVideoPlayer` in
-/// lib/foundation/video/native_player.dart.
+/// Plays videos in the system player (AVPlayerViewController), embedded in
+/// the Flutter page as the platform view `venera/native_player_view`; its own
+/// fullscreen button opens the system fullscreen player. Driven by
+/// `NativeVideoPlayer` in lib/foundation/video/native_player.dart.
 ///
 /// Methods on `venera/native_player`:
 ///   open {url, headers, startMs?, title, rate, actions}
@@ -13,7 +14,7 @@ import UIKit
 ///   play, pause, seek {ms}, setRate {rate}, close
 /// Events on `venera/native_player/events`, as {event, ...}:
 ///   position {ms}, duration {ms}, playing {value}, rate {value},
-///   completed, error {message}, closed {ms}, action {id}
+///   completed, error {message}, action {id}
 class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerDelegate {
   private weak var host: FlutterViewController?
 
@@ -30,8 +31,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   private var notificationObservers: [NSObjectProtocol] = []
 
   private var timeObserver: Any?
-
-  private var isPictureInPicture = false
 
   private var rate: Float = 1
 
@@ -191,7 +190,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     observe(item)
     player.replaceCurrentItem(with: item)
     activateAudioSession()
-    present()
     play()
   }
 
@@ -268,51 +266,43 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     try? session.setActive(true)
   }
 
-  // MARK: Presentation
+  // MARK: Views
 
-  private func present() {
-    // The picture-in-picture window keeps playing the new item.
-    if controller != nil || isPictureInPicture { return }
-    guard let host else { return }
+  /// Embeds a player in [container], a platform view of the Flutter page.
+  fileprivate func attach(to container: UIView) -> AVPlayerViewController? {
+    guard let host else { return nil }
     let vc = PlayerViewController()
     vc.player = player
     vc.delegate = self
     vc.allowsPictureInPicturePlayback = true
-    vc.modalPresentationStyle = .fullScreen
-    vc.onDismiss = { [weak self, weak vc] in
-      guard let self, let vc, self.controller === vc else { return }
-      self.controller = nil
-      if !self.isPictureInPicture { self.finish(notify: true) }
-    }
+    vc.entersFullScreenWhenPlaybackBegins = false
+    vc.exitsFullScreenWhenPlaybackEnds = true
+    host.addChild(vc)
+    vc.view.frame = container.bounds
+    vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    container.addSubview(vc.view)
+    vc.didMove(toParent: host)
     controller = vc
     applyActions()
-    var top: UIViewController = host
-    while let presented = top.presentedViewController { top = presented }
-    top.present(vc, animated: true)
+    return vc
   }
 
-  /// Closes the player from Flutter, e.g. to fall back to the other engine.
+  fileprivate func detach(_ vc: AVPlayerViewController) {
+    vc.willMove(toParent: nil)
+    vc.view.removeFromSuperview()
+    vc.removeFromParent()
+    if controller === vc { controller = nil }
+  }
+
+  /// Stops playback, e.g. when the page closes or another engine takes over.
   private func close() {
-    if let vc = controller {
-      controller = nil
-      vc.dismiss(animated: true)
-    }
-    finish(notify: false)
-  }
-
-  /// Playback has ended: the player and picture in picture are closed.
-  /// Tells Flutter with `notify`, when the user closed it.
-  private func finish(notify: Bool) {
     player.pause()
-    let ms = Self.milliseconds(player.currentTime())
-    let hadItem = player.currentItem != nil
     itemObservers.removeAll()
     for o in notificationObservers { NotificationCenter.default.removeObserver(o) }
     notificationObservers.removeAll()
     player.replaceCurrentItem(with: nil)
     pendingStart = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    if notify && hadItem { send("closed", ["ms": ms]) }
   }
 
   private func applyActions() {
@@ -323,51 +313,63 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   // MARK: AVPlayerViewControllerDelegate
 
-  func playerViewControllerWillStartPictureInPicture(
-    _ playerViewController: AVPlayerViewController
-  ) {
-    isPictureInPicture = true
-  }
-
-  func playerViewControllerDidStopPictureInPicture(
-    _ playerViewController: AVPlayerViewController
-  ) {
-    isPictureInPicture = false
-    // Closed from the picture-in-picture window, not restored.
-    if controller == nil { finish(notify: true) }
-  }
-
   func playerViewController(
     _ playerViewController: AVPlayerViewController,
     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler:
       @escaping (Bool) -> Void
   ) {
-    guard let host, let vc = playerViewController as? PlayerViewController,
-      vc.presentingViewController == nil
-    else {
-      completionHandler(true)
-      return
-    }
-    controller = vc
-    applyActions()
-    var top: UIViewController = host
-    while let presented = top.presentedViewController { top = presented }
-    top.present(vc, animated: true) { completionHandler(true) }
+    // The page with the player is still there.
+    completionHandler(true)
   }
 }
 
-/// Tells when the user closes the player, and shows the buttons from
-/// Flutter over the video (AVPlayerViewController has no API for them on
-/// iOS). A skip button stays visible; the others show on a tap, like the
-/// player's own controls.
-private class PlayerViewController: AVPlayerViewController, UIGestureRecognizerDelegate {
-  var onDismiss: (() -> Void)?
+/// The platform view `venera/native_player_view`.
+class NativePlayerViewFactory: NSObject, FlutterPlatformViewFactory {
+  private let owner: NativeVideoPlayer
 
+  init(owner: NativeVideoPlayer) {
+    self.owner = owner
+    super.init()
+  }
+
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?)
+    -> FlutterPlatformView
+  {
+    NativePlayerPlatformView(owner: owner, frame: frame)
+  }
+}
+
+private class NativePlayerPlatformView: NSObject, FlutterPlatformView {
+  private let container: UIView
+
+  private weak var owner: NativeVideoPlayer?
+
+  private var controller: AVPlayerViewController?
+
+  init(owner: NativeVideoPlayer, frame: CGRect) {
+    self.owner = owner
+    container = UIView(frame: frame)
+    container.backgroundColor = .black
+    super.init()
+    controller = owner.attach(to: container)
+  }
+
+  deinit {
+    if let controller {
+      let owner = owner
+      DispatchQueue.main.async { owner?.detach(controller) }
+    }
+  }
+
+  func view() -> UIView { container }
+}
+
+/// Shows the buttons from Flutter (a skip button) over the video:
+/// AVPlayerViewController has no API for them on iOS.
+private class PlayerViewController: AVPlayerViewController {
   private let actionBar = UIStackView()
 
-  private var hideTimer: Timer?
-
-  private var isPinned = false
+  private var onPressed: ((String) -> Void)?
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -379,45 +381,9 @@ private class PlayerViewController: AVPlayerViewController, UIGestureRecognizerD
       actionBar.trailingAnchor.constraint(
         equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
       actionBar.bottomAnchor.constraint(
-        equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -96),
+        equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -56),
     ])
-    // Sees taps without taking them from the player's controls.
-    let tap = UITapGestureRecognizer(target: self, action: #selector(onTap))
-    tap.cancelsTouchesInView = false
-    tap.delegate = self
-    view.addGestureRecognizer(tap)
   }
-
-  func gestureRecognizer(
-    _ gestureRecognizer: UIGestureRecognizer,
-    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
-  ) -> Bool {
-    true
-  }
-
-  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
-    -> Bool
-  {
-    // A tap on one of the buttons is not a tap on the video.
-    !(touch.view?.isDescendant(of: actionBar) ?? false)
-  }
-
-  @objc private func onTap() {
-    if isPinned { return }
-    setBarVisible(actionBar.alpha == 0)
-  }
-
-  private func setBarVisible(_ visible: Bool) {
-    hideTimer?.invalidate()
-    UIView.animate(withDuration: 0.2) { self.actionBar.alpha = visible ? 1 : 0 }
-    if visible && !isPinned {
-      hideTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
-        self?.setBarVisible(false)
-      }
-    }
-  }
-
-  private var onPressed: ((String) -> Void)?
 
   @objc private func buttonPressed(_ button: UIButton) {
     if let id = button.accessibilityIdentifier { onPressed?(id) }
@@ -441,15 +407,6 @@ private class PlayerViewController: AVPlayerViewController, UIGestureRecognizerD
       button.accessibilityIdentifier = id
       button.addTarget(self, action: #selector(buttonPressed(_:)), for: .touchUpInside)
       actionBar.addArrangedSubview(button)
-    }
-    isPinned = actions.contains { $0["id"] == "skip" }
-    setBarVisible(isPinned || actionBar.alpha > 0)
-  }
-
-  override func viewDidDisappear(_ animated: Bool) {
-    super.viewDidDisappear(animated)
-    if isBeingDismissed || presentingViewController == nil {
-      onDismiss?()
     }
   }
 }

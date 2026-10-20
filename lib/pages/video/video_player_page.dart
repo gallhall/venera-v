@@ -183,9 +183,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   bool get hasNext => current < episodes.length - 1;
 
-  /// Phones show the player from the top edge without an app bar; the
-  /// player then has its own back button.
-  bool get isEdgeToEdge => App.isMobile;
+  /// Android phones show the player from the top edge without an app bar;
+  /// the player then has its own back button. On iOS the system player has
+  /// its own buttons at the top.
+  bool get isEdgeToEdge => App.isAndroid;
 
   /// Whether the page has no app bar, set on each build.
   bool showPlayerBack = false;
@@ -245,11 +246,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       var n = native = NativeVideoPlayer();
       listenTo(n);
       subscriptions.addAll([
-        n.closed.listen((_) {
-          if (!identical(active, n)) return;
-          saveHistory();
-          setState(() {});
-        }),
         n.actions.listen((id) {
           if (!identical(active, n)) return;
           if (id == 'skip') skipCurrent();
@@ -476,11 +472,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       updateNativePlayer();
     } else {
       next = ensureMediaKit();
-      if (n != null && n.isOpen) {
-        // Keep the video fullscreen after leaving the system player.
-        await n.close();
-        if (next != null) setFullscreen(true);
-      }
+      // Stop the system player before media_kit plays.
+      if (n != null && identical(active, n)) await n.close();
     }
     if (next == null) {
       setState(() {
@@ -907,7 +900,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       view = p.buildView(custom: controls, fit: fit);
       if (App.isMobile) view = VideoGestureLayer(child: view);
     } else {
-      view = buildNativePlaceholder();
+      view = native?.buildView() ?? const SizedBox();
     }
     return ColoredBox(
       color: Colors.black,
@@ -933,39 +926,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (error != null) buildError(),
         ],
       ),
-    );
-  }
-
-  /// Shown on iOS while the system player is closed or opening.
-  Widget buildNativePlaceholder() {
-    var canPlay =
-        playInfo != null &&
-        !isLoading &&
-        error == null &&
-        !(native?.isOpen ?? false);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (canPlay)
-          Center(
-            child: IconButton.filled(
-              iconSize: 40,
-              tooltip: "Play".tl,
-              icon: const Icon(Icons.play_arrow),
-              onPressed: () =>
-                  openSource(sourceIndex, start: resumePosition(current)),
-            ),
-          ),
-        if (showPlayerBack)
-          Align(
-            alignment: Alignment.topLeft,
-            child: IconButton(
-              color: Colors.white,
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () => context.pop(),
-            ),
-          ),
-      ],
     );
   }
 

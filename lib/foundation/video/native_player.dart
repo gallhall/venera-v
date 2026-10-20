@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
@@ -32,10 +33,9 @@ class NativePlayerAction {
   int get hashCode => Object.hash(id, title, icon);
 }
 
-/// The iOS system player (AVPlayerViewController), presented fullscreen
-/// over the app by ios/Runner/NativeVideoPlayer.swift. Opening a stream
-/// shows it; it stays open across [open] calls until the user closes it
-/// ([closed]) or [close] is called.
+/// The iOS system player (AVPlayerViewController) of
+/// ios/Runner/NativeVideoPlayer.swift, shown in the page by [buildView]. Its
+/// own fullscreen button opens the system fullscreen player.
 ///
 /// Only one instance should exist at a time.
 class NativeVideoPlayer implements VideoPlayback {
@@ -98,8 +98,6 @@ class NativeVideoPlayer implements VideoPlayback {
 
   final _errors = StreamController<String>.broadcast();
 
-  final _closed = StreamController<Duration>.broadcast();
-
   final _actions = StreamController<String>.broadcast();
 
   Duration _currentPosition = Duration.zero;
@@ -112,8 +110,8 @@ class NativeVideoPlayer implements VideoPlayback {
 
   bool _disposed = false;
 
-  /// Whether the player is showing, or playing in picture in picture.
-  bool isOpen = false;
+  /// Whether a stream is loaded.
+  bool _isOpen = false;
 
   @override
   Stream<Duration> get position => _position.stream;
@@ -132,9 +130,6 @@ class NativeVideoPlayer implements VideoPlayback {
 
   @override
   Stream<String> get errors => _errors.stream;
-
-  /// The user closed the player, at this position.
-  Stream<Duration> get closed => _closed.stream;
 
   /// Ids of the [NativePlayerAction]s pressed.
   Stream<String> get actions => _actions.stream;
@@ -160,11 +155,6 @@ class NativeVideoPlayer implements VideoPlayback {
         _completed.add(true);
       case 'error':
         _errors.add(event['message']?.toString() ?? 'Playback failed');
-      case 'closed':
-        isOpen = false;
-        _currentPosition = ms();
-        _playing.add(false);
-        _closed.add(_currentPosition);
       case 'action':
         _actions.add(event['id'].toString());
     }
@@ -174,18 +164,14 @@ class NativeVideoPlayer implements VideoPlayback {
   set title(String value) {
     if (value == _title) return;
     _title = value;
-    if (isOpen) _invoke('update', {"title": value});
+    _invoke('update', {"title": value});
   }
 
   /// Buttons shown over the video in the player.
   set playerActions(List<NativePlayerAction> value) {
     if (_listEquals(value, _currentActions)) return;
     _currentActions = value;
-    if (isOpen) {
-      _invoke('update', {
-        "actions": value.map((e) => e.toJson()).toList(),
-      });
-    }
+    _invoke('update', {"actions": value.map((e) => e.toJson()).toList()});
   }
 
   static bool _listEquals<T>(List<T> a, List<T> b) {
@@ -212,7 +198,7 @@ class NativeVideoPlayer implements VideoPlayback {
     bool play = true,
   }) async {
     _currentPosition = start ?? Duration.zero;
-    isOpen = true;
+    _isOpen = true;
     await _invoke('open', {
       "url": request.url,
       "headers": PlayerService.buildHeaders(request.url, request.headers),
@@ -240,11 +226,16 @@ class NativeVideoPlayer implements VideoPlayback {
     return _invoke('setRate', {"rate": rate});
   }
 
-  /// Closes the player without a [closed] event.
+  /// Stops playback, e.g. before another engine plays.
   Future<void> close() async {
-    if (!isOpen) return;
-    isOpen = false;
+    if (!_isOpen) return;
+    _isOpen = false;
     await _invoke('close');
+  }
+
+  /// The player, with the system controls.
+  Widget buildView() {
+    return const UiKitView(viewType: 'venera/native_player_view');
   }
 
   @override
@@ -260,7 +251,6 @@ class NativeVideoPlayer implements VideoPlayback {
       _completed,
       _rate,
       _errors,
-      _closed,
       _actions,
     ]) {
       await c.close();
