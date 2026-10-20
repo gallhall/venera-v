@@ -5,6 +5,7 @@ import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/ugoira.dart';
 import 'base_image_provider.dart';
 import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
@@ -54,7 +55,9 @@ class ReaderImageProvider
     if (imageBytes == null) {
       throw "Error: Empty response body.";
     }
-    if (appdata.settings['enableCustomImageProcessing']) {
+    // A ugoira is a zip of frames, which image processing scripts can't handle.
+    if (appdata.settings['enableCustomImageProcessing'] &&
+        !isUgoiraData(imageBytes)) {
       var script = appdata.settings['customImageProcessing'].toString();
       if (!script.contains('function processImage')) {
         return imageBytes;

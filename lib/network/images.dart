@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_qjs/flutter_qjs.dart';
@@ -6,6 +7,7 @@ import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/utils/image.dart';
+import 'package:venera/utils/ugoira.dart';
 
 import 'app_dio.dart';
 
@@ -205,7 +207,13 @@ abstract class ImageDownloader {
           buffer.clear();
         }
 
-        if (configs['modifyImage'] != null) {
+        var ugoira = parseUgoiraConfig(configs['ugoira']);
+        if (ugoira != null) {
+          // Store the zip with its frame delays, so that the cached or
+          // downloaded file plays without asking the source again.
+          var zip = data;
+          data = await Isolate.run(() => packUgoira(zip, ugoira));
+        } else if (configs['modifyImage'] != null) {
           var newData = await modifyImageWithScript(
             data,
             configs['modifyImage'],

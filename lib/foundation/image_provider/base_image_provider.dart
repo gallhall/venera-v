@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/utils/ugoira.dart';
 
 abstract class BaseImageProvider<T extends BaseImageProvider<T>>
     extends ImageProvider<T> {
@@ -103,6 +104,12 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
       }
 
       try {
+        if (isUgoiraData(data)) {
+          return await UgoiraCodec.create(
+            data,
+            getTargetSize: enableResize ? _getTargetSize : null,
+          );
+        }
         final buffer = await ImmutableBuffer.fromUint8List(data);
         return await decode(
           buffer,

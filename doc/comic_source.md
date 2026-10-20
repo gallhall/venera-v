@@ -660,6 +660,51 @@ If `load` function is implemented, `loadNext` function will be ignored.
 
 This part is used to load comic details.
 
+#### Ugoira (animated images)
+
+Since app version 2.0.0, a page can be a Pixiv ugoira: a zip of numbered JPG/PNG frames
+whose delays are served separately. The reader plays it in an endless loop, with the same
+zooming and page turning as a normal image.
+
+To mark a page as ugoira, return a `ugoira` field from `comic.onImageLoad`, and point `url`
+to the zip. `loadEp` is unchanged, the image key of the page can be anything your
+`onImageLoad` understands.
+
+```javascript
+onImageLoad: async (url, comicId, epId) => {
+    // e.g. loadEp returned "ugoira:12345678" for an animated work
+    if (url.startsWith("ugoira:")) {
+        let id = url.substring(7)
+        let res = await Network.get(
+            `https://www.pixiv.net/ajax/illust/${id}/ugoira_meta`,
+            {"Referer": "https://www.pixiv.net/"}
+        )
+        let meta = JSON.parse(res.body).body
+        return {
+            url: meta.originalSrc, // or meta.src for the smaller one
+            headers: {"Referer": "https://www.pixiv.net/"},
+            // [{file: "000000.jpg", delay: 60}, ...], delay in milliseconds
+            ugoira: {frames: meta.frames},
+        }
+    }
+    return {}
+}
+```
+
+`ugoira` accepts:
+
+- `{frames: [{file, delay}]}`: the `body` of Pixiv's `ugoira_meta` response can be passed as is.
+- `[{file, delay}]`: the frame list.
+- `true`: the zip already contains an `animation.json` (as written by PixivUtil2),
+  otherwise its images are played in file name order.
+
+A missing or invalid `delay` is treated as 100ms, and delays below 20ms are raised to 20ms.
+`headers`, `onResponse` and `onLoadFailed` work as usual, `modifyImage` is ignored.
+
+The app stores the zip together with the frame delays (in an `animation.json` entry),
+so cached and downloaded ugoira play offline without calling the source again.
+Sources that don't return `ugoira` are not affected.
+
 #### Settings
 
 ```javascript
