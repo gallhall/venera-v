@@ -270,9 +270,18 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     if (res.error) throw res.errorMessage!;
     var info = res.data;
 
-    // Use the first source that can be downloaded.
+    // Use the first source that can be downloaded, trying the ones named
+    // after the quality setting (e.g. "720P") first. Without a limit the
+    // order of the source is kept.
+    var maxHeight = _maxHeight;
+    var sources = VideoQuality.sort(
+      info.sources,
+      maxHeight,
+      height: (s) =>
+          maxHeight == null ? null : VideoQuality.heightFromName(s.name),
+    );
     Object? lastError;
-    for (var source in info.sources) {
+    for (var source in sources) {
       if (!_isRunning) return;
       var headers = _headers(info.headersFor(source));
       try {
@@ -335,6 +344,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     throw lastError ?? "No source to download";
   }
 
+  /// The highest resolution to download, see [VideoQuality.maxHeight].
+  static int? get _maxHeight =>
+      VideoQuality.maxHeight(appdata.settings['videoDownloadQuality']);
+
   /// Request headers, with the app's User-Agent for video sites.
   static Map<String, String> _headers(Map<String, String> custom) {
     var hasUA = custom.keys.any((k) => k.toLowerCase() == 'user-agent');
@@ -367,7 +380,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     notifyListeners();
     var text = await _readText(url.toString(), headers);
     if (HlsPlaylist.isMaster(text)) {
-      url = HlsPlaylist.pickVariant(text, url);
+      url = HlsPlaylist.pickVariant(text, url, _maxHeight);
       text = await _readText(url.toString(), headers);
     }
     var playlist = HlsPlaylist.localize(text, url);
@@ -397,7 +410,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   ) async {
     _message = "${label}Fetching manifest...";
     notifyListeners();
-    var dash = DashManifest.parse(await _readText(url.toString(), headers), url);
+    var dash = DashManifest.parse(
+      await _readText(url.toString(), headers),
+      url,
+      _maxHeight,
+    );
     var tracks = [?dash.video, ?dash.audio];
     var files = <DashTrack, List<File>>{};
     var downloads = <(String, String?, File)>[];

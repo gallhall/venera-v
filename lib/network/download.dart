@@ -18,6 +18,7 @@ import 'package:venera/network/dash_manifest.dart';
 import 'package:venera/network/hls_playlist.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/network/mp4_merge.dart';
+import 'package:venera/network/video_quality.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';

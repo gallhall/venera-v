@@ -8,6 +8,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/downloading_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
+import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/utils/cbz.dart';
 import 'package:venera/utils/epub.dart';
 import 'package:venera/utils/io.dart';
@@ -435,7 +436,23 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
     return isDeleted;
   }
 
-  List<MenuEntry> exportActions(List<LocalComic> comics) {
+  List<MenuEntry> exportActions(List<LocalComic> all) {
+    var videos = all.where(isLocalVideo).toList();
+    var comics = all.where((c) => !isLocalVideo(c)).toList();
+    return [
+      if (videos.isNotEmpty)
+        MenuEntry(
+          icon: Icons.movie_outlined,
+          text: "Export Video".tl,
+          onClick: () {
+            exportVideos(context, videos);
+          },
+        ),
+      if (comics.isNotEmpty) ...comicExportActions(comics),
+    ];
+  }
+
+  List<MenuEntry> comicExportActions(List<LocalComic> comics) {
     return [
       MenuEntry(
         icon: Icons.outbox_outlined,

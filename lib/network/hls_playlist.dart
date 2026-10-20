@@ -1,6 +1,8 @@
 /// Helpers to download an HLS stream as local files.
 library;
 
+import 'video_quality.dart';
+
 /// A file a media playlist needs: a segment, a key or an init segment.
 class HlsResource {
   final Uri uri;
@@ -26,27 +28,40 @@ class HlsPlaylist {
 
   static bool isMaster(String text) => text.contains('#EXT-X-STREAM-INF');
 
-  /// The variant with the highest bandwidth in a master playlist.
-  static Uri pickVariant(String text, Uri base) {
+  /// The variant of a master playlist that best matches [maxHeight] (see
+  /// [VideoQuality.sort]), the highest bandwidth one without a limit.
+  static Uri pickVariant(String text, Uri base, [int? maxHeight]) {
     var lines = _lines(text);
-    Uri? best;
-    var bestBandwidth = -1;
+    var variants = <(Uri, int?, int)>[];
     for (int i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
       var bandwidth =
           int.tryParse(_attribute(lines[i], 'BANDWIDTH') ?? '') ?? 0;
+      var resolution = _attribute(lines[i], 'RESOLUTION')?.split('x');
+      var height = resolution?.length == 2
+          ? VideoQuality.heightFromResolution(
+              int.tryParse(resolution![0]),
+              int.tryParse(resolution[1]),
+            )
+          : null;
       // The uri is the next line that is not a tag.
       var j = i + 1;
       while (j < lines.length && lines[j].startsWith('#')) {
         j++;
       }
       if (j >= lines.length) break;
-      if (bandwidth > bestBandwidth) {
-        bestBandwidth = bandwidth;
-        best = base.resolve(lines[j]);
-      }
+      variants.add((base.resolve(lines[j]), height, bandwidth));
     }
-    return best ?? (throw const FormatException('No variant in the playlist'));
+    if (variants.isEmpty) {
+      throw const FormatException('No variant in the playlist');
+    }
+    return VideoQuality.sort(
+      variants,
+      maxHeight,
+      // Without a limit the bandwidth decides, as before.
+      height: (v) => maxHeight == null ? null : v.$2,
+      bandwidth: (v) => v.$3,
+    ).first.$1;
   }
 
   /// Rewrites a media playlist to local files. Throws for a live stream,
