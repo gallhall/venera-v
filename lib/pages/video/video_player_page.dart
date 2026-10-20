@@ -106,6 +106,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   bool get hasNext => current < episodes.length - 1;
 
+  /// Phones show the player from the top edge without an app bar; the
+  /// player then has its own back button.
+  bool get isEdgeToEdge => App.isMobile;
+
+  /// Whether the page has no app bar, set on each build.
+  bool showPlayerBack = false;
+
   @override
   void initState() {
     super.initState();
@@ -257,7 +264,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       title: episode.id == null
           ? widget.details.title
           : '${widget.details.title} · ${episode.title}',
-      onBack: () => context.pop(),
+      onBack: showPlayerBack ? () => context.pop() : null,
       onPrevious: hasPrevious ? () => loadEpisode(current - 1) : null,
       onNext: hasNext ? () => loadEpisode(current + 1) : null,
       actions: [
@@ -317,7 +324,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= 900) {
+        var isWide = constraints.maxWidth >= 900;
+        showPlayerBack = !isWide && isEdgeToEdge;
+        if (isWide) {
           return Scaffold(
             appBar: Appbar(title: Text(widget.details.title)),
             body: Row(
@@ -325,6 +334,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 Expanded(child: buildPlayer()),
                 SizedBox(
                   width: 340,
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    children: buildInfo(),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        if (!isEdgeToEdge) {
+          // The desktop window frame draws its title bar over the page, so
+          // keep the app bar instead of a black area up to the top.
+          return Scaffold(
+            appBar: Appbar(title: Text(widget.details.title)),
+            body: Column(
+              children: [
+                AspectRatio(aspectRatio: 16 / 9, child: buildPlayer()),
+                Expanded(
                   child: ListView(
                     padding: const EdgeInsets.only(bottom: 16),
                     children: buildInfo(),
@@ -388,7 +415,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (MediaQuery.of(context).size.width < 900)
+          if (showPlayerBack)
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
