@@ -31,6 +31,13 @@ class DebugPageState extends State<DebugPage> {
           },
           actionTitle: 'Open'.tl,
         ).toSliver(),
+        _CallbackSetting(
+          title: "Video Player Test".tl,
+          callback: () {
+            context.to(() => const VideoTestPage());
+          },
+          actionTitle: 'Open'.tl,
+        ).toSliver(),
         _SwitchSetting(
           title: "Ignore Certificate Errors".tl,
           settingKey: "ignoreBadCertificate",
