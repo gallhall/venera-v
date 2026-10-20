@@ -271,8 +271,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           ? widget.details.title
           : '${widget.details.title} · ${episode.title}',
       onBack: showPlayerBack ? () => context.pop() : null,
-      onPrevious: hasPrevious ? () => loadEpisode(current - 1) : null,
-      onNext: hasNext ? () => loadEpisode(current + 1) : null,
+      // Always shown, so the buttons keep their place around play/pause.
+      onPrevious: () {
+        hasPrevious
+            ? loadEpisode(current - 1)
+            : context.showMessage(message: "Already the first episode".tl);
+      },
+      onNext: () {
+        hasNext
+            ? loadEpisode(current + 1)
+            : context.showMessage(message: "Already the last episode".tl);
+      },
       actions: [
         if (episodes.length > 1)
           PlayerControlAction(Icons.format_list_numbered, (context) async {
