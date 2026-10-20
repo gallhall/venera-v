@@ -414,12 +414,13 @@ function Comment({userName, avatar, content, time, replyCount, id, isLiked, scor
  *  The script will be executed in a new Isolate.
  *  A function named `modifyImage` should be defined in the script, which receives an [Image] as the only argument, and returns an [Image]..
  * @param onLoadFailed {(() => ImageLoadingConfig)?} - called when the image loading failed
+ * @param ugoira {(boolean | {file: string, delay: number}[] | {frames: {file: string, delay: number}[]})?} - mark the image as a Pixiv ugoira, `url` points to the zip of frames. See [Ugoira](comic_source.md#ugoira-animated-images). Since 2.0.0
  * @constructor
  * @since 1.0.5
  *
  * To keep the compatibility with the old version, do not use the constructor. Consider creating a new object with the properties directly.
  */
-function ImageLoadingConfig({url, method, data, headers, onResponse, modifyImage, onLoadFailed}) {
+function ImageLoadingConfig({url, method, data, headers, onResponse, modifyImage, onLoadFailed, ugoira}) {
     this.url = url;
     this.method = method;
     this.data = data;
@@ -427,6 +428,7 @@ function ImageLoadingConfig({url, method, data, headers, onResponse, modifyImage
     this.onResponse = onResponse;
     this.modifyImage = modifyImage;
     this.onLoadFailed = onLoadFailed;
+    this.ugoira = ugoira;
 }
 ```
 

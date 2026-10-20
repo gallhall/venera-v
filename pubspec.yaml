@@ -54,6 +54,7 @@ dependencies:
   flutter_file_dialog: ^3.0.3
   file_selector: ^1.1.0
   zip_flutter: ^0.0.13
+  archive: ^4.0.7
   lodepng_flutter:
     git:
       url: https://github.com/venera-app/lodepng_flutter
@@ -108,7 +109,6 @@ dev_dependencies:
   flutter_to_debian: 
     git:
       url: https://github.com/venera-app/flutter_to_debian.git
-  archive: any
 
 flutter:
   uses-material-design: true
