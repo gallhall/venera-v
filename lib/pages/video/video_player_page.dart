@@ -252,14 +252,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         }),
         n.actions.listen((id) {
           if (!identical(active, n)) return;
-          switch (id) {
-            case 'previous' when hasPrevious:
-              loadEpisode(current - 1);
-            case 'next' when hasNext:
-              loadEpisode(current + 1);
-            case 'skip':
-              skipCurrent();
-          }
+          if (id == 'skip') skipCurrent();
         }),
         // Speeds picked in the system player are remembered as well.
         n.rate.listen((v) {
@@ -512,13 +505,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var skip = currentSkip;
     n.playerActions = [
       if (skip != null)
-        NativePlayerAction('skip', skipLabel(skip), 'forward.end')
-      else ...[
-        if (hasPrevious)
-          NativePlayerAction('previous', "Previous episode".tl, 'backward.end'),
-        if (hasNext)
-          NativePlayerAction('next', "Next episode".tl, 'forward.end'),
-      ],
+        NativePlayerAction('skip', skipLabel(skip), 'forward.end'),
     ];
   }
 

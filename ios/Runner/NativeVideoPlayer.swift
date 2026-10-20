@@ -326,21 +326,26 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     }
   }
 
-  /// Previous and next episode from the lock screen, Control Center and
+  /// Back and forward 15 seconds from the lock screen, Control Center and
   /// headphones.
   private func applyRemoteCommands(enabled: Bool) {
     for (command, target) in remoteCommandTargets { command.removeTarget(target) }
     remoteCommandTargets.removeAll()
     let center = MPRemoteCommandCenter.shared()
-    let ids = Set(actions.compactMap { $0["id"] })
-    for (command, id) in [
-      (center.previousTrackCommand, "previous"), (center.nextTrackCommand, "next"),
+    center.previousTrackCommand.isEnabled = false
+    center.nextTrackCommand.isEnabled = false
+    for (command, seconds) in [
+      (center.skipBackwardCommand, -15.0), (center.skipForwardCommand, 15.0),
     ] {
-      let on = enabled && ids.contains(id)
-      command.isEnabled = on
-      if !on { continue }
+      command.preferredIntervals = [NSNumber(value: abs(seconds))]
+      command.isEnabled = enabled
+      if !enabled { continue }
       let target = command.addTarget { [weak self] _ in
-        self?.send("action", ["id": id])
+        guard let self, self.player.currentItem != nil else { return .noActionableNowPlayingItem }
+        var time = CMTimeGetSeconds(self.player.currentTime()) + seconds
+        let duration = CMTimeGetSeconds(self.player.currentItem!.duration)
+        if duration.isFinite { time = min(time, duration) }
+        self.player.seek(to: CMTime(seconds: max(time, 0), preferredTimescale: 1000))
         return .success
       }
       remoteCommandTargets.append((command, target))

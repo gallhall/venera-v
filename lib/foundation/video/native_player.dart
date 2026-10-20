@@ -7,7 +7,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/utils/io.dart';
 
-/// A button shown in the system player while it plays, e.g. "Next episode".
+/// A button shown in the system player while it plays, e.g. "Skip intro".
 class NativePlayerAction {
   /// Sent back by [NativeVideoPlayer.actions] when pressed.
   final String id;
@@ -136,8 +136,7 @@ class NativeVideoPlayer implements VideoPlayback {
   /// The user closed the player, at this position.
   Stream<Duration> get closed => _closed.stream;
 
-  /// Ids of the [NativePlayerAction]s pressed, also "previous" and "next"
-  /// from the lock screen when such actions are set.
+  /// Ids of the [NativePlayerAction]s pressed.
   Stream<String> get actions => _actions.stream;
 
   @override
