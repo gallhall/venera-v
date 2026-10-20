@@ -139,6 +139,7 @@ video = {
 | `sources` | `VideoPlaySource[]` | Required, at least one. Different qualities or mirrors of the episode. The player starts with the **first** one, so put the preferred one first. |
 | `subtitles` | `VideoSubtitle[]?` | External subtitle files. |
 | `headers` | `object?` | Request headers sent with every stream and subtitle. |
+| `skips` | `VideoSkip[]?` | Parts the player offers to skip, e.g. the opening and the ending. |
 
 ### VideoPlaySource
 
@@ -161,6 +162,24 @@ A source can also be just a url string.
 | `language` | `string?` | e.g. `"en"`, `"zh-CN"`. |
 
 A subtitle can also be just a url string.
+
+### VideoSkip
+
+| Field | Type | Description |
+|---|---|---|
+| `start` | `number` | Required. Start of the part, in seconds. |
+| `end` | `number` | Required. End of the part, in seconds, after `start`. |
+| `type` | `string?` | `"intro"`, `"outro"` or `"other"` (default). Decides the button label, e.g. "Skip intro". |
+
+While the position is inside a part, the player shows a skip button.
+If the user turned on automatic skipping in the player settings, it jumps to `end` directly, once per episode.
+
+```javascript
+skips: [
+    new VideoSkip({start: 0, end: 90, type: "intro"}),
+    new VideoSkip({start: 1350, end: 1440, type: "outro"}),
+]
+```
 
 ### Shorthands
 
@@ -204,7 +223,8 @@ The returned play info is printed to the log on that page.
 Plain objects with the same fields work as well.
 
 ```javascript
-new VideoPlayInfo({sources, subtitles, headers})
+new VideoPlayInfo({sources, subtitles, headers, skips})
 new VideoPlaySource({url, name, type, headers, audioUrl})
 new VideoSubtitle({url, name, language})
+new VideoSkip({start, end, type})
 ```

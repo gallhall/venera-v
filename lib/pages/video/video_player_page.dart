@@ -1,14 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/pages/video/video_gestures.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:window_manager/window_manager.dart';
 
 class VideoEpisode {
   /// null for a video without episodes.
@@ -131,6 +136,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Sources of [playInfo] that failed to open.
   final failedSources = <int>{};
 
+  /// Sources of [playInfo] already opened again after a failure.
+  final retriedSources = <int>{};
+
   bool isLoading = false;
 
   String? error;
@@ -181,6 +189,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Duration duration = Duration.zero;
 
+  /// Fullscreen is done by the page rather than by the engine's own route,
+  /// so that gestures, the lock and the skip button also work in it.
+  bool isFullscreen = false;
+
+  Size? videoSize;
+
+  /// While locked, touches on the player are ignored until it is unlocked.
+  bool isLocked = false;
+
+  /// Whether the unlock button is visible while locked.
+  bool showUnlock = false;
+
+  Timer? unlockTimer;
+
+  BoxFit fit = switch (appdata.settings['videoFit']) {
+    'cover' => BoxFit.cover,
+    'fill' => BoxFit.fill,
+    _ => BoxFit.contain,
+  };
+
+  /// The skip range the position is in, if not skipped automatically.
+  VideoSkip? currentSkip;
+
+  /// Skip ranges of the current episode already handled, by index.
+  final handledSkips = <int>{};
+
   @override
   void initState() {
     super.initState();
@@ -201,6 +235,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var p = player!;
     subscriptions.addAll([
       p.errors.listen(onPlayerError),
+      // Engine warnings say why a stream failed, e.g. which request.
+      p.logs.listen((line) => Log.info('Video', line)),
       p.duration.listen((d) {
         duration = d;
         if (d > Duration.zero && !started) {
@@ -227,7 +263,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       }),
       p.rate.listen((v) => setState(() => rate = v)),
       p.tracks.listen((v) => setState(() => tracks = v)),
+      p.videoSize.listen((v) => videoSize = v),
+      p.position.listen(checkSkip),
     ]);
+    var savedRate = appdata.settings['videoPlaybackRate'];
+    if (savedRate is num && savedRate != 1.0) {
+      p.setRate(savedRate.toDouble());
+    }
     if (source?.loadVideoPlayInfo == null) {
       error = "Video source not found".tl;
       return;
@@ -238,6 +280,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void dispose() {
     historyTimer?.cancel();
+    unlockTimer?.cancel();
+    if (isFullscreen) applyFullscreen(false);
     for (var s in subscriptions) {
       s.cancel();
     }
@@ -292,6 +336,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       isLoading = true;
       error = null;
       playInfo = null;
+      currentSkip = null;
+      handledSkips.clear();
     });
     await player!.pause();
     var res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
@@ -307,6 +353,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       isLoading = false;
       playInfo = res.data;
       failedSources.clear();
+      retriedSources.clear();
     });
     var start = resumePosition(index);
     openSource(0, start: start);
@@ -348,6 +395,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || info == null || started || isLoading) return;
     if (errorHandledFor == openToken) return;
     errorHandledFor = openToken;
+    // Opening a stream takes several requests (a DASH stream fetches every
+    // quality's init segment), so a single dropped one fails it: try the
+    // same source again once first.
+    if (retriedSources.add(sourceIndex)) {
+      var token = openToken;
+      var index = sourceIndex;
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && token == openToken && !isLoading) {
+          openSource(index, start: openedAt == Duration.zero ? null : openedAt);
+        }
+      });
+      return;
+    }
     failedSources.add(sourceIndex);
     var next = Iterable.generate(
       info.sources.length,
@@ -369,6 +429,153 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (index == sourceIndex && error == null) return;
     failedSources.remove(index);
     openSource(index, start: started ? player!.currentPosition : null);
+  }
+
+  /// Applies fullscreen to the window or the system UI.
+  static Future<void> applyFullscreen(bool value, {Size? videoSize}) async {
+    if (App.isDesktop) {
+      await windowManager.setFullScreen(value);
+      WindowFrame.of(App.rootContext).setWindowFrame(!value);
+    } else if (App.isMobile) {
+      if (value) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        var portrait =
+            videoSize != null && videoSize.height > videoSize.width;
+        await SystemChrome.setPreferredOrientations(
+          portrait
+              ? [DeviceOrientation.portraitUp]
+              : [
+                  DeviceOrientation.landscapeLeft,
+                  DeviceOrientation.landscapeRight,
+                ],
+        );
+      } else {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      }
+    }
+  }
+
+  void setFullscreen(bool value) {
+    if (value == isFullscreen) return;
+    setState(() {
+      isFullscreen = value;
+      if (!value) isLocked = false;
+    });
+    applyFullscreen(value, videoSize: videoSize);
+  }
+
+  void lock() {
+    setState(() => isLocked = true);
+    flashUnlockButton();
+  }
+
+  void flashUnlockButton() {
+    unlockTimer?.cancel();
+    setState(() => showUnlock = true);
+    unlockTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => showUnlock = false);
+    });
+  }
+
+  void checkSkip(Duration position) {
+    var info = playInfo;
+    if (info == null || !started) return;
+    VideoSkip? inRange;
+    for (int i = 0; i < info.skips.length; i++) {
+      var skip = info.skips[i];
+      if (!skip.contains(position) || handledSkips.contains(i)) continue;
+      if (appdata.settings['videoAutoSkip'] == true) {
+        handledSkips.add(i);
+        player!.seek(skip.end);
+        context.showMessage(message: skipLabel(skip, done: true));
+        return;
+      }
+      inRange = skip;
+      break;
+    }
+    if (inRange != currentSkip) setState(() => currentSkip = inRange);
+  }
+
+  void skipCurrent() {
+    var skip = currentSkip;
+    if (skip == null) return;
+    handledSkips.add(playInfo!.skips.indexOf(skip));
+    setState(() => currentSkip = null);
+    player!.seek(skip.end);
+  }
+
+  String skipLabel(VideoSkip skip, {bool done = false}) {
+    return switch (skip.type) {
+      VideoSkipType.intro => done ? "Skipped the intro" : "Skip intro",
+      VideoSkipType.outro => done ? "Skipped the outro" : "Skip outro",
+      VideoSkipType.other => done ? "Skipped" : "Skip",
+    }.tl;
+  }
+
+  void setFit(BoxFit value) {
+    setState(() => fit = value);
+    appdata.settings['videoFit'] = switch (value) {
+      BoxFit.cover => 'cover',
+      BoxFit.fill => 'fill',
+      _ => 'contain',
+    };
+    appdata.saveData();
+  }
+
+  void setRate(double value) {
+    player!.setRate(value);
+    appdata.settings['videoPlaybackRate'] = value;
+    appdata.saveData();
+  }
+
+  Future<void> showPlayerSettings(BuildContext context) {
+    return showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => ContentDialog(
+          title: "Player Settings".tl,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Video fit".tl, style: ts.s14).paddingHorizontal(16),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (var (value, label) in const [
+                    (BoxFit.contain, "Fit"),
+                    (BoxFit.cover, "Crop"),
+                    (BoxFit.fill, "Stretch"),
+                  ])
+                    ChoiceChip(
+                      label: Text(label.tl),
+                      selected: fit == value,
+                      onSelected: (_) {
+                        setFit(value);
+                        setDialogState(() {});
+                      },
+                    ),
+                ],
+              ).paddingHorizontal(16),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: Text("Skip intro and outro automatically".tl),
+                subtitle: Text(
+                  "Only when the video source marks them".tl,
+                ),
+                value: appdata.settings['videoAutoSkip'] == true,
+                onChanged: (v) {
+                  appdata.settings['videoAutoSkip'] = v;
+                  appdata.saveData();
+                  setDialogState(() {});
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<T?> pick<T>(
@@ -406,7 +613,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       title: episode.id == null
           ? widget.details.title
           : '${widget.details.title} · ${episode.title}',
-      onBack: showPlayerBack ? () => context.pop() : null,
+      onBack: isFullscreen
+          ? () => setFullscreen(false)
+          : (showPlayerBack ? () => context.pop() : null),
+      onToggleFullscreen: () => setFullscreen(!isFullscreen),
+      isFullscreen: isFullscreen,
       // Always shown, so the buttons keep their place around play/pause.
       onPrevious: () {
         hasPrevious
@@ -440,7 +651,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             for (var r in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0])
               r: '${r}x',
           }, rate);
-          if (r != null) p.setRate(r);
+          if (r != null) setRate(r);
         }),
         if (tracks.audio.length > 3)
           PlayerControlAction(Icons.audiotrack_outlined, (context) async {
@@ -456,6 +667,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             }, p.currentSubtitleTrack);
             if (id != null) p.selectSubtitleTrack(id);
           }),
+        PlayerControlAction(Icons.tune, showPlayerSettings),
+        if (App.isMobile)
+          PlayerControlAction(Icons.lock_outline, (_) => lock()),
       ],
     );
   }
@@ -476,6 +690,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) controls.value = buildControls();
     });
+    return PopScope(
+      // Back leaves fullscreen first.
+      canPop: !isFullscreen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setFullscreen(false);
+      },
+      child: isFullscreen
+          ? Scaffold(backgroundColor: Colors.black, body: buildPlayer())
+          : buildLayout(),
+    );
+  }
+
+  Widget buildLayout() {
     return LayoutBuilder(
       builder: (context, constraints) {
         var isWide = constraints.maxWidth >= 900;
@@ -540,18 +767,53 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildPlayer() {
+    Widget view = player!.buildView(custom: controls, fit: fit);
+    if (App.isMobile) view = VideoGestureLayer(child: view);
     return ColoredBox(
       color: Colors.black,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          player!.buildView(custom: controls),
+          view,
           if (isLoading)
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
             ),
+          if (currentSkip != null && !isLocked)
+            Positioned(
+              right: 16,
+              bottom: 64,
+              child: FilledButton.tonalIcon(
+                onPressed: skipCurrent,
+                icon: const Icon(Icons.skip_next),
+                label: Text(skipLabel(currentSkip!)),
+              ),
+            ),
+          if (isLocked) buildLockOverlay(),
           if (error != null) buildError(),
         ],
+      ),
+    );
+  }
+
+  /// Takes all touches while locked; a tap shows the unlock button.
+  Widget buildLockOverlay() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: flashUnlockButton,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AnimatedOpacity(
+          opacity: showUnlock ? 1 : 0,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: !showUnlock,
+            child: IconButton.filledTonal(
+              icon: const Icon(Icons.lock_open),
+              onPressed: () => setState(() => isLocked = false),
+            ).paddingLeft(24),
+          ),
+        ),
       ),
     );
   }
@@ -569,13 +831,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (showPlayerBack)
+          if (showPlayerBack || isFullscreen)
             Align(
               alignment: Alignment.topLeft,
               child: IconButton(
                 color: Colors.white,
                 icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
+                onPressed: () =>
+                    isFullscreen ? setFullscreen(false) : context.pop(),
               ),
             ),
           const Spacer(),

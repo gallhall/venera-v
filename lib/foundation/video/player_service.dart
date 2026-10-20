@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:venera/foundation/app.dart';
@@ -86,8 +87,8 @@ class PlayerControlAction {
 class PlayerControls {
   final String? title;
 
-  /// Back button in normal (not fullscreen) mode on mobile. In fullscreen
-  /// the back button leaves fullscreen.
+  /// Back button at the top left. On desktop the top bar is only shown in
+  /// fullscreen, where its back button leaves fullscreen.
   final VoidCallback? onBack;
 
   final VoidCallback? onPrevious;
@@ -96,12 +97,20 @@ class PlayerControls {
 
   final List<PlayerControlAction> actions;
 
+  /// Fullscreen handled by the page. If null, the controls use the
+  /// engine's own fullscreen route.
+  final VoidCallback? onToggleFullscreen;
+
+  final bool isFullscreen;
+
   const PlayerControls({
     this.title,
     this.onBack,
     this.onPrevious,
     this.onNext,
     this.actions = const [],
+    this.onToggleFullscreen,
+    this.isFullscreen = false,
   });
 }
 
@@ -331,36 +340,33 @@ class PlayerService {
     await _player.setSubtitleTrack(track);
   }
 
-  /// The video view. [custom] adds a title, episode navigation and extra
-  /// buttons to the default controls, in normal and fullscreen mode.
+  /// The video view. [custom] adds a title, episode navigation, extra
+  /// buttons and page fullscreen to the default controls.
   ///
   /// The controls are themed once and listen to [custom]: media_kit's
   /// theme widgets do not notify the controls when the theme changes.
   Widget buildView({
     bool controls = true,
     ValueListenable<PlayerControls>? custom,
+    BoxFit fit = BoxFit.contain,
   }) {
     var video = Video(
       controller: _controller,
+      fit: fit,
       controls: controls ? AdaptiveVideoControls : null,
     );
     if (!controls || custom == null) return video;
     if (!identical(custom, _themedControls)) {
       _themedControls = custom;
-      _themes = (
-        _mobileTheme(custom, false),
-        _mobileTheme(custom, true),
-        _desktopTheme(custom, false),
-        _desktopTheme(custom, true),
-      );
+      _themes = (_mobileTheme(custom), _desktopTheme(custom));
     }
-    var t = _themes!;
+    var (mobile, desktop) = _themes!;
     return MaterialVideoControlsTheme(
-      normal: t.$1,
-      fullscreen: t.$2,
+      normal: mobile,
+      fullscreen: mobile,
       child: MaterialDesktopVideoControlsTheme(
-        normal: t.$3,
-        fullscreen: t.$4,
+        normal: desktop,
+        fullscreen: desktop,
         child: video,
       ),
     );
@@ -368,12 +374,7 @@ class PlayerService {
 
   ValueListenable<PlayerControls>? _themedControls;
 
-  (
-    MaterialVideoControlsThemeData,
-    MaterialVideoControlsThemeData,
-    MaterialDesktopVideoControlsThemeData,
-    MaterialDesktopVideoControlsThemeData,
-  )?
+  (MaterialVideoControlsThemeData, MaterialDesktopVideoControlsThemeData)?
   _themes;
 
   /// A button bar that is rebuilt when [custom] changes.
@@ -400,9 +401,11 @@ class PlayerService {
     );
   }
 
+  static IconData _fullscreenIcon(PlayerControls c) =>
+      c.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen;
+
   static MaterialVideoControlsThemeData _mobileTheme(
     ValueListenable<PlayerControls> custom,
-    bool fullscreen,
   ) {
     Widget button(IconData icon, void Function(BuildContext) onPressed) {
       return Builder(
@@ -419,10 +422,7 @@ class PlayerService {
       speedUpOnLongPress: true,
       topButtonBar: [
         _bar(custom, (c) => [
-          if (fullscreen || c.onBack != null)
-            button(Icons.arrow_back, (context) {
-              fullscreen ? exitFullscreen(context) : c.onBack!();
-            }),
+          if (c.onBack != null) button(Icons.arrow_back, (_) => c.onBack!()),
           _title(c),
           for (var a in c.actions) button(a.icon, a.onPressed),
         ]),
@@ -439,12 +439,21 @@ class PlayerService {
           const Spacer(flex: 2),
         ]),
       ],
+      bottomButtonBar: [
+        _bar(custom, (c) => [
+          const MaterialPositionIndicator(),
+          const Spacer(),
+          if (c.onToggleFullscreen != null)
+            button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
+          else
+            const MaterialFullscreenButton(),
+        ]),
+      ],
     );
   }
 
-  static MaterialDesktopVideoControlsThemeData _desktopTheme(
+  MaterialDesktopVideoControlsThemeData _desktopTheme(
     ValueListenable<PlayerControls> custom,
-    bool fullscreen,
   ) {
     Widget button(IconData icon, void Function(BuildContext) onPressed) {
       return Builder(
@@ -455,14 +464,52 @@ class PlayerService {
       );
     }
 
+    // media_kit's default shortcuts, with fullscreen and the media track
+    // keys handled by the page.
+    void seekBy(Duration d) => _player.seek(_player.state.position + d);
+    void volumeBy(double d) =>
+        _player.setVolume((_player.state.volume + d).clamp(0.0, 100.0));
+    PlayerControls c() => custom.value;
+    var pageFullscreen = c().onToggleFullscreen != null;
+    var shortcuts = <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.mediaPlay): _player.play,
+      const SingleActivator(LogicalKeyboardKey.mediaPause): _player.pause,
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
+          _player.playOrPause,
+      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
+          c().onNext?.call(),
+      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
+          c().onPrevious?.call(),
+      const SingleActivator(LogicalKeyboardKey.space): _player.playOrPause,
+      const SingleActivator(LogicalKeyboardKey.keyJ): () =>
+          seekBy(const Duration(seconds: -10)),
+      const SingleActivator(LogicalKeyboardKey.keyI): () =>
+          seekBy(const Duration(seconds: 10)),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+          seekBy(const Duration(seconds: -5)),
+      const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+          seekBy(const Duration(seconds: 5)),
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () => volumeBy(5),
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () => volumeBy(-5),
+      const SingleActivator(LogicalKeyboardKey.keyF): () =>
+          c().onToggleFullscreen?.call(),
+      const SingleActivator(LogicalKeyboardKey.escape): () {
+        if (c().isFullscreen) c().onToggleFullscreen?.call();
+      },
+    };
+
     return MaterialDesktopVideoControlsThemeData(
+      keyboardShortcuts: pageFullscreen ? shortcuts : null,
+      // A double click would open the engine's fullscreen route.
+      toggleFullscreenOnDoublePress: !pageFullscreen,
       topButtonBar: [
-        if (fullscreen)
-          _bar(custom, (c) => [
-            button(Icons.arrow_back, exitFullscreen),
+        _bar(custom, (c) => [
+          if (c.isFullscreen) ...[
+            button(Icons.arrow_back, (_) => c.onToggleFullscreen?.call()),
             const SizedBox(width: 8),
             _title(c),
-          ]),
+          ],
+        ]),
       ],
       bottomButtonBar: [
         _bar(custom, (c) => [
@@ -474,7 +521,10 @@ class PlayerService {
           const MaterialDesktopPositionIndicator(),
           const Spacer(),
           for (var a in c.actions) button(a.icon, a.onPressed),
-          const MaterialDesktopFullscreenButton(),
+          if (c.onToggleFullscreen != null)
+            button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
+          else
+            const MaterialDesktopFullscreenButton(),
         ]),
       ],
     );

@@ -165,6 +165,11 @@ class DemoVideoSource extends ComicSource {
                                 url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
                                 type: "hls",
                             })],
+                            // the opening titles and the end credits, in seconds
+                            skips: [
+                                new VideoSkip({start: 0, end: 20, type: "intro"}),
+                                new VideoSkip({start: 490, end: 596, type: "outro"}),
+                            ],
                         })
                     }
                     return new VideoPlayInfo({

@@ -146,6 +146,59 @@ class VideoSubtitle {
   };
 }
 
+enum VideoSkipType {
+  intro,
+  outro,
+  other;
+
+  static VideoSkipType parse(dynamic value) {
+    return switch (value) {
+      null || 'other' => other,
+      'intro' => intro,
+      'outro' => outro,
+      _ => throw FormatException("Unknown skip type $value"),
+    };
+  }
+}
+
+/// A part of the episode the player offers to skip, e.g. the opening.
+class VideoSkip {
+  final Duration start;
+
+  final Duration end;
+
+  final VideoSkipType type;
+
+  const VideoSkip(this.start, this.end, [this.type = VideoSkipType.other]);
+
+  factory VideoSkip.fromJson(dynamic json, int index) {
+    var field = "skips[$index]";
+    if (json is! Map) throw FormatException("$field must be an object");
+    Duration seconds(String key) {
+      var value = json[key];
+      if (value is! num || value < 0) {
+        throw FormatException("$field.$key must be a number of seconds");
+      }
+      return Duration(milliseconds: (value * 1000).round());
+    }
+
+    var start = seconds("start");
+    var end = seconds("end");
+    if (end <= start) {
+      throw FormatException("$field.end must be after start");
+    }
+    return VideoSkip(start, end, VideoSkipType.parse(json["type"]));
+  }
+
+  bool contains(Duration position) => position >= start && position < end;
+
+  Map<String, dynamic> toJson() => {
+    "start": start.inMilliseconds / 1000,
+    "end": end.inMilliseconds / 1000,
+    "type": type.name,
+  };
+}
+
 /// Result of `video.loadPlayInfo`: everything needed to play an episode.
 class VideoPlayInfo {
   /// At least one stream. The player starts with the first one.
@@ -156,10 +209,14 @@ class VideoPlayInfo {
   /// Headers shared by all streams and subtitles.
   final Map<String, String> headers;
 
+  /// Parts the player offers to skip, e.g. the opening and the ending.
+  final List<VideoSkip> skips;
+
   const VideoPlayInfo({
     required this.sources,
     this.subtitles = const [],
     this.headers = const {},
+    this.skips = const [],
   });
 
   /// Accepts the full object, a single stream object (`{url, headers...}`)
@@ -198,6 +255,10 @@ class VideoPlayInfo {
     if (rawSubtitles is! List) {
       throw const FormatException("subtitles must be an array");
     }
+    var rawSkips = json["skips"] ?? const [];
+    if (rawSkips is! List) {
+      throw const FormatException("skips must be an array");
+    }
     return VideoPlayInfo(
       sources: [
         for (int i = 0; i < rawSources.length; i++)
@@ -208,6 +269,10 @@ class VideoPlayInfo {
           VideoSubtitle.fromJson(rawSubtitles[i], i),
       ],
       headers: _parseHeaders(json["headers"], "headers"),
+      skips: [
+        for (int i = 0; i < rawSkips.length; i++)
+          VideoSkip.fromJson(rawSkips[i], i),
+      ],
     );
   }
 
@@ -226,5 +291,6 @@ class VideoPlayInfo {
     "sources": sources.map((e) => e.toJson()).toList(),
     "subtitles": subtitles.map((e) => e.toJson()).toList(),
     "headers": headers,
+    "skips": skips.map((e) => e.toJson()).toList(),
   };
 }
