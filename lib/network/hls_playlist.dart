@@ -23,25 +23,46 @@ class HlsMediaPlaylist {
   const HlsMediaPlaylist(this.localText, this.resources);
 }
 
+/// A stream of a master playlist.
+class HlsVariant {
+  final Uri uri;
+
+  /// The short side of the resolution, see
+  /// [VideoQuality.heightFromResolution].
+  final int? height;
+
+  /// `WIDTHxHEIGHT`, e.g. `1920x1080`.
+  final String? resolution;
+
+  final int bandwidth;
+
+  const HlsVariant(
+    this.uri, {
+    this.height,
+    this.resolution,
+    this.bandwidth = 0,
+  });
+}
+
 class HlsPlaylist {
   static bool isPlaylist(String text) => text.trimLeft().startsWith('#EXTM3U');
 
   static bool isMaster(String text) => text.contains('#EXT-X-STREAM-INF');
 
-  /// The variant of a master playlist that best matches [maxHeight] (see
-  /// [VideoQuality.sort]), the highest bandwidth one without a limit.
-  static Uri pickVariant(String text, Uri base, [int? maxHeight]) {
+  /// The variants of a master playlist.
+  static List<HlsVariant> variants(String text, Uri base) {
     var lines = _lines(text);
-    var variants = <(Uri, int?, int)>[];
+    var variants = <HlsVariant>[];
     for (int i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
       var bandwidth =
           int.tryParse(_attribute(lines[i], 'BANDWIDTH') ?? '') ?? 0;
-      var resolution = _attribute(lines[i], 'RESOLUTION')?.split('x');
-      var height = resolution?.length == 2
+      var resolution = _attribute(lines[i], 'RESOLUTION');
+      var size = resolution?.split('x');
+      var height = size?.length == 2
           ? VideoQuality.heightFromResolution(
-              int.tryParse(resolution![0]),
-              int.tryParse(resolution[1]),
+              int.tryParse(size![0]),
+              int.tryParse(size[1]),
             )
           : null;
       // The uri is the next line that is not a tag.
@@ -50,18 +71,30 @@ class HlsPlaylist {
         j++;
       }
       if (j >= lines.length) break;
-      variants.add((base.resolve(lines[j]), height, bandwidth));
+      variants.add(HlsVariant(
+        base.resolve(lines[j]),
+        height: height,
+        resolution: height == null ? null : resolution,
+        bandwidth: bandwidth,
+      ));
     }
-    if (variants.isEmpty) {
+    return variants;
+  }
+
+  /// The variant of a master playlist that best matches [maxHeight] (see
+  /// [VideoQuality.sort]), the highest bandwidth one without a limit.
+  static Uri pickVariant(String text, Uri base, [int? maxHeight]) {
+    var list = variants(text, base);
+    if (list.isEmpty) {
       throw const FormatException('No variant in the playlist');
     }
     return VideoQuality.sort(
-      variants,
+      list,
       maxHeight,
       // Without a limit the bandwidth decides, as before.
-      height: (v) => maxHeight == null ? null : v.$2,
-      bandwidth: (v) => v.$3,
-    ).first.$1;
+      height: (v) => maxHeight == null ? null : v.height,
+      bandwidth: (v) => v.bandwidth,
+    ).first.uri;
   }
 
   /// Rewrites a media playlist to local files. Throws for a live stream,

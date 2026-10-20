@@ -22,11 +22,16 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// has none.
   final List<String>? episodes;
 
+  /// Quality picked when the download was added, see
+  /// [VideoQuality.maxHeight].
+  final String quality;
+
   VideoDownloadTask({
     required this.source,
     required this.videoId,
     this.comic,
     this.episodes,
+    this.quality = 'highest',
   });
 
   static const manifestName = 'episode.json';
@@ -345,13 +350,59 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   }
 
   /// The highest resolution to download, see [VideoQuality.maxHeight].
-  static int? get _maxHeight =>
-      VideoQuality.maxHeight(appdata.settings['videoDownloadQuality']);
+  int? get _maxHeight => VideoQuality.maxHeight(quality);
 
   /// Request headers, with the app's User-Agent for video sites.
   static Map<String, String> _headers(Map<String, String> custom) {
     var hasUA = custom.keys.any((k) => k.toLowerCase() == 'user-agent');
     return {if (!hasUA) 'User-Agent': webUA, ...custom};
+  }
+
+  /// The qualities episode [ep] of [videoId] offers, the highest first:
+  /// the ones in source names (e.g. "720P") and the variants of the first
+  /// source's HLS or DASH manifest. Empty if none is known, e.g. for a
+  /// single MP4 file.
+  static Future<List<VideoQualityLevel>> loadQualities(
+    ComicSource source,
+    String videoId,
+    String? ep,
+  ) async {
+    var res = await source.loadVideoPlayInfo!(videoId, ep);
+    if (res.error) throw res.errorMessage!;
+    var info = res.data;
+    var levels = <VideoQualityLevel>[
+      for (var s in info.sources)
+        if (VideoQuality.heightFromName(s.name) case var h?)
+          VideoQualityLevel(h),
+    ];
+    var first = info.sources.firstOrNull;
+    if (first != null) {
+      var task = VideoDownloadTask(source: source, videoId: videoId);
+      var headers = _headers(info.headersFor(first));
+      var url = Uri.parse(first.url);
+      var kind = await task._detect(first, headers);
+      if (kind == VideoStreamType.hls) {
+        var text = await task._readText(first.url, headers);
+        if (HlsPlaylist.isMaster(text)) {
+          for (var v in HlsPlaylist.variants(text, url)) {
+            if (v.height case var h?) {
+              levels.add(VideoQualityLevel(h, v.resolution));
+            }
+          }
+        }
+      } else if (kind == VideoStreamType.dash) {
+        var tracks = DashManifest.parseTracks(
+          await task._readText(first.url, headers),
+          url,
+        );
+        for (var t in DashManifest.candidates(tracks, 'video')) {
+          if (t.height case var h?) {
+            levels.add(VideoQualityLevel(h, t.resolution));
+          }
+        }
+      }
+    }
+    return VideoQualityLevel.distinct(levels);
   }
 
   Future<VideoStreamType> _detect(
@@ -686,6 +737,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "videoId": videoId,
       "comic": comic?.toJson(),
       "episodes": episodes,
+      "quality": quality,
       "path": path,
       "cover": _cover,
       "completed": _completed,
@@ -702,6 +754,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
             ? null
             : ComicDetails.fromJson(json["comic"]),
         episodes: ListOrNull.from(json["episodes"]),
+        // Tasks saved before the quality was picked per download.
+        quality: json["quality"] ??
+            appdata.settings["videoDownloadQuality"] ??
+            "highest",
       )
       ..path = json["path"]
       .._cover = json["cover"]

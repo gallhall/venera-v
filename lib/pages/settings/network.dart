@@ -28,19 +28,6 @@ class _NetworkSettingsState extends State<NetworkSettings> {
           min: 1,
           max: 16,
         ).toSliver(),
-        SelectSetting(
-          title: "Video Download Quality".tl,
-          settingKey: "videoDownloadQuality",
-          optionTranslation: {
-            for (var option in VideoQuality.options)
-              option: switch (option) {
-                'highest' => "Highest".tl,
-                'lowest' => "Lowest".tl,
-                _ => "@q and below".tlParams({"q": "${option}P"}),
-              },
-          },
-          help: "The highest resolution to download. If the video has no quality at or below it, the lowest one is downloaded.".tl,
-        ).toSliver(),
       ],
     );
   }

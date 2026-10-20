@@ -1,21 +1,36 @@
 /// Picks the quality to download from the levels of a stream.
 library;
 
-class VideoQuality {
-  /// Values of the `videoDownloadQuality` setting, best first.
-  static const options = [
-    'highest',
-    '2160',
-    '1440',
-    '1080',
-    '720',
-    '480',
-    '360',
-    'lowest',
-  ];
+/// A quality a video offers.
+class VideoQualityLevel {
+  /// The short side of the resolution, e.g. 1080.
+  final int height;
 
+  /// `WIDTHxHEIGHT`, if known.
+  final String? resolution;
+
+  const VideoQualityLevel(this.height, [this.resolution]);
+
+  /// Value of a download's quality, see [VideoQuality.maxHeight].
+  String get value => height.toString();
+
+  /// Distinct levels, the highest first, keeping a resolution if one of
+  /// the same height has it.
+  static List<VideoQualityLevel> distinct(Iterable<VideoQualityLevel> levels) {
+    var byHeight = <int, VideoQualityLevel>{};
+    for (var l in levels) {
+      var old = byHeight[l.height];
+      if (old == null || old.resolution == null) byHeight[l.height] = l;
+    }
+    return byHeight.values.toList()
+      ..sort((a, b) => b.height.compareTo(a.height));
+  }
+}
+
+class VideoQuality {
   /// The highest resolution (short side, e.g. 1080) to download for a
-  /// setting value: null for the best quality, 0 for the lowest.
+  /// download's quality: a height, `highest` (or null) for the best
+  /// quality, `lowest` for the lowest.
   static int? maxHeight(Object? setting) {
     return switch (setting) {
       null || 'highest' => null,

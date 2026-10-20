@@ -34,6 +34,9 @@ class DashTrack {
   /// The short side of the resolution, for video tracks that tell it.
   final int? height;
 
+  /// `WIDTHxHEIGHT`, e.g. `1920x1080`, for video tracks that tell it.
+  final String? resolution;
+
   /// Null if the media segments initialize themselves.
   final DashSegment? init;
 
@@ -46,6 +49,7 @@ class DashTrack {
     this.codecs,
     required this.bandwidth,
     this.height,
+    this.resolution,
     this.init,
     required this.segments,
   });
@@ -68,11 +72,8 @@ class DashSelection {
 }
 
 class DashManifest {
-  /// Picks the video representation that best matches [maxHeight] (see
-  /// [VideoQuality.sort]) and the audio one with the highest bandwidth,
-  /// preferring MP4 ones, which can be merged into one file. Without a
-  /// limit the video one with the highest bandwidth is picked.
-  static DashSelection parse(String text, Uri url, [int? maxHeight]) {
+  /// Every video and audio representation of a manifest.
+  static List<DashTrack> parseTracks(String text, Uri url) {
     var mpd = XmlDocument.parse(text).rootElement;
     if (mpd.localName != 'MPD') {
       throw const FormatException('Not a DASH manifest');
@@ -114,31 +115,49 @@ class DashManifest {
           bandwidth,
           duration,
         );
+        var width = int.tryParse(
+          rep.getAttribute('width') ?? set.getAttribute('width') ?? '',
+        );
+        var height = int.tryParse(
+          rep.getAttribute('height') ?? set.getAttribute('height') ?? '',
+        );
         tracks.add(DashTrack(
           id: id,
           kind: kind,
           mimeType: mimeType,
           codecs: rep.getAttribute('codecs') ?? set.getAttribute('codecs'),
           bandwidth: bandwidth,
-          height: VideoQuality.heightFromResolution(
-            int.tryParse(
-              rep.getAttribute('width') ?? set.getAttribute('width') ?? '',
-            ),
-            int.tryParse(
-              rep.getAttribute('height') ?? set.getAttribute('height') ?? '',
-            ),
-          ),
+          height: VideoQuality.heightFromResolution(width, height),
+          resolution: width == null || height == null
+              ? null
+              : '${width}x$height',
           init: init,
           segments: segments,
         ));
       }
     }
+    return tracks;
+  }
+
+  /// The tracks of [kind] (`video` or `audio`) a download picks from: the
+  /// MP4 ones if there are, which can be merged into one file.
+  static List<DashTrack> candidates(List<DashTrack> tracks, String kind) {
+    var list = tracks.where((t) => t.kind == kind).toList();
+    if (list.any((t) => t.isMp4)) {
+      list = list.where((t) => t.isMp4).toList();
+    }
+    return list;
+  }
+
+  /// Picks the video representation that best matches [maxHeight] (see
+  /// [VideoQuality.sort]) and the audio one with the highest bandwidth,
+  /// preferring MP4 ones, which can be merged into one file. Without a
+  /// limit the video one with the highest bandwidth is picked.
+  static DashSelection parse(String text, Uri url, [int? maxHeight]) {
+    var tracks = parseTracks(text, url);
 
     DashTrack? best(String kind) {
-      var list = tracks.where((t) => t.kind == kind).toList();
-      if (list.any((t) => t.isMp4)) {
-        list = list.where((t) => t.isMp4).toList();
-      }
+      var list = candidates(tracks, kind);
       var limit = kind == 'video' ? maxHeight : null;
       return VideoQuality.sort(
         list,
