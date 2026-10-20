@@ -326,7 +326,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     }
   }
 
-  /// Back and forward 15 seconds from the lock screen, Control Center and
+  /// Back and forward 10 seconds from the lock screen, Control Center and
   /// headphones.
   private func applyRemoteCommands(enabled: Bool) {
     for (command, target) in remoteCommandTargets { command.removeTarget(target) }
@@ -335,7 +335,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     center.previousTrackCommand.isEnabled = false
     center.nextTrackCommand.isEnabled = false
     for (command, seconds) in [
-      (center.skipBackwardCommand, -15.0), (center.skipForwardCommand, 15.0),
+      (center.skipBackwardCommand, -10.0), (center.skipForwardCommand, 10.0),
     ] {
       command.preferredIntervals = [NSNumber(value: abs(seconds))]
       command.isEnabled = enabled
