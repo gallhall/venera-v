@@ -136,6 +136,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Sources of [playInfo] that failed to open.
   final failedSources = <int>{};
 
+  /// Sources of [playInfo] already opened again after a failure.
+  final retriedSources = <int>{};
+
   bool isLoading = false;
 
   String? error;
@@ -232,6 +235,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var p = player!;
     subscriptions.addAll([
       p.errors.listen(onPlayerError),
+      // Engine warnings say why a stream failed, e.g. which request.
+      p.logs.listen((line) => Log.info('Video', line)),
       p.duration.listen((d) {
         duration = d;
         if (d > Duration.zero && !started) {
@@ -348,6 +353,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       isLoading = false;
       playInfo = res.data;
       failedSources.clear();
+      retriedSources.clear();
     });
     var start = resumePosition(index);
     openSource(0, start: start);
@@ -389,6 +395,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || info == null || started || isLoading) return;
     if (errorHandledFor == openToken) return;
     errorHandledFor = openToken;
+    // Opening a stream takes several requests (a DASH stream fetches every
+    // quality's init segment), so a single dropped one fails it: try the
+    // same source again once first.
+    if (retriedSources.add(sourceIndex)) {
+      var token = openToken;
+      var index = sourceIndex;
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted && token == openToken && !isLoading) {
+          openSource(index, start: openedAt == Duration.zero ? null : openedAt);
+        }
+      });
+      return;
+    }
     failedSources.add(sourceIndex);
     var next = Iterable.generate(
       info.sources.length,
