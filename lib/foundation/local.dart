@@ -11,6 +11,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/io.dart';
 
 import 'app.dart';
@@ -114,6 +115,7 @@ class LocalComic with HistoryMixin implements Comic {
     if (downloadedChapters.isNotEmpty && chapters != null) {
       final chapters = this.chapters!;
       if (chapters.isGrouped) {
+        groups:
         for (int i=0; i<chapters.groupCount; i++) {
           var group = chapters.getGroupByIndex(i);
           var keys = group.keys.toList();
@@ -122,7 +124,7 @@ class LocalComic with HistoryMixin implements Comic {
             if (downloadedChapters.contains(chapterId)) {
               firstDownloadedChapter = j + 1;
               firstDownloadedChapterGroup = i + 1;
-              break;
+              break groups;
             }
           }
         }
@@ -135,6 +137,27 @@ class LocalComic with HistoryMixin implements Comic {
           }
         }
       }
+    }
+    if (comicType.comicSource?.isVideoSource ?? false) {
+      App.rootContext.to(
+        () => VideoPlayerPage(
+          sourceKey: sourceKey,
+          details: ComicDetails.fromJson({
+            "title": title,
+            "subtitle": subtitle,
+            "cover": "file://${coverFile.path}",
+            "tags": <String, dynamic>{},
+            "chapters": chapters?.toJson(),
+            "sourceKey": sourceKey,
+            "comicId": id,
+          }),
+          // Without a history, start with the first downloaded episode.
+          initialEp: history == null ? firstDownloadedChapter : null,
+          initialGroup: history == null ? firstDownloadedChapterGroup : null,
+          history: history ?? History.fromModel(model: this, ep: 0, page: 0),
+        ),
+      );
+      return;
     }
     App.rootContext.to(
       () => Reader(

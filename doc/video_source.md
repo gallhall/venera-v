@@ -207,6 +207,18 @@ return {
 
 Throw an error from `loadPlayInfo` to show it to the user, e.g. `throw "This episode needs VIP"`.
 
+## Downloads
+
+Users can download episodes from the details page. The app calls `video.loadPlayInfo` for each episode and saves the first source it can download, with the same request headers as playback:
+
+- MP4 and other direct files, resumed after a pause or a restart;
+- HLS: the highest bandwidth variant of a master playlist, with its segments, AES-128 keys and init segments. Live streams cannot be downloaded;
+- `audioUrl` and the subtitles.
+
+DASH streams cannot be downloaded yet: the app tries the next source. If a site offers both, list a direct or HLS source as well.
+
+Downloaded episodes play from their files, without calling `loadPlayInfo`, and the skips returned at download time are kept.
+
 ## Testing a video source
 
 Open a video from the source's pages and tap **Play** or an episode: the player page loads the play info and starts the first stream.

@@ -9,8 +9,11 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/video_gestures.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
@@ -270,10 +273,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (savedRate is num && savedRate != 1.0) {
       p.setRate(savedRate.toDouble());
     }
-    if (source?.loadVideoPlayInfo == null) {
-      error = "Video source not found".tl;
-      return;
-    }
     loadEpisode(current);
   }
 
@@ -325,6 +324,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return position;
   }
 
+  LocalComic? get localVideo =>
+      LocalManager().find(widget.details.id, ComicType(widget.sourceKey.hashCode));
+
+  bool isDownloaded(int index, LocalComic? local) {
+    if (local == null) return false;
+    var ep = episodes[index].id;
+    return ep == null || local.downloadedChapters.contains(ep);
+  }
+
+  VideoPlayInfo? localPlayInfo(int index) {
+    var local = localVideo;
+    if (local == null || !isDownloaded(index, local)) return null;
+    return DownloadedEpisode.load(
+      VideoDownloadTask.episodeDirectory(local.baseDir, episodes[index].id),
+    );
+  }
+
   Future<void> loadEpisode(int index) async {
     if (index < 0 || index >= episodes.length) return;
     if (index != current) saveHistory();
@@ -340,7 +356,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       handledSkips.clear();
     });
     await player!.pause();
-    var res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
+    // A downloaded episode plays from its files, without the source.
+    var local = localPlayInfo(index);
+    Res<VideoPlayInfo> res;
+    if (local != null) {
+      res = Res(local);
+    } else if (source?.loadVideoPlayInfo == null) {
+      res = Res.error("Video source not found".tl);
+    } else {
+      res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
+    }
     if (!mounted || token != loadToken) return;
     if (res.error) {
       setState(() {
@@ -874,6 +899,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   List<Widget> buildInfo() {
     var info = playInfo;
+    var local = localVideo;
     var groups = <String?>[];
     for (var e in episodes) {
       if (!groups.contains(e.group)) groups.add(e.group);
@@ -910,6 +936,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               for (int i = 0; i < episodes.length; i++)
                 if (episodes[i].group == group)
                   ChoiceChip(
+                    avatar: isDownloaded(i, local)
+                        ? const Icon(Icons.download_done, size: 16)
+                        : null,
                     label: Text(
                       episodes[i].title,
                       style: TextStyle(
