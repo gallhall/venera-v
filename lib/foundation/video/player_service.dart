@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -331,21 +332,59 @@ class PlayerService {
   }
 
   /// The video view. [custom] adds a title, episode navigation and extra
-  /// buttons to the default controls; it is used in normal and fullscreen
-  /// mode.
-  Widget buildView({bool controls = true, PlayerControls? custom}) {
+  /// buttons to the default controls, in normal and fullscreen mode.
+  ///
+  /// The controls are themed once and listen to [custom]: media_kit's
+  /// theme widgets do not notify the controls when the theme changes.
+  Widget buildView({
+    bool controls = true,
+    ValueListenable<PlayerControls>? custom,
+  }) {
     var video = Video(
       controller: _controller,
       controls: controls ? AdaptiveVideoControls : null,
     );
     if (!controls || custom == null) return video;
+    if (!identical(custom, _themedControls)) {
+      _themedControls = custom;
+      _themes = (
+        _mobileTheme(custom, false),
+        _mobileTheme(custom, true),
+        _desktopTheme(custom, false),
+        _desktopTheme(custom, true),
+      );
+    }
+    var t = _themes!;
     return MaterialVideoControlsTheme(
-      normal: _mobileTheme(custom, false),
-      fullscreen: _mobileTheme(custom, true),
+      normal: t.$1,
+      fullscreen: t.$2,
       child: MaterialDesktopVideoControlsTheme(
-        normal: _desktopTheme(custom, false),
-        fullscreen: _desktopTheme(custom, true),
+        normal: t.$3,
+        fullscreen: t.$4,
         child: video,
+      ),
+    );
+  }
+
+  ValueListenable<PlayerControls>? _themedControls;
+
+  (
+    MaterialVideoControlsThemeData,
+    MaterialVideoControlsThemeData,
+    MaterialDesktopVideoControlsThemeData,
+    MaterialDesktopVideoControlsThemeData,
+  )?
+  _themes;
+
+  /// A button bar that is rebuilt when [custom] changes.
+  static Widget _bar(
+    ValueListenable<PlayerControls> custom,
+    List<Widget> Function(PlayerControls c) build,
+  ) {
+    return Expanded(
+      child: ValueListenableBuilder(
+        valueListenable: custom,
+        builder: (context, c, _) => Row(children: build(c)),
       ),
     );
   }
@@ -362,7 +401,7 @@ class PlayerService {
   }
 
   static MaterialVideoControlsThemeData _mobileTheme(
-    PlayerControls c,
+    ValueListenable<PlayerControls> custom,
     bool fullscreen,
   ) {
     Widget button(IconData icon, void Function(BuildContext) onPressed) {
@@ -379,28 +418,32 @@ class PlayerService {
       seekOnDoubleTap: true,
       speedUpOnLongPress: true,
       topButtonBar: [
-        if (fullscreen || c.onBack != null)
-          button(Icons.arrow_back, (context) {
-            fullscreen ? exitFullscreen(context) : c.onBack!();
-          }),
-        _title(c),
-        for (var a in c.actions) button(a.icon, a.onPressed),
+        _bar(custom, (c) => [
+          if (fullscreen || c.onBack != null)
+            button(Icons.arrow_back, (context) {
+              fullscreen ? exitFullscreen(context) : c.onBack!();
+            }),
+          _title(c),
+          for (var a in c.actions) button(a.icon, a.onPressed),
+        ]),
       ],
       primaryButtonBar: [
-        const Spacer(flex: 2),
-        if (c.onPrevious != null)
-          button(Icons.skip_previous, (_) => c.onPrevious!()),
-        const Spacer(),
-        const MaterialPlayOrPauseButton(iconSize: 48.0),
-        const Spacer(),
-        if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
-        const Spacer(flex: 2),
+        _bar(custom, (c) => [
+          const Spacer(flex: 2),
+          if (c.onPrevious != null)
+            button(Icons.skip_previous, (_) => c.onPrevious!()),
+          const Spacer(),
+          const MaterialPlayOrPauseButton(iconSize: 48.0),
+          const Spacer(),
+          if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
+          const Spacer(flex: 2),
+        ]),
       ],
     );
   }
 
   static MaterialDesktopVideoControlsThemeData _desktopTheme(
-    PlayerControls c,
+    ValueListenable<PlayerControls> custom,
     bool fullscreen,
   ) {
     Widget button(IconData icon, void Function(BuildContext) onPressed) {
@@ -414,22 +457,25 @@ class PlayerService {
 
     return MaterialDesktopVideoControlsThemeData(
       topButtonBar: [
-        if (fullscreen) ...[
-          button(Icons.arrow_back, exitFullscreen),
-          const SizedBox(width: 8),
-          _title(c),
-        ],
+        if (fullscreen)
+          _bar(custom, (c) => [
+            button(Icons.arrow_back, exitFullscreen),
+            const SizedBox(width: 8),
+            _title(c),
+          ]),
       ],
       bottomButtonBar: [
-        if (c.onPrevious != null)
-          button(Icons.skip_previous, (_) => c.onPrevious!()),
-        const MaterialDesktopPlayOrPauseButton(),
-        if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
-        const MaterialDesktopVolumeButton(),
-        const MaterialDesktopPositionIndicator(),
-        const Spacer(),
-        for (var a in c.actions) button(a.icon, a.onPressed),
-        const MaterialDesktopFullscreenButton(),
+        _bar(custom, (c) => [
+          if (c.onPrevious != null)
+            button(Icons.skip_previous, (_) => c.onPrevious!()),
+          const MaterialDesktopPlayOrPauseButton(),
+          if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
+          const MaterialDesktopVolumeButton(),
+          const MaterialDesktopPositionIndicator(),
+          const Spacer(),
+          for (var a in c.actions) button(a.icon, a.onPressed),
+          const MaterialDesktopFullscreenButton(),
+        ]),
       ],
     );
   }

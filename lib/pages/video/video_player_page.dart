@@ -100,6 +100,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   PlayerTracks tracks = PlayerTracks.empty;
 
+  /// Read by the player controls, which keep their own state: refreshed
+  /// after every build of this page.
+  late final controls = ValueNotifier<PlayerControls>(buildControls());
+
   VideoEpisode get episode => episodes[current];
 
   bool get hasPrevious => current > 0;
@@ -152,10 +156,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       s.cancel();
     }
     player?.dispose();
+    if (player != null) controls.dispose();
     super.dispose();
   }
 
   Future<void> loadEpisode(int index) async {
+    if (index < 0 || index >= episodes.length) return;
     var token = ++loadToken;
     setState(() {
       current = index;
@@ -322,6 +328,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       );
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) controls.value = buildControls();
+    });
     return LayoutBuilder(
       builder: (context, constraints) {
         var isWide = constraints.maxWidth >= 900;
@@ -391,7 +400,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          player!.buildView(custom: buildControls()),
+          player!.buildView(custom: controls),
           if (isLoading)
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
