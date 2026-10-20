@@ -1,6 +1,7 @@
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/local.dart';
@@ -73,10 +74,21 @@ Future<void> exportVideos(BuildContext context, List<LocalComic> videos) async {
     withProgress: jobs.length > 1,
     onCancel: () => canceled = true,
   );
+  // A directory picked on Android is a SAF document, which only the main
+  // isolate's [IOOverrides] can write.
+  var staging = target is AndroidDirectory
+      ? FilePath.join(App.cachePath, 'video_export')
+      : null;
   try {
     for (var (dir, outDir, name) in jobs) {
       if (canceled) return;
-      await _exportInIsolate(dir, outDir, name);
+      if (staging == null) {
+        await _exportInIsolate(dir, outDir, name);
+      } else {
+        await Directory(staging).deleteIgnoreError(recursive: true);
+        var files = await _exportInIsolate(dir, staging, name);
+        await _copyToSafIsolate([for (var f in files) f.path], outDir);
+      }
       done++;
       loading.setMessage(progressText());
       if (jobs.length > 1) loading.setProgress(done / jobs.length);
@@ -90,6 +102,9 @@ Future<void> exportVideos(BuildContext context, List<LocalComic> videos) async {
     loading.close();
     if (context.mounted) context.showMessage(message: e.toString());
   } finally {
+    if (staging != null) {
+      await Directory(staging).deleteIgnoreError(recursive: true);
+    }
     // Use the picker until here so that the directory stays accessible.
     picker.hashCode;
   }
@@ -99,4 +114,32 @@ Future<void> exportVideos(BuildContext context, List<LocalComic> videos) async {
 /// isolate.
 Future<List<File>> _exportInIsolate(String dir, String outDir, String name) {
   return Isolate.run(() => VideoExporter.exportEpisode(dir, outDir, name));
+}
+
+/// Copies [files] into the SAF directory [outDir], in chunks: videos are
+/// too large to be read at once like [copyDirectory] does.
+Future<void> _copyToSafIsolate(List<String> files, String outDir) {
+  return Isolate.run(() => overrideIO(() {
+        var dir = Directory(outDir);
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        var buffer = Uint8List(1 << 20);
+        for (var path in files) {
+          var source = File(path);
+          var target = File(FilePath.join(outDir, source.name));
+          target.deleteIfExistsSync();
+          target.createSync();
+          var input = source.openSync();
+          var output = target.openSync(mode: FileMode.write);
+          try {
+            int read;
+            while ((read = input.readIntoSync(buffer)) > 0) {
+              output.writeFromSync(buffer, 0, read);
+            }
+          } finally {
+            input.closeSync();
+            output.closeSync();
+          }
+          source.deleteSync();
+        }
+      }));
 }
