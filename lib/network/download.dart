@@ -14,8 +14,10 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cache.dart';
+import 'package:venera/network/dash_manifest.dart';
 import 'package:venera/network/hls_playlist.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/network/mp4_merge.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
@@ -66,6 +68,8 @@ abstract class DownloadTask with ChangeNotifier {
         return ImagesDownloadTask.fromJson(json);
       case "VideoDownloadTask":
         return VideoDownloadTask.fromJson(json);
+      case "ArchiveDownloadTask":
+        return ArchiveDownloadTask.fromJson(json);
       default:
         return null;
     }

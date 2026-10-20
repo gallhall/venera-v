@@ -12,6 +12,8 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart' show FilePath;
 
+import 'fmp4_builder.dart';
+
 /// Runs a [VideoDownloadTask] for a test video source against a local
 /// server. Needs flutter_qjs_plugin.dll on PATH, like video_source_test.
 bool _jsEngineAvailable() {
@@ -34,6 +36,63 @@ class _Server {
   ];
 
   final key = List.generate(16, (i) => i);
+
+  // DASH, MP4: video as numbered segments, audio as byte ranges of one file.
+  final dashVideo = [
+    init(1, 1000, 90000),
+    segment(1, 1, 0, List.filled(32, 0xA0)),
+    segment(1, 2, 180000, List.filled(32, 0xA1)),
+  ];
+
+  final dashAudioParts = [
+    init(1, 48000, 48000),
+    segment(1, 1, 0, List.filled(16, 0xB0)),
+    segment(1, 2, 96000, List.filled(16, 0xB1)),
+  ];
+
+  late final dashAudio = cat(dashAudioParts);
+
+  /// `first-last` ranges of [dashAudioParts] in [dashAudio].
+  List<String> get dashAudioRanges {
+    var ranges = <String>[];
+    var offset = 0;
+    for (var p in dashAudioParts) {
+      ranges.add('$offset-${offset + p.length - 1}');
+      offset += p.length;
+    }
+    return ranges;
+  }
+
+  String get dashMpd {
+    var r = dashAudioRanges;
+    return '<?xml version="1.0"?>'
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S">'
+        '<Period>'
+        '<AdaptationSet contentType="video" mimeType="video/mp4">'
+        '<SegmentTemplate timescale="1" duration="2" initialization="v/init.mp4" media="v/\$Number\$.m4s"/>'
+        '<Representation id="v" bandwidth="1000"/>'
+        '</AdaptationSet>'
+        '<AdaptationSet contentType="audio" mimeType="audio/mp4">'
+        '<Representation id="a" bandwidth="64"><BaseURL>audio.m4a</BaseURL>'
+        '<SegmentList><Initialization range="${r[0]}"/>'
+        '<SegmentURL mediaRange="${r[1]}"/><SegmentURL mediaRange="${r[2]}"/>'
+        '</SegmentList></Representation>'
+        '</AdaptationSet></Period></MPD>';
+  }
+
+  // DASH, WebM: cannot be merged, kept as two files.
+  final webmVideo = List.generate(5000, (i) => i % 251);
+
+  final webmAudio = List.generate(3000, (i) => i % 241);
+
+  static const webmMpd = '<?xml version="1.0"?>'
+      '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S">'
+      '<Period>'
+      '<AdaptationSet mimeType="video/webm"><Representation id="v" bandwidth="1">'
+      '<BaseURL>v.webm</BaseURL></Representation></AdaptationSet>'
+      '<AdaptationSet mimeType="audio/webm"><Representation id="a" bandwidth="1">'
+      '<BaseURL>a.webm</BaseURL></Representation></AdaptationSet>'
+      '</Period></MPD>';
 
   /// Referer headers seen for the clip.
   final referers = <String?>[];
@@ -73,6 +132,36 @@ class _Server {
             await res.flush();
             await Future.delayed(const Duration(milliseconds: 30));
           }
+        case '/dash/stream.mpd':
+          res.write(dashMpd);
+        case '/dash/v/init.mp4':
+          res.add(dashVideo[0]);
+        case '/dash/v/1.m4s':
+          res.add(dashVideo[1]);
+        case '/dash/v/2.m4s':
+          res.add(dashVideo[2]);
+        case '/dash/audio.m4a':
+          var m = RegExp(r'bytes=(\d+)-(\d+)')
+              .firstMatch(req.headers.value('range') ?? '');
+          if (m == null) {
+            res.add(dashAudio);
+          } else {
+            res.statusCode = HttpStatus.partialContent;
+            res.add(dashAudio.sublist(
+              int.parse(m.group(1)!),
+              int.parse(m.group(2)!) + 1,
+            ));
+          }
+        case '/split/v.mp4':
+          res.add(cat(dashVideo));
+        case '/split/a.m4a':
+          res.add(dashAudio);
+        case '/dash/webm.mpd':
+          res.write(webmMpd);
+        case '/dash/v.webm':
+          res.add(webmVideo);
+        case '/dash/a.webm':
+          res.add(webmAudio);
         case '/sub.vtt':
           res.write('WEBVTT\n\n00:00.000 --> 00:01.000\nhi\n');
         case '/hls/master.m3u8':
@@ -130,11 +219,17 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: id === "slow" ? null : {mp4: "MP4", hls: "HLS"},
+      chapters: id === "slow" ? null
+        : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
+        : {mp4: "MP4", hls: "HLS"},
     }),
   }
   video = {
-    loadPlayInfo: async (id, epId) => id === "slow"
+    loadPlayInfo: async (id, epId) => epId === "split"
+      ? {url: "${server.base}/split/v.mp4", audioUrl: "${server.base}/split/a.m4a"}
+      : id === "dash"
+      ? {url: "${server.base}/dash/" + (epId === "dash" ? "stream" : "webm") + ".mpd"}
+      : id === "slow"
       ? {url: "${server.base}/slow", type: "mp4"}
       : epId === "mp4"
       ? new VideoPlayInfo({
@@ -202,6 +297,63 @@ class TestVideo extends ComicSource {
           .listSync(recursive: true)
           .where((f) => f.path.endsWith('.part')),
       isEmpty,
+    );
+  }, skip: skip);
+
+  test('downloads DASH: merges MP4 tracks, keeps WebM tracks apart', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'dash');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('dash', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('dash', task.comicType)!;
+    String ep(String id) =>
+        VideoDownloadTask.episodeDirectory(local.baseDir, id);
+
+    // MP4: one file with both tracks, no separate audio.
+    var dash = DownloadedEpisode.load(ep('dash'))!;
+    var merged = File(dash.sources.single.url);
+    expect(merged.path, endsWith('video.mp4'));
+    expect(dash.sources.single.audioUrl, isNull);
+    var bytes = merged.readAsBytesSync();
+    int count(String type) {
+      var pattern = type.codeUnits;
+      var n = 0;
+      for (int i = 0; i + 4 <= bytes.length; i++) {
+        if (bytes[i] == pattern[0] &&
+            bytes[i + 1] == pattern[1] &&
+            bytes[i + 2] == pattern[2] &&
+            bytes[i + 3] == pattern[3]) {
+          n++;
+        }
+      }
+      return n;
+    }
+
+    expect(count('trak'), 2);
+    expect(count('moof'), 4);
+    // The segments are removed once the episode is saved.
+    expect(Directory(FilePath.join(ep('dash'), 'dash_video')).existsSync(), isFalse);
+    expect(Directory(FilePath.join(ep('dash'), 'dash_audio')).existsSync(), isFalse);
+
+    // WebM: video and audio as two files, played together.
+    var webm = DownloadedEpisode.load(ep('webm'))!;
+    expect(File(webm.sources.single.url).readAsBytesSync(), server.webmVideo);
+    expect(webm.sources.single.url, endsWith('video.webm'));
+    expect(File(webm.sources.single.audioUrl!).readAsBytesSync(), server.webmAudio);
+
+    // Separate fragmented MP4 video and audio links: merged too.
+    var split = DownloadedEpisode.load(ep('split'))!;
+    expect(split.sources.single.url, endsWith('merged.mp4'));
+    expect(split.sources.single.audioUrl, isNull);
+    bytes = File(split.sources.single.url).readAsBytesSync();
+    expect(count('trak'), 2);
+    expect(
+      Directory(ep('split')).listSync().map((e) => e.path.split(RegExp(r'[\\/]')).last),
+      unorderedEquals(['merged.mp4', 'episode.json']),
     );
   }, skip: skip);
 

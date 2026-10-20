@@ -212,10 +212,13 @@ Throw an error from `loadPlayInfo` to show it to the user, e.g. `throw "This epi
 Users can download episodes from the details page. The app calls `video.loadPlayInfo` for each episode and saves the first source it can download, with the same request headers as playback:
 
 - MP4 and other direct files, resumed after a pause or a restart;
-- HLS: the highest bandwidth variant of a master playlist, with its segments, AES-128 keys and init segments. Live streams cannot be downloaded;
+- HLS: the highest bandwidth variant of a master playlist, with its segments, AES-128 keys and init segments;
+- DASH: the highest bandwidth video and audio representations, preferring MP4 ones. Segment templates (`$Number$`, `$Time$` with a `SegmentTimeline`), segment lists with byte ranges and single files are supported;
 - `audioUrl` and the subtitles.
 
-DASH streams cannot be downloaded yet: the app tries the next source. If a site offers both, list a direct or HLS source as well.
+Video and audio in separate fragmented MP4 tracks (DASH, or a direct video with an `audioUrl` serving fragmented MP4) are merged into one MP4 file, without re-encoding. Other separate tracks, e.g. WebM, are kept as two files and played together.
+
+Live streams (HLS without `#EXT-X-ENDLIST`, DASH `type="dynamic"`), DRM-protected DASH and DASH manifests with several periods cannot be downloaded: the app tries the next source.
 
 Downloaded episodes play from their files, without calling `loadPlayInfo`, and the skips returned at download time are kept.
 
