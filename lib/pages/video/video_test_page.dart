@@ -5,12 +5,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
 /// Debug page used to verify the video engine on each platform:
-/// formats, request headers, proxy, external audio and subtitles.
+/// formats, request headers, proxy, external audio and subtitles. It can
+/// also play the episodes of an installed video source.
 class VideoTestPage extends StatefulWidget {
   const VideoTestPage({super.key});
 
@@ -71,7 +74,7 @@ final _testCases = <_TestCase>[
     'External subtitle',
     (server) => VideoStreamRequest(
       _mp4Url,
-      subtitleUrls: ['${server.baseUrl}/test.vtt'],
+      subtitles: [VideoSubtitle(url: '${server.baseUrl}/test.vtt')],
     ),
   ),
   // The current libmpv build stops after the first segment when all segments
@@ -196,6 +199,23 @@ class _VideoTestPageState extends State<VideoTestPage> {
 
   final subtitleController = TextEditingController();
 
+  final videoSources = ComicSource.all().where((e) => e.isVideoSource).toList();
+
+  String? videoSourceKey;
+
+  final videoIdController = TextEditingController();
+
+  bool isLoadingSource = false;
+
+  ComicDetails? videoDetails;
+
+  /// The episode being played, `null` for a video without episodes.
+  String? playingEp;
+
+  VideoPlayInfo? playInfo;
+
+  int playingSource = 0;
+
   @override
   void initState() {
     super.initState();
@@ -238,6 +258,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
     headersController.dispose();
     audioController.dispose();
     subtitleController.dispose();
+    videoIdController.dispose();
     super.dispose();
   }
 
@@ -287,9 +308,64 @@ class _VideoTestPageState extends State<VideoTestPage> {
         url,
         headers: headers,
         audioUrl: audio.isEmpty ? null : audio,
-        subtitleUrls: subtitle.isEmpty ? const [] : [subtitle],
+        subtitles: [if (subtitle.isNotEmpty) VideoSubtitle(url: subtitle)],
       ),
     );
+  }
+
+  ComicSource? get videoSource => videoSources.firstWhereOrNull(
+    (e) => e.key == videoSourceKey,
+  );
+
+  Future<void> loadVideoDetails() async {
+    var source = videoSource;
+    var id = videoIdController.text.trim();
+    if (source == null || id.isEmpty || isLoadingSource) return;
+    setState(() {
+      isLoadingSource = true;
+      videoDetails = null;
+      playInfo = null;
+    });
+    addLog('Load info ${source.key}@$id');
+    var res = await source.loadComicInfo!(id);
+    if (!mounted) return;
+    setState(() {
+      isLoadingSource = false;
+      videoDetails = res.dataOrNull;
+    });
+    if (res.error) addLog('[error] ${res.errorMessage}');
+  }
+
+  Future<void> playEpisode(String? epId) async {
+    var source = videoSource;
+    var details = videoDetails;
+    if (source == null || details == null || isLoadingSource) return;
+    setState(() {
+      isLoadingSource = true;
+      playingEp = epId;
+      playInfo = null;
+    });
+    addLog('Load play info ${details.id} / ${epId ?? '-'}');
+    var res = await source.loadVideoPlayInfo!(details.id, epId);
+    if (!mounted) return;
+    setState(() {
+      isLoadingSource = false;
+      playInfo = res.dataOrNull;
+    });
+    if (res.error) {
+      addLog('[error] ${res.errorMessage}');
+      return;
+    }
+    addLog(const JsonEncoder.withIndent('  ').convert(res.data.toJson()));
+    playSource(0);
+  }
+
+  void playSource(int index) {
+    setState(() {
+      selectedCase = null;
+      playingSource = index;
+    });
+    openRequest(VideoStreamRequest.fromPlayInfo(playInfo!, index));
   }
 
   @override
@@ -330,7 +406,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
                 width: 380,
                 child: ListView(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  children: [buildCases(), buildCustom()],
+                  children: [buildVideoSource(), buildCases(), buildCustom()],
                 ),
               ),
             ],
@@ -341,6 +417,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
           children: [
             playerView,
             buildStatus().paddingHorizontal(16),
+            buildVideoSource(),
             buildCases(),
             buildCustom(),
             buildLogs().paddingHorizontal(16),
@@ -372,6 +449,98 @@ class _VideoTestPageState extends State<VideoTestPage> {
             title: Text(_testCases[i].name.tl),
             onTap: () => playCase(i),
           ),
+      ],
+    );
+  }
+
+  Widget buildVideoSource() {
+    if (videoSources.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildTitle("Video Source".tl),
+          Text(
+            "No video source installed".tl,
+            style: ts.s12,
+          ).paddingHorizontal(16),
+        ],
+      );
+    }
+    var details = videoDetails;
+    var episodes = details?.chapters?.allChapters;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        buildTitle("Video Source".tl),
+        Row(
+          children: [
+            DropdownButton<String>(
+              value: videoSource?.key,
+              hint: Text("Select a source".tl),
+              items: [
+                for (var s in videoSources)
+                  DropdownMenuItem(value: s.key, child: Text(s.name)),
+              ],
+              onChanged: (v) => setState(() {
+                videoSourceKey = v;
+                videoDetails = null;
+                playInfo = null;
+              }),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: videoIdController,
+                decoration: const InputDecoration(
+                  labelText: 'ID',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (_) => loadVideoDetails(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: isLoadingSource ? null : loadVideoDetails,
+              child: Text("Load".tl),
+            ),
+          ],
+        ).paddingHorizontal(16).paddingVertical(4),
+        if (isLoadingSource) const LinearProgressIndicator().paddingAll(16),
+        if (details != null) ...[
+          Text(details.title, style: ts.s14).paddingHorizontal(16),
+          if (episodes == null || episodes.isEmpty)
+            ListTile(
+              dense: true,
+              selected: playInfo != null,
+              leading: const Icon(Icons.play_arrow),
+              title: Text("Play".tl),
+              onTap: () => playEpisode(null),
+            )
+          else
+            for (var e in episodes.entries)
+              ListTile(
+                dense: true,
+                selected: playInfo != null && playingEp == e.key,
+                leading: const Icon(Icons.play_arrow),
+                title: Text(e.value),
+                subtitle: Text(e.key),
+                onTap: () => playEpisode(e.key),
+              ),
+        ],
+        if (playInfo != null)
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (int i = 0; i < playInfo!.sources.length; i++)
+                ChoiceChip(
+                  label: Text(playInfo!.sources[i].name),
+                  selected: playingSource == i,
+                  onSelected: (_) => playSource(i),
+                ),
+            ],
+          ).paddingHorizontal(16).paddingVertical(4),
       ],
     );
   }
