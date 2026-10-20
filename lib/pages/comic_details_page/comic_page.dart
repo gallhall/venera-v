@@ -470,7 +470,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                       var page = history!.page;
                       var ep = history!.ep;
                       var group = history!.group;
-                      String text;
+                      String? chapterName;
                       if (haveChapter) {
                         var epName = "E$ep";
                         String? groupName;
@@ -491,13 +491,23 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                         } catch (e) {
                           // ignore
                         }
-                        text = groupName == null
-                            ? "${"Last Reading".tl}: $epName P$page"
-                            : "${"Last Reading".tl}: $groupName $epName P$page";
-                      } else {
-                        text = "${"Last Reading".tl}: P$page";
+                        chapterName = groupName == null
+                            ? epName
+                            : "$groupName $epName";
                       }
-                      return Text(text);
+                      // Video sources store the playback position in
+                      // seconds instead of a page.
+                      var position = isVideo
+                          ? History.formatSeconds(page)
+                          : "P$page";
+                      var label = isVideo ? "Last Watched" : "Last Reading";
+                      return Text(
+                        [
+                          "${label.tl}:",
+                          ?chapterName,
+                          position,
+                        ].join(" "),
+                      );
                     },
                   ),
                   const SizedBox(width: 4),

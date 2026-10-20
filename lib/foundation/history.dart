@@ -131,8 +131,30 @@ class History implements Comic {
   @override
   int get hashCode => Object.hash(id, type);
 
+  /// Video sources keep the playback position in [page] and the duration in
+  /// [maxPage], both in seconds.
+  bool get isVideo => type.comicSource?.isVideoSource ?? false;
+
+  /// `m:ss`, or `h:mm:ss` from one hour.
+  static String formatSeconds(int seconds) {
+    var h = seconds ~/ 3600;
+    var m = (seconds % 3600) ~/ 60;
+    var s = (seconds % 60).toString().padLeft(2, '0');
+    return h > 0 ? "$h:${m.toString().padLeft(2, '0')}:$s" : "$m:$s";
+  }
+
+  String get _videoDescription {
+    var parts = <String>[
+      if (group != null) "Group @group".tlParams({"group": group!}),
+      if (ep >= 1) "Episode @ep".tlParams({"ep": ep}),
+      if (page > 0) formatSeconds(page),
+    ];
+    return parts.join(" - ");
+  }
+
   @override
   String get description {
+    if (isVideo) return _videoDescription;
     var res = "";
     if (group != null){
       res += "${"Group @group".tlParams({

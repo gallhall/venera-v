@@ -30,6 +30,7 @@ class _ReaderWithLoadingState
         sourceKey: widget.sourceKey,
         details: data.videoDetails!,
         initialEp: widget.initialEp,
+        history: data.history,
       );
     }
     return Reader(

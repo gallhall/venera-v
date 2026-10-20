@@ -109,6 +109,8 @@ abstract mixin class _ComicPageActions {
               sourceKey: comic.sourceKey,
               details: comic,
               initialEp: ep,
+              initialGroup: group,
+              history: history,
             ),
           )
           .then((_) => onReadEnd());

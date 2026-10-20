@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/utils/translations.dart';
@@ -37,6 +39,47 @@ class VideoEpisode {
   }
 }
 
+/// Converts between an index into a flat episode list and the position
+/// [History] stores, the same way the comic reader does: a 1-based `ep`,
+/// counted within its group when the episodes are grouped, and the
+/// 1-based `group`.
+extension VideoEpisodeList on List<VideoEpisode> {
+  List<String> get _groups => <String>{
+    for (var e in this)
+      if (e.group != null) e.group!,
+  }.toList();
+
+  ({int ep, int? group}) toHistory(int index) {
+    var group = this[index].group;
+    if (group == null) return (ep: index + 1, group: null);
+    var first = indexWhere((e) => e.group == group);
+    return (ep: index - first + 1, group: _groups.indexOf(group) + 1);
+  }
+
+  /// Key of the episode in [History.readEpisode].
+  String historyKey(int index) {
+    var h = toHistory(index);
+    return h.group == null ? "${h.ep}" : "${h.group}-${h.ep}";
+  }
+
+  /// The index for [ep] and [group], null if out of range. Without a
+  /// group, [ep] counts over all episodes.
+  int? fromHistory(int ep, int? group) {
+    int index;
+    if (group == null) {
+      index = ep - 1;
+    } else {
+      var groups = _groups;
+      if (group < 1 || group > groups.length) return null;
+      var first = indexWhere((e) => e.group == groups[group - 1]);
+      var count = where((e) => e.group == groups[group - 1]).length;
+      if (ep < 1 || ep > count) return null;
+      index = first + ep - 1;
+    }
+    return index >= 0 && index < length ? index : null;
+  }
+}
+
 /// Plays the episodes of a video source.
 class VideoPlayerPage extends StatefulWidget {
   const VideoPlayerPage({
@@ -44,15 +87,23 @@ class VideoPlayerPage extends StatefulWidget {
     required this.sourceKey,
     required this.details,
     this.initialEp,
+    this.initialGroup,
+    this.history,
   });
 
   final String sourceKey;
 
   final ComicDetails details;
 
-  /// Episode to start with, 1-based over all groups. Invalid values equal
-  /// to 1.
+  /// Episode to start with, 1-based. Counted within [initialGroup] if it is
+  /// set, otherwise over all episodes. Defaults to the episode in the
+  /// history.
   final int? initialEp;
+
+  final int? initialGroup;
+
+  /// Updated while playing. Loaded from [HistoryManager] if null.
+  final History? history;
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -117,11 +168,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Whether the page has no app bar, set on each build.
   bool showPlayerBack = false;
 
+  late final History history =
+      widget.history ??
+      HistoryManager().find(
+        widget.details.id,
+        ComicType(widget.sourceKey.hashCode),
+      ) ??
+      History.fromModel(model: widget.details, ep: 0, page: 0);
+
+  /// Saves the progress while playing.
+  Timer? historyTimer;
+
+  Duration duration = Duration.zero;
+
+  /// Don't resume when this close to the end: the episode was finished.
+  static const _endMargin = Duration(seconds: 10);
+
   @override
   void initState() {
     super.initState();
-    var ep = (widget.initialEp ?? 1) - 1;
-    current = ep < 0 || ep >= episodes.length ? 0 : ep;
+    int? index;
+    if (widget.initialEp != null) {
+      index = episodes.fromHistory(widget.initialEp!, widget.initialGroup);
+    } else if (history.ep >= 1) {
+      index = episodes.fromHistory(history.ep, history.group);
+    }
+    current = index ?? 0;
     try {
       player = PlayerService.create();
     } catch (e, s) {
@@ -133,12 +205,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     subscriptions.addAll([
       p.errors.listen(onPlayerError),
       p.duration.listen((d) {
-        if (d > Duration.zero) started = true;
+        duration = d;
+        if (d > Duration.zero && !started) {
+          started = true;
+          // The seek to the start position may not be applied yet.
+          saveHistory(position: openedAt);
+        }
+      }),
+      p.playing.listen((playing) {
+        historyTimer?.cancel();
+        if (playing) {
+          historyTimer = Timer.periodic(
+            const Duration(seconds: 15),
+            (_) => saveHistory(),
+          );
+        } else {
+          saveHistory();
+        }
       }),
       p.completed.listen((completed) {
-        if (completed && started && hasNext && !isLoading) {
-          loadEpisode(current + 1);
-        }
+        if (!completed || !started || isLoading) return;
+        saveHistory(position: duration);
+        if (hasNext) loadEpisode(current + 1);
       }),
       p.rate.listen((v) => setState(() => rate = v)),
       p.tracks.listen((v) => setState(() => tracks = v)),
@@ -152,16 +240,54 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
+    historyTimer?.cancel();
     for (var s in subscriptions) {
       s.cancel();
     }
+    // Saved synchronously, so the details page sees it when it comes back.
+    saveHistory(sync: true);
     player?.dispose();
     if (player != null) controls.dispose();
     super.dispose();
   }
 
+  /// Records the current episode and position. Only once the stream has
+  /// loaded, so an episode that fails to play is not marked as watched.
+  void saveHistory({Duration? position, bool sync = false}) {
+    var p = player;
+    if (p == null || !started) return;
+    var h = episodes.toHistory(current);
+    history
+      ..ep = h.ep
+      ..group = h.group
+      ..page = (position ?? p.currentPosition).inSeconds
+      ..maxPage = duration.inSeconds
+      ..time = DateTime.now();
+    history.readEpisode.add(episodes.historyKey(current));
+    if (sync) {
+      HistoryManager().addHistory(history);
+    } else {
+      HistoryManager().addHistoryAsync(history);
+    }
+  }
+
+  /// Where to start episode [index]: the saved position if it is the
+  /// episode in the history and it was not finished.
+  Duration? resumePosition(int index) {
+    var h = episodes.toHistory(index);
+    if (h.ep != history.ep || h.group != history.group) return null;
+    var position = Duration(seconds: history.page);
+    var total = Duration(seconds: history.maxPage ?? 0);
+    if (position <= Duration.zero) return null;
+    if (total > Duration.zero && position >= total - _endMargin) return null;
+    return position;
+  }
+
   Future<void> loadEpisode(int index) async {
     if (index < 0 || index >= episodes.length) return;
+    if (index != current) saveHistory();
+    // Nothing is saved until the new stream loads.
+    started = false;
     var token = ++loadToken;
     setState(() {
       current = index;
@@ -184,10 +310,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       playInfo = res.data;
       failedSources.clear();
     });
-    openSource(0);
+    var start = resumePosition(index);
+    openSource(0, start: start);
+    if (start != null) {
+      context.showMessage(
+        message: "Resumed from @t".tlParams({
+          "t": History.formatSeconds(start.inSeconds),
+        }),
+      );
+    }
   }
 
+  /// Start position of the stream opened last.
+  Duration openedAt = Duration.zero;
+
   Future<void> openSource(int index, {Duration? start}) async {
+    openedAt = start ?? Duration.zero;
     var info = playInfo;
     if (info == null) return;
     setState(() {
@@ -220,7 +358,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       context.showMessage(
         message: "Switched to @s".tlParams({"s": info.sources[next].name}),
       );
-      openSource(next);
+      openSource(next, start: resumePosition(current));
     } else {
       setState(() => error = message);
     }
@@ -511,7 +649,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               for (int i = 0; i < episodes.length; i++)
                 if (episodes[i].group == group)
                   ChoiceChip(
-                    label: Text(episodes[i].title),
+                    label: Text(
+                      episodes[i].title,
+                      style: TextStyle(
+                        color:
+                            current != i &&
+                                history.readEpisode.contains(
+                                  episodes.historyKey(i),
+                                )
+                            ? context.colorScheme.outline
+                            : null,
+                      ),
+                    ),
                     selected: current == i,
                     onSelected: (_) {
                       if (i != current) loadEpisode(i);
