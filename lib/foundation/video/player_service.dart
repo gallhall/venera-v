@@ -320,6 +320,7 @@ class PlayerService {
     Duration? start,
     bool play = true,
   }) async {
+    await _applyAudioOutput();
     await _applyCacheDir();
     await _applyProxy();
     var media = Media(
@@ -390,6 +391,23 @@ class PlayerService {
     }
     headers.addAll(custom);
     return headers;
+  }
+
+  bool _audioOutputApplied = false;
+
+  /// media_kit plays through OpenSL ES on Android, which is noticeably
+  /// quieter than browsers and other players on many devices. Prefer
+  /// AudioTrack as mpv-android does, falling back to OpenSL ES.
+  Future<void> _applyAudioOutput() async {
+    if (_audioOutputApplied || !Platform.isAndroid) return;
+    var platform = _player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      await platform.setProperty('ao', 'audiotrack,opensles');
+      _audioOutputApplied = true;
+    } catch (e) {
+      Log.warning('Video', 'Failed to set the audio output: $e');
+    }
   }
 
   bool _cacheDirApplied = false;
