@@ -147,7 +147,7 @@ video = {
 |---|---|---|
 | `url` | `string` | Required. Stream url: MP4, HLS (`.m3u8`), DASH (`.mpd`) or anything else libmpv can play. |
 | `name` | `string?` | Label in the source picker, e.g. `"1080P"`, `"Line 2"`. Defaults to `"Source n"`. |
-| `type` | `string?` | `"auto"` (default), `"mp4"`, `"hls"` or `"dash"`. A hint only: the player detects the format by itself. |
+| `type` | `string?` | `"auto"` (default), `"mp4"`, `"hls"`, `"dash"`, or `"web"` for a web page with a player, see [Web page sniffing](#web-page-sniffing). Other values are hints only: the player detects the format by itself. |
 | `headers` | `object?` | Request headers for this stream. Merged over `VideoPlayInfo.headers`, a header set here wins (names are case-insensitive). |
 | `audioUrl` | `string?` | External audio stream, for sites that serve audio and video separately. |
 
@@ -207,13 +207,68 @@ return {
 
 Throw an error from `loadPlayInfo` to show it to the user, e.g. `throw "This episode needs VIP"`.
 
+## Web page sniffing
+
+Some sites build the stream url in the page: the player script decrypts it, calls an API with a signature, or runs in an iframe from another domain.
+Instead of reproducing that in the source, the app can open the page in a hidden browser and catch the stream the player requests.
+
+### Video.sniff
+
+```javascript
+loadPlayInfo: async (id, epId) => {
+    // returns {url, headers, type}, which loadPlayInfo can return as is
+    return await Video.sniff(`https://example.com/play/${id}-${epId}.html`, {
+        match: "\\.m3u8",
+    })
+}
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `match` | `string?` | Regular expression a stream url must match (the whole url). Defaults to urls whose path ends with `.m3u8`, `.mpd`, `.mp4`, `.m4v`, `.webm`, `.mkv`, `.mov` or `.flv`. HLS and DASH segments (`.ts`, `.m4s`) never match the default. |
+| `exclude` | `string?` | Regular expression of urls to ignore, e.g. ads played before the video. |
+| `timeout` | `number?` | In seconds, 20 by default. `Video.sniff` throws when no stream shows up in time. |
+| `headers` | `object?` | Headers used to load the page. |
+| `userAgent` | `string?` | User-Agent of the hidden browser. |
+| `script` | `string?` | JavaScript run in the page after it loads, e.g. to click a play button: `"document.querySelector('.play-btn').click()"`. |
+
+The result is the **first** matching request:
+
+```javascript
+{
+    url: "https://cdn.example.com/hls/index.m3u8",
+    // what the page sent with that request, to fetch the stream the same way
+    headers: {"Referer": "https://player.example.com/embed/1", "User-Agent": "...", "Cookie": "..."},
+    type: "hls",  // from the extension, "auto" if unknown
+}
+```
+
+Use it as a whole play info, or put it in a `VideoPlaySource` among others.
+
+### type: "web"
+
+Without any code, a source can set `type: "web"` on a `VideoPlaySource` whose `url` is a page.
+After `loadPlayInfo` returns, the app sniffs each such page with the default patterns, using the source's headers to load it, and replaces the source with the stream it found and the page's headers.
+Pages are opened in parallel; a page without a stream is dropped, and loading fails if no source is left.
+Use `Video.sniff` for anything else, e.g. a `match` pattern or a script.
+
+### How it works
+
+- The page runs in a hidden webview (WebView2 on Windows, the system webview on Android, WKWebView on iOS and macOS) with the app's proxy and its own cookies, shared with webview logins.
+- Requests are intercepted natively on Android and Windows, including the ones of iframes and media elements. On iOS and macOS, a script in every frame reports `fetch`, `XMLHttpRequest` and `<video>` urls instead.
+- Videos in the page are started muted, as many players only request the stream on play.
+- Sniffing takes seconds, and `loadPlayInfo` is called every time an episode is played or downloaded. Prefer reading the stream url from the page or an API when you can.
+- Not available on Linux: `Video.sniff` throws.
+
+You can try a page in **Settings > Debug > Video Player Test > Web Page Sniffing**.
+
 ## Downloads
 
-Users can download episodes from the details page. The app calls `video.loadPlayInfo` for each episode and saves the first source it can download, with the same request headers as playback:
+Users can download episodes from the details page, after picking a quality among the ones the first episode offers (resolutions of HLS variants, DASH video tracks, and sources named like `"720P"`). The app calls `video.loadPlayInfo` for each episode, sniffing `"web"` sources as for playback, and saves the first source it can download, with the same request headers as playback:
 
 - MP4 and other direct files, resumed after a pause or a restart;
-- HLS: the highest bandwidth variant of a master playlist, with its segments, AES-128 keys and init segments;
-- DASH: the highest bandwidth video and audio representations, preferring MP4 ones. Segment templates (`$Number$`, `$Time$` with a `SegmentTimeline`), segment lists with byte ranges and single files are supported;
+- HLS: the variant of a master playlist at the picked quality (the highest one below it, or the lowest), with its segments, AES-128 keys and init segments;
+- DASH: the video representation at the picked quality and the highest bandwidth audio one, preferring MP4 ones. Segment templates (`$Number$`, `$Time$` with a `SegmentTimeline`), segment lists with byte ranges and single files are supported;
 - `audioUrl` and the subtitles.
 
 Video and audio in separate fragmented MP4 tracks (DASH, or a direct video with an `audioUrl` serving fragmented MP4) are merged into one MP4 file, without re-encoding. Other separate tracks, e.g. WebM, are kept as two files and played together.
@@ -242,4 +297,7 @@ new VideoPlayInfo({sources, subtitles, headers, skips})
 new VideoPlaySource({url, name, type, headers, audioUrl})
 new VideoSubtitle({url, name, language})
 new VideoSkip({start, end, type})
+
+// see Web page sniffing
+await Video.sniff(url, {match, exclude, timeout, headers, userAgent, script})
 ```

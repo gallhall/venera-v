@@ -21,6 +21,7 @@ import 'package:venera/utils/translations.dart';
 
 import '../js_engine.dart';
 import '../log.dart';
+import '../video/video_sniffer.dart';
 
 part 'category.dart';
 

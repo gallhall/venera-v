@@ -64,6 +64,16 @@ const DEMO_VIDEOS = {
         tags: {"Format": ["DASH"]},
         episodes: null,
     },
+    sniff: {
+        title: "Web page sniffing",
+        cover: DEMO_COVER_BBB,
+        description: "The stream is found by opening the hls.js demo page in a hidden browser.",
+        tags: {"Format": ["HLS"], "Feature": ["Web page sniffing"]},
+        episodes: {
+            api: "Video.sniff",
+            web: "type: \"web\"",
+        },
+    },
     lines: {
         title: "Grouped episodes",
         cover: DEMO_COVER_SINTEL,
@@ -81,7 +91,7 @@ class DemoVideoSource extends ComicSource {
 
     key = "demo_video"
 
-    version = "1.0.0"
+    version = "1.1.0"
 
     // video sources need venera-v
     minAppVersion = "2.0.0"
@@ -203,6 +213,21 @@ class DemoVideoSource extends ComicSource {
                         url: "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd",
                         type: "dash",
                     }
+                case "sniff":
+                    if (epId === "api") {
+                        // Opens the page, waits for the first request of an .m3u8 file
+                        // and returns it with the page's Referer, User-Agent and cookies.
+                        return await Video.sniff("https://hlsjs.video-dev.org/demo/", {
+                            match: "\\.m3u8",
+                            timeout: 30,
+                        })
+                    }
+                    // The same, done by the app with the default stream patterns
+                    return new VideoPlaySource({
+                        name: "hls.js demo",
+                        url: "https://hlsjs.video-dev.org/demo/",
+                        type: "web",
+                    })
                 case "lines":
                     // a real source would request the episode page here, e.g.
                     // let res = await Network.get(`https://example.com/play/${epId}`)

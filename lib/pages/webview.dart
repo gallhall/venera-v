@@ -78,20 +78,9 @@ class AppWebview extends StatefulWidget {
 
   static WebViewEnvironment? webViewEnvironment;
 
-  @override
-  State<AppWebview> createState() => _AppWebviewState();
-}
-
-class _AppWebviewState extends State<AppWebview> {
-  InAppWebViewController? controller;
-
-  String title = "Webview";
-
-  double _progress = 0;
-
-  late var future = _createWebviewEnvironment();
-
-  Future<bool> _createWebviewEnvironment() async {
+  /// Applies the proxy setting and, on Windows, creates the shared
+  /// [webViewEnvironment] once. Call it before creating a webview.
+  static Future<bool> prepareEnvironment() async {
     var proxy = appdata.settings['proxy'].toString();
     if (proxy != "system" && proxy != "direct") {
       var proxyAvailable = await WebViewFeature.isFeatureSupported(
@@ -113,13 +102,26 @@ class _AppWebviewState extends State<AppWebview> {
     if (!App.isWindows) {
       return true;
     }
-    AppWebview.webViewEnvironment = await WebViewEnvironment.create(
+    webViewEnvironment ??= await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: "${App.dataPath}\\webview",
       ),
     );
     return true;
   }
+
+  @override
+  State<AppWebview> createState() => _AppWebviewState();
+}
+
+class _AppWebviewState extends State<AppWebview> {
+  InAppWebViewController? controller;
+
+  String title = "Webview";
+
+  double _progress = 0;
+
+  late var future = AppWebview.prepareEnvironment();
 
   @override
   Widget build(BuildContext context) {

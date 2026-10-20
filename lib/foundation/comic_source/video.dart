@@ -44,7 +44,11 @@ enum VideoStreamType {
   auto,
   mp4,
   hls,
-  dash;
+  dash,
+
+  /// A web page with a player: the stream it requests is sniffed when the
+  /// play info is loaded, see [VideoPlayInfo.resolveWebSources].
+  web;
 
   static VideoStreamType parse(dynamic value) {
     return switch (value) {
@@ -52,6 +56,7 @@ enum VideoStreamType {
       'mp4' => mp4,
       'hls' || 'm3u8' => hls,
       'dash' || 'mpd' => dash,
+      'web' => web,
       _ => throw FormatException("Unknown stream type $value"),
     };
   }
@@ -278,13 +283,63 @@ class VideoPlayInfo {
 
   /// Headers to use for [source]: shared headers overridden by the
   /// stream's own ones (case-insensitive).
-  Map<String, String> headersFor(VideoPlaySource source) {
-    var res = Map.of(headers);
-    for (var e in source.headers.entries) {
+  Map<String, String> headersFor(VideoPlaySource source) =>
+      _mergeHeaders(headers, source.headers);
+
+  /// [over] merged over [base], header names being case-insensitive.
+  static Map<String, String> _mergeHeaders(
+    Map<String, String> base,
+    Map<String, String> over,
+  ) {
+    var res = Map.of(base);
+    for (var e in over.entries) {
       res.removeWhere((k, _) => k.toLowerCase() == e.key.toLowerCase());
       res[e.key] = e.value;
     }
     return res;
+  }
+
+  bool get hasWebSources =>
+      sources.any((s) => s.type == VideoStreamType.web);
+
+  /// Replaces each [VideoStreamType.web] source, a page with a player, by
+  /// the stream [sniff] finds in it, with the headers the page used. The
+  /// pages are loaded with the source's headers, in parallel. Sources
+  /// whose page has no stream are dropped; throws if none is left.
+  Future<VideoPlayInfo> resolveWebSources(
+    Future<({String url, Map<String, String> headers, VideoStreamType type})>
+            Function(String url, Map<String, String> headers)
+        sniff,
+  ) async {
+    if (!hasWebSources) return this;
+    Object? error;
+    var resolved = await Future.wait([
+      for (var s in sources)
+        if (s.type != VideoStreamType.web)
+          Future.value(s)
+        else
+          sniff(s.url, headersFor(s)).then<VideoPlaySource?>(
+            (r) => VideoPlaySource(
+              url: r.url,
+              name: s.name,
+              type: r.type,
+              headers: _mergeHeaders(s.headers, r.headers),
+              audioUrl: s.audioUrl,
+            ),
+            onError: (Object e) {
+              error = e;
+              return null;
+            },
+          ),
+    ]);
+    var list = resolved.nonNulls.toList();
+    if (list.isEmpty) throw error ?? "No source";
+    return VideoPlayInfo(
+      sources: list,
+      subtitles: subtitles,
+      headers: headers,
+      skips: skips,
+    );
   }
 
   Map<String, dynamic> toJson() => {
