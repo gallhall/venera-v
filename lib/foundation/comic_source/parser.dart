@@ -200,14 +200,25 @@ class ComicSourceParser {
   }
 
   bool _checkExists(String index) {
-    return JsEngine().runCode(
-      "ComicSource.sources.$_key.$index !== null "
-      "&& ComicSource.sources.$_key.$index !== undefined",
-    );
+    try {
+      return JsEngine().runCode(
+        "ComicSource.sources.$_key.$index !== null "
+        "&& ComicSource.sources.$_key.$index !== undefined",
+      );
+    } on JSError {
+      // A missing parent, e.g. `search.onTagSuggestionSelected` in a source
+      // without `search`.
+      return false;
+    }
   }
 
   dynamic _getValue(String index) {
-    return JsEngine().runCode("ComicSource.sources.$_key.$index");
+    try {
+      return JsEngine().runCode("ComicSource.sources.$_key.$index");
+    } on JSError {
+      // A missing parent, as in [_checkExists].
+      return null;
+    }
   }
 
   AccountConfig? _loadAccountConfig() {

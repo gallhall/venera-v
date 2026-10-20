@@ -358,7 +358,6 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   Widget buildActions() {
     bool isMobile = context.width < changePoint;
     bool hasHistory = history != null && (history!.ep > 1 || history!.page > 1);
-    // Downloading videos is not supported yet.
     bool isVideo = comicSource.isVideoSource;
     return SliverLazyToBoxAdapter(
       child: Column(
@@ -381,7 +380,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                   onPressed: read,
                   iconColor: context.useTextColor(Colors.orange),
                 ),
-              if (!isMobile && !isDownloaded && !isVideo)
+              if (!isMobile && !isDownloaded)
                 _ActionButton(
                   icon: const Icon(Icons.download),
                   text: 'Download'.tl,
@@ -429,15 +428,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           if (isMobile)
             Row(
               children: [
-                if (!isVideo) ...[
-                  Expanded(
-                    child: FilledButton.tonal(
-                      onPressed: download,
-                      child: Text("Download".tl),
-                    ),
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: download,
+                    child: Text("Download".tl),
                   ),
-                  const SizedBox(width: 16),
-                ],
+                ),
+                const SizedBox(width: 16),
                 Expanded(
                   child: hasHistory
                       ? FilledButton(

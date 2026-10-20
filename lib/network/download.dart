@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 
 import 'package:flutter/widgets.dart' show ChangeNotifier;
@@ -7,16 +8,24 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/cache.dart';
+import 'package:venera/network/dash_manifest.dart';
+import 'package:venera/network/hls_playlist.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/network/mp4_merge.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'file_downloader.dart';
+
+part 'video_download.dart';
 
 abstract class DownloadTask with ChangeNotifier {
   /// 0-1
@@ -57,6 +66,10 @@ abstract class DownloadTask with ChangeNotifier {
     switch (json["type"]) {
       case "ImagesDownloadTask":
         return ImagesDownloadTask.fromJson(json);
+      case "VideoDownloadTask":
+        return VideoDownloadTask.fromJson(json);
+      case "ArchiveDownloadTask":
+        return ArchiveDownloadTask.fromJson(json);
       default:
         return null;
     }
@@ -632,8 +645,16 @@ abstract mixin class _TransferSpeedMixin {
     _bytesSinceLastSecond += length;
   }
 
+  /// Bytes received in each of the last seconds.
+  final _lastSeconds = <int>[];
+
   void onNextSecond(Timer t) {
-    _currentSpeed = _bytesSinceLastSecond;
+    // Average over a few seconds: a single second without data (e.g. while
+    // a connection is set up) would otherwise show 0.
+    _lastSeconds.add(_bytesSinceLastSecond);
+    if (_lastSeconds.length > 5) _lastSeconds.removeAt(0);
+    _currentSpeed =
+        _lastSeconds.fold<int>(0, (a, b) => a + b) ~/ _lastSeconds.length;
     _bytesSinceLastSecond = 0;
   }
 
@@ -650,6 +671,7 @@ abstract mixin class _TransferSpeedMixin {
     timer = null;
     _currentSpeed = 0;
     _bytesSinceLastSecond = 0;
+    _lastSeconds.clear();
   }
 }
 

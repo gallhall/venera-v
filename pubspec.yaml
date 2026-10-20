@@ -98,6 +98,7 @@ dependencies:
       path: ./media_kit_video
   screen_brightness: ^2.1.11
   volume_controller: ^3.5.0
+  xml: 6.5.0
 
 dev_dependencies:
   flutter_test:

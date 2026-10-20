@@ -146,6 +146,7 @@ abstract mixin class _ComicPageActions {
   void onReadEnd();
 
   void download() async {
+    if (comicSource.isVideoSource) return downloadVideo();
     if (LocalManager().isDownloading(comic.id, comic.comicType)) {
       App.rootContext.showMessage(message: "The comic is downloading".tl);
       return;
@@ -305,6 +306,49 @@ abstract mixin class _ComicPageActions {
         }).toList(),
       ));
     }
+    App.rootContext.showMessage(message: "Download started".tl);
+    update();
+  }
+
+  Future<void> downloadVideo() async {
+    if (LocalManager().isDownloading(comic.id, comic.comicType)) {
+      App.rootContext.showMessage(message: "The video is downloading".tl);
+      return;
+    }
+    var chapters = comic.chapters;
+    List<String>? episodes;
+    if (chapters == null || chapters.length == 0) {
+      if (LocalManager().isDownloaded(comic.id, comic.comicType, 0)) {
+        App.rootContext.showMessage(message: "The video is downloaded".tl);
+        return;
+      }
+    } else {
+      var local = LocalManager().find(comic.id, comic.comicType);
+      var ids = chapters.ids.toList();
+      var downloaded = [
+        for (int i = 0; i < ids.length; i++)
+          if (local?.downloadedChapters.contains(ids[i]) ?? false) i,
+      ];
+      List<int>? selected;
+      await showSideBar(
+        App.rootContext,
+        _SelectDownloadChapter(
+          chapters.titles.toList(),
+          (v) => selected = v,
+          downloaded,
+        ),
+      );
+      if (selected == null) return;
+      episodes = selected!.map((i) => ids[i]).toList();
+    }
+    LocalManager().addTask(
+      VideoDownloadTask(
+        source: comicSource,
+        videoId: comic.id,
+        comic: comic,
+        episodes: episodes,
+      ),
+    );
     App.rootContext.showMessage(message: "Download started".tl);
     update();
   }
