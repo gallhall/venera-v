@@ -178,7 +178,7 @@ class NativeVideoPlayer implements VideoPlayback {
     if (isOpen) _invoke('update', {"title": value});
   }
 
-  /// Buttons in the player (iOS 16+).
+  /// Buttons shown over the video in the player.
   set playerActions(List<NativePlayerAction> value) {
     if (_listEquals(value, _currentActions)) return;
     _currentActions = value;

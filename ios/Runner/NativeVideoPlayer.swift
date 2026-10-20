@@ -321,15 +321,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   private func applyActions() {
     applyRemoteCommands(enabled: controller != nil || isPictureInPicture)
-    guard let vc = controller else { return }
-    if #available(iOS 16.0, *) {
-      vc.contextualActions = actions.map { action in
-        let id = action["id"] ?? ""
-        let image = action["icon"].flatMap { UIImage(systemName: $0) }
-        return UIAction(title: action["title"] ?? id, image: image) { [weak self] _ in
-          self?.send("action", ["id": id])
-        }
-      }
+    controller?.setActions(actions) { [weak self] id in
+      self?.send("action", ["id": id])
     }
   }
 
@@ -389,9 +382,95 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   }
 }
 
-/// Tells when the user closes the player.
-private class PlayerViewController: AVPlayerViewController {
+/// Tells when the user closes the player, and shows the buttons from
+/// Flutter over the video (AVPlayerViewController has no API for them on
+/// iOS). A skip button stays visible; the others show on a tap, like the
+/// player's own controls.
+private class PlayerViewController: AVPlayerViewController, UIGestureRecognizerDelegate {
   var onDismiss: (() -> Void)?
+
+  private let actionBar = UIStackView()
+
+  private var hideTimer: Timer?
+
+  private var isPinned = false
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    actionBar.axis = .horizontal
+    actionBar.spacing = 12
+    actionBar.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(actionBar)
+    NSLayoutConstraint.activate([
+      actionBar.trailingAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+      actionBar.bottomAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -96),
+    ])
+    // Sees taps without taking them from the player's controls.
+    let tap = UITapGestureRecognizer(target: self, action: #selector(onTap))
+    tap.cancelsTouchesInView = false
+    tap.delegate = self
+    view.addGestureRecognizer(tap)
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+  ) -> Bool {
+    true
+  }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
+    -> Bool
+  {
+    // A tap on one of the buttons is not a tap on the video.
+    !(touch.view?.isDescendant(of: actionBar) ?? false)
+  }
+
+  @objc private func onTap() {
+    if isPinned { return }
+    setBarVisible(actionBar.alpha == 0)
+  }
+
+  private func setBarVisible(_ visible: Bool) {
+    hideTimer?.invalidate()
+    UIView.animate(withDuration: 0.2) { self.actionBar.alpha = visible ? 1 : 0 }
+    if visible && !isPinned {
+      hideTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: false) { [weak self] _ in
+        self?.setBarVisible(false)
+      }
+    }
+  }
+
+  private var onPressed: ((String) -> Void)?
+
+  @objc private func buttonPressed(_ button: UIButton) {
+    if let id = button.accessibilityIdentifier { onPressed?(id) }
+  }
+
+  func setActions(_ actions: [[String: String]], onPressed: @escaping (String) -> Void) {
+    self.onPressed = onPressed
+    loadViewIfNeeded()
+    for v in actionBar.arrangedSubviews { v.removeFromSuperview() }
+    for action in actions {
+      let id = action["id"] ?? ""
+      let button = UIButton(type: .system)
+      button.setTitle(" " + (action["title"] ?? id), for: .normal)
+      button.setImage(action["icon"].flatMap { UIImage(systemName: $0) }, for: .normal)
+      button.tintColor = .white
+      button.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+      button.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+      button.layer.cornerRadius = 18
+      button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+      button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+      button.accessibilityIdentifier = id
+      button.addTarget(self, action: #selector(buttonPressed(_:)), for: .touchUpInside)
+      actionBar.addArrangedSubview(button)
+    }
+    isPinned = actions.contains { $0["id"] == "skip" }
+    setBarVisible(isPinned || actionBar.alpha > 0)
+  }
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
