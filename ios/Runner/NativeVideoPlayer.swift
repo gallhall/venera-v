@@ -1,7 +1,6 @@
 import AVFoundation
 import AVKit
 import Flutter
-import MediaPlayer
 import UIKit
 
 /// Plays videos in the system player (AVPlayerViewController), presented
@@ -31,8 +30,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   private var notificationObservers: [NSObjectProtocol] = []
 
   private var timeObserver: Any?
-
-  private var remoteCommandTargets: [(MPRemoteCommand, Any)] = []
 
   private var isPictureInPicture = false
 
@@ -314,41 +311,13 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     notificationObservers.removeAll()
     player.replaceCurrentItem(with: nil)
     pendingStart = nil
-    applyRemoteCommands(enabled: false)
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     if notify && hadItem { send("closed", ["ms": ms]) }
   }
 
   private func applyActions() {
-    applyRemoteCommands(enabled: controller != nil || isPictureInPicture)
     controller?.setActions(actions) { [weak self] id in
       self?.send("action", ["id": id])
-    }
-  }
-
-  /// Back and forward 10 seconds from the lock screen, Control Center and
-  /// headphones.
-  private func applyRemoteCommands(enabled: Bool) {
-    for (command, target) in remoteCommandTargets { command.removeTarget(target) }
-    remoteCommandTargets.removeAll()
-    let center = MPRemoteCommandCenter.shared()
-    center.previousTrackCommand.isEnabled = false
-    center.nextTrackCommand.isEnabled = false
-    for (command, seconds) in [
-      (center.skipBackwardCommand, -10.0), (center.skipForwardCommand, 10.0),
-    ] {
-      command.preferredIntervals = [NSNumber(value: abs(seconds))]
-      command.isEnabled = enabled
-      if !enabled { continue }
-      let target = command.addTarget { [weak self] _ in
-        guard let self, self.player.currentItem != nil else { return .noActionableNowPlayingItem }
-        var time = CMTimeGetSeconds(self.player.currentTime()) + seconds
-        let duration = CMTimeGetSeconds(self.player.currentItem!.duration)
-        if duration.isFinite { time = min(time, duration) }
-        self.player.seek(to: CMTime(seconds: max(time, 0), preferredTimescale: 1000))
-        return .success
-      }
-      remoteCommandTargets.append((command, target))
     }
   }
 
