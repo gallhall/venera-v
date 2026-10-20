@@ -181,9 +181,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Duration duration = Duration.zero;
 
-  /// Don't resume when this close to the end: the episode was finished.
-  static const _endMargin = Duration(seconds: 10);
-
   @override
   void initState() {
     super.initState();
@@ -279,7 +276,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var position = Duration(seconds: history.page);
     var total = Duration(seconds: history.maxPage ?? 0);
     if (position <= Duration.zero) return null;
-    if (total > Duration.zero && position >= total - _endMargin) return null;
+    // Played to the end (saved on completion): start over.
+    if (total > Duration.zero && position >= total) return null;
     return position;
   }
 
