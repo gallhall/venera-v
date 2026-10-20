@@ -505,7 +505,23 @@
     "Clear specific reader settings for this device": "清除该设备的特殊阅读设置",
     "Enable device specific settings": "启用此设备特定设置",
     "Ignore Certificate Errors": "忽略证书错误",
-    "Mouse scroll speed": "鼠标滚动速度"
+    "Mouse scroll speed": "鼠标滚动速度",
+    "Video files": "视频文件",
+    "Video folder": "视频文件夹",
+    "Select video files. Subtitles and a cover picked with them are matched by name.": "选择视频文件，一起选择的字幕和封面会按文件名自动配对。",
+    "Select a folder of videos. Each video is an episode, in the order of the file names.": "选择一个视频文件夹，每个视频作为一集，按文件名排序。",
+    "No video files found": "没有找到视频文件",
+    "Importing...": "正在导入...",
+    "Copying @a/@b": "正在复制 @a/@b",
+    "Generating cover...": "正在生成封面...",
+    "Imported @a": "已导入 @a",
+    "@a subtitles match no episode": "@a 个字幕没有匹配到剧集",
+    "Import Video": "导入视频",
+    "@a episodes, in this order": "共 @a 集，按以下顺序",
+    "No subtitles": "无字幕",
+    "Not matched": "未匹配",
+    "Add subtitles": "添加字幕",
+    "Title cannot be empty": "标题不能为空"
   },
   "zh_TW": {
     "Home": "首頁",
@@ -1013,6 +1029,22 @@
     "Clear specific reader settings for this device": "清除該裝置的特殊閱讀設定",
     "Enable device specific settings": "啟用此裝置特定設定",
     "Ignore Certificate Errors": "忽略證書錯誤",
-    "Mouse scroll speed": "滑鼠滾動速度"
+    "Mouse scroll speed": "滑鼠滾動速度",
+    "Video files": "影片檔案",
+    "Video folder": "影片資料夾",
+    "Select video files. Subtitles and a cover picked with them are matched by name.": "選擇影片檔案，一起選擇的字幕和封面會按檔名自動配對。",
+    "Select a folder of videos. Each video is an episode, in the order of the file names.": "選擇一個影片資料夾，每個影片作為一集，按檔名排序。",
+    "No video files found": "沒有找到影片檔案",
+    "Importing...": "正在匯入...",
+    "Copying @a/@b": "正在複製 @a/@b",
+    "Generating cover...": "正在產生封面...",
+    "Imported @a": "已匯入 @a",
+    "@a subtitles match no episode": "@a 個字幕沒有匹配到劇集",
+    "Import Video": "匯入影片",
+    "@a episodes, in this order": "共 @a 集，按以下順序",
+    "No subtitles": "無字幕",
+    "Not matched": "未匹配",
+    "Add subtitles": "新增字幕",
+    "Title cannot be empty": "標題不能為空"
   }
 }

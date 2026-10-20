@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.ContentResolver
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -28,6 +30,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -167,8 +170,20 @@ class MainActivity : FlutterFragmentActivity() {
 
         val selectFileChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/select_file")
         selectFileChannel.setMethodCallHandler { req, res ->
-            val mimeType = req.arguments<String>()
-            openFile(res, mimeType!!)
+            when (req.method) {
+                "selectFiles" -> openFiles(res, req.arguments<String>()!!)
+                "selectFolder" -> openFolder(res)
+                "videoThumbnail" -> videoThumbnail(res, req.arguments<String>()!!)
+                "copyUri" -> copyUri(
+                    res,
+                    req.argument<String>("uri")!!,
+                    req.argument<String>("path")!!
+                )
+                else -> {
+                    val mimeType = req.arguments<String>()
+                    openFile(res, mimeType!!)
+                }
+            }
         }
 
         val shareTextChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/text_share")
@@ -401,6 +416,122 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }.start()
         }
+    }
+
+    /// Picks several files and returns their uris and names, without
+    /// copying them: large files (videos) are copied once, by [copyUri].
+    private fun openFiles(result: MethodChannel.Result, mimeType: String) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        intent.addCategory(Intent.CATEGORY_OPENABLE)
+        intent.type = mimeType
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        startContractForResult(ActivityResultContracts.StartActivityForResult(), intent) { activityResult ->
+            if (activityResult.resultCode != Activity.RESULT_OK) {
+                result.success(null)
+                return@startContractForResult
+            }
+            val data = activityResult.data
+            val uris = mutableListOf<Uri>()
+            val clip = data?.clipData
+            if (clip != null) {
+                for (i in 0 until clip.itemCount) {
+                    uris.add(clip.getItemAt(i).uri)
+                }
+            } else {
+                data?.data?.let { uris.add(it) }
+            }
+            val files = uris.mapNotNull { uri ->
+                val name = DocumentFile.fromSingleUri(this, uri)?.name ?: return@mapNotNull null
+                mapOf("uri" to uri.toString(), "name" to name)
+            }
+            result.success(files)
+        }
+    }
+
+    /// Copies the content of [uri] into the file [path].
+    private fun copyUri(result: MethodChannel.Result, uri: String, path: String) {
+        Thread {
+            try {
+                val input = contentResolver.openInputStream(Uri.parse(uri))
+                    ?: throw Exception("Cannot open $uri")
+                input.use {
+                    FileOutputStream(File(path)).use { output ->
+                        input.copyTo(output, bufferSize = 1024 * 1024)
+                        output.flush()
+                    }
+                }
+                runOnUiThread { result.success(null) }
+            } catch (e: Exception) {
+                runOnUiThread { result.error("copy error", e.message, null) }
+            }
+        }.start()
+    }
+    /// Picks a folder and lists its files, and the files of its subfolders,
+    /// as uris without copying them: `{"name", "files": [{"name", "uri",
+    /// "nested"}]}`.
+    private fun openFolder(result: MethodChannel.Result) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startContractForResult(ActivityResultContracts.StartActivityForResult(), intent) { activityResult ->
+            val uri = activityResult.data?.data
+            if (activityResult.resultCode != Activity.RESULT_OK || uri == null) {
+                result.success(null)
+                return@startContractForResult
+            }
+            Thread {
+                try {
+                    val root = DocumentFile.fromTreeUri(this, uri)
+                        ?: throw Exception("Cannot open $uri")
+                    val files = mutableListOf<Map<String, Any>>()
+                    for (file in root.listFiles()) {
+                        if (file.isDirectory) {
+                            for (child in file.listFiles()) {
+                                val name = child.name ?: continue
+                                if (child.isFile) {
+                                    files.add(mapOf("name" to name, "uri" to child.uri.toString(), "nested" to true))
+                                }
+                            }
+                        } else {
+                            val name = file.name ?: continue
+                            files.add(mapOf("name" to name, "uri" to file.uri.toString(), "nested" to false))
+                        }
+                    }
+                    val folder = mapOf("name" to (root.name ?: ""), "files" to files)
+                    runOnUiThread { result.success(folder) }
+                } catch (e: Exception) {
+                    runOnUiThread { result.error("list error", e.message, null) }
+                }
+            }.start()
+        }
+    }
+
+    /// A JPEG frame from a tenth into the video file [path], at most a
+    /// minute in, or null.
+    private fun videoThumbnail(result: MethodChannel.Result, path: String) {
+        Thread {
+            val retriever = MediaMetadataRetriever()
+            var data: ByteArray? = null
+            try {
+                retriever.setDataSource(path)
+                val duration = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
+                val at = minOf(duration / 10, 60_000L) * 1000
+                val frame = retriever.getFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.frameAtTime
+                if (frame != null) {
+                    val out = ByteArrayOutputStream()
+                    frame.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    frame.recycle()
+                    data = out.toByteArray()
+                }
+            } catch (e: Exception) {
+                Log.w("Venera", "No thumbnail for $path: ${e.message}")
+            } finally {
+                try { retriever.release() } catch (_: Exception) {}
+            }
+            runOnUiThread { result.success(data) }
+        }.start()
     }
 }
 
