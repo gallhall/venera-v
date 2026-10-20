@@ -825,7 +825,12 @@ class ComicSourceParser {
         var res = await JsEngine().runCode("""
           ComicSource.sources.$_key.video.loadPlayInfo(${jsonEncode(id)}, ${jsonEncode(epId)})
         """);
-        return Res(VideoPlayInfo.fromJson(res));
+        var info = VideoPlayInfo.fromJson(res);
+        info = await info.resolveWebSources((url, headers) async {
+          var r = await VideoSniffer.sniff(url, headers: headers);
+          return (url: r.url, headers: r.headers, type: r.type);
+        });
+        return Res(info);
       } catch (e, s) {
         Log.error("Network", "$e\n$s");
         return Res.error(e.toString());

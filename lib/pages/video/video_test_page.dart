@@ -8,6 +8,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/foundation/video/video_sniffer.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -199,6 +200,12 @@ class _VideoTestPageState extends State<VideoTestPage> {
 
   final subtitleController = TextEditingController();
 
+  final sniffUrlController = TextEditingController();
+
+  final sniffMatchController = TextEditingController();
+
+  bool isSniffing = false;
+
   final videoSources = ComicSource.all().where((e) => e.isVideoSource).toList();
 
   String? videoSourceKey;
@@ -258,6 +265,8 @@ class _VideoTestPageState extends State<VideoTestPage> {
     headersController.dispose();
     audioController.dispose();
     subtitleController.dispose();
+    sniffUrlController.dispose();
+    sniffMatchController.dispose();
     videoIdController.dispose();
     super.dispose();
   }
@@ -406,7 +415,12 @@ class _VideoTestPageState extends State<VideoTestPage> {
                 width: 380,
                 child: ListView(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  children: [buildVideoSource(), buildCases(), buildCustom()],
+                  children: [
+                    buildVideoSource(),
+                    buildSniff(),
+                    buildCases(),
+                    buildCustom(),
+                  ],
                 ),
               ),
             ],
@@ -418,6 +432,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
             playerView,
             buildStatus().paddingHorizontal(16),
             buildVideoSource(),
+            buildSniff(),
             buildCases(),
             buildCustom(),
             buildLogs().paddingHorizontal(16),
@@ -541,6 +556,60 @@ class _VideoTestPageState extends State<VideoTestPage> {
                 ),
             ],
           ).paddingHorizontal(16).paddingVertical(4),
+      ],
+    );
+  }
+
+  Future<void> sniffAndPlay() async {
+    var url = sniffUrlController.text.trim();
+    if (url.isEmpty || isSniffing) return;
+    var match = sniffMatchController.text.trim();
+    setState(() => isSniffing = true);
+    addLog('Sniff $url');
+    try {
+      var result = await VideoSniffer.sniff(
+        url,
+        match: match.isEmpty ? null : RegExp(match),
+      );
+      addLog(const JsonEncoder.withIndent('  ').convert(result.toJson()));
+      setState(() => selectedCase = null);
+      openRequest(VideoStreamRequest(result.url, headers: result.headers));
+    } catch (e) {
+      addLog('[error] $e');
+    } finally {
+      if (mounted) setState(() => isSniffing = false);
+    }
+  }
+
+  Widget buildSniff() {
+    InputDecoration decoration(String label, [String? hint]) => InputDecoration(
+      labelText: label,
+      hintText: hint,
+      border: const OutlineInputBorder(),
+      isDense: true,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        buildTitle("Web Page Sniffing".tl),
+        TextField(
+          controller: sniffUrlController,
+          decoration: decoration("Page URL".tl, 'https://hls-js.netlify.app/demo/'),
+        ).paddingHorizontal(16).paddingVertical(4),
+        TextField(
+          controller: sniffMatchController,
+          decoration: decoration(
+            "Stream URL pattern (optional)".tl,
+            r'\.m3u8',
+          ),
+        ).paddingHorizontal(16).paddingVertical(4),
+        if (isSniffing) const LinearProgressIndicator().paddingAll(16),
+        FilledButton(
+          onPressed: isSniffing || !VideoSniffer.isSupported
+              ? null
+              : sniffAndPlay,
+          child: Text("Sniff and play".tl),
+        ).toAlign(Alignment.centerRight).paddingHorizontal(16).paddingVertical(8),
       ],
     );
   }

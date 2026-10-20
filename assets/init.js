@@ -1191,6 +1191,34 @@ function VideoSkip({start, end, type}) {
     this.type = type;
 }
 
+/**
+ * Helpers for video sources.
+ * @since 2.0.0
+ */
+let Video = {
+    /**
+     * Open a web page in a hidden browser and return the first video stream it requests,
+     * for sites whose player builds the stream url in the page.
+     * The result can be returned from `loadPlayInfo` as is, or used as a `VideoPlaySource`.
+     * @param url {string} - the page with the player
+     * @param options {{match?: string, exclude?: string, timeout?: number, headers?: Object, userAgent?: string, script?: string}?}
+     *   - match: regular expression a stream url must match. Defaults to urls ending with .m3u8, .mpd, .mp4, .webm...
+     *   - exclude: regular expression of urls to ignore, e.g. ads
+     *   - timeout: in seconds, 20 by default
+     *   - headers, userAgent: used to load the page
+     *   - script: JavaScript run in the page after it loads, e.g. to click a play button
+     * @returns {Promise<{url: string, headers: Object, type: string}>} - the stream, with the Referer, Origin, User-Agent and Cookie the page used
+     * @since 2.0.0
+     */
+    sniff: (url, options) => {
+        return sendMessage({
+            method: 'video_sniff',
+            url: url,
+            ...(options ?? {}),
+        })
+    },
+}
+
 class ComicSource {
     name = ""
 

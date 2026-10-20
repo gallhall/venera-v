@@ -32,6 +32,7 @@ import 'package:venera/utils/init.dart';
 
 import 'comic_source/comic_source.dart';
 import 'consts.dart';
+import 'video/video_sniffer.dart';
 import 'log.dart';
 
 class JavaScriptRuntimeException implements Exception {
@@ -109,6 +110,32 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
     }
   }
 
+  /// `Video.sniff(url, options)` of init.js.
+  Future<Map<String, dynamic>> _videoSniff(Map<String, dynamic> message) async {
+    var url = message["url"];
+    if (url is! String || url.isEmpty) throw "Video.sniff: url is required";
+    RegExp? regex(Object? value) =>
+        value is String && value.isNotEmpty ? RegExp(value) : null;
+    var timeout = message["timeout"];
+    var headers = message["headers"];
+    var userAgent = message["userAgent"];
+    var script = message["script"];
+    var result = await VideoSniffer.sniff(
+      url,
+      match: regex(message["match"]),
+      exclude: regex(message["exclude"]),
+      timeout: timeout is num && timeout > 0
+          ? Duration(milliseconds: (timeout * 1000).round())
+          : const Duration(seconds: 20),
+      headers: headers is Map
+          ? {for (var e in headers.entries) e.key.toString(): e.value.toString()}
+          : const {},
+      userAgent: userAgent is String ? userAgent : null,
+      script: script is String ? script : null,
+    );
+    return result.toJson();
+  }
+
   Object? _messageReceiver(dynamic message) {
     try {
       if (message is Map<dynamic, dynamic>) {
@@ -146,6 +173,8 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
             var source = ComicSource.find(key);
             source?.data.remove(dataKey);
             source?.saveData();
+          case 'video_sniff':
+            return _videoSniff(Map.from(message));
           case 'http':
             return _http(Map.from(message));
           case 'html':
