@@ -11,6 +11,8 @@ import Foundation // 添加此行
   // 定义插件通道名称
   private var directoryPicker: DirectoryPicker?
 
+  private var nativeVideoPlayer: NativeVideoPlayer?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -20,6 +22,8 @@ import Foundation // 添加此行
     guard let controller = window?.rootViewController as? FlutterViewController else {
           fatalError("rootViewController is not of type FlutterViewController")
     }
+
+    nativeVideoPlayer = NativeVideoPlayer(host: controller)
 
     let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
     methodChannel.setMethodCallHandler { (call, result) in

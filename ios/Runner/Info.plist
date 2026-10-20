@@ -55,5 +55,9 @@
   <string>Ensure that the operation is being performed by the user themselves.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.books</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

@@ -115,11 +115,45 @@ class PlayerControls {
   });
 }
 
+/// What the video page needs from a player: implemented by [PlayerService]
+/// and by the iOS system player (`NativeVideoPlayer`).
+abstract interface class VideoPlayback {
+  Stream<Duration> get position;
+
+  Stream<Duration> get duration;
+
+  Stream<bool> get playing;
+
+  Stream<bool> get completed;
+
+  Stream<double> get rate;
+
+  Stream<String> get errors;
+
+  Duration get currentPosition;
+
+  Future<void> open(
+    VideoStreamRequest request, {
+    Duration? start,
+    bool play = true,
+  });
+
+  Future<void> play();
+
+  Future<void> pause();
+
+  Future<void> seek(Duration position);
+
+  Future<void> setRate(double rate);
+
+  Future<void> dispose();
+}
+
 /// Thin wrapper around the playback engine (media_kit / libmpv).
 ///
 /// Pages should only talk to this class, so that the engine can be replaced
 /// without touching the UI.
-class PlayerService {
+class PlayerService implements VideoPlayback {
   PlayerService._(this._player, this._controller);
 
   static const _speedUpFactor = 2.0;
@@ -257,20 +291,26 @@ class PlayerService {
 
   bool _disposed = false;
 
+  @override
   Stream<Duration> get position => _player.stream.position;
 
+  @override
   Stream<Duration> get duration => _player.stream.duration;
 
   Stream<Duration> get buffer => _player.stream.buffer;
 
+  @override
   Stream<bool> get playing => _player.stream.playing;
 
   Stream<bool> get buffering => _player.stream.buffering;
 
+  @override
   Stream<bool> get completed => _player.stream.completed;
 
+  @override
   Stream<double> get rate => _player.stream.rate;
 
+  @override
   Stream<String> get errors => _player.stream.error;
 
   /// mpv messages that show up on every normal playback and carry no signal.
@@ -303,6 +343,7 @@ class PlayerService {
 
   String get currentSubtitleTrack => _player.state.track.subtitle.id;
 
+  @override
   Duration get currentPosition => _player.state.position;
 
   /// The proxy applied to the last opened stream, null for direct.
@@ -315,6 +356,7 @@ class PlayerService {
     );
   }
 
+  @override
   Future<void> open(
     VideoStreamRequest request, {
     Duration? start,
@@ -325,7 +367,7 @@ class PlayerService {
     await _applyProxy();
     var media = Media(
       request.url,
-      httpHeaders: _buildHeaders(request.url, request.headers),
+      httpHeaders: buildHeaders(request.url, request.headers),
       start: start,
     );
     await _player.open(media, play: play);
@@ -368,7 +410,8 @@ class PlayerService {
     }
   }
 
-  static Map<String, String> _buildHeaders(
+  /// [custom] with a default User-Agent and the stored cookies.
+  static Map<String, String> buildHeaders(
     String url,
     Map<String, String> custom,
   ) {
@@ -440,14 +483,18 @@ class PlayerService {
     }
   }
 
+  @override
   Future<void> play() => _player.play();
 
+  @override
   Future<void> pause() => _player.pause();
 
   Future<void> playOrPause() => _player.playOrPause();
 
+  @override
   Future<void> seek(Duration position) => _player.seek(position);
 
+  @override
   Future<void> setRate(double rate) => _player.setRate(rate);
 
   Future<void> selectAudioTrack(String id) async {
@@ -695,6 +742,7 @@ class PlayerService {
     );
   }
 
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;

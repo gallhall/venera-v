@@ -12,6 +12,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/video_gestures.dart';
@@ -124,7 +125,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     widget.details,
   );
 
+  /// media_kit, on iOS only for streams the system player cannot play.
   PlayerService? player;
+
+  /// The iOS system player.
+  NativeVideoPlayer? native;
+
+  /// The player of the current stream.
+  VideoPlayback? active;
+
+  /// Sources of [playInfo] the system player failed to open.
+  final nativeFailedSources = <int>{};
 
   String? engineError;
 
@@ -228,27 +239,86 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       index = episodes.fromHistory(history.ep, history.group);
     }
     current = index ?? 0;
+    var savedRate = appdata.settings['videoPlaybackRate'];
+    if (savedRate is num) rate = savedRate.toDouble();
+    if (NativeVideoPlayer.isAvailable) {
+      var n = native = NativeVideoPlayer();
+      listenTo(n);
+      subscriptions.addAll([
+        n.closed.listen((_) {
+          if (!identical(active, n)) return;
+          saveHistory();
+          setState(() {});
+        }),
+        n.actions.listen((id) {
+          if (!identical(active, n)) return;
+          switch (id) {
+            case 'previous' when hasPrevious:
+              loadEpisode(current - 1);
+            case 'next' when hasNext:
+              loadEpisode(current + 1);
+            case 'skip':
+              skipCurrent();
+          }
+        }),
+        // Speeds picked in the system player are remembered as well.
+        n.rate.listen((v) {
+          if (!identical(active, n)) return;
+          appdata.settings['videoPlaybackRate'] = v;
+          appdata.saveData();
+        }),
+      ]);
+      if (rate != 1.0) n.setRate(rate);
+    } else {
+      if (ensureMediaKit() == null) return;
+      active = player;
+    }
+    loadEpisode(current);
+  }
+
+  /// The media_kit player, created on first use: on iOS only for streams
+  /// the system player cannot play.
+  PlayerService? ensureMediaKit() {
+    if (player != null) return player;
+    if (engineError != null) return null;
+    PlayerService p;
     try {
-      player = PlayerService.create();
+      p = player = PlayerService.create();
     } catch (e, s) {
       Log.error('Video', 'Failed to load the video engine: $e', s);
       engineError = e.toString();
-      return;
+      return null;
     }
-    var p = player!;
+    listenTo(p);
     subscriptions.addAll([
-      p.errors.listen(onPlayerError),
       // Engine warnings say why a stream failed, e.g. which request.
       p.logs.listen((line) => Log.info('Video', line)),
-      p.duration.listen((d) {
+      p.tracks.listen((v) => setState(() => tracks = v)),
+      p.videoSize.listen((v) => videoSize = v),
+    ]);
+    if (rate != 1.0) p.setRate(rate);
+    return p;
+  }
+
+  /// Follows [p] while it is the [active] player.
+  void listenTo(VideoPlayback p) {
+    void Function(T) ifActive<T>(void Function(T) f) {
+      return (v) {
+        if (identical(active, p)) f(v);
+      };
+    }
+
+    subscriptions.addAll([
+      p.errors.listen(ifActive(onPlayerError)),
+      p.duration.listen(ifActive((d) {
         duration = d;
         if (d > Duration.zero && !started) {
           started = true;
           // The seek to the start position may not be applied yet.
           saveHistory(position: openedAt);
         }
-      }),
-      p.playing.listen((playing) {
+      })),
+      p.playing.listen(ifActive((playing) {
         historyTimer?.cancel();
         if (playing) {
           historyTimer = Timer.periodic(
@@ -258,22 +328,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         } else {
           saveHistory();
         }
-      }),
-      p.completed.listen((completed) {
+      })),
+      p.completed.listen(ifActive((completed) {
         if (!completed || !started || isLoading) return;
         saveHistory(position: duration);
         if (hasNext) loadEpisode(current + 1);
-      }),
-      p.rate.listen((v) => setState(() => rate = v)),
-      p.tracks.listen((v) => setState(() => tracks = v)),
-      p.videoSize.listen((v) => videoSize = v),
-      p.position.listen(checkSkip),
+      })),
+      p.rate.listen(ifActive((v) => setState(() => rate = v))),
+      p.position.listen(ifActive(checkSkip)),
     ]);
-    var savedRate = appdata.settings['videoPlaybackRate'];
-    if (savedRate is num && savedRate != 1.0) {
-      p.setRate(savedRate.toDouble());
-    }
-    loadEpisode(current);
   }
 
   @override
@@ -287,14 +350,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Saved synchronously, so the details page sees it when it comes back.
     saveHistory(sync: true);
     player?.dispose();
-    if (player != null) controls.dispose();
+    native?.dispose();
+    controls.dispose();
     super.dispose();
   }
 
   /// Records the current episode and position. Only once the stream has
   /// loaded, so an episode that fails to play is not marked as watched.
   void saveHistory({Duration? position, bool sync = false}) {
-    var p = player;
+    var p = active;
     if (p == null || !started) return;
     var h = episodes.toHistory(current);
     history
@@ -355,7 +419,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       currentSkip = null;
       handledSkips.clear();
     });
-    await player!.pause();
+    await active?.pause();
     // A downloaded episode plays from its files, without the source.
     var local = localPlayInfo(index);
     Res<VideoPlayInfo> res;
@@ -368,6 +432,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     if (!mounted || token != loadToken) return;
     if (res.error) {
+      // The error is shown on the page, under the system player.
+      native?.close();
       setState(() {
         isLoading = false;
         error = res.errorMessage;
@@ -378,6 +444,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       isLoading = false;
       playInfo = res.data;
       failedSources.clear();
+      nativeFailedSources.clear();
       retriedSources.clear();
     });
     var start = resumePosition(index);
@@ -404,14 +471,55 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       started = false;
     });
     openToken++;
+    var request = VideoStreamRequest.fromPlayInfo(info, index);
+    VideoPlayback? next;
+    var n = native;
+    if (n != null &&
+        !nativeFailedSources.contains(index) &&
+        NativeVideoPlayer.supports(info.sources[index], request)) {
+      await player?.pause();
+      next = n;
+      if (isFullscreen) setFullscreen(false);
+      updateNativePlayer();
+    } else {
+      next = ensureMediaKit();
+      if (n != null && n.isOpen) {
+        // Keep the video fullscreen after leaving the system player.
+        await n.close();
+        if (next != null) setFullscreen(true);
+      }
+    }
+    if (next == null) {
+      setState(() {
+        active = null;
+        error = "${"Failed to load the video engine".tl}\n$engineError";
+      });
+      return;
+    }
+    setState(() => active = next);
     try {
-      await player!.open(
-        VideoStreamRequest.fromPlayInfo(info, index),
-        start: start,
-      );
+      await next.open(request, start: start);
     } catch (e) {
       onPlayerError(e.toString());
     }
+  }
+
+  /// Title and buttons of the system player.
+  void updateNativePlayer() {
+    var n = native;
+    if (n == null) return;
+    n.title = playerTitle;
+    var skip = currentSkip;
+    n.playerActions = [
+      if (skip != null)
+        NativePlayerAction('skip', skipLabel(skip), 'forward.end')
+      else ...[
+        if (hasPrevious)
+          NativePlayerAction('previous', "Previous episode".tl, 'backward.end'),
+        if (hasNext)
+          NativePlayerAction('next', "Next episode".tl, 'forward.end'),
+      ],
+    ];
   }
 
   void onPlayerError(String message) {
@@ -420,6 +528,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || info == null || started || isLoading) return;
     if (errorHandledFor == openToken) return;
     errorHandledFor = openToken;
+    if (identical(active, native)) {
+      // Try the same stream with media_kit, which plays more formats.
+      Log.info('Video', 'The system player failed, using media_kit');
+      nativeFailedSources.add(sourceIndex);
+      openSource(sourceIndex, start: openedAt == Duration.zero ? null : openedAt);
+      return;
+    }
     // Opening a stream takes several requests (a DASH stream fetches every
     // quality's init segment), so a single dropped one fails it: try the
     // same source again once first.
@@ -453,7 +568,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void switchSource(int index) {
     if (index == sourceIndex && error == null) return;
     failedSources.remove(index);
-    openSource(index, start: started ? player!.currentPosition : null);
+    openSource(index, start: started ? active!.currentPosition : null);
   }
 
   /// Applies fullscreen to the window or the system UI.
@@ -512,7 +627,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (!skip.contains(position) || handledSkips.contains(i)) continue;
       if (appdata.settings['videoAutoSkip'] == true) {
         handledSkips.add(i);
-        player!.seek(skip.end);
+        active?.seek(skip.end);
         context.showMessage(message: skipLabel(skip, done: true));
         return;
       }
@@ -527,7 +642,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (skip == null) return;
     handledSkips.add(playInfo!.skips.indexOf(skip));
     setState(() => currentSkip = null);
-    player!.seek(skip.end);
+    active?.seek(skip.end);
   }
 
   String skipLabel(VideoSkip skip, {bool done = false}) {
@@ -549,7 +664,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void setRate(double value) {
-    player!.setRate(value);
+    player?.setRate(value);
+    native?.setRate(value);
     appdata.settings['videoPlaybackRate'] = value;
     appdata.saveData();
   }
@@ -631,13 +747,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return e.group == null ? e.title : '${e.group} · ${e.title}';
   }
 
+  String get playerTitle => episode.id == null
+      ? widget.details.title
+      : '${widget.details.title} · ${episode.title}';
+
   PlayerControls buildControls() {
-    var p = player!;
+    var p = player;
     var info = playInfo;
     return PlayerControls(
-      title: episode.id == null
-          ? widget.details.title
-          : '${widget.details.title} · ${episode.title}',
+      title: playerTitle,
       onBack: isFullscreen
           ? () => setFullscreen(false)
           : (showPlayerBack ? () => context.pop() : null),
@@ -678,14 +796,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           }, rate);
           if (r != null) setRate(r);
         }),
-        if (tracks.audio.length > 3)
+        if (p != null && tracks.audio.length > 3)
           PlayerControlAction(Icons.audiotrack_outlined, (context) async {
             var id = await pick(context, "Audio Track".tl, {
               for (var t in tracks.audio) t.id: t.label,
             }, p.currentAudioTrack);
             if (id != null) p.selectAudioTrack(id);
           }),
-        if (tracks.subtitle.length > 2)
+        if (p != null && tracks.subtitle.length > 2)
           PlayerControlAction(Icons.subtitles_outlined, (context) async {
             var id = await pick(context, "Subtitle".tl, {
               for (var t in tracks.subtitle) t.id: t.label,
@@ -701,7 +819,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (engineError != null) {
+    if (engineError != null && native == null) {
       return Scaffold(
         appBar: Appbar(title: Text(widget.details.title)),
         body: Center(
@@ -713,7 +831,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       );
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) controls.value = buildControls();
+      if (!mounted) return;
+      controls.value = buildControls();
+      if (identical(active, native)) updateNativePlayer();
     });
     return PopScope(
       // Back leaves fullscreen first.
@@ -792,8 +912,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildPlayer() {
-    Widget view = player!.buildView(custom: controls, fit: fit);
-    if (App.isMobile) view = VideoGestureLayer(child: view);
+    var p = player;
+    var isMediaKit = false;
+    Widget view;
+    if (p != null && identical(active, p)) {
+      isMediaKit = true;
+      view = p.buildView(custom: controls, fit: fit);
+      if (App.isMobile) view = VideoGestureLayer(child: view);
+    } else {
+      view = buildNativePlaceholder();
+    }
     return ColoredBox(
       color: Colors.black,
       child: Stack(
@@ -804,7 +932,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
             ),
-          if (currentSkip != null && !isLocked)
+          if (currentSkip != null && !isLocked && isMediaKit)
             Positioned(
               right: 16,
               bottom: 64,
@@ -818,6 +946,39 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (error != null) buildError(),
         ],
       ),
+    );
+  }
+
+  /// Shown on iOS while the system player is closed or opening.
+  Widget buildNativePlaceholder() {
+    var canPlay =
+        playInfo != null &&
+        !isLoading &&
+        error == null &&
+        !(native?.isOpen ?? false);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (canPlay)
+          Center(
+            child: IconButton.filled(
+              iconSize: 40,
+              tooltip: "Play".tl,
+              icon: const Icon(Icons.play_arrow),
+              onPressed: () =>
+                  openSource(sourceIndex, start: resumePosition(current)),
+            ),
+          ),
+        if (showPlayerBack)
+          Align(
+            alignment: Alignment.topLeft,
+            child: IconButton(
+              color: Colors.white,
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => context.pop(),
+            ),
+          ),
+      ],
     );
   }
 
