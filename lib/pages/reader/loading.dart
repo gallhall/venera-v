@@ -25,6 +25,13 @@ class _ReaderWithLoadingState
     extends LoadingState<ReaderWithLoading, ReaderProps> {
   @override
   Widget buildContent(BuildContext context, ReaderProps data) {
+    if (data.videoDetails != null) {
+      return VideoPlayerPage(
+        sourceKey: widget.sourceKey,
+        details: data.videoDetails!,
+        initialEp: widget.initialEp,
+      );
+    }
     return Reader(
       type: data.type,
       cid: data.cid,
@@ -89,6 +96,7 @@ class _ReaderWithLoadingState
               ),
           author: comic.data.findAuthor() ?? "",
           tags: comic.data.plainTags,
+          videoDetails: comicSource.isVideoSource ? comic.data : null,
         ),
       );
     }
@@ -110,7 +118,11 @@ class ReaderProps {
 
   final List<String> tags;
 
+  /// Set for video sources, which open the player instead of the reader.
+  final ComicDetails? videoDetails;
+
   const ReaderProps({
+    this.videoDetails,
     required this.type,
     required this.cid,
     required this.name,

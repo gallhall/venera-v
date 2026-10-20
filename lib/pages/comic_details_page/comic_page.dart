@@ -22,6 +22,7 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -357,6 +358,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   Widget buildActions() {
     bool isMobile = context.width < changePoint;
     bool hasHistory = history != null && (history!.ep > 1 || history!.page > 1);
+    // Downloading videos is not supported yet.
+    bool isVideo = comicSource.isVideoSource;
     return SliverLazyToBoxAdapter(
       child: Column(
         children: [
@@ -374,11 +377,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               if (!isMobile || hasHistory)
                 _ActionButton(
                   icon: const Icon(Icons.play_circle_outline),
-                  text: 'Start'.tl,
+                  text: isVideo ? 'Play'.tl : 'Start'.tl,
                   onPressed: read,
                   iconColor: context.useTextColor(Colors.orange),
                 ),
-              if (!isMobile && !isDownloaded)
+              if (!isMobile && !isDownloaded && !isVideo)
                 _ActionButton(
                   icon: const Icon(Icons.download),
                   text: 'Download'.tl,
@@ -426,20 +429,25 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
           if (isMobile)
             Row(
               children: [
-                Expanded(
-                  child: FilledButton.tonal(
-                    onPressed: download,
-                    child: Text("Download".tl),
+                if (!isVideo) ...[
+                  Expanded(
+                    child: FilledButton.tonal(
+                      onPressed: download,
+                      child: Text("Download".tl),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
+                  const SizedBox(width: 16),
+                ],
                 Expanded(
                   child: hasHistory
                       ? FilledButton(
                           onPressed: continueRead,
                           child: Text("Continue".tl),
                         )
-                      : FilledButton(onPressed: read, child: Text("Read".tl)),
+                      : FilledButton(
+                          onPressed: read,
+                          child: Text(isVideo ? "Play".tl : "Read".tl),
+                        ),
                 ),
               ],
             ).paddingHorizontal(16).paddingVertical(8),
