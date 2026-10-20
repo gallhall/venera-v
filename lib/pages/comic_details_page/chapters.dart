@@ -79,7 +79,11 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
           slivers: [
             SliverToBoxAdapter(
               child: ListTile(
-                title: Text("Chapters".tl),
+                title: Text(
+                  state.comicSource.isVideoSource
+                      ? "Episodes".tl
+                      : "Chapters".tl,
+                ),
                 trailing: Tooltip(
                   message: "Order".tl,
                   child: IconButton(
@@ -253,7 +257,11 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
           slivers: [
             SliverToBoxAdapter(
               child: ListTile(
-                title: Text("Chapters".tl),
+                title: Text(
+                  state.comicSource.isVideoSource
+                      ? "Episodes".tl
+                      : "Chapters".tl,
+                ),
                 trailing: Tooltip(
                   message: "Order".tl,
                   child: IconButton(

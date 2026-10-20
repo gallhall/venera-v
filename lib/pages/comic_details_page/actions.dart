@@ -102,6 +102,18 @@ abstract mixin class _ComicPageActions {
   ///
   /// [group] the chapter group number, start from 1
   void read([int? ep, int? page, int? group]) {
+    if (comicSource.isVideoSource) {
+      App.rootContext
+          .to(
+            () => VideoPlayerPage(
+              sourceKey: comic.sourceKey,
+              details: comic,
+              initialEp: ep,
+            ),
+          )
+          .then((_) => onReadEnd());
+      return;
+    }
     App.rootContext
         .to(
       () => Reader(

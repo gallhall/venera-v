@@ -190,7 +190,11 @@ Throw an error from `loadPlayInfo` to show it to the user, e.g. `throw "This epi
 
 ## Testing a video source
 
-Until the player page lands, use **Settings > Debug > Video Player Test > Video Source**:
+Open a video from the source's pages and tap **Play** or an episode: the player page loads the play info and starts the first stream.
+If a stream fails before it starts, the player switches to the next source; when all sources fail it shows the error with a retry button, which calls `loadPlayInfo` again.
+After an episode ends, the next one starts.
+
+To see the raw play info, use **Settings > Debug > Video Player Test > Video Source**:
 choose the source, enter a video id, load it and tap an episode.
 The returned play info is printed to the log on that page.
 
