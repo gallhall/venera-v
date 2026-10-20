@@ -1166,13 +1166,29 @@ function VideoSubtitle({url, name, language}) {
  * @param sources {VideoPlaySource[]} - at least one. The player starts with the first one.
  * @param subtitles {VideoSubtitle[]?}
  * @param headers {Object?} - request headers shared by all streams and subtitles
+ * @param skips {VideoSkip[]?} - parts the player offers to skip, e.g. the opening
  * @constructor
  * @since 2.0.0
  */
-function VideoPlayInfo({sources, subtitles, headers}) {
+function VideoPlayInfo({sources, subtitles, headers, skips}) {
     this.sources = sources;
     this.subtitles = subtitles;
     this.headers = headers;
+    this.skips = skips;
+}
+
+/**
+ * A part of a video episode the player offers to skip.
+ * @param start {number} - in seconds
+ * @param end {number} - in seconds
+ * @param type {string?} - "intro" | "outro" | "other" (default)
+ * @constructor
+ * @since 2.0.0
+ */
+function VideoSkip({start, end, type}) {
+    this.start = start;
+    this.end = end;
+    this.type = type;
 }
 
 class ComicSource {

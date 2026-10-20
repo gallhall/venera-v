@@ -98,6 +98,37 @@ void main() {
       }
     });
 
+    test('skips', () {
+      var info = VideoPlayInfo.fromJson({
+        'url': 'u',
+        'skips': [
+          {'start': 0, 'end': 89.5, 'type': 'intro'},
+          {'start': 1300, 'end': 1400},
+        ],
+      });
+      var intro = info.skips[0];
+      expect(intro.type, VideoSkipType.intro);
+      expect(intro.end, const Duration(milliseconds: 89500));
+      expect(intro.contains(const Duration(seconds: 89)), isTrue);
+      expect(intro.contains(const Duration(seconds: 90)), isFalse);
+      expect(info.skips[1].type, VideoSkipType.other);
+      for (var bad in [
+        {'start': 10, 'end': 5},
+        {'start': -1, 'end': 5},
+        {'start': '0', 'end': 5},
+        {'start': 0, 'end': 5, 'type': 'ad'},
+      ]) {
+        expect(
+          () => VideoPlayInfo.fromJson({
+            'url': 'u',
+            'skips': [bad],
+          }),
+          throwsFormatException,
+          reason: '$bad',
+        );
+      }
+    });
+
     test('stream request', () {
       var info = VideoPlayInfo.fromJson({
         'sources': [
@@ -164,6 +195,12 @@ void main() {
     }, skip: skip);
 
     test('loads play info', () async {
+      var full = (await source.loadVideoPlayInfo!('bbb', 'full')).data;
+      expect(full.skips.map((e) => e.type), [
+        VideoSkipType.intro,
+        VideoSkipType.outro,
+      ]);
+
       var clip = (await source.loadVideoPlayInfo!('bbb', 'clip')).data;
       expect(clip.sources.map((e) => e.name), ['720P', '360P']);
       expect(clip.sources.first.type, VideoStreamType.mp4);

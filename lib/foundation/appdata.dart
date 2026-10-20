@@ -237,6 +237,9 @@ class Settings with ChangeNotifier {
     'showChapterComments': true, // show chapter comments in reader
     'showChapterCommentsAtEnd':
         false, // show chapter comments at end of chapter
+    'videoPlaybackRate': 1.0, // last speed picked in the player
+    'videoFit': 'contain', // contain, cover, fill
+    'videoAutoSkip': false, // skip the ranges a video source marks
   };
 
   operator [](String key) {
