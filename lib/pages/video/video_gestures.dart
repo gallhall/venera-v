@@ -71,20 +71,36 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
     }
   }
 
+  /// Distance swiped before the swipe takes effect.
+  static const _activationDistance = 24.0;
+
+  /// Distance swiped since the swipe started, until it takes effect.
+  double pendingDistance = 0;
+
   void onStart(DragStartDetails details, double width) {
-    hideTimer?.cancel();
-    setState(() {
-      target = details.localPosition.dx < width / 2
-          ? _Target.brightness
-          : _Target.volume;
-      shown = target!;
-      showIndicator = true;
-    });
+    // Without another recognizer in the arena, the drag wins as soon as a
+    // finger is down, so this also runs for a tap: wait for a real swipe.
+    target = details.localPosition.dx < width / 2
+        ? _Target.brightness
+        : _Target.volume;
+    pendingDistance = 0;
   }
 
   void onUpdate(DragUpdateDetails details, double height) {
+    if (target == null) return;
+    var primaryDelta = details.primaryDelta ?? 0;
+    if (pendingDistance < _activationDistance) {
+      pendingDistance += primaryDelta.abs();
+      if (pendingDistance < _activationDistance) return;
+      hideTimer?.cancel();
+      setState(() {
+        shown = target!;
+        showIndicator = true;
+      });
+      return;
+    }
     // Swiping over the whole height changes the value by 1.
-    var delta = -(details.primaryDelta ?? 0) / height;
+    var delta = -primaryDelta / height;
     setState(() {
       if (target == _Target.brightness) {
         brightness = (brightness + delta).clamp(0.0, 1.0);
@@ -101,6 +117,10 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
 
   void onEnd() {
     target = null;
+    // A tap or a short swipe showed nothing.
+    if (pendingDistance < _activationDistance) return;
+    pendingDistance = 0;
+    hideTimer?.cancel();
     hideTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) setState(() => showIndicator = false);
     });
