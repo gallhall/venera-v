@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -121,6 +122,78 @@ class PlayerControls {
 class PlayerService {
   PlayerService._(this._player, this._controller);
 
+  static const _speedUpFactor = 2.0;
+
+  static const _controlsHoverDuration = Duration(seconds: 3);
+
+  /// Whether a long press on the left or right third plays faster.
+  final _speedingUp = ValueNotifier(false);
+
+  /// The press also shows or hides the controls, which would cover the
+  /// speed indicator: they are drawn empty while it plays faster, and until
+  /// they would have hidden again.
+  final _hideControls = ValueNotifier(false);
+
+  /// The touch that may become a long press.
+  int? _pressPointer;
+
+  Offset _pressPosition = Offset.zero;
+
+  Timer? _longPressTimer;
+
+  Timer? _showControlsTimer;
+
+  double _rateBeforeSpeedUp = 1.0;
+
+  void _onPointerDown(PointerDownEvent e, double width) {
+    if (e.kind != PointerDeviceKind.touch) return;
+    if (_pressPointer != null) {
+      // A second finger: not a long press.
+      _cancelPress();
+      return;
+    }
+    // The middle third shows the controls, like a tap.
+    var x = e.localPosition.dx;
+    if (x > width / 3 && x < width * 2 / 3) return;
+    _pressPointer = e.pointer;
+    _pressPosition = e.localPosition;
+    _longPressTimer = Timer(kLongPressTimeout, _startSpeedUp);
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.pointer != _pressPointer || _speedingUp.value) return;
+    if ((e.localPosition - _pressPosition).distance > kTouchSlop) {
+      _cancelPress();
+    }
+  }
+
+  void _onPointerUp(PointerEvent e) {
+    if (e.pointer == _pressPointer) _cancelPress();
+  }
+
+  void _startSpeedUp() {
+    _longPressTimer = null;
+    _rateBeforeSpeedUp = _player.state.rate;
+    _player.setRate(_speedUpFactor);
+    _showControlsTimer?.cancel();
+    _hideControls.value = true;
+    _speedingUp.value = true;
+  }
+
+  void _cancelPress() {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    _pressPointer = null;
+    if (!_speedingUp.value) return;
+    _speedingUp.value = false;
+    _player.setRate(_rateBeforeSpeedUp);
+    _showControlsTimer?.cancel();
+    _showControlsTimer = Timer(
+      _controlsHoverDuration + const Duration(milliseconds: 300),
+      () => _hideControls.value = false,
+    );
+  }
+
   static bool _initialized = false;
 
   /// Loads the native player library. Called lazily so that a broken video
@@ -141,6 +214,41 @@ class PlayerService {
       ),
     );
     return PlayerService._(player, VideoController(player));
+  }
+
+  /// A JPEG frame from a tenth into the local video [path], for a cover.
+  /// Null if the video cannot be read in time.
+  static Future<Uint8List?> thumbnail(String path) async {
+    Player? player;
+    try {
+      ensureInitialized();
+      player = Player(
+        configuration: const PlayerConfiguration(logLevel: MPVLogLevel.error),
+      );
+      // Frames are only decoded with a video output.
+      VideoController(player);
+      await player.setVolume(0);
+      await player.open(Media(path), play: false);
+      const timeout = Duration(seconds: 10);
+      var duration = await player.stream.duration
+          .firstWhere((d) => d > Duration.zero)
+          .timeout(timeout);
+      var at = duration * 0.1;
+      if (at > const Duration(minutes: 1)) at = const Duration(minutes: 1);
+      await player.seek(at);
+      bool reached(Duration p) => p >= at - const Duration(seconds: 1);
+      if (!reached(player.state.position)) {
+        await player.stream.position.firstWhere(reached).timeout(timeout);
+      }
+      // The frame at the new position is drawn after the position updates.
+      await Future.delayed(const Duration(milliseconds: 300));
+      return await player.screenshot(format: 'image/jpeg').timeout(timeout);
+    } catch (e) {
+      Log.warning('Video', 'No thumbnail for $path: $e');
+      return null;
+    } finally {
+      await player?.dispose();
+    }
   }
 
   final Player _player;
@@ -361,13 +469,50 @@ class PlayerService {
       _themes = (_mobileTheme(custom), _desktopTheme(custom));
     }
     var (mobile, desktop) = _themes!;
-    return MaterialVideoControlsTheme(
-      normal: mobile,
-      fullscreen: mobile,
-      child: MaterialDesktopVideoControlsTheme(
-        normal: desktop,
-        fullscreen: desktop,
-        child: video,
+    var hidden = mobile.copyWith(
+      displaySeekBar: false,
+      backdropColor: Colors.transparent,
+      topButtonBar: const [],
+      primaryButtonBar: const [],
+      bottomButtonBar: const [],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => Listener(
+        onPointerDown: (e) => _onPointerDown(e, constraints.maxWidth),
+        onPointerMove: _onPointerMove,
+        onPointerUp: _onPointerUp,
+        onPointerCancel: _onPointerUp,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ValueListenableBuilder(
+              valueListenable: _hideControls,
+              builder: (context, hide, child) {
+                var theme = hide ? hidden : mobile;
+                return MaterialVideoControlsTheme(
+                  normal: theme,
+                  fullscreen: theme,
+                  child: child!,
+                );
+              },
+              child: MaterialDesktopVideoControlsTheme(
+                normal: desktop,
+                fullscreen: desktop,
+                child: video,
+              ),
+            ),
+            ValueListenableBuilder(
+              valueListenable: _speedingUp,
+              builder: (context, speeding, _) => IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: speeding ? 1 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: const _SpeedUpIndicator(_speedUpFactor),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -419,7 +564,9 @@ class PlayerService {
     return MaterialVideoControlsThemeData(
       seekGesture: true,
       seekOnDoubleTap: true,
-      speedUpOnLongPress: true,
+      // Done by [PlayerService], only on the sides.
+      speedUpOnLongPress: false,
+      controlsHoverDuration: _controlsHoverDuration,
       topButtonBar: [
         _bar(custom, (c) => [
           if (c.onBack != null) button(Icons.arrow_back, (_) => c.onBack!()),
@@ -533,6 +680,42 @@ class PlayerService {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _showControlsTimer?.cancel();
+    _longPressTimer?.cancel();
+    _speedingUp.dispose();
+    _hideControls.dispose();
     await _player.dispose();
+  }
+}
+
+class _SpeedUpIndicator extends StatelessWidget {
+  const _SpeedUpIndicator(this.factor);
+
+  final double factor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Container(
+        margin: const EdgeInsets.only(top: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${factor.toStringAsFixed(1)}x',
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.fast_forward, color: Colors.white, size: 20),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -183,7 +183,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       widget.history ??
       HistoryManager().find(
         widget.details.id,
-        ComicType(widget.sourceKey.hashCode),
+        ComicType.fromKey(widget.sourceKey),
       ) ??
       History.fromModel(model: widget.details, ep: 0, page: 0);
 
@@ -325,7 +325,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   LocalComic? get localVideo =>
-      LocalManager().find(widget.details.id, ComicType(widget.sourceKey.hashCode));
+      LocalManager().find(widget.details.id, ComicType.fromKey(widget.sourceKey));
 
   bool isDownloaded(int index, LocalComic? local) {
     if (local == null) return false;

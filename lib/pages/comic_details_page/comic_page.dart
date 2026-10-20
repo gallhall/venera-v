@@ -23,6 +23,7 @@ import 'package:venera/network/cache.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
+import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
@@ -220,6 +221,11 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
       var history = HistoryManager().find(widget.id, ComicType.local);
       if (isFirst) {
         Future.microtask(() {
+          if (isLocalVideo(localComic)) {
+            localComic.read();
+            App.mainNavigatorKey!.currentContext!.pop();
+            return;
+          }
           App.rootContext.to(() {
             return Reader(
               type: ComicType.local,

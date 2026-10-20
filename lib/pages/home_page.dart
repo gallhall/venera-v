@@ -18,6 +18,7 @@ import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
 import 'package:venera/pages/search_page.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/import_comic.dart';
+import 'package:venera/utils/import_video.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -515,6 +516,8 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
       "Select a directory which contains multiple archive files.".tl,
       "Select an EhViewer database and a download folder.".tl,
       "Scan the current local path and restore the local database.".tl,
+      "Select video files. Subtitles and a cover picked with them are matched by name.".tl,
+      "Select a folder of videos. Each video is an episode, in the order of the file names.".tl,
     ][type];
     List<String> importMethods = [
       "Single Comic".tl,
@@ -523,6 +526,8 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
       "Multiple archive files".tl,
       "EhViewer downloads".tl,
       "Restore local downloads".tl,
+      "Video files".tl,
+      "Video folder".tl,
     ];
 
     return ContentDialog(
@@ -575,7 +580,8 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
                       !App.isMacOS &&
                       type != 2 &&
                       type != 3 &&
-                      type != 5)
+                      type != 5 &&
+                      type < 6)
                     CheckboxListTile(
                         enabled: true,
                         title: Text("Copy to app local path".tl),
@@ -632,6 +638,8 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
       3 => await importer.multipleCbz(),
       4 => await importer.ehViewer(),
       5 => await importer.localDownloads(),
+      6 => await ImportVideo(selectedFolder: selectedFolder).files(),
+      7 => await ImportVideo(selectedFolder: selectedFolder).folder(),
       int() => true,
     };
     if (result) {

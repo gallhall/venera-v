@@ -618,14 +618,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
     }
     if (!_isRunning) return;
-    await dir.joinFile(manifestName).writeAsString(
-      jsonEncode({
-        "video": video,
-        "audio": audio,
-        "subtitles": subtitles,
-        "skips": info.skips.map((e) => e.toJson()).toList(),
-        "source": source.name,
-      }),
+    await DownloadedEpisode.write(
+      dir,
+      video: video,
+      audio: audio,
+      subtitles: subtitles,
+      skips: info.skips,
+      source: source.name,
     );
   }
 
@@ -795,6 +794,27 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
 /// An episode saved by [VideoDownloadTask], read back for playback.
 class DownloadedEpisode {
+  /// Writes the manifest of the episode in [dir]. File names are relative
+  /// to [dir]; each subtitle is `{"file", "name", "language"}`.
+  static Future<void> write(
+    Directory dir, {
+    required String video,
+    String? audio,
+    List<Map<String, dynamic>> subtitles = const [],
+    List<VideoSkip> skips = const [],
+    String? source,
+  }) {
+    return dir.joinFile(VideoDownloadTask.manifestName).writeAsString(
+      jsonEncode({
+        "video": video,
+        "audio": audio,
+        "subtitles": subtitles,
+        "skips": skips.map((e) => e.toJson()).toList(),
+        "source": source,
+      }),
+    );
+  }
+
   /// Play info with local file paths.
   static VideoPlayInfo? load(String directory) {
     var file = File(FilePath.join(directory, VideoDownloadTask.manifestName));

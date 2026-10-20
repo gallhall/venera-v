@@ -11,6 +11,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/reader/reader.dart';
+import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/io.dart';
 
@@ -138,7 +139,10 @@ class LocalComic with HistoryMixin implements Comic {
         }
       }
     }
-    if (comicType.comicSource?.isVideoSource ?? false) {
+    // Imported videos have no source; a downloaded one needs its source,
+    // whose key the player uses.
+    if (isLocalVideo(this) &&
+        (comicType == ComicType.local || comicType.comicSource != null)) {
       App.rootContext.to(
         () => VideoPlayerPage(
           sourceKey: sourceKey,

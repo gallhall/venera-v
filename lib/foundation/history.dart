@@ -12,7 +12,9 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/image_provider/image_favorites_provider.dart';
+import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/utils/channel.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
@@ -132,8 +134,22 @@ class History implements Comic {
   int get hashCode => Object.hash(id, type);
 
   /// Video sources keep the playback position in [page] and the duration in
-  /// [maxPage], both in seconds.
-  bool get isVideo => type.comicSource?.isVideoSource ?? false;
+  /// [maxPage], both in seconds. So do imported local videos.
+  bool get isVideo {
+    if (type == ComicType.local) return _isLocalVideo ??= _findLocalVideo();
+    return type.comicSource?.isVideoSource ?? false;
+  }
+
+  bool? _isLocalVideo;
+
+  bool _findLocalVideo() {
+    try {
+      var comic = LocalManager().find(id, ComicType.local);
+      return comic != null && isLocalVideo(comic);
+    } catch (e) {
+      return false;
+    }
+  }
 
   /// `m:ss`, or `h:mm:ss` from one hour.
   static String formatSeconds(int seconds) {
