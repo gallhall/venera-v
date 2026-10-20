@@ -102,12 +102,34 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     return dio;
   }();
 
+  RHttpAdapter? _adapter;
+
+  /// Uses one client for the whole run, so that connections are reused:
+  /// otherwise every segment pays a new TLS handshake, seconds on a slow
+  /// route.
+  Future<void> _openClient() async {
+    _closeClient();
+    try {
+      _adapter = await RHttpAdapter.persistent();
+      _dio.httpClientAdapter = _adapter!;
+    } catch (e) {
+      Log.warning("Download", "Falling back to a client per request: $e");
+    }
+  }
+
+  void _closeClient() {
+    _adapter?.client?.dispose(cancelRunningRequests: true);
+    _adapter = null;
+    _dio.httpClientAdapter = RHttpAdapter();
+  }
+
   @override
   void pause() {
     if (isPaused) return;
     _isRunning = false;
     _message = "Paused";
     stopRecorder();
+    _closeClient();
     notifyListeners();
   }
 
@@ -115,6 +137,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   void cancel() {
     _isRunning = false;
     stopRecorder();
+    _closeClient();
     LocalManager().removeTask(this);
     var dir = path;
     if (dir == null) return;
@@ -137,6 +160,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _isError = true;
     _message = message;
     stopRecorder();
+    _closeClient();
     notifyListeners();
   }
 
@@ -154,6 +178,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _message = "Resuming...";
     notifyListeners();
     runRecorder();
+    await _openClient();
 
     if (comic == null) {
       _message = "Fetching video info...";
@@ -227,6 +252,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
 
     stopRecorder();
+    _closeClient();
     LocalManager().completeTask(this);
   }
 
@@ -546,6 +572,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     void Function(double progress)? onProgress, {
     String? range,
   }) async {
+    // Paused: do not start a new request.
+    if (!_isRunning) return;
     var part = File("${file.path}.part");
     // A byte range is small: download it again rather than resume it.
     var start = range == null && await part.exists() ? await part.length() : 0;

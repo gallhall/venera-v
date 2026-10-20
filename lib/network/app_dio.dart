@@ -175,6 +175,21 @@ class AppDio with DioMixin {
 }
 
 class RHttpAdapter implements HttpClientAdapter {
+  /// A client that keeps its connections open between requests. Without
+  /// one, every request opens a new connection (and TLS handshake).
+  final rhttp.RhttpClient? client;
+
+  RHttpAdapter({this.client});
+
+  /// An adapter with a client of its own, for many requests in a row such
+  /// as a download. Dispose the client when done.
+  static Future<RHttpAdapter> persistent() async {
+    var client = await rhttp.RhttpClient.create(
+      settings: await RHttpAdapter().settings,
+    );
+    return RHttpAdapter(client: client);
+  }
+
   Future<rhttp.ClientSettings> get settings async {
     var proxy = await getProxy();
 
@@ -227,20 +242,33 @@ class RHttpAdapter implements HttpClientAdapter {
       options.headers['User-Agent'] = "venera/v${App.version}";
     }
 
-    var res = await rhttp.Rhttp.request(
-      method: rhttp.HttpMethod(options.method),
-      url: options.uri.toString(),
-      settings: await settings,
-      expectBody: rhttp.HttpExpectBody.stream,
-      body: requestStream == null ? null : rhttp.HttpBody.stream(requestStream),
-      headers: rhttp.HttpHeaders.rawMap(
-        Map.fromEntries(
-          options.headers.entries.map(
-            (e) => MapEntry(e.key, e.value.toString().trim()),
-          ),
+    var method = rhttp.HttpMethod(options.method);
+    var url = options.uri.toString();
+    var body =
+        requestStream == null ? null : rhttp.HttpBody.stream(requestStream);
+    var requestHeaders = rhttp.HttpHeaders.rawMap(
+      Map.fromEntries(
+        options.headers.entries.map(
+          (e) => MapEntry(e.key, e.value.toString().trim()),
         ),
       ),
     );
+    var res = client != null
+        ? await client!.request(
+            method: method,
+            url: url,
+            expectBody: rhttp.HttpExpectBody.stream,
+            body: body,
+            headers: requestHeaders,
+          )
+        : await rhttp.Rhttp.request(
+            method: method,
+            url: url,
+            settings: await settings,
+            expectBody: rhttp.HttpExpectBody.stream,
+            body: body,
+            headers: requestHeaders,
+          );
     if (res is! rhttp.HttpStreamResponse) {
       throw Exception("Invalid response type: ${res.runtimeType}");
     }

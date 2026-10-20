@@ -645,8 +645,16 @@ abstract mixin class _TransferSpeedMixin {
     _bytesSinceLastSecond += length;
   }
 
+  /// Bytes received in each of the last seconds.
+  final _lastSeconds = <int>[];
+
   void onNextSecond(Timer t) {
-    _currentSpeed = _bytesSinceLastSecond;
+    // Average over a few seconds: a single second without data (e.g. while
+    // a connection is set up) would otherwise show 0.
+    _lastSeconds.add(_bytesSinceLastSecond);
+    if (_lastSeconds.length > 5) _lastSeconds.removeAt(0);
+    _currentSpeed =
+        _lastSeconds.fold<int>(0, (a, b) => a + b) ~/ _lastSeconds.length;
     _bytesSinceLastSecond = 0;
   }
 
@@ -663,6 +671,7 @@ abstract mixin class _TransferSpeedMixin {
     timer = null;
     _currentSpeed = 0;
     _bytesSinceLastSecond = 0;
+    _lastSeconds.clear();
   }
 }
 
