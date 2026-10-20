@@ -341,12 +341,19 @@ abstract mixin class _ComicPageActions {
       if (selected == null) return;
       episodes = selected!.map((i) => ids[i]).toList();
     }
+    var quality = await selectDownloadQuality(
+      comicSource,
+      comic.id,
+      episodes?.firstOrNull,
+    );
+    if (quality == null) return;
     LocalManager().addTask(
       VideoDownloadTask(
         source: comicSource,
         videoId: comic.id,
         comic: comic,
         episodes: episodes,
+        quality: quality,
       ),
     );
     App.rootContext.showMessage(message: "Download started".tl);

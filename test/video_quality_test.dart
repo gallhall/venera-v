@@ -106,6 +106,40 @@ void main() {
     var limited = DashManifest.parse(mpd, url, 720);
     expect(limited.video!.id, 'v720');
     expect(limited.audio!.id, 'a128');
+    expect(
+      DashManifest.candidates(DashManifest.parseTracks(mpd, url), 'video')
+          .map((t) => t.resolution),
+      ['1920x1080', '1280x720', '640x360'],
+    );
     expect(DashManifest.parse(mpd, url, 0).video!.id, 'v360');
+  });
+
+  test('HLS variants with their resolutions', () {
+    var base = Uri.parse('https://cdn.example.com/master.m3u8');
+    const master = '''#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1639x921
+a.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=900000
+b.m3u8
+''';
+    var variants = HlsPlaylist.variants(master, base);
+    expect(variants.map((v) => v.height), [921, null]);
+    expect(variants.first.resolution, '1639x921');
+    expect(variants.last.uri.toString(), 'https://cdn.example.com/b.m3u8');
+  });
+
+  test('distinct levels, highest first, keeping resolutions', () {
+    var levels = VideoQualityLevel.distinct([
+      const VideoQualityLevel(720),
+      const VideoQualityLevel(1080, '1920x1080'),
+      const VideoQualityLevel(720, '1280x720'),
+      const VideoQualityLevel(1080),
+    ]);
+    expect(levels.map((l) => (l.height, l.resolution)), [
+      (1080, '1920x1080'),
+      (720, '1280x720'),
+    ]);
+    expect(levels.first.value, '1080');
+    expect(VideoQuality.maxHeight(levels.first.value), 1080);
   });
 }
