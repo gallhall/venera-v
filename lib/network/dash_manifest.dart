@@ -4,6 +4,8 @@ library;
 
 import 'package:xml/xml.dart';
 
+import 'video_quality.dart';
+
 /// A file or a byte range of a file.
 class DashSegment {
   final Uri uri;
@@ -29,6 +31,9 @@ class DashTrack {
 
   final int bandwidth;
 
+  /// The short side of the resolution, for video tracks that tell it.
+  final int? height;
+
   /// Null if the media segments initialize themselves.
   final DashSegment? init;
 
@@ -40,6 +45,7 @@ class DashTrack {
     required this.mimeType,
     this.codecs,
     required this.bandwidth,
+    this.height,
     this.init,
     required this.segments,
   });
@@ -62,9 +68,11 @@ class DashSelection {
 }
 
 class DashManifest {
-  /// Picks the representation with the highest bandwidth for video and for
-  /// audio, preferring MP4 ones, which can be merged into one file.
-  static DashSelection parse(String text, Uri url) {
+  /// Picks the video representation that best matches [maxHeight] (see
+  /// [VideoQuality.sort]) and the audio one with the highest bandwidth,
+  /// preferring MP4 ones, which can be merged into one file. Without a
+  /// limit the video one with the highest bandwidth is picked.
+  static DashSelection parse(String text, Uri url, [int? maxHeight]) {
     var mpd = XmlDocument.parse(text).rootElement;
     if (mpd.localName != 'MPD') {
       throw const FormatException('Not a DASH manifest');
@@ -112,6 +120,14 @@ class DashManifest {
           mimeType: mimeType,
           codecs: rep.getAttribute('codecs') ?? set.getAttribute('codecs'),
           bandwidth: bandwidth,
+          height: VideoQuality.heightFromResolution(
+            int.tryParse(
+              rep.getAttribute('width') ?? set.getAttribute('width') ?? '',
+            ),
+            int.tryParse(
+              rep.getAttribute('height') ?? set.getAttribute('height') ?? '',
+            ),
+          ),
           init: init,
           segments: segments,
         ));
@@ -123,8 +139,13 @@ class DashManifest {
       if (list.any((t) => t.isMp4)) {
         list = list.where((t) => t.isMp4).toList();
       }
-      list.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
-      return list.firstOrNull;
+      var limit = kind == 'video' ? maxHeight : null;
+      return VideoQuality.sort(
+        list,
+        limit,
+        height: (t) => limit == null ? null : t.height,
+        bandwidth: (t) => t.bandwidth,
+      ).firstOrNull;
     }
 
     var selection = DashSelection(best('video'), best('audio'));
