@@ -1008,7 +1008,8 @@ class ComicListState extends State<ComicList> {
   }
 
   void storeState() {
-    if (enablePageStorage) {
+    // A page may finish loading after the list was closed.
+    if (enablePageStorage && mounted) {
       PageStorage.of(context).writeState(context, state);
     }
   }
