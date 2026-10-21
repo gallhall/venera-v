@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -79,12 +78,16 @@ class PlayerTracks {
 class PlayerControlAction {
   final IconData icon;
 
+  /// Tooltip, and the menu entry when the button does not fit.
+  final String label;
+
   final void Function(BuildContext context) onPressed;
 
-  const PlayerControlAction(this.icon, this.onPressed);
+  const PlayerControlAction(this.icon, this.label, this.onPressed);
 }
 
-/// Additions to the default player controls.
+/// Additions to the player controls: `VideoControls` on phones, media_kit's
+/// controls on desktop.
 class PlayerControls {
   final String? title;
 
@@ -155,78 +158,6 @@ abstract interface class VideoPlayback {
 /// without touching the UI.
 class PlayerService implements VideoPlayback {
   PlayerService._(this._player, this._controller);
-
-  static const _speedUpFactor = 2.0;
-
-  static const _controlsHoverDuration = Duration(seconds: 3);
-
-  /// Whether a long press on the left or right third plays faster.
-  final _speedingUp = ValueNotifier(false);
-
-  /// The press also shows or hides the controls, which would cover the
-  /// speed indicator: they are drawn empty while it plays faster, and until
-  /// they would have hidden again.
-  final _hideControls = ValueNotifier(false);
-
-  /// The touch that may become a long press.
-  int? _pressPointer;
-
-  Offset _pressPosition = Offset.zero;
-
-  Timer? _longPressTimer;
-
-  Timer? _showControlsTimer;
-
-  double _rateBeforeSpeedUp = 1.0;
-
-  void _onPointerDown(PointerDownEvent e, double width) {
-    if (e.kind != PointerDeviceKind.touch) return;
-    if (_pressPointer != null) {
-      // A second finger: not a long press.
-      _cancelPress();
-      return;
-    }
-    // The middle third shows the controls, like a tap.
-    var x = e.localPosition.dx;
-    if (x > width / 3 && x < width * 2 / 3) return;
-    _pressPointer = e.pointer;
-    _pressPosition = e.localPosition;
-    _longPressTimer = Timer(kLongPressTimeout, _startSpeedUp);
-  }
-
-  void _onPointerMove(PointerMoveEvent e) {
-    if (e.pointer != _pressPointer || _speedingUp.value) return;
-    if ((e.localPosition - _pressPosition).distance > kTouchSlop) {
-      _cancelPress();
-    }
-  }
-
-  void _onPointerUp(PointerEvent e) {
-    if (e.pointer == _pressPointer) _cancelPress();
-  }
-
-  void _startSpeedUp() {
-    _longPressTimer = null;
-    _rateBeforeSpeedUp = _player.state.rate;
-    _player.setRate(_speedUpFactor);
-    _showControlsTimer?.cancel();
-    _hideControls.value = true;
-    _speedingUp.value = true;
-  }
-
-  void _cancelPress() {
-    _longPressTimer?.cancel();
-    _longPressTimer = null;
-    _pressPointer = null;
-    if (!_speedingUp.value) return;
-    _speedingUp.value = false;
-    _player.setRate(_rateBeforeSpeedUp);
-    _showControlsTimer?.cancel();
-    _showControlsTimer = Timer(
-      _controlsHoverDuration + const Duration(milliseconds: 300),
-      () => _hideControls.value = false,
-    );
-  }
 
   static bool _initialized = false;
 
@@ -346,6 +277,16 @@ class PlayerService implements VideoPlayback {
   @override
   Duration get currentPosition => _player.state.position;
 
+  Duration get currentDuration => _player.state.duration;
+
+  Duration get currentBuffer => _player.state.buffer;
+
+  bool get isPlaying => _player.state.playing;
+
+  bool get isBuffering => _player.state.buffering;
+
+  double get currentRate => _player.state.rate;
+
   /// The proxy applied to the last opened stream, null for direct.
   String? appliedProxy;
 
@@ -426,8 +367,9 @@ class PlayerService implements VideoPlayback {
       headers['User-Agent'] = webUA;
     }
     if (!hasHeader('cookie')) {
-      var cookie = SingleInstanceCookieJar.instance
-          ?.loadForRequestCookieHeader(uri);
+      var cookie = SingleInstanceCookieJar.instance?.loadForRequestCookieHeader(
+        uri,
+      );
       if (cookie != null && cookie.isNotEmpty) {
         headers['Cookie'] = cookie;
       }
@@ -513,8 +455,10 @@ class PlayerService implements VideoPlayback {
     await _player.setSubtitleTrack(track);
   }
 
-  /// The video view. [custom] adds a title, episode navigation, extra
-  /// buttons and page fullscreen to the default controls.
+  /// The video view. With [controls], media_kit's controls are drawn over
+  /// it; on phones the page draws `VideoControls` instead. [custom] adds a
+  /// title, episode navigation, extra buttons and page fullscreen to the
+  /// desktop controls.
   ///
   /// The controls are themed once and listen to [custom]: media_kit's
   /// theme widgets do not notify the controls when the theme changes.
@@ -531,61 +475,18 @@ class PlayerService implements VideoPlayback {
     if (!controls || custom == null) return video;
     if (!identical(custom, _themedControls)) {
       _themedControls = custom;
-      _themes = (_mobileTheme(custom), _desktopTheme(custom));
+      _desktopControls = _desktopTheme(custom);
     }
-    var (mobile, desktop) = _themes!;
-    var hidden = mobile.copyWith(
-      displaySeekBar: false,
-      backdropColor: Colors.transparent,
-      topButtonBar: const [],
-      primaryButtonBar: const [],
-      bottomButtonBar: const [],
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) => Listener(
-        onPointerDown: (e) => _onPointerDown(e, constraints.maxWidth),
-        onPointerMove: _onPointerMove,
-        onPointerUp: _onPointerUp,
-        onPointerCancel: _onPointerUp,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ValueListenableBuilder(
-              valueListenable: _hideControls,
-              builder: (context, hide, child) {
-                var theme = hide ? hidden : mobile;
-                return MaterialVideoControlsTheme(
-                  normal: theme,
-                  fullscreen: theme,
-                  child: child!,
-                );
-              },
-              child: MaterialDesktopVideoControlsTheme(
-                normal: desktop,
-                fullscreen: desktop,
-                child: video,
-              ),
-            ),
-            ValueListenableBuilder(
-              valueListenable: _speedingUp,
-              builder: (context, speeding, _) => IgnorePointer(
-                child: AnimatedOpacity(
-                  opacity: speeding ? 1 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: const _SpeedUpIndicator(_speedUpFactor),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return MaterialDesktopVideoControlsTheme(
+      normal: _desktopControls!,
+      fullscreen: _desktopControls!,
+      child: video,
     );
   }
 
   ValueListenable<PlayerControls>? _themedControls;
 
-  (MaterialVideoControlsThemeData, MaterialDesktopVideoControlsThemeData)?
-  _themes;
+  MaterialDesktopVideoControlsThemeData? _desktopControls;
 
   /// A button bar that is rebuilt when [custom] changes.
   static Widget _bar(
@@ -613,56 +514,6 @@ class PlayerService implements VideoPlayback {
 
   static IconData _fullscreenIcon(PlayerControls c) =>
       c.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen;
-
-  static MaterialVideoControlsThemeData _mobileTheme(
-    ValueListenable<PlayerControls> custom,
-  ) {
-    Widget button(IconData icon, void Function(BuildContext) onPressed) {
-      return Builder(
-        builder: (context) => MaterialCustomButton(
-          icon: Icon(icon),
-          onPressed: () => onPressed(context),
-        ),
-      );
-    }
-
-    return MaterialVideoControlsThemeData(
-      seekGesture: true,
-      seekOnDoubleTap: true,
-      // Done by [PlayerService], only on the sides.
-      speedUpOnLongPress: false,
-      controlsHoverDuration: _controlsHoverDuration,
-      topButtonBar: [
-        _bar(custom, (c) => [
-          if (c.onBack != null) button(Icons.arrow_back, (_) => c.onBack!()),
-          _title(c),
-          for (var a in c.actions) button(a.icon, a.onPressed),
-        ]),
-      ],
-      primaryButtonBar: [
-        _bar(custom, (c) => [
-          const Spacer(flex: 2),
-          if (c.onPrevious != null)
-            button(Icons.skip_previous, (_) => c.onPrevious!()),
-          const Spacer(),
-          const MaterialPlayOrPauseButton(iconSize: 48.0),
-          const Spacer(),
-          if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
-          const Spacer(flex: 2),
-        ]),
-      ],
-      bottomButtonBar: [
-        _bar(custom, (c) => [
-          const MaterialPositionIndicator(),
-          const Spacer(),
-          if (c.onToggleFullscreen != null)
-            button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
-          else
-            const MaterialFullscreenButton(),
-        ]),
-      ],
-    );
-  }
 
   MaterialDesktopVideoControlsThemeData _desktopTheme(
     ValueListenable<PlayerControls> custom,
@@ -715,29 +566,35 @@ class PlayerService implements VideoPlayback {
       // A double click would open the engine's fullscreen route.
       toggleFullscreenOnDoublePress: !pageFullscreen,
       topButtonBar: [
-        _bar(custom, (c) => [
-          if (c.isFullscreen) ...[
-            button(Icons.arrow_back, (_) => c.onToggleFullscreen?.call()),
-            const SizedBox(width: 8),
-            _title(c),
+        _bar(
+          custom,
+          (c) => [
+            if (c.isFullscreen) ...[
+              button(Icons.arrow_back, (_) => c.onToggleFullscreen?.call()),
+              const SizedBox(width: 8),
+              _title(c),
+            ],
           ],
-        ]),
+        ),
       ],
       bottomButtonBar: [
-        _bar(custom, (c) => [
-          if (c.onPrevious != null)
-            button(Icons.skip_previous, (_) => c.onPrevious!()),
-          const MaterialDesktopPlayOrPauseButton(),
-          if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
-          const MaterialDesktopVolumeButton(),
-          const MaterialDesktopPositionIndicator(),
-          const Spacer(),
-          for (var a in c.actions) button(a.icon, a.onPressed),
-          if (c.onToggleFullscreen != null)
-            button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
-          else
-            const MaterialDesktopFullscreenButton(),
-        ]),
+        _bar(
+          custom,
+          (c) => [
+            if (c.onPrevious != null)
+              button(Icons.skip_previous, (_) => c.onPrevious!()),
+            const MaterialDesktopPlayOrPauseButton(),
+            if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
+            const MaterialDesktopVolumeButton(),
+            const MaterialDesktopPositionIndicator(),
+            const Spacer(),
+            for (var a in c.actions) button(a.icon, a.onPressed),
+            if (c.onToggleFullscreen != null)
+              button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
+            else
+              const MaterialDesktopFullscreenButton(),
+          ],
+        ),
       ],
     );
   }
@@ -746,42 +603,6 @@ class PlayerService implements VideoPlayback {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _showControlsTimer?.cancel();
-    _longPressTimer?.cancel();
-    _speedingUp.dispose();
-    _hideControls.dispose();
     await _player.dispose();
-  }
-}
-
-class _SpeedUpIndicator extends StatelessWidget {
-  const _SpeedUpIndicator(this.factor);
-
-  final double factor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Container(
-        margin: const EdgeInsets.only(top: 24),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${factor.toStringAsFixed(1)}x',
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.fast_forward, color: Colors.white, size: 20),
-          ],
-        ),
-      ),
-    );
   }
 }

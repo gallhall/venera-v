@@ -15,7 +15,7 @@ import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/network/download.dart';
-import 'package:venera/pages/video/video_gestures.dart';
+import 'package:venera/pages/video/video_controls.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -299,30 +299,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     subscriptions.addAll([
       p.errors.listen(ifActive(onPlayerError)),
-      p.duration.listen(ifActive((d) {
-        duration = d;
-        if (d > Duration.zero && !started) {
-          started = true;
-          // The seek to the start position may not be applied yet.
-          saveHistory(position: openedAt);
-        }
-      })),
-      p.playing.listen(ifActive((playing) {
-        historyTimer?.cancel();
-        if (playing) {
-          historyTimer = Timer.periodic(
-            const Duration(seconds: 15),
-            (_) => saveHistory(),
-          );
-        } else {
-          saveHistory();
-        }
-      })),
-      p.completed.listen(ifActive((completed) {
-        if (!completed || !started || isLoading) return;
-        saveHistory(position: duration);
-        if (hasNext) loadEpisode(current + 1);
-      })),
+      p.duration.listen(
+        ifActive((d) {
+          duration = d;
+          if (d > Duration.zero && !started) {
+            started = true;
+            // The seek to the start position may not be applied yet.
+            saveHistory(position: openedAt);
+          }
+        }),
+      ),
+      p.playing.listen(
+        ifActive((playing) {
+          historyTimer?.cancel();
+          if (playing) {
+            historyTimer = Timer.periodic(
+              const Duration(seconds: 15),
+              (_) => saveHistory(),
+            );
+          } else {
+            saveHistory();
+          }
+        }),
+      ),
+      p.completed.listen(
+        ifActive((completed) {
+          if (!completed || !started || isLoading) return;
+          saveHistory(position: duration);
+          if (hasNext) loadEpisode(current + 1);
+        }),
+      ),
       p.rate.listen(ifActive((v) => setState(() => rate = v))),
       p.position.listen(ifActive(checkSkip)),
     ]);
@@ -377,8 +383,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return position;
   }
 
-  LocalComic? get localVideo =>
-      LocalManager().find(widget.details.id, ComicType.fromKey(widget.sourceKey));
+  LocalComic? get localVideo => LocalManager().find(
+    widget.details.id,
+    ComicType.fromKey(widget.sourceKey),
+  );
 
   bool isDownloaded(int index, LocalComic? local) {
     if (local == null) return false;
@@ -512,7 +520,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       // Try the same stream with media_kit, which plays more formats.
       Log.info('Video', 'The system player failed, using media_kit');
       nativeFailedSources.add(sourceIndex);
-      openSource(sourceIndex, start: openedAt == Duration.zero ? null : openedAt);
+      openSource(
+        sourceIndex,
+        start: openedAt == Duration.zero ? null : openedAt,
+      );
       return;
     }
     // Opening a stream takes several requests (a DASH stream fetches every
@@ -559,8 +570,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     } else if (App.isMobile) {
       if (value) {
         await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        var portrait =
-            videoSize != null && videoSize.height > videoSize.width;
+        var portrait = videoSize != null && videoSize.height > videoSize.width;
         await SystemChrome.setPreferredOrientations(
           portrait
               ? [DeviceOrientation.portraitUp]
@@ -682,9 +692,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               const SizedBox(height: 8),
               SwitchListTile(
                 title: Text("Skip intro and outro automatically".tl),
-                subtitle: Text(
-                  "Only when the video source marks them".tl,
-                ),
+                subtitle: Text("Only when the video source marks them".tl),
                 value: appdata.settings['videoAutoSkip'] == true,
                 onChanged: (v) {
                   appdata.settings['videoAutoSkip'] = v;
@@ -754,7 +762,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       },
       actions: [
         if (episodes.length > 1)
-          PlayerControlAction(Icons.format_list_numbered, (context) async {
+          PlayerControlAction(Icons.format_list_numbered, "Episodes".tl, (
+            context,
+          ) async {
             var i = await pick(context, "Episodes".tl, {
               for (int i = 0; i < episodes.length; i++)
                 i: episodeLabel(episodes[i]),
@@ -762,14 +772,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (i != null && i != current) loadEpisode(i);
           }),
         if (info != null && info.sources.length > 1)
-          PlayerControlAction(Icons.hd_outlined, (context) async {
+          PlayerControlAction(Icons.hd_outlined, "Source".tl, (context) async {
             var i = await pick(context, "Source".tl, {
               for (int i = 0; i < info.sources.length; i++)
                 i: info.sources[i].name,
             }, sourceIndex);
             if (i != null) switchSource(i);
           }),
-        PlayerControlAction(Icons.speed, (context) async {
+        PlayerControlAction(Icons.speed, "Speed".tl, (context) async {
           var r = await pick(context, "Speed".tl, {
             for (var r in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0])
               r: '${r}x',
@@ -777,22 +787,30 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (r != null) setRate(r);
         }),
         if (p != null && tracks.audio.length > 3)
-          PlayerControlAction(Icons.audiotrack_outlined, (context) async {
+          PlayerControlAction(Icons.audiotrack_outlined, "Audio Track".tl, (
+            context,
+          ) async {
             var id = await pick(context, "Audio Track".tl, {
               for (var t in tracks.audio) t.id: t.label,
             }, p.currentAudioTrack);
             if (id != null) p.selectAudioTrack(id);
           }),
         if (p != null && tracks.subtitle.length > 2)
-          PlayerControlAction(Icons.subtitles_outlined, (context) async {
+          PlayerControlAction(Icons.subtitles_outlined, "Subtitle".tl, (
+            context,
+          ) async {
             var id = await pick(context, "Subtitle".tl, {
               for (var t in tracks.subtitle) t.id: t.label,
             }, p.currentSubtitleTrack);
             if (id != null) p.selectSubtitleTrack(id);
           }),
-        PlayerControlAction(Icons.tune, showPlayerSettings),
+        PlayerControlAction(
+          Icons.tune,
+          "Player Settings".tl,
+          showPlayerSettings,
+        ),
         if (App.isMobile)
-          PlayerControlAction(Icons.lock_outline, (_) => lock()),
+          PlayerControlAction(Icons.lock_outline, "Lock".tl, (_) => lock()),
       ],
     );
   }
@@ -897,8 +915,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     Widget view;
     if (p != null && identical(active, p)) {
       isMediaKit = true;
-      view = p.buildView(custom: controls, fit: fit);
-      if (App.isMobile) view = VideoGestureLayer(child: view);
+      if (App.isMobile) {
+        view = VideoControls(
+          player: p,
+          controls: controls,
+          child: p.buildView(controls: false, fit: fit),
+        );
+      } else {
+        view = p.buildView(custom: controls, fit: fit);
+      }
     } else {
       view = native?.buildView() ?? const SizedBox();
     }
@@ -909,9 +934,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         children: [
           view,
           if (isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
           if (currentSkip != null && !isLocked && isMediaKit)
             Positioned(
               right: 16,
