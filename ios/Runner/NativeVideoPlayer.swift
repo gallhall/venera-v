@@ -332,14 +332,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     vc.modalPresentationStyle = .fullScreen
     // Grows out of the video in the page and shrinks back into it, with
     // the system zoom transition (iOS 18), like fullscreen in Safari.
-    // Only the close button leaves fullscreen: the transition's swipe and
-    // pinch to dismiss would catch touches meant for the player.
     if #available(iOS 18.0, *) {
-      let options = UIViewController.Transition.ZoomOptions()
-      options.interactiveDismissShouldBegin = { _ in false }
-      vc.preferredTransition = .zoom(options: options) { [weak self] _ in
-        self?.controller?.view
-      }
+      vc.preferredTransition = .zoom { [weak self] _ in self?.controller?.view }
     } else {
       vc.modalTransitionStyle = .crossDissolve
     }

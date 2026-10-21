@@ -79,6 +79,12 @@ class _VideoControlsState extends State<VideoControls> {
   /// Mouse and keyboard rather than touch.
   final desktop = App.isDesktop;
 
+  /// Whether the volume keys show the controls' own indicator. Not on iOS:
+  /// the plugin sets the app's audio session to mix with others while it
+  /// listens and deactivates it when it stops, which pauses the system
+  /// player. The volume is read when a swipe starts instead.
+  final listensVolumeKeys = App.isAndroid;
+
   final focusNode = FocusNode();
 
   final subscriptions = <StreamSubscription>[];
@@ -183,7 +189,7 @@ class _VideoControlsState extends State<VideoControls> {
       volume = ((mediaKit?.currentVolume ?? 100) / 100).clamp(0.0, 1.0);
       return;
     }
-    if (widget.enabled) startVolumeListener();
+    if (widget.enabled && listensVolumeKeys) startVolumeListener();
     ScreenBrightness.instance.application
         .then((v) {
           if (mounted && swipeLevel == null) brightness = v;
@@ -203,7 +209,7 @@ class _VideoControlsState extends State<VideoControls> {
     seekingToTimer?.cancel();
     levelTimer?.cancel();
     focusNode.dispose();
-    if (!desktop) stopVolumeListener();
+    if (listensVolumeKeys) stopVolumeListener();
     if (brightnessChanged) {
       ScreenBrightness.instance.resetApplicationScreenBrightness().catchError(
         (Object e) => Log.warning('Video', 'Failed to reset brightness: $e'),
@@ -217,7 +223,7 @@ class _VideoControlsState extends State<VideoControls> {
     super.didUpdateWidget(oldWidget);
     if (widget.enabled == oldWidget.enabled) return;
     if (widget.enabled) {
-      if (!desktop) startVolumeListener();
+      if (listensVolumeKeys) startVolumeListener();
       setVisible(true);
       return;
     }
@@ -233,7 +239,7 @@ class _VideoControlsState extends State<VideoControls> {
       seekSide = 0;
     });
     setVisible(false);
-    if (!desktop) stopVolumeListener();
+    if (listensVolumeKeys) stopVolumeListener();
   }
 
   /// The controls show their own indicator, also for the volume keys.
@@ -475,15 +481,29 @@ class _VideoControlsState extends State<VideoControls> {
         ? _Level.brightness
         : _Level.volume;
     levelTimer?.cancel();
+    swipeMoved = false;
     setState(() {
       swipeLevel = shownLevel = level;
       showLevel = true;
     });
+    if (level == _Level.volume && !listensVolumeKeys) {
+      // The volume keys may have changed it since.
+      VolumeController.instance
+          .getVolume()
+          .then((v) {
+            if (mounted && !swipeMoved) setState(() => volume = v);
+          })
+          .catchError((Object e) {});
+    }
   }
+
+  /// Whether the current vertical swipe changed a value yet.
+  bool swipeMoved = false;
 
   void onVerticalUpdate(DragUpdateDetails details, double height) {
     var level = swipeLevel;
     if (level == null) return;
+    swipeMoved = true;
     // Swiping over the whole height changes the value by 1.
     var delta = -(details.primaryDelta ?? 0) / height;
     if (level == _Level.volume) {
