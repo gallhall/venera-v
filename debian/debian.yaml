@@ -9,7 +9,8 @@ control:
   Version: {{Version}}
   Architecture: {{Architecture}}
   Priority: optional
-  Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libepoxy0
+  # The rest after libasound2 are the libraries the bundled libmpv links.
+  Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libepoxy0, libasound2, libfontconfig1, libharfbuzz0b, libfribidi0, libfreetype6, liblzma5, zlib1g, libva2, libva-drm2, libva-x11-2, libva-wayland2, libvdpau1, libdrm2, libgbm1, libegl1, libx11-6, libxcb1, libxext6, libxfixes3, libxrandr2, libxss1, libxv1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libgnutls30, libunwind8, liblcms2-2, libarchive13, libpulse0
   Maintainer: gallhall
   Description: venera-v
   

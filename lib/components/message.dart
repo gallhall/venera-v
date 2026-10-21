@@ -42,8 +42,11 @@ class _ToastOverlay extends StatelessWidget {
           color: Theme.of(context).colorScheme.inverseSurface,
           borderRadius: BorderRadius.circular(8),
           elevation: 2,
-          textStyle:
-              ts.withColor(Theme.of(context).colorScheme.onInverseSurface),
+          // From the theme, which sets the font: the overlay is above the
+          // pages' default text style.
+          textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onInverseSurface,
+              ),
           child: IconTheme(
             data: IconThemeData(
                 color: Theme.of(context).colorScheme.onInverseSurface),
