@@ -380,6 +380,23 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   func playerViewController(
     _ playerViewController: AVPlayerViewController,
+    willEndFullScreenPresentationWithAnimationCoordinator coordinator:
+      UIViewControllerTransitionCoordinator
+  ) {
+    guard playerViewController === fullscreenController else { return }
+    // The close button only ends AVKit's own fullscreen presentation: with
+    // the zoom transition, the presented player then stays, without its
+    // controls. Close it as the swipe down does.
+    coordinator.animate(alongsideTransition: nil) { [weak playerViewController] context in
+      guard let vc = playerViewController, !context.isCancelled else { return }
+      if vc.presentingViewController != nil && !vc.isBeingDismissed {
+        vc.dismiss(animated: true)
+      }
+    }
+  }
+
+  func playerViewController(
+    _ playerViewController: AVPlayerViewController,
     restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler:
       @escaping (Bool) -> Void
   ) {
