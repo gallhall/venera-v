@@ -184,8 +184,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   bool get hasNext => current < episodes.length - 1;
 
   /// Android phones show the player from the top edge without an app bar;
-  /// the player then has its own back button. On iOS the system player has
-  /// its own buttons at the top.
+  /// the player then has its own back button.
   bool get isEdgeToEdge => App.isAndroid;
 
   /// Whether the page has no app bar, set on each build.
@@ -251,7 +250,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (id == 'skip') skipCurrent();
         }),
         // Speeds picked in the system player are remembered as well.
-        n.rate.listen((v) {
+        n.pickedRate.listen((v) {
           if (!identical(active, n)) return;
           appdata.settings['videoPlaybackRate'] = v;
           appdata.saveData();
@@ -587,6 +586,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void setFullscreen(bool value) {
+    // The system player has its own fullscreen, with its own controls.
+    var n = native;
+    if (value && n != null && identical(active, n)) {
+      n.enterFullscreen();
+      return;
+    }
     if (value == isFullscreen) return;
     setState(() {
       isFullscreen = value;
@@ -911,17 +916,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Widget buildPlayer() {
     var p = player;
-    var isMediaKit = false;
+    var a = active;
     Widget view;
-    if (p != null && identical(active, p)) {
-      isMediaKit = true;
-      view = VideoControls(
-        player: p,
-        controls: controls,
-        child: p.buildView(controls: false, fit: fit),
-      );
+    if (p != null && identical(a, p)) {
+      view = p.buildView(controls: false, fit: fit);
     } else {
       view = native?.buildView() ?? const SizedBox();
+    }
+    if (a != null) {
+      view = VideoControls(
+        // New controls for the other engine.
+        key: ObjectKey(a),
+        player: a,
+        controls: controls,
+        child: view,
+      );
     }
     return ColoredBox(
       color: Colors.black,
@@ -931,7 +940,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           view,
           if (isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.white)),
-          if (currentSkip != null && !isLocked && isMediaKit)
+          if (currentSkip != null && !isLocked)
             Positioned(
               right: 16,
               bottom: 64,

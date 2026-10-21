@@ -130,7 +130,21 @@ abstract interface class VideoPlayback {
 
   Stream<String> get errors;
 
+  /// Whether playback waits for data.
+  Stream<bool> get buffering;
+
   Duration get currentPosition;
+
+  Duration get currentDuration;
+
+  /// How far the stream is loaded.
+  Duration get currentBuffer;
+
+  bool get isPlaying;
+
+  bool get isBuffering;
+
+  double get currentRate;
 
   Future<void> open(
     VideoStreamRequest request, {
@@ -141,6 +155,8 @@ abstract interface class VideoPlayback {
   Future<void> play();
 
   Future<void> pause();
+
+  Future<void> playOrPause();
 
   Future<void> seek(Duration position);
 
@@ -230,6 +246,7 @@ class PlayerService implements VideoPlayback {
   @override
   Stream<bool> get playing => _player.stream.playing;
 
+  @override
   Stream<bool> get buffering => _player.stream.buffering;
 
   @override
@@ -274,14 +291,19 @@ class PlayerService implements VideoPlayback {
   @override
   Duration get currentPosition => _player.state.position;
 
+  @override
   Duration get currentDuration => _player.state.duration;
 
+  @override
   Duration get currentBuffer => _player.state.buffer;
 
+  @override
   bool get isPlaying => _player.state.playing;
 
+  @override
   bool get isBuffering => _player.state.buffering;
 
+  @override
   double get currentRate => _player.state.rate;
 
   /// 0 to 100.
@@ -433,6 +455,7 @@ class PlayerService implements VideoPlayback {
   @override
   Future<void> pause() => _player.pause();
 
+  @override
   Future<void> playOrPause() => _player.playOrPause();
 
   @override

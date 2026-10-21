@@ -13,7 +13,7 @@ import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:volume_controller/volume_controller.dart';
 
-/// Controls for the media_kit player, laid out like the players of video
+/// Controls for the video player, laid out like the players of video
 /// apps such as Kazumi and PiliPlus. All gestures go through a single
 /// detector, so none of them waits on another. On phones:
 ///
@@ -37,7 +37,8 @@ class VideoControls extends StatefulWidget {
     required this.child,
   });
 
-  final PlayerService player;
+  /// media_kit, or the iOS system player.
+  final VideoPlayback player;
 
   final ValueListenable<PlayerControls> controls;
 
@@ -62,7 +63,13 @@ class _VideoControlsState extends State<VideoControls> {
 
   static const _speedUpFactor = 2.0;
 
-  PlayerService get player => widget.player;
+  VideoPlayback get player => widget.player;
+
+  /// The player volume, only set on desktop where media_kit always plays.
+  PlayerService? get mediaKit {
+    var p = player;
+    return p is PlayerService ? p : null;
+  }
 
   /// Mouse and keyboard rather than touch.
   final desktop = App.isDesktop;
@@ -168,7 +175,7 @@ class _VideoControlsState extends State<VideoControls> {
     ]);
     scheduleHide();
     if (desktop) {
-      volume = (player.currentVolume / 100).clamp(0.0, 1.0);
+      volume = ((mediaKit?.currentVolume ?? 100) / 100).clamp(0.0, 1.0);
       return;
     }
     // The controls show their own indicator, also for the volume keys.
@@ -235,7 +242,7 @@ class _VideoControlsState extends State<VideoControls> {
     value = value.clamp(0.0, 1.0);
     setState(() => volume = value);
     if (desktop) {
-      player.setVolume(value * 100);
+      mediaKit?.setVolume(value * 100);
     } else {
       VolumeController.instance.setVolume(value).catchError((Object e) {});
     }

@@ -33,9 +33,10 @@ class NativePlayerAction {
   int get hashCode => Object.hash(id, title, icon);
 }
 
-/// The iOS system player (AVPlayerViewController) of
-/// ios/Runner/NativeVideoPlayer.swift, shown in the page by [buildView]. Its
-/// own fullscreen button opens the system fullscreen player.
+/// The iOS system player (AVPlayer) of ios/Runner/NativeVideoPlayer.swift.
+/// In the page, [buildView] shows only the video, under the app's own
+/// controls; [enterFullscreen] opens the system fullscreen player with its
+/// controls.
 ///
 /// Only one instance should exist at a time.
 class NativeVideoPlayer implements VideoPlayback {
@@ -100,7 +101,21 @@ class NativeVideoPlayer implements VideoPlayback {
 
   final _actions = StreamController<String>.broadcast();
 
+  final _buffering = StreamController<bool>.broadcast();
+
+  final _pickedRate = StreamController<double>.broadcast();
+
+  final _fullscreen = StreamController<bool>.broadcast();
+
   Duration _currentPosition = Duration.zero;
+
+  Duration _currentDuration = Duration.zero;
+
+  Duration _currentBuffer = Duration.zero;
+
+  bool _isPlaying = false;
+
+  bool _isBuffering = false;
 
   double _currentRate = 1.0;
 
@@ -137,20 +152,57 @@ class NativeVideoPlayer implements VideoPlayback {
   @override
   Duration get currentPosition => _currentPosition;
 
+  @override
+  Stream<bool> get buffering => _buffering.stream;
+
+  /// Speeds picked in the system player's own menu.
+  Stream<double> get pickedRate => _pickedRate.stream;
+
+  /// Whether the system fullscreen player is shown.
+  Stream<bool> get fullscreen => _fullscreen.stream;
+
+  @override
+  Duration get currentDuration => _currentDuration;
+
+  @override
+  Duration get currentBuffer => _currentBuffer;
+
+  @override
+  bool get isPlaying => _isPlaying;
+
+  @override
+  bool get isBuffering => _isBuffering;
+
+  @override
+  double get currentRate => _currentRate;
+
   void _onEvent(dynamic event) {
     if (event is! Map || _disposed) return;
     Duration ms() => Duration(milliseconds: (event['ms'] as num).toInt());
     switch (event['event']) {
       case 'position':
         _currentPosition = ms();
+        var buffer = event['bufferMs'];
+        if (buffer is num) {
+          _currentBuffer = Duration(milliseconds: buffer.toInt());
+        }
         _position.add(_currentPosition);
       case 'duration':
-        _duration.add(ms());
+        _currentDuration = ms();
+        _duration.add(_currentDuration);
       case 'playing':
-        _playing.add(event['value'] == true);
+        _isPlaying = event['value'] == true;
+        _playing.add(_isPlaying);
+      case 'buffering':
+        _isBuffering = event['value'] == true;
+        _buffering.add(_isBuffering);
       case 'rate':
+        // Only sent for a speed picked in the system player.
         _currentRate = (event['value'] as num).toDouble();
         _rate.add(_currentRate);
+        _pickedRate.add(_currentRate);
+      case 'fullscreen':
+        _fullscreen.add(event['value'] == true);
       case 'completed':
         _completed.add(true);
       case 'error':
@@ -167,7 +219,7 @@ class NativeVideoPlayer implements VideoPlayback {
     _invoke('update', {"title": value});
   }
 
-  /// Buttons shown over the video in the player.
+  /// Buttons shown over the video in the fullscreen player.
   set playerActions(List<NativePlayerAction> value) {
     if (_listEquals(value, _currentActions)) return;
     _currentActions = value;
@@ -198,6 +250,8 @@ class NativeVideoPlayer implements VideoPlayback {
     bool play = true,
   }) async {
     _currentPosition = start ?? Duration.zero;
+    _currentDuration = Duration.zero;
+    _currentBuffer = Duration.zero;
     _isOpen = true;
     await _invoke('open', {
       "url": request.url,
@@ -217,12 +271,16 @@ class NativeVideoPlayer implements VideoPlayback {
   Future<void> pause() => _invoke('pause');
 
   @override
+  Future<void> playOrPause() => _isPlaying ? pause() : play();
+
+  @override
   Future<void> seek(Duration position) =>
       _invoke('seek', {"ms": position.inMilliseconds});
 
   @override
   Future<void> setRate(double rate) {
     _currentRate = rate;
+    _rate.add(rate);
     return _invoke('setRate', {"rate": rate});
   }
 
@@ -233,7 +291,10 @@ class NativeVideoPlayer implements VideoPlayback {
     await _invoke('close');
   }
 
-  /// The player, with the system controls.
+  /// Opens the system fullscreen player, with its own controls.
+  Future<void> enterFullscreen() => _invoke('enterFullscreen');
+
+  /// The video, without controls.
   Widget buildView() {
     return const UiKitView(viewType: 'venera/native_player_view');
   }
@@ -252,6 +313,9 @@ class NativeVideoPlayer implements VideoPlayback {
       _rate,
       _errors,
       _actions,
+      _buffering,
+      _pickedRate,
+      _fullscreen,
     ]) {
       await c.close();
     }

@@ -3,18 +3,20 @@ import AVKit
 import Flutter
 import UIKit
 
-/// Plays videos in the system player (AVPlayerViewController), embedded in
-/// the Flutter page as the platform view `venera/native_player_view`; its own
-/// fullscreen button opens the system fullscreen player. Driven by
+/// Plays videos with AVPlayer. In the Flutter page, the platform view
+/// `venera/native_player_view` shows only the video, under the app's own
+/// controls; `enterFullscreen` presents the system player
+/// (AVPlayerViewController) with its controls over the page. Driven by
 /// `NativeVideoPlayer` in lib/foundation/video/native_player.dart.
 ///
 /// Methods on `venera/native_player`:
 ///   open {url, headers, startMs?, title, rate, actions}
 ///   update {title, actions}   actions: [{id, title, icon}]
-///   play, pause, seek {ms}, setRate {rate}, close
+///   play, pause, seek {ms}, setRate {rate}, enterFullscreen, close
 /// Events on `venera/native_player/events`, as {event, ...}:
-///   position {ms}, duration {ms}, playing {value}, rate {value},
-///   completed, error {message}, action {id}
+///   position {ms, bufferMs}, duration {ms}, playing {value},
+///   buffering {value}, rate {value} (only for a speed picked in the system
+///   player), fullscreen {value}, completed, error {message}, action {id}
 class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerDelegate {
   private weak var host: FlutterViewController?
 
@@ -22,7 +24,14 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   private let player = AVPlayer()
 
-  private var controller: PlayerViewController?
+  /// The video in the page.
+  private var controller: AVPlayerViewController?
+
+  /// The system player while it is presented fullscreen.
+  private var fullscreenController: PlayerViewController?
+
+  /// Set while the speed is changed from Flutter, which knows it already.
+  private var settingRate = false
 
   private var itemObservers: [NSKeyValueObservation] = []
 
@@ -61,15 +70,22 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
       // The speed picked in the player's own menu.
       playerObservers.append(
         player.observe(\.defaultRate, options: [.new]) { [weak self] player, _ in
-          self?.rate = player.defaultRate
-          self?.send("rate", ["value": Double(player.defaultRate)])
+          guard let self, !self.settingRate else { return }
+          self.rate = player.defaultRate
+          self.send("rate", ["value": Double(player.defaultRate)])
         })
     }
+    playerObservers.append(
+      player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+        self?.send(
+          "buffering", ["value": player.timeControlStatus == .waitingToPlayAtSpecifiedRate])
+      })
     timeObserver = player.addPeriodicTimeObserver(
       forInterval: CMTime(value: 1, timescale: 2), queue: .main
     ) { [weak self] time in
       guard let self, self.player.currentItem != nil else { return }
-      self.send("position", ["ms": Self.milliseconds(time)])
+      self.send(
+        "position", ["ms": Self.milliseconds(time), "bufferMs": self.bufferedMilliseconds()])
     }
   }
 
@@ -107,6 +123,19 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     return seconds.isFinite ? Int(seconds * 1000) : 0
   }
 
+  /// End of the loaded range at the current position.
+  private func bufferedMilliseconds() -> Int {
+    guard let item = player.currentItem else { return 0 }
+    let now = player.currentTime()
+    for value in item.loadedTimeRanges {
+      let range = value.timeRangeValue
+      if range.containsTime(now) || CMTimeCompare(range.start, now) > 0 {
+        return Self.milliseconds(CMTimeRangeGetEnd(range))
+      }
+    }
+    return 0
+  }
+
   // MARK: Methods
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -142,12 +171,13 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
       result(nil)
     case "setRate":
       rate = Float(args["rate"] as? Double ?? 1)
-      if #available(iOS 16.0, *) {
-        player.defaultRate = rate
-      } else {
-        send("rate", ["value": Double(rate)])
-      }
+      settingRate = true
+      if #available(iOS 16.0, *) { player.defaultRate = rate }
       if player.rate != 0 { player.rate = rate }
+      settingRate = false
+      result(nil)
+    case "enterFullscreen":
+      enterFullscreen()
       result(nil)
     case "close":
       close()
@@ -268,23 +298,48 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   // MARK: Views
 
-  /// Embeds a player in [container], a platform view of the Flutter page.
+  /// Embeds the video in [container], a platform view of the Flutter page.
+  /// The page draws its own controls over it.
   fileprivate func attach(to container: UIView) -> AVPlayerViewController? {
     guard let host else { return nil }
-    let vc = PlayerViewController()
-    vc.player = player
-    vc.delegate = self
-    vc.allowsPictureInPicturePlayback = true
-    vc.entersFullScreenWhenPlaybackBegins = false
-    vc.exitsFullScreenWhenPlaybackEnds = true
+    let vc = AVPlayerViewController()
+    // While fullscreen, only the fullscreen player shows the video.
+    vc.player = fullscreenController == nil ? player : nil
+    vc.showsPlaybackControls = false
+    vc.view.isUserInteractionEnabled = false
+    vc.view.backgroundColor = .black
     host.addChild(vc)
     vc.view.frame = container.bounds
     vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     container.addSubview(vc.view)
     vc.didMove(toParent: host)
     controller = vc
-    applyActions()
     return vc
+  }
+
+  /// Presents the system player with its controls over the page; the
+  /// `fullscreen` event says when it is closed.
+  private func enterFullscreen() {
+    guard let host, fullscreenController == nil, player.currentItem != nil else { return }
+    let vc = PlayerViewController()
+    vc.player = player
+    vc.delegate = self
+    vc.allowsPictureInPicturePlayback = true
+    vc.modalPresentationStyle = .fullScreen
+    vc.onDismiss = { [weak self] in self?.fullscreenClosed() }
+    var presenter: UIViewController = host
+    while let presented = presenter.presentedViewController { presenter = presented }
+    fullscreenController = vc
+    applyActions()
+    controller?.player = nil
+    presenter.present(vc, animated: true)
+    send("fullscreen", ["value": true])
+  }
+
+  private func fullscreenClosed() {
+    fullscreenController = nil
+    controller?.player = player
+    send("fullscreen", ["value": false])
   }
 
   fileprivate func detach(_ vc: AVPlayerViewController) {
@@ -296,6 +351,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
 
   /// Stops playback, e.g. when the page closes or another engine takes over.
   private func close() {
+    fullscreenController?.dismiss(animated: true)
     player.pause()
     itemObservers.removeAll()
     for o in notificationObservers { NotificationCenter.default.removeObserver(o) }
@@ -306,7 +362,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   }
 
   private func applyActions() {
-    controller?.setActions(actions) { [weak self] id in
+    fullscreenController?.setActions(actions) { [weak self] id in
       self?.send("action", ["id": id])
     }
   }
@@ -364,12 +420,23 @@ private class NativePlayerPlatformView: NSObject, FlutterPlatformView {
   func view() -> UIView { container }
 }
 
-/// Shows the buttons from Flutter (a skip button) over the video:
-/// AVPlayerViewController has no API for them on iOS.
+/// The fullscreen system player. Shows the buttons from Flutter (a skip
+/// button) over the video: AVPlayerViewController has no API for them on iOS.
 private class PlayerViewController: AVPlayerViewController {
   private let actionBar = UIStackView()
 
   private var onPressed: ((String) -> Void)?
+
+  /// Called once the player is closed, with its close button or a swipe.
+  var onDismiss: (() -> Void)?
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    if isBeingDismissed || presentingViewController == nil {
+      onDismiss?()
+      onDismiss = nil
+    }
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
