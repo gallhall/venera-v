@@ -77,19 +77,17 @@ import Foundation // 添加此行
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-    self.directoryPath = urls.first
-    if self.directoryPath == nil {
+    guard let url = urls.first else {
       flutterResult?(nil)
       return
     }
-
-    let success = self.directoryPath.startAccessingSecurityScopedResource()
-
-    if success {
-      flutterResult?(self.directoryPath.path)
-    } else {
-      flutterResult?(nil)
+    // A folder of the app itself (On My iPhone > Venera-V) needs no security
+    // scope, and starting one fails for it: it is still usable. Only a scope
+    // that was started is stopped later.
+    if url.startAccessingSecurityScopedResource() {
+      self.directoryPath = url
     }
+    flutterResult?(url.path)
   }
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
