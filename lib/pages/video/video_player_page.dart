@@ -915,15 +915,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     Widget view;
     if (p != null && identical(active, p)) {
       isMediaKit = true;
-      if (App.isMobile) {
-        view = VideoControls(
-          player: p,
-          controls: controls,
-          child: p.buildView(controls: false, fit: fit),
-        );
-      } else {
-        view = p.buildView(custom: controls, fit: fit);
-      }
+      view = VideoControls(
+        player: p,
+        controls: controls,
+        child: p.buildView(controls: false, fit: fit),
+      );
     } else {
       view = native?.buildView() ?? const SizedBox();
     }

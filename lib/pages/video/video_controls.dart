@@ -6,15 +6,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_brightness/screen_brightness.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:volume_controller/volume_controller.dart';
 
-/// Touch controls for the media_kit player on phones, laid out like the
-/// players of video apps such as Kazumi and PiliPlus. All gestures go through
-/// a single detector, so none of them waits on another:
+/// Controls for the media_kit player, laid out like the players of video
+/// apps such as Kazumi and PiliPlus. All gestures go through a single
+/// detector, so none of them waits on another. On phones:
 ///
 /// - tap: show or hide the controls, at once
 /// - double tap: play or pause in the middle, seek back or forward on the
@@ -24,6 +25,10 @@ import 'package:volume_controller/volume_controller.dart';
 /// - vertical swipe: brightness on the left half, system volume on the right
 ///   half. The brightness only applies to the app and is reset when the
 ///   controls are disposed.
+///
+/// On desktop: a click plays or pauses, a double click toggles fullscreen,
+/// the wheel sets the player volume, the controls show while the mouse
+/// moves, and the keyboard shortcuts of media_kit's desktop controls work.
 class VideoControls extends StatefulWidget {
   const VideoControls({
     super.key,
@@ -59,6 +64,11 @@ class _VideoControlsState extends State<VideoControls> {
 
   PlayerService get player => widget.player;
 
+  /// Mouse and keyboard rather than touch.
+  final desktop = App.isDesktop;
+
+  final focusNode = FocusNode();
+
   final subscriptions = <StreamSubscription>[];
 
   late bool playing = player.isPlaying;
@@ -70,6 +80,9 @@ class _VideoControlsState extends State<VideoControls> {
   bool visible = true;
 
   Timer? hideTimer;
+
+  /// Whether the mouse is over a bar, which keeps the controls shown.
+  bool hoveringBar = false;
 
   // Taps
 
@@ -121,10 +134,14 @@ class _VideoControlsState extends State<VideoControls> {
 
   double brightness = 0.5;
 
+  /// The system volume on phones, the player volume on desktop.
   double volume = 0.5;
 
   /// Whether [volume] was read, so the first reading shows nothing.
   bool volumeKnown = false;
+
+  /// Restored when unmuting.
+  double volumeBeforeMute = 1.0;
 
   bool brightnessChanged = false;
 
@@ -149,6 +166,11 @@ class _VideoControlsState extends State<VideoControls> {
         }
       }),
     ]);
+    scheduleHide();
+    if (desktop) {
+      volume = (player.currentVolume / 100).clamp(0.0, 1.0);
+      return;
+    }
     // The controls show their own indicator, also for the volume keys.
     VolumeController.instance.showSystemUI = false;
     VolumeController.instance.addListener((v) {
@@ -165,7 +187,6 @@ class _VideoControlsState extends State<VideoControls> {
         .catchError((Object e) {
           Log.warning('Video', 'Failed to read the brightness: $e');
         });
-    scheduleHide();
   }
 
   @override
@@ -177,8 +198,11 @@ class _VideoControlsState extends State<VideoControls> {
     seekSideTimer?.cancel();
     seekingToTimer?.cancel();
     levelTimer?.cancel();
-    VolumeController.instance.removeListener();
-    VolumeController.instance.showSystemUI = true;
+    focusNode.dispose();
+    if (!desktop) {
+      VolumeController.instance.removeListener();
+      VolumeController.instance.showSystemUI = true;
+    }
     if (brightnessChanged) {
       ScreenBrightness.instance.resetApplicationScreenBrightness().catchError(
         (Object e) => Log.warning('Video', 'Failed to reset brightness: $e'),
@@ -200,9 +224,106 @@ class _VideoControlsState extends State<VideoControls> {
   void scheduleHide() {
     hideTimer?.cancel();
     hideTimer = Timer(_hideDelay, () {
-      if (!mounted || sliderPosition != null || !playing) return;
+      if (!mounted || sliderPosition != null || !playing || hoveringBar) {
+        return;
+      }
       setState(() => visible = false);
     });
+  }
+
+  void setVolume(double value) {
+    value = value.clamp(0.0, 1.0);
+    setState(() => volume = value);
+    if (desktop) {
+      player.setVolume(value * 100);
+    } else {
+      VolumeController.instance.setVolume(value).catchError((Object e) {});
+    }
+  }
+
+  void toggleMute() {
+    if (volume > 0) {
+      volumeBeforeMute = volume;
+      setVolume(0);
+    } else {
+      setVolume(volumeBeforeMute > 0 ? volumeBeforeMute : 1);
+    }
+  }
+
+  // Mouse and keyboard
+
+  void onClick() {
+    focusNode.requestFocus();
+    var now = DateTime.now();
+    var last = lastTapTime;
+    // Played or paused at once; a double click plays or pauses again, so it
+    // only toggles fullscreen.
+    player.playOrPause();
+    if (last != null && now.difference(last) < _doubleTapTimeout) {
+      lastTapTime = null;
+      widget.controls.value.onToggleFullscreen?.call();
+      return;
+    }
+    lastTapTime = now;
+  }
+
+  void onHover() {
+    if (visible) {
+      scheduleHide();
+    } else {
+      setVisible(true);
+    }
+  }
+
+  void onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (e) {
+      var dy = (e as PointerScrollEvent).scrollDelta.dy;
+      if (dy == 0) return;
+      setVolume(volume + (dy < 0 ? 0.05 : -0.05));
+      flashLevel(_Level.volume);
+    });
+  }
+
+  Map<ShortcutActivator, VoidCallback> get shortcuts {
+    PlayerControls c() => widget.controls.value;
+    void seekBy(Duration d) {
+      seekTo((seekingTo ?? player.currentPosition) + d);
+      setVisible(true);
+    }
+
+    void volumeBy(double d) {
+      setVolume(volume + d);
+      flashLevel(_Level.volume);
+    }
+
+    return {
+      const SingleActivator(LogicalKeyboardKey.mediaPlay): player.play,
+      const SingleActivator(LogicalKeyboardKey.mediaPause): player.pause,
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
+          player.playOrPause,
+      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
+          c().onNext?.call(),
+      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
+          c().onPrevious?.call(),
+      const SingleActivator(LogicalKeyboardKey.space): player.playOrPause,
+      const SingleActivator(LogicalKeyboardKey.keyJ): () => seekBy(-_seekStep),
+      const SingleActivator(LogicalKeyboardKey.keyL): () => seekBy(_seekStep),
+      const SingleActivator(LogicalKeyboardKey.keyI): () => seekBy(_seekStep),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+          seekBy(const Duration(seconds: -5)),
+      const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+          seekBy(const Duration(seconds: 5)),
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () => volumeBy(0.05),
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+          volumeBy(-0.05),
+      const SingleActivator(LogicalKeyboardKey.keyM): toggleMute,
+      const SingleActivator(LogicalKeyboardKey.keyF): () =>
+          c().onToggleFullscreen?.call(),
+      const SingleActivator(LogicalKeyboardKey.escape): () {
+        if (c().isFullscreen) c().onToggleFullscreen?.call();
+      },
+    };
   }
 
   void seekTo(Duration target) {
@@ -321,18 +442,17 @@ class _VideoControlsState extends State<VideoControls> {
     if (level == null) return;
     // Swiping over the whole height changes the value by 1.
     var delta = -(details.primaryDelta ?? 0) / height;
+    if (level == _Level.volume) {
+      setVolume(volume + delta);
+      return;
+    }
     setState(() {
-      if (level == _Level.brightness) {
-        brightness = (brightness + delta).clamp(0.0, 1.0);
-        brightnessChanged = true;
-        ScreenBrightness.instance
-            .setApplicationScreenBrightness(brightness)
-            .catchError((Object e) {});
-      } else {
-        volume = (volume + delta).clamp(0.0, 1.0);
-        VolumeController.instance.setVolume(volume).catchError((Object e) {});
-      }
+      brightness = (brightness + delta).clamp(0.0, 1.0);
+      brightnessChanged = true;
     });
+    ScreenBrightness.instance
+        .setApplicationScreenBrightness(brightness)
+        .catchError((Object e) {});
   }
 
   void onVerticalEnd() {
@@ -358,25 +478,35 @@ class _VideoControlsState extends State<VideoControls> {
     return LayoutBuilder(
       builder: (context, constraints) {
         var size = constraints.biggest;
-        return Stack(
+        var gestures = desktop
+            ? GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (_) => onClick(),
+                onLongPressStart: (_) => onLongPressStart(),
+                onLongPressEnd: (_) => onLongPressEnd(),
+                onLongPressCancel: onLongPressEnd,
+              )
+            : GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (d) => onTapUp(d, size.width),
+                onLongPressStart: (_) => onLongPressStart(),
+                onLongPressEnd: (_) => onLongPressEnd(),
+                onLongPressCancel: onLongPressEnd,
+                onHorizontalDragStart: (_) => onHorizontalStart(),
+                onHorizontalDragUpdate: (d) =>
+                    onHorizontalUpdate(d, size.width),
+                onHorizontalDragEnd: (_) => onHorizontalEnd(),
+                onHorizontalDragCancel: () => onHorizontalEnd(apply: false),
+                onVerticalDragStart: (d) => onVerticalStart(d, size.width),
+                onVerticalDragUpdate: (d) => onVerticalUpdate(d, size.height),
+                onVerticalDragEnd: (_) => onVerticalEnd(),
+                onVerticalDragCancel: onVerticalEnd,
+              );
+        Widget view = Stack(
           fit: StackFit.expand,
           children: [
             widget.child,
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (d) => onTapUp(d, size.width),
-              onLongPressStart: (_) => onLongPressStart(),
-              onLongPressEnd: (_) => onLongPressEnd(),
-              onLongPressCancel: onLongPressEnd,
-              onHorizontalDragStart: (_) => onHorizontalStart(),
-              onHorizontalDragUpdate: (d) => onHorizontalUpdate(d, size.width),
-              onHorizontalDragEnd: (_) => onHorizontalEnd(),
-              onHorizontalDragCancel: () => onHorizontalEnd(apply: false),
-              onVerticalDragStart: (d) => onVerticalStart(d, size.width),
-              onVerticalDragUpdate: (d) => onVerticalUpdate(d, size.height),
-              onVerticalDragEnd: (_) => onVerticalEnd(),
-              onVerticalDragCancel: onVerticalEnd,
-            ),
+            gestures,
             if (buffering && swipeSeekTarget == null)
               const IgnorePointer(
                 child: Center(
@@ -402,19 +532,114 @@ class _VideoControlsState extends State<VideoControls> {
             IgnorePointer(child: buildFeedback()),
           ],
         );
+        if (!desktop) return view;
+        return CallbackShortcuts(
+          bindings: shortcuts,
+          child: Focus(
+            focusNode: focusNode,
+            autofocus: true,
+            child: MouseRegion(
+              cursor: visible || !playing
+                  ? MouseCursor.defer
+                  : SystemMouseCursors.none,
+              onHover: (_) => onHover(),
+              onExit: (_) {
+                if (playing) setVisible(false);
+              },
+              child: Listener(onPointerSignal: onPointerSignal, child: view),
+            ),
+          ),
+        );
       },
     );
   }
 
   Widget buildControls(BuildContext context, PlayerControls c) {
+    if (desktop) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // The page has an app bar outside fullscreen.
+          if (c.isFullscreen)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: hoverBar(buildTopBar(context, c, actions: const [])),
+            ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: hoverBar(buildDesktopBottomBar(context, c)),
+          ),
+        ],
+      );
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
-        Positioned(top: 0, left: 0, right: 0, child: buildTopBar(context, c)),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: buildTopBar(context, c, actions: c.actions),
+        ),
         Center(child: buildCenter(c)),
         Positioned(left: 0, right: 0, bottom: 0, child: buildBottomBar(c)),
       ],
     );
+  }
+
+  Widget hoverBar(Widget child) {
+    return MouseRegion(
+      onEnter: (_) => hoveringBar = true,
+      onExit: (_) {
+        hoveringBar = false;
+        scheduleHide();
+      },
+      child: child,
+    );
+  }
+
+  /// [actions] as buttons, with those that do not fit in [room] in a menu.
+  List<Widget> buildActions(
+    BuildContext context,
+    List<PlayerControlAction> actions,
+    double room,
+  ) {
+    const buttonWidth = 40.0;
+    var fit = math.max(0, (room / buttonWidth).floor());
+    var shown = actions.length <= fit
+        ? actions
+        : actions.take(math.max(0, fit - 1)).toList();
+    var more = actions.skip(shown.length).toList();
+    return [
+      for (var a in shown)
+        Builder(
+          builder: (context) =>
+              button(a.icon, () => a.onPressed(context), tooltip: a.label),
+        ),
+      if (more.isNotEmpty)
+        PopupMenuButton<int>(
+          icon: const Icon(Icons.more_vert, color: Colors.white),
+          tooltip: "More".tl,
+          onSelected: (i) => more[i].onPressed(context),
+          itemBuilder: (context) => [
+            for (int i = 0; i < more.length; i++)
+              PopupMenuItem(
+                value: i,
+                child: Row(
+                  children: [
+                    Icon(more[i].icon, size: 20),
+                    const SizedBox(width: 12),
+                    Text(more[i].label),
+                  ],
+                ),
+              ),
+          ],
+        ),
+    ];
   }
 
   Widget button(IconData icon, VoidCallback onPressed, {String? tooltip}) {
@@ -427,7 +652,11 @@ class _VideoControlsState extends State<VideoControls> {
     );
   }
 
-  Widget buildTopBar(BuildContext context, PlayerControls c) {
+  Widget buildTopBar(
+    BuildContext context,
+    PlayerControls c, {
+    required List<PlayerControlAction> actions,
+  }) {
     return _Shade(
       fromTop: true,
       child: SafeArea(
@@ -436,19 +665,9 @@ class _VideoControlsState extends State<VideoControls> {
           padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // Buttons that do not fit next to the title go in a menu.
-              const buttonWidth = 40.0;
-              const minTitleWidth = 96.0;
-              var actions = c.actions;
+              // Room next to the back button and the title.
               var room =
-                  constraints.maxWidth -
-                  minTitleWidth -
-                  (c.onBack != null ? buttonWidth : 0);
-              var fit = math.max(0, (room / buttonWidth).floor());
-              var shown = actions.length <= fit
-                  ? actions
-                  : actions.take(math.max(0, fit - 1)).toList();
-              var more = actions.skip(shown.length).toList();
+                  constraints.maxWidth - 96 - (c.onBack != null ? 40 : 0);
               return Row(
                 children: [
                   if (c.onBack != null) button(Icons.arrow_back, c.onBack!),
@@ -466,33 +685,7 @@ class _VideoControlsState extends State<VideoControls> {
                       ),
                     ),
                   ),
-                  for (var a in shown)
-                    Builder(
-                      builder: (context) => button(
-                        a.icon,
-                        () => a.onPressed(context),
-                        tooltip: a.label,
-                      ),
-                    ),
-                  if (more.isNotEmpty)
-                    PopupMenuButton<int>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white),
-                      tooltip: "More".tl,
-                      onSelected: (i) => more[i].onPressed(context),
-                      itemBuilder: (context) => [
-                        for (int i = 0; i < more.length; i++)
-                          PopupMenuItem(
-                            value: i,
-                            child: Row(
-                              children: [
-                                Icon(more[i].icon, size: 20),
-                                const SizedBox(width: 12),
-                                Text(more[i].label),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+                  ...buildActions(context, actions, room),
                 ],
               );
             },
@@ -548,11 +741,7 @@ class _VideoControlsState extends State<VideoControls> {
           child: StreamBuilder(
             stream: player.position,
             builder: (context, _) {
-              var position =
-                  sliderPosition ??
-                  swipeSeekTarget ??
-                  seekingTo ??
-                  player.currentPosition;
+              var position = shownPosition;
               return Row(
                 children: [
                   Text(
@@ -575,6 +764,88 @@ class _VideoControlsState extends State<VideoControls> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Seek bar on its own row, then playback, volume, time and the actions.
+  Widget buildDesktopBottomBar(BuildContext context, PlayerControls c) {
+    return _Shade(
+      fromTop: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 24, 8, 4),
+        child: StreamBuilder(
+          stream: player.position,
+          builder: (context, _) {
+            var position = shownPosition;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(height: 28, child: buildSeekBar(position)),
+                LayoutBuilder(
+                  builder: (context, constraints) => Row(
+                    children: [
+                      if (c.onPrevious != null)
+                        button(Icons.skip_previous, c.onPrevious!),
+                      button(
+                        playing ? Icons.pause : Icons.play_arrow,
+                        player.playOrPause,
+                      ),
+                      if (c.onNext != null) button(Icons.skip_next, c.onNext!),
+                      button(volumeIcon, toggleMute),
+                      SizedBox(width: 88, child: buildVolumeSlider()),
+                      const SizedBox(width: 8),
+                      IgnorePointer(
+                        child: Text(
+                          '${History.formatSeconds(position.inSeconds)} / '
+                          '${History.formatSeconds(duration.inSeconds)}',
+                          style: _timeStyle,
+                        ),
+                      ),
+                      const Spacer(),
+                      // Room left by the buttons and the time on the left.
+                      ...buildActions(
+                        context,
+                        c.actions,
+                        constraints.maxWidth - 400,
+                      ),
+                      if (c.onToggleFullscreen != null)
+                        button(
+                          c.isFullscreen
+                              ? Icons.fullscreen_exit
+                              : Icons.fullscreen,
+                          c.onToggleFullscreen!,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Duration get shownPosition =>
+      sliderPosition ?? swipeSeekTarget ?? seekingTo ?? player.currentPosition;
+
+  IconData get volumeIcon {
+    if (volume == 0) return Icons.volume_off;
+    return volume < 0.5 ? Icons.volume_down : Icons.volume_up;
+  }
+
+  Widget buildVolumeSlider() {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 2,
+        activeTrackColor: Colors.white,
+        inactiveTrackColor: Colors.white24,
+        thumbColor: Colors.white,
+        overlayColor: Colors.white24,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+      ),
+      child: Slider(value: volume, onChanged: setVolume),
     );
   }
 

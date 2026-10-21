@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -59,7 +58,7 @@ class PlayerTrack {
     if (id == 'auto') return 'Auto';
     if (id == 'no') return 'Off';
     var parts = [title, language].nonNulls;
-    return parts.isEmpty ? id : '$id · ${parts.join(' · ')}';
+    return parts.isEmpty ? id : '$id 路 ${parts.join(' 路 ')}';
   }
 }
 
@@ -86,8 +85,7 @@ class PlayerControlAction {
   const PlayerControlAction(this.icon, this.label, this.onPressed);
 }
 
-/// Additions to the player controls: `VideoControls` on phones, media_kit's
-/// controls on desktop.
+/// Additions to the player controls (`VideoControls`).
 class PlayerControls {
   final String? title;
 
@@ -101,8 +99,7 @@ class PlayerControls {
 
   final List<PlayerControlAction> actions;
 
-  /// Fullscreen handled by the page. If null, the controls use the
-  /// engine's own fullscreen route.
+  /// Fullscreen, done by the page. No fullscreen button if null.
   final VoidCallback? onToggleFullscreen;
 
   final bool isFullscreen;
@@ -287,6 +284,11 @@ class PlayerService implements VideoPlayback {
 
   double get currentRate => _player.state.rate;
 
+  /// 0 to 100.
+  double get currentVolume => _player.state.volume;
+
+  Future<void> setVolume(double volume) => _player.setVolume(volume);
+
   /// The proxy applied to the last opened stream, null for direct.
   String? appliedProxy;
 
@@ -455,147 +457,13 @@ class PlayerService implements VideoPlayback {
     await _player.setSubtitleTrack(track);
   }
 
-  /// The video view. With [controls], media_kit's controls are drawn over
-  /// it; on phones the page draws `VideoControls` instead. [custom] adds a
-  /// title, episode navigation, extra buttons and page fullscreen to the
-  /// desktop controls.
-  ///
-  /// The controls are themed once and listen to [custom]: media_kit's
-  /// theme widgets do not notify the controls when the theme changes.
-  Widget buildView({
-    bool controls = true,
-    ValueListenable<PlayerControls>? custom,
-    BoxFit fit = BoxFit.contain,
-  }) {
-    var video = Video(
+  /// The video view, with media_kit's own controls if [controls]. The video
+  /// page draws `VideoControls` over a view without them.
+  Widget buildView({bool controls = true, BoxFit fit = BoxFit.contain}) {
+    return Video(
       controller: _controller,
       fit: fit,
       controls: controls ? AdaptiveVideoControls : null,
-    );
-    if (!controls || custom == null) return video;
-    if (!identical(custom, _themedControls)) {
-      _themedControls = custom;
-      _desktopControls = _desktopTheme(custom);
-    }
-    return MaterialDesktopVideoControlsTheme(
-      normal: _desktopControls!,
-      fullscreen: _desktopControls!,
-      child: video,
-    );
-  }
-
-  ValueListenable<PlayerControls>? _themedControls;
-
-  MaterialDesktopVideoControlsThemeData? _desktopControls;
-
-  /// A button bar that is rebuilt when [custom] changes.
-  static Widget _bar(
-    ValueListenable<PlayerControls> custom,
-    List<Widget> Function(PlayerControls c) build,
-  ) {
-    return Expanded(
-      child: ValueListenableBuilder(
-        valueListenable: custom,
-        builder: (context, c, _) => Row(children: build(c)),
-      ),
-    );
-  }
-
-  static Widget _title(PlayerControls custom) {
-    return Expanded(
-      child: Text(
-        custom.title ?? '',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
-      ),
-    );
-  }
-
-  static IconData _fullscreenIcon(PlayerControls c) =>
-      c.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen;
-
-  MaterialDesktopVideoControlsThemeData _desktopTheme(
-    ValueListenable<PlayerControls> custom,
-  ) {
-    Widget button(IconData icon, void Function(BuildContext) onPressed) {
-      return Builder(
-        builder: (context) => MaterialDesktopCustomButton(
-          icon: Icon(icon),
-          onPressed: () => onPressed(context),
-        ),
-      );
-    }
-
-    // media_kit's default shortcuts, with fullscreen and the media track
-    // keys handled by the page.
-    void seekBy(Duration d) => _player.seek(_player.state.position + d);
-    void volumeBy(double d) =>
-        _player.setVolume((_player.state.volume + d).clamp(0.0, 100.0));
-    PlayerControls c() => custom.value;
-    var pageFullscreen = c().onToggleFullscreen != null;
-    var shortcuts = <ShortcutActivator, VoidCallback>{
-      const SingleActivator(LogicalKeyboardKey.mediaPlay): _player.play,
-      const SingleActivator(LogicalKeyboardKey.mediaPause): _player.pause,
-      const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
-          _player.playOrPause,
-      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
-          c().onNext?.call(),
-      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
-          c().onPrevious?.call(),
-      const SingleActivator(LogicalKeyboardKey.space): _player.playOrPause,
-      const SingleActivator(LogicalKeyboardKey.keyJ): () =>
-          seekBy(const Duration(seconds: -10)),
-      const SingleActivator(LogicalKeyboardKey.keyI): () =>
-          seekBy(const Duration(seconds: 10)),
-      const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-          seekBy(const Duration(seconds: -5)),
-      const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-          seekBy(const Duration(seconds: 5)),
-      const SingleActivator(LogicalKeyboardKey.arrowUp): () => volumeBy(5),
-      const SingleActivator(LogicalKeyboardKey.arrowDown): () => volumeBy(-5),
-      const SingleActivator(LogicalKeyboardKey.keyF): () =>
-          c().onToggleFullscreen?.call(),
-      const SingleActivator(LogicalKeyboardKey.escape): () {
-        if (c().isFullscreen) c().onToggleFullscreen?.call();
-      },
-    };
-
-    return MaterialDesktopVideoControlsThemeData(
-      keyboardShortcuts: pageFullscreen ? shortcuts : null,
-      // A double click would open the engine's fullscreen route.
-      toggleFullscreenOnDoublePress: !pageFullscreen,
-      topButtonBar: [
-        _bar(
-          custom,
-          (c) => [
-            if (c.isFullscreen) ...[
-              button(Icons.arrow_back, (_) => c.onToggleFullscreen?.call()),
-              const SizedBox(width: 8),
-              _title(c),
-            ],
-          ],
-        ),
-      ],
-      bottomButtonBar: [
-        _bar(
-          custom,
-          (c) => [
-            if (c.onPrevious != null)
-              button(Icons.skip_previous, (_) => c.onPrevious!()),
-            const MaterialDesktopPlayOrPauseButton(),
-            if (c.onNext != null) button(Icons.skip_next, (_) => c.onNext!()),
-            const MaterialDesktopVolumeButton(),
-            const MaterialDesktopPositionIndicator(),
-            const Spacer(),
-            for (var a in c.actions) button(a.icon, a.onPressed),
-            if (c.onToggleFullscreen != null)
-              button(_fullscreenIcon(c), (_) => c.onToggleFullscreen!())
-            else
-              const MaterialDesktopFullscreenButton(),
-          ],
-        ),
-      ],
     );
   }
 
