@@ -306,6 +306,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     // While fullscreen, only the fullscreen player shows the video.
     vc.player = fullscreenController == nil ? player : nil
     vc.showsPlaybackControls = false
+    // Its Live Text button would sit under the page's controls, which take
+    // all touches. The fullscreen player keeps it.
+    if #available(iOS 16.0, *) { vc.allowsVideoFrameAnalysis = false }
     vc.view.isUserInteractionEnabled = false
     vc.view.backgroundColor = .black
     host.addChild(vc)

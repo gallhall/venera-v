@@ -879,7 +879,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             appBar: Appbar(title: Text(widget.details.title)),
             body: Column(
               children: [
-                AspectRatio(aspectRatio: 16 / 9, child: buildPlayer()),
+                AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
                 Expanded(
                   child: ListView(
                     padding: const EdgeInsets.only(bottom: 16),
@@ -898,7 +898,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 color: Colors.black,
                 child: SafeArea(
                   bottom: false,
-                  child: AspectRatio(aspectRatio: 16 / 9, child: buildPlayer()),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: buildTopPlayer(),
+                  ),
                 ),
               ),
               Expanded(
@@ -911,6 +914,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           ),
         );
       },
+    );
+  }
+
+  /// The player above the page content, away from the bottom edge: its
+  /// controls should not leave room for the home indicator.
+  Widget buildTopPlayer() {
+    return MediaQuery.removePadding(
+      context: context,
+      removeBottom: true,
+      child: buildPlayer(),
     );
   }
 
