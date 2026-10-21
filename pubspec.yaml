@@ -135,3 +135,29 @@ flutter_to_arch:
     - webkit2gtk-4.1
     - libepoxy
     - alsa-lib
+    # Libraries the bundled libmpv links.
+    - fontconfig
+    - harfbuzz
+    - fribidi
+    - freetype2
+    - xz
+    - zlib
+    - libva
+    - libvdpau
+    - libdrm
+    - mesa
+    - libglvnd
+    - libx11
+    - libxcb
+    - libxext
+    - libxfixes
+    - libxrandr
+    - libxss
+    - libxv
+    - wayland
+    - libxkbcommon
+    - gnutls
+    - libunwind
+    - lcms2
+    - libarchive
+    - libpulse
