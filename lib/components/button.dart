@@ -169,8 +169,9 @@ class _ButtonState extends State<Button> {
       data: IconThemeData(
         color: textColor,
       ),
+      // From the theme, which sets the font.
       child: DefaultTextStyle(
-        style: TextStyle(
+        style: Theme.of(context).textTheme.bodyMedium!.copyWith(
           color: textColor,
           fontSize: 14,
         ),
