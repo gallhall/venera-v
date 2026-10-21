@@ -303,8 +303,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   fileprivate func attach(to container: UIView) -> AVPlayerViewController? {
     guard let host else { return nil }
     let vc = AVPlayerViewController()
-    // Also while fullscreen, so the page shows the video when the
-    // fullscreen player shrinks back into it.
+    // Also while fullscreen, so the page shows the video as the
+    // fullscreen player fades out.
     vc.player = player
     vc.showsPlaybackControls = false
     // Its Live Text button would sit under the page's controls, which take
@@ -330,13 +330,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     vc.delegate = self
     vc.allowsPictureInPicturePlayback = true
     vc.modalPresentationStyle = .fullScreen
-    // Grows out of the video in the page and shrinks back into it, with
-    // the system zoom transition (iOS 18), like fullscreen in Safari.
-    if #available(iOS 18.0, *) {
-      vc.preferredTransition = .zoom { [weak self] _ in self?.controller?.view }
-    } else {
-      vc.modalTransitionStyle = .crossDissolve
-    }
+    // Fades in and out. The zoom transition (iOS 18) broke the close button:
+    // AVKit then ends its own fullscreen without dismissing the player.
+    vc.modalTransitionStyle = .crossDissolve
     vc.onDismiss = { [weak self] in self?.fullscreenClosed() }
     var presenter: UIViewController = host
     while let presented = presenter.presentedViewController { presenter = presented }
@@ -377,23 +373,6 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   }
 
   // MARK: AVPlayerViewControllerDelegate
-
-  func playerViewController(
-    _ playerViewController: AVPlayerViewController,
-    willEndFullScreenPresentationWithAnimationCoordinator coordinator:
-      UIViewControllerTransitionCoordinator
-  ) {
-    guard playerViewController === fullscreenController else { return }
-    // The close button only ends AVKit's own fullscreen presentation: with
-    // the zoom transition, the presented player then stays, without its
-    // controls. Close it as the swipe down does.
-    coordinator.animate(alongsideTransition: nil) { [weak playerViewController] context in
-      guard let vc = playerViewController, !context.isCancelled else { return }
-      if vc.presentingViewController != nil && !vc.isBeingDismissed {
-        vc.dismiss(animated: true)
-      }
-    }
-  }
 
   func playerViewController(
     _ playerViewController: AVPlayerViewController,
