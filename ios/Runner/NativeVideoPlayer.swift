@@ -303,8 +303,9 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
   fileprivate func attach(to container: UIView) -> AVPlayerViewController? {
     guard let host else { return nil }
     let vc = AVPlayerViewController()
-    // While fullscreen, only the fullscreen player shows the video.
-    vc.player = fullscreenController == nil ? player : nil
+    // Also while fullscreen, so the page shows the video when the
+    // fullscreen player shrinks back into it.
+    vc.player = player
     vc.showsPlaybackControls = false
     // Its Live Text button would sit under the page's controls, which take
     // all touches. The fullscreen player keeps it.
@@ -329,19 +330,23 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     vc.delegate = self
     vc.allowsPictureInPicturePlayback = true
     vc.modalPresentationStyle = .fullScreen
+    // Grows out of the video in the page, like fullscreen in Safari.
+    zoomTransition.source = controller?.view
+    vc.transitioningDelegate = zoomTransition
     vc.onDismiss = { [weak self] in self?.fullscreenClosed() }
     var presenter: UIViewController = host
     while let presented = presenter.presentedViewController { presenter = presented }
     fullscreenController = vc
     applyActions()
-    controller?.player = nil
     presenter.present(vc, animated: true)
     send("fullscreen", ["value": true])
   }
 
+  /// Kept here: `transitioningDelegate` is weak.
+  private let zoomTransition = ZoomTransition()
+
   private func fullscreenClosed() {
     fullscreenController = nil
-    controller?.player = player
     send("fullscreen", ["value": false])
   }
 
@@ -477,6 +482,82 @@ private class PlayerViewController: AVPlayerViewController {
       button.accessibilityIdentifier = id
       button.addTarget(self, action: #selector(buttonPressed(_:)), for: .touchUpInside)
       actionBar.addArrangedSubview(button)
+    }
+  }
+}
+
+/// Grows the fullscreen player out of [source], the video in the page, and
+/// shrinks it back into it when closed. Fades when [source] is not shown.
+private class ZoomTransition: NSObject, UIViewControllerTransitioningDelegate,
+  UIViewControllerAnimatedTransitioning
+{
+  weak var source: UIView?
+
+  private var presenting = true
+
+  func animationController(
+    forPresented presented: UIViewController, presenting: UIViewController,
+    source: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    self.presenting = true
+    return self
+  }
+
+  func animationController(forDismissed dismissed: UIViewController)
+    -> UIViewControllerAnimatedTransitioning?
+  {
+    presenting = false
+    return self
+  }
+
+  func transitionDuration(using context: UIViewControllerContextTransitioning?)
+    -> TimeInterval
+  {
+    0.4
+  }
+
+  func animateTransition(using context: UIViewControllerContextTransitioning) {
+    let container = context.containerView
+    guard
+      let player = context.view(forKey: presenting ? .to : .from),
+      let playerController = context.viewController(forKey: presenting ? .to : .from)
+    else {
+      context.completeTransition(false)
+      return
+    }
+    let full = presenting ? context.finalFrame(for: playerController) : player.frame
+    let small = source.flatMap { source in
+      source.window == nil ? nil : source.convert(source.bounds, to: container)
+    }
+    if presenting {
+      container.addSubview(player)
+    } else if let page = context.view(forKey: .to), page.superview == nil {
+      // A fullscreen presentation removed the page while it was covered.
+      container.insertSubview(page, belowSubview: player)
+    }
+    player.clipsToBounds = true
+    if presenting {
+      player.frame = small ?? full
+      player.alpha = small == nil ? 0 : 1
+    }
+    UIView.animate(
+      withDuration: transitionDuration(using: context), delay: 0,
+      usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+      options: [.curveEaseInOut, .layoutSubviews]
+    ) {
+      if self.presenting {
+        player.frame = full
+        player.alpha = 1
+      } else if let small {
+        player.frame = small
+      } else {
+        player.alpha = 0
+      }
+      player.layoutIfNeeded()
+    } completion: { _ in
+      let finished = !context.transitionWasCancelled
+      if !self.presenting && finished { player.removeFromSuperview() }
+      context.completeTransition(finished)
     }
   }
 }
