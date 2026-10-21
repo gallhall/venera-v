@@ -35,6 +35,7 @@ class VideoControls extends StatefulWidget {
     required this.player,
     required this.controls,
     required this.child,
+    this.enabled = true,
   });
 
   /// media_kit, or the iOS system player.
@@ -44,6 +45,10 @@ class VideoControls extends StatefulWidget {
 
   /// The video view, drawn under the controls.
   final Widget child;
+
+  /// False while the iOS fullscreen player covers the page: the controls
+  /// are hidden, take no touches and leave the volume keys to the system.
+  final bool enabled;
 
   @override
   State<VideoControls> createState() => _VideoControlsState();
@@ -178,15 +183,7 @@ class _VideoControlsState extends State<VideoControls> {
       volume = ((mediaKit?.currentVolume ?? 100) / 100).clamp(0.0, 1.0);
       return;
     }
-    // The controls show their own indicator, also for the volume keys.
-    VolumeController.instance.showSystemUI = false;
-    VolumeController.instance.addListener((v) {
-      if (!mounted) return;
-      var changed = volumeKnown && (v - volume).abs() > 0.001;
-      volumeKnown = true;
-      volume = v;
-      if (changed && swipeLevel == null) flashLevel(_Level.volume);
-    }, fetchInitialVolume: true);
+    if (widget.enabled) startVolumeListener();
     ScreenBrightness.instance.application
         .then((v) {
           if (mounted && swipeLevel == null) brightness = v;
@@ -206,16 +203,56 @@ class _VideoControlsState extends State<VideoControls> {
     seekingToTimer?.cancel();
     levelTimer?.cancel();
     focusNode.dispose();
-    if (!desktop) {
-      VolumeController.instance.removeListener();
-      VolumeController.instance.showSystemUI = true;
-    }
+    if (!desktop) stopVolumeListener();
     if (brightnessChanged) {
       ScreenBrightness.instance.resetApplicationScreenBrightness().catchError(
         (Object e) => Log.warning('Video', 'Failed to reset brightness: $e'),
       );
     }
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(VideoControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.enabled == oldWidget.enabled) return;
+    if (widget.enabled) {
+      if (!desktop) startVolumeListener();
+      setVisible(true);
+      return;
+    }
+    // A gesture in progress ends without effect.
+    onLongPressEnd();
+    onHorizontalEnd(apply: false);
+    swipeLevel = null;
+    lastTapTime = null;
+    levelTimer?.cancel();
+    seekSideTimer?.cancel();
+    setState(() {
+      showLevel = false;
+      seekSide = 0;
+    });
+    setVisible(false);
+    if (!desktop) stopVolumeListener();
+  }
+
+  /// The controls show their own indicator, also for the volume keys.
+  void startVolumeListener() {
+    // The first reading is the current volume, not a change to show.
+    volumeKnown = false;
+    VolumeController.instance.showSystemUI = false;
+    VolumeController.instance.addListener((v) {
+      if (!mounted) return;
+      var changed = volumeKnown && (v - volume).abs() > 0.001;
+      volumeKnown = true;
+      volume = v;
+      if (changed && swipeLevel == null) flashLevel(_Level.volume);
+    }, fetchInitialVolume: true);
+  }
+
+  void stopVolumeListener() {
+    VolumeController.instance.removeListener();
+    VolumeController.instance.showSystemUI = true;
   }
 
   void setVisible(bool value) {
@@ -539,7 +576,9 @@ class _VideoControlsState extends State<VideoControls> {
             IgnorePointer(child: buildFeedback()),
           ],
         );
-        if (!desktop) return view;
+        if (!desktop) {
+          return IgnorePointer(ignoring: !widget.enabled, child: view);
+        }
         return CallbackShortcuts(
           bindings: shortcuts,
           child: Focus(

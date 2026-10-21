@@ -212,6 +212,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// While locked, touches on the player are ignored until it is unlocked.
   bool isLocked = false;
 
+  /// Whether the iOS fullscreen player covers the page.
+  bool nativeFullscreen = false;
+
   /// Whether the unlock button is visible while locked.
   bool showUnlock = false;
 
@@ -245,6 +248,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       var n = native = NativeVideoPlayer();
       listenTo(n);
       subscriptions.addAll([
+        n.fullscreen.listen((v) => setState(() => nativeFullscreen = v)),
         n.actions.listen((id) {
           if (!identical(active, n)) return;
           if (id == 'skip') skipCurrent();
@@ -944,6 +948,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         key: ObjectKey(a),
         player: a,
         controls: controls,
+        enabled: !nativeFullscreen,
         child: view,
       );
     }
