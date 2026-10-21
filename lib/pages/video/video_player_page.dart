@@ -917,11 +917,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// The player above the page content, away from the bottom edge: its
-  /// controls should not leave room for the home indicator.
+  /// The player above the page content, under the app bar or the status bar
+  /// and away from the bottom edge: its controls should not leave room for
+  /// the status bar or the home indicator.
   Widget buildTopPlayer() {
     return MediaQuery.removePadding(
       context: context,
+      removeTop: true,
       removeBottom: true,
       child: buildPlayer(),
     );
