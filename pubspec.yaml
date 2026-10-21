@@ -111,6 +111,9 @@ dev_dependencies:
       url: https://github.com/venera-app/flutter_to_debian.git
 
 flutter:
+  config:
+    # media_kit_video only builds for iOS and macOS as a Swift package.
+    enable-swift-package-manager: true
   uses-material-design: true
   assets:
     - assets/translation.json

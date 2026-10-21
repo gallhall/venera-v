@@ -4,6 +4,12 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+		<string>zh-Hant</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Venera-V</string>
 	<key>CFBundleExecutable</key>
@@ -55,5 +61,9 @@
   <string>Ensure that the operation is being performed by the user themselves.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.books</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>
