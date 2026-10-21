@@ -134,3 +134,4 @@ flutter_to_arch:
     - gtk3
     - webkit2gtk-4.1
     - libepoxy
+    - alsa-lib
