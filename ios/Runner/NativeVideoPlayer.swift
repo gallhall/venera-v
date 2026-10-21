@@ -307,6 +307,8 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     // fullscreen player fades out.
     vc.player = player
     vc.showsPlaybackControls = false
+    // Not shown as Now Playing: no Dynamic Island or lock screen controls.
+    vc.updatesNowPlayingInfoCenter = false
     // Its Live Text button would sit under the page's controls, which take
     // all touches. The fullscreen player keeps it.
     if #available(iOS 16.0, *) { vc.allowsVideoFrameAnalysis = false }
@@ -328,6 +330,7 @@ class NativeVideoPlayer: NSObject, FlutterStreamHandler, AVPlayerViewControllerD
     let vc = PlayerViewController()
     vc.player = player
     vc.delegate = self
+    vc.updatesNowPlayingInfoCenter = false
     vc.allowsPictureInPicturePlayback = true
     vc.modalPresentationStyle = .fullScreen
     // Fades in and out. The zoom transition (iOS 18) broke the close button:
