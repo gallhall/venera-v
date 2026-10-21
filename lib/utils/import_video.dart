@@ -33,8 +33,7 @@ class _PathFile implements _PickedFile {
 
   @override
   Future<void> copyTo(String path) async {
-    if (!file.path.startsWith('android://') &&
-        !path.startsWith('android://')) {
+    if (!file.path.startsWith('android://') && !path.startsWith('android://')) {
       await file.copy(path);
       return;
     }
@@ -103,10 +102,24 @@ class ImportVideo {
   /// Picks a folder whose videos are the episodes of one video.
   Future<bool> folder() async {
     if (App.isAndroid) return _androidFolder();
+    if (App.isIOS) return _iosFolder();
     // Kept alive until the import ends, see [DirectoryPicker].
     var picker = DirectoryPicker();
     var dir = await picker.pickDirectory();
     if (dir == null) return false;
+    try {
+      return await _importFolder(dir);
+    } finally {
+      picker.hashCode;
+    }
+  }
+
+  /// A folder opened in place is only readable among the app's own folders
+  /// on some installs, and the picker cannot copy a folder (it throws): the
+  /// files of the folder are picked instead, as copies.
+  Future<bool> _iosFolder() => files();
+
+  Future<bool> _importFolder(Directory dir) async {
     var files = <_PickedFile>[];
     try {
       await for (var entry in dir.list()) {
@@ -279,9 +292,9 @@ class ImportVideo {
           ),
         );
       }
-      App.rootContext.showMessage(message: "Imported @a".tlParams({
-        'a': comic.title,
-      }));
+      App.rootContext.showMessage(
+        message: "Imported @a".tlParams({'a': comic.title}),
+      );
       return true;
     } catch (e, s) {
       Log.error("Import Video", e.toString(), s);
