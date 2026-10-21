@@ -115,19 +115,9 @@ class ImportVideo {
   }
 
   /// A folder opened in place is only readable among the app's own folders
-  /// on some installs: import a copy of it, made by the system picker.
-  Future<bool> _iosFolder() async {
-    var path = await const MethodChannel(
-      "venera/method_channel",
-    ).invokeMethod<String>("pickFolderCopy");
-    if (path == null) return false;
-    var dir = Directory(path);
-    try {
-      return await _importFolder(dir);
-    } finally {
-      await dir.deleteIgnoreError(recursive: true);
-    }
-  }
+  /// on some installs, and the picker cannot copy a folder (it throws): the
+  /// files of the folder are picked instead, as copies.
+  Future<bool> _iosFolder() => files();
 
   Future<bool> _importFolder(Directory dir) async {
     var files = <_PickedFile>[];

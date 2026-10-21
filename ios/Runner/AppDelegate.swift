@@ -63,12 +63,6 @@ import Foundation // 添加此行
         let urls = paths.map { URL(fileURLWithPath: $0) }
         let picker = UIDocumentPickerViewController(forExporting: urls, asCopy: true)
         self.presentPicker(picker) { picked in result(picked != nil) }
-      } else if call.method == "pickFolderCopy" {
-        // A copy of a folder: opening one in place fails outside the app's
-        // own folders on some installs, while copies always work.
-        let picker = UIDocumentPickerViewController(
-          forOpeningContentTypes: [UTType.folder], asCopy: true)
-        self.presentPicker(picker) { picked in result(picked?.path) }
       } else {
         result(FlutterMethodNotImplemented)
       }
