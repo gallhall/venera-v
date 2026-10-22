@@ -24,7 +24,7 @@ jobs:
       - name: Video smoke test
         run: |
           mkdir -p smoke
-          (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 10; done) &
+          (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 2; done) &
           shots=$!
           build/macos/Build/Products/Debug/venera-v.app/Contents/MacOS/venera-v > smoke/test.log 2>&1 &
           app=$!
