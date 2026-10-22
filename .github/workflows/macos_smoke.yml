@@ -1,0 +1,33 @@
+name: macOS smoke test
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [test/macos-smoke]
+
+jobs:
+  smoke:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - name: GPU
+        run: system_profiler SPDisplaysDataType
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - name: Launch the app
+        run: |
+          mkdir -p smoke
+          build/macos/Build/Products/Release/venera-v.app/Contents/MacOS/venera-v > smoke/app.log 2>&1 &
+          sleep 30
+          screencapture -x smoke/launch.png || true
+          kill %1 || true
+          cat smoke/app.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos_smoke
+          path: smoke/
