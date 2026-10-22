@@ -318,7 +318,11 @@ class HistoryManager with ChangeNotifier {
   /// add history. if exists, update time.
   ///
   /// This function would be called when user start reading.
-  void addHistory(History newItem) {
+  ///
+  /// With [notifyLater], listeners are notified after the current task:
+  /// for callers during which widgets cannot rebuild, e.g. a State's
+  /// dispose. The history is saved at once either way.
+  void addHistory(History newItem, {bool notifyLater = false}) {
     _db.execute(_insertHistorySql, [
       newItem.id,
       newItem.title,
@@ -341,7 +345,11 @@ class HistoryManager with ChangeNotifier {
     if (cachedHistories.length > 10) {
       cachedHistories.remove(cachedHistories.keys.first);
     }
-    notifyListeners();
+    if (notifyLater) {
+      scheduleMicrotask(notifyListeners);
+    } else {
+      notifyListeners();
+    }
   }
 
   void clearHistory() {
