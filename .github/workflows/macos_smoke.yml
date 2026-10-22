@@ -14,27 +14,28 @@ jobs:
           channel: "stable"
           flutter-version-file: pubspec.yaml
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
-      - name: GPU
-        run: system_profiler SPDisplaysDataType
       - run: flutter pub get
-      - run: flutter build macos --release
-      - name: Launch the app
-        run: |
-          mkdir -p smoke
-          build/macos/Build/Products/Release/venera-v.app/Contents/MacOS/venera-v > smoke/app.log 2>&1 &
-          sleep 30
-          screencapture -x smoke/launch.png || true
-          kill %1 || true
-          cat smoke/app.log
+      # The test built as the app. `flutter test -d macos` starts it with
+      # `open`, which fails on the runner: the app then has no window and
+      # draws nothing. Started directly, it does.
+      - run: flutter build macos --debug -t integration_test/video_smoke_test.dart
       # The video features in the running app, see the test. Screenshots
       # are taken meanwhile, to see what the app drew.
       - name: Video smoke test
         run: |
+          mkdir -p smoke
           (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 10; done) &
-          flutter test integration_test/video_smoke_test.dart -d macos 2>&1 | tee smoke/test.log
-          status=${PIPESTATUS[0]}
-          kill %1 || true
-          exit $status
+          shots=$!
+          build/macos/Build/Products/Debug/venera-v.app/Contents/MacOS/venera-v > smoke/test.log 2>&1 &
+          app=$!
+          for i in $(seq 1 180); do
+            grep -qE "All tests passed|Some tests failed" smoke/test.log && break
+            kill -0 $app 2>/dev/null || break
+            sleep 5
+          done
+          kill $app $shots || true
+          cat smoke/test.log
+          grep -q "All tests passed" smoke/test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
