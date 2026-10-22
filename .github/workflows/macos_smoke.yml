@@ -1,8 +1,6 @@
 name: macOS smoke test
 on:
   workflow_dispatch: {}
-  push:
-    branches: [test/macos-smoke]
 
 jobs:
   smoke:
