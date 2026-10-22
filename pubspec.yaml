@@ -104,6 +104,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+  file_selector_platform_interface: ^2.7.0
   flutter_lints: ^5.0.0
   flutter_to_arch: ^1.0.1
   flutter_to_debian: 

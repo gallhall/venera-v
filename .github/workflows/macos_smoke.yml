@@ -26,6 +26,15 @@ jobs:
           screencapture -x smoke/launch.png || true
           kill %1 || true
           cat smoke/app.log
+      # The video features in the running app, see the test. Screenshots
+      # are taken meanwhile, to see what the app drew.
+      - name: Video smoke test
+        run: |
+          (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 10; done) &
+          flutter test integration_test/video_smoke_test.dart -d macos 2>&1 | tee smoke/test.log
+          status=${PIPESTATUS[0]}
+          kill %1 || true
+          exit $status
       - uses: actions/upload-artifact@v4
         if: always()
         with:
