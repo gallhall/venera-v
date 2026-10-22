@@ -405,26 +405,29 @@ class _VideoImportDialogState extends State<_VideoImportDialog> {
               }),
               style: ts.s14,
             ).paddingHorizontal(16).paddingVertical(4),
+          // Not a ListView: the dialog measures its content's intrinsic
+          // width, which a ListView cannot report.
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 360),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (var (i, ep) in plan.episodes.indexed)
-                  ListTile(
-                    dense: true,
-                    leading: plan.hasEpisodes ? Text('${i + 1}') : null,
-                    title: Text(ep.fileName),
-                    subtitle: Text(
-                      ep.subtitles.isEmpty
-                          ? "No subtitles".tl
-                          : ep.subtitles.map((s) => s.name).join(', '),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (var (i, ep) in plan.episodes.indexed)
+                    ListTile(
+                      dense: true,
+                      leading: plan.hasEpisodes ? Text('${i + 1}') : null,
+                      title: Text(ep.fileName),
+                      subtitle: Text(
+                        ep.subtitles.isEmpty
+                            ? "No subtitles".tl
+                            : ep.subtitles.map((s) => s.name).join(', '),
+                      ),
+                      trailing: ep.subtitles.isEmpty
+                          ? null
+                          : const Icon(Icons.subtitles_outlined, size: 18),
                     ),
-                    trailing: ep.subtitles.isEmpty
-                        ? null
-                        : const Icon(Icons.subtitles_outlined, size: 18),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           if (plan.unmatchedSubtitles.isNotEmpty)
