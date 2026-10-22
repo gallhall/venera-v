@@ -11,7 +11,9 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/video_sniffer.dart';
+import 'package:venera/init.dart';
 import 'package:venera/main.dart' as app;
+import 'package:window_manager/window_manager.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/main_page.dart';
 import 'package:venera/pages/video/video_export.dart';
@@ -131,8 +133,13 @@ void main() {
   }
 
   testWidgets('video features of the app', (tester) async {
-    // The app's own main(), with its initialization.
-    app.main(const []);
+    // The app's initialization and root widget, as in its main(). The app
+    // logs Flutter errors itself; the test reports them instead.
+    var onError = FlutterError.onError;
+    await init();
+    FlutterError.onError = onError;
+    await windowManager.ensureInitialized();
+    runApp(const app.MyApp());
     await pumpUntil(
       tester,
       () => find.byType(MainPage).evaluate().isNotEmpty,
