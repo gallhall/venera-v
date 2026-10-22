@@ -139,6 +139,8 @@ void main() {
     // The app's initialization and root widget, as in its main(). The app
     // logs Flutter errors itself; the test reports them instead.
     var onError = FlutterError.onError;
+    // Replaced by the app as it builds, restored at the end of the test.
+    var errorWidgetBuilder = ErrorWidget.builder;
     await init();
     FlutterError.onError = onError;
     await windowManager.ensureInitialized();
@@ -274,5 +276,6 @@ void main() {
     debugPrint('SMOKE: exported ${exported.path}');
 
     await temp.delete(recursive: true);
+    ErrorWidget.builder = errorWidgetBuilder;
   }, timeout: const Timeout(Duration(minutes: 10)));
 }
