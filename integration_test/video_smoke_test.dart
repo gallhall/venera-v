@@ -64,7 +64,10 @@ class _FakeFileSelector extends FileSelectorPlatform {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // Frames are drawn as the app asks for them, like outside of tests: the
+  // test waits without pumping (see pumpUntil) while the player runs.
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized().framePolicy =
+      LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
 
   late Directory temp;
 
