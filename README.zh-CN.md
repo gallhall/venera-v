@@ -33,6 +33,12 @@ Android、iOS、Windows、macOS 和 Linux（deb、Arch）的安装包在 [Releas
 
 venera-v 是独立的应用（Android 包名为 `com.github.gallhall.venerav`），可以和 venera 同时安装。
 
+## 相关链接
+- [Releases](https://github.com/gallhall/venera-v/releases)：各个版本的安装包
+- [venerav-configs](https://github.com/gallhall/venerav-configs)：venera-v 默认使用的漫画源列表
+- [Telegram 频道](https://t.me/VeneraV_Updates)：新版本发布通知
+- [venera](https://github.com/venera-app/venera)：venera-v 所基于的项目
+
 ## 从源码构建
 1. 克隆本仓库
 2. 安装 flutter，见 [flutter.dev](https://flutter.dev/docs/get-started/install)

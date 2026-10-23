@@ -33,6 +33,12 @@ Installers for Android, iOS, Windows, macOS and Linux (deb, Arch) are on the [Re
 
 venera-v installs as its own app (`com.github.gallhall.venerav` on Android), so it can be installed next to venera.
 
+## Links
+- [Releases](https://github.com/gallhall/venera-v/releases): installers of every version
+- [venerav-configs](https://github.com/gallhall/venerav-configs): the source list venera-v uses by default
+- [Telegram channel](https://t.me/VeneraV_Updates): release announcements
+- [venera](https://github.com/venera-app/venera): the project venera-v is based on
+
 ## Build from source
 1. Clone the repository
 2. Install flutter, see [flutter.dev](https://flutter.dev/docs/get-started/install)
