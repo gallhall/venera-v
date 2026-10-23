@@ -85,13 +85,9 @@ class _AboutSettingsState extends State<AboutSettings> {
 }
 
 Future<bool> checkUpdate() async {
-  var res = await AppDio()
-      .get("https://cdn.jsdelivr.net/gh/gallhall/venera-v@master/pubspec.yaml");
-  if (res.statusCode == 200) {
-    var data = loadYaml(res.data);
-    if (data["version"] != null) {
-      return _compareVersion(data["version"].split("+")[0], App.version);
-    }
+  var res = await AppDio().get<String>(latestPubspecUrl);
+  if (res.statusCode == 200 && res.data != null) {
+    return hasNewerVersion(res.data!, App.version);
   }
   return false;
 }
@@ -130,19 +126,4 @@ Future<void> checkUpdateUi([bool showMessageIfNoUpdate = true, bool delay = fals
   } catch (e, s) {
     Log.error("Check Update", e.toString(), s);
   }
-}
-
-/// return true if version1 > version2
-bool _compareVersion(String version1, String version2) {
-  var v1 = version1.split(".");
-  var v2 = version2.split(".");
-  for (var i = 0; i < v1.length; i++) {
-    if (int.parse(v1[i]) > int.parse(v2[i])) {
-      return true;
-    }
-    if (int.parse(v1[i]) < int.parse(v2[i])) {
-      return false;
-    }
-  }
-  return false;
 }

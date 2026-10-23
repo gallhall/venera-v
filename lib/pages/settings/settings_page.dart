@@ -15,11 +15,11 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/video/video_test_page.dart';
+import 'package:venera/utils/app_update.dart';
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
-import 'package:yaml/yaml.dart';
 
 part 'reader.dart';
 part 'explore_settings.dart';
