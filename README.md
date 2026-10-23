@@ -3,12 +3,12 @@
 [![License](https://img.shields.io/github/license/gallhall/venera-v)](https://github.com/gallhall/venera-v/blob/master/LICENSE)
 [![Download](https://img.shields.io/github/v/release/gallhall/venera-v)](https://github.com/gallhall/venera-v/releases)
 
+English | [简体中文](README.zh-CN.md)
+
 A comic and video reader that supports local and network content.
 
 venera-v is a fork of [venera](https://github.com/venera-app/venera), which is no longer maintained.
 It keeps everything venera does and adds video playback.
-
-venera-v 是 [venera](https://github.com/venera-app/venera) 的分支，在原有漫画功能之上增加了视频播放。
 
 ## Features
 - Read local comics
