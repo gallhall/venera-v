@@ -295,6 +295,17 @@ jobs:
             echo "No TELEGRAM_API_ID or TELEGRAM_API_HASH, announcing without files"
             exit 0
           fi
+          # A pasted value often carries a space or line break.
+          export TELEGRAM_API_ID=$(printf '%s' "$TELEGRAM_API_ID" | tr -d '[:space:]')
+          export TELEGRAM_API_HASH=$(printf '%s' "$TELEGRAM_API_HASH" | tr -d '[:space:]')
+          if [[ ! "$TELEGRAM_API_ID" =~ ^[0-9]+$ ]]; then
+            echo "TELEGRAM_API_ID is not a number" >&2
+            exit 1
+          fi
+          if [[ ! "$TELEGRAM_API_HASH" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "TELEGRAM_API_HASH is not 32 hex digits (it has ${#TELEGRAM_API_HASH} characters)" >&2
+            exit 1
+          fi
           docker run -d --name telegram-bot-api -p 8081:8081 \
             -e TELEGRAM_API_ID -e TELEGRAM_API_HASH -e TELEGRAM_LOCAL=1 \
             aiogram/telegram-bot-api:10.2

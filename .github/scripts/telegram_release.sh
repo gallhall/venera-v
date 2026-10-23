@@ -101,7 +101,7 @@ echo "Announced ${tag} on ${CHANNEL}"
 
 for ((i = 0; i < ${#files[@]}; i += 10)); do
   group=("${files[@]:i:10}")
-  args=(-F "chat_id=$CHANNEL")
+  args=(--form-string "chat_id=$CHANNEL")
   media="["
   for j in "${!group[@]}"; do
     [ "$j" -gt 0 ] && media+=","
@@ -109,6 +109,6 @@ for ((i = 0; i < ${#files[@]}; i += 10)); do
     args+=(-F "file$j=@${group[$j]}")
   done
   media+="]"
-  call sendMediaGroup "${args[@]}" -F "media=$media"
+  call sendMediaGroup "${args[@]}" --form-string "media=$media"
   echo "Sent $(printf '%s ' "${group[@]##*/}")"
 done
