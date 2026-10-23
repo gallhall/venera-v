@@ -40,7 +40,7 @@ class _AboutSettingsState extends State<AboutSettings> {
               "V${App.version}",
               style: const TextStyle(fontSize: 16),
             ),
-            Text("Venera is a free and open-source app for comic reading.".tl),
+            Text("venera-v is a free and open-source app for comics and videos.".tl),
             const SizedBox(height: 8),
           ],
         ).toSliver(),
@@ -76,7 +76,7 @@ class _AboutSettingsState extends State<AboutSettings> {
           title: const Text("Telegram"),
           trailing: const Icon(Icons.open_in_new),
           onTap: () {
-            launchUrlString("https://t.me/venera_release");
+            launchUrlString("https://t.me/VeneraV_Updates");
           },
         ).toSliver(),
       ],
