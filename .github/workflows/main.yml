@@ -283,6 +283,14 @@ jobs:
           git commit -am "chore: version ${GITHUB_REF_NAME#v}"
           git push
           # The app checks for updates in this pubspec.yaml through jsDelivr.
+          # Right after a push jsDelivr can still see the previous commit and
+          # cache the old file again: purge late, and twice.
           BRANCH="${{ github.event.repository.default_branch }}"
-          curl -s -o /dev/null -w "purge pubspec.yaml %{http_code}\n" --max-time 10 \
-            "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml" || true
+          purge() {
+            curl -s -o /dev/null -w "purge pubspec.yaml %{http_code}\n" --max-time 10 \
+              "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml" || true
+          }
+          sleep 30
+          purge
+          sleep 120
+          purge
