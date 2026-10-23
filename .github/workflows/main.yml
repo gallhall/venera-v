@@ -10,6 +10,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -60,6 +64,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -86,6 +94,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
         with:
@@ -115,6 +127,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - name: install dependencies
         run: | 
           choco install yq -y
@@ -138,6 +154,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
@@ -174,6 +194,10 @@ jobs:
     runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: 'master'
@@ -241,3 +265,24 @@ jobs:
             outputs/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The installers are up, so master can now carry the released version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: repo
+      - name: Write the version into master
+        working-directory: repo
+        run: |
+          bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+          if git diff --quiet; then
+            echo "master already has this version"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: version ${GITHUB_REF_NAME#v}"
+          git push
+          # The app checks for updates in this pubspec.yaml through jsDelivr.
+          BRANCH="${{ github.event.repository.default_branch }}"
+          curl -s -o /dev/null -w "purge pubspec.yaml %{http_code}\n" --max-time 10 \
+            "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml" || true

@@ -612,7 +612,7 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
           ),
           onPressed: () {
             launchUrlString(
-                "https://github.com/venera-app/venera/blob/master/doc/import_comic.md");
+                "https://github.com/gallhall/venera-v/blob/master/doc/import_comic.md");
           },
         ).fixWidth(90).paddingRight(8),
         Button.filled(
