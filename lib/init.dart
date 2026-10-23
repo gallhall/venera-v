@@ -96,9 +96,13 @@ void _checkOldConfigs() {
     appdata.writeImplicitData();
   }
 
-  if (appdata.settings['comicSourceListUrl'].toString().contains("git.nyne.dev")) {
-    // migrate to jsdelivr cdn
-    appdata.settings['comicSourceListUrl'] = "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/index.json";
+  var sourceListUrl = appdata.settings['comicSourceListUrl'].toString();
+  // Old defaults: venera on git.nyne.dev, then venera on jsdelivr. The list
+  // of venera-v has the sources of venera too.
+  if (sourceListUrl.contains("git.nyne.dev") ||
+      sourceListUrl ==
+          "https://cdn.jsdelivr.net/gh/venera-app/venera-configs@main/index.json") {
+    appdata.settings['comicSourceListUrl'] = defaultSourceListUrl;
     appdata.saveData();
   }
 }
