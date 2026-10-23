@@ -367,7 +367,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ..time = DateTime.now();
     history.readEpisode.add(episodes.historyKey(current));
     if (sync) {
-      HistoryManager().addHistory(history);
+      // Only from dispose, while other pages listening to the history
+      // cannot rebuild.
+      HistoryManager().addHistory(history, notifyLater: true);
     } else {
       HistoryManager().addHistoryAsync(history);
     }

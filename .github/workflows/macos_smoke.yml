@@ -1,0 +1,41 @@
+name: macOS smoke test
+on:
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - run: flutter pub get
+      # The test built as the app. `flutter test -d macos` starts it with
+      # `open`, which fails on the runner: the app then has no window and
+      # draws nothing. Started directly, it does.
+      - run: flutter build macos --debug -t integration_test/video_smoke_test.dart
+      # The video features in the running app, see the test. Screenshots
+      # are taken meanwhile, to see what the app drew.
+      - name: Video smoke test
+        run: |
+          mkdir -p smoke
+          (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 2; done) &
+          shots=$!
+          build/macos/Build/Products/Debug/venera-v.app/Contents/MacOS/venera-v > smoke/test.log 2>&1 &
+          app=$!
+          for i in $(seq 1 180); do
+            grep -qE "All tests passed|Some tests failed" smoke/test.log && break
+            kill -0 $app 2>/dev/null || break
+            sleep 5
+          done
+          kill $app $shots || true
+          cat smoke/test.log
+          grep -q "All tests passed" smoke/test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos_smoke
+          path: smoke/
