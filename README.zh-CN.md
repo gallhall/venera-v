@@ -26,7 +26,7 @@ venera-v 保留了 venera 的全部功能，并增加了视频播放。
 - 按选择的画质下载剧集（包括 DASH 流），离线播放，并可导出为文件
 - 导入本地视频和字幕
 - 打开视频网页来查找视频流
-- iOS 上使用系统播放器播放，支持锁屏控制
+- iOS 上使用系统播放器播放
 
 ## 下载
 Android、iOS、Windows、macOS 和 Linux（deb、Arch）的安装包在 [Releases](https://github.com/gallhall/venera-v/releases) 页面。

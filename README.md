@@ -26,7 +26,7 @@ It keeps everything venera does and adds video playback.
 - Download episodes (including DASH streams) in a chosen quality, play them offline, and export them as files
 - Import local videos and subtitles
 - Find streams by opening the web page of a video
-- On iOS, playback in the system player, with lock screen controls
+- On iOS, playback in the system player
 
 ## Download
 Installers for Android, iOS, Windows, macOS and Linux (deb, Arch) are on the [Releases](https://github.com/gallhall/venera-v/releases) page.
