@@ -10,6 +10,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -60,6 +64,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -86,6 +94,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
         with:
@@ -115,6 +127,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - name: install dependencies
         run: | 
           choco install yq -y
@@ -138,6 +154,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
@@ -174,6 +194,10 @@ jobs:
     runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
+      - name: Set version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
       - uses: subosito/flutter-action@v2
         with:
           channel: 'master'
