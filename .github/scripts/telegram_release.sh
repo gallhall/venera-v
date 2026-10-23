@@ -49,8 +49,17 @@ if [ "${DRY_RUN:-}" = 1 ]; then
 fi
 
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is not set}"
-response=$(curl -s --max-time 30 -H "Content-Type: application/json" -d "$payload" \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage")
+# A pasted token often carries a space or line break.
+token=$(printf '%s' "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')
+if [[ ! "$token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+  echo "TELEGRAM_BOT_TOKEN does not look like a bot token (digits:letters)" >&2
+  exit 1
+fi
+if ! response=$(curl -sS --max-time 30 -H "Content-Type: application/json" -d "$payload" \
+  "https://api.telegram.org/bot${token}/sendMessage"); then
+  echo "Could not reach Telegram" >&2
+  exit 1
+fi
 if ! echo "$response" | grep -q '"ok":true'; then
   echo "Telegram did not take the message: $response" >&2
   exit 1
