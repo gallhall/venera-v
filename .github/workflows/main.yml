@@ -265,3 +265,24 @@ jobs:
             outputs/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The installers are up, so master can now carry the released version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: repo
+      - name: Write the version into master
+        working-directory: repo
+        run: |
+          bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+          if git diff --quiet; then
+            echo "master already has this version"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: version ${GITHUB_REF_NAME#v}"
+          git push
+          # The app checks for updates in this pubspec.yaml through jsDelivr.
+          BRANCH="${{ github.event.repository.default_branch }}"
+          curl -s -o /dev/null -w "purge pubspec.yaml %{http_code}\n" --max-time 10 \
+            "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml" || true
