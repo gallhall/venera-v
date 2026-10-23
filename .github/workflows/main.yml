@@ -173,15 +173,25 @@ jobs:
           flutter pub get
           dart run patch/font.dart
       - run: python3 debian/build.py x64
-      # flutter_to_arch expects the executable to be named like the package.
-      - run: |
-          cp build/linux/x64/release/bundle/venera-v build/linux/x64/release/bundle/venera
-          dart run flutter_to_arch
+      # flutter_to_arch names the package after the name in pubspec.yaml, which
+      # is the Dart package name venera. That clashes with venera's own Arch
+      # package, so it runs compiled, with pubspec.yaml naming venera-v (not a
+      # valid Dart package name, so `dart run` cannot be used while it does).
+      - name: Build the Arch package
+        run: |
+          F2A=$(jq -r '.packages[] | select(.name == "flutter_to_arch") | .rootUri' .dart_tool/package_config.json)
+          dart compile exe --packages=.dart_tool/package_config.json "${F2A#file://}/bin/flutter_to_arch.dart" -o "$RUNNER_TEMP/flutter_to_arch"
+          sed -i 's/^name: venera$/name: venera-v/' pubspec.yaml
+          "$RUNNER_TEMP/flutter_to_arch"
+          sed -i 's/^name: venera-v$/name: venera/' pubspec.yaml
       - run: |
           sudo rm -rf build/linux/arch/app.tar.gz
           sudo rm -rf build/linux/arch/pkg
           sudo rm -rf build/linux/arch/src
           sudo rm -rf build/linux/arch/PKGBUILD
+          # Debug symbols, which makepkg packages on its own.
+          sudo rm -f build/linux/arch/*-debug-*.pkg.tar.zst
+          ls build/linux/arch
       - uses: actions/upload-artifact@v4
         with:
           name: deb_build
