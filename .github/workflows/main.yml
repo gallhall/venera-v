@@ -280,14 +280,59 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: repo
+      # The cloud Bot API takes files of up to 50 MB, the macOS and universal
+      # Android installers are larger: a local server takes up to 2000 MB. It
+      # needs an api_id and api_hash from my.telegram.org; without them the
+      # release is announced without its files.
+      - name: Start a local Telegram Bot API server
+        id: telegram_api
+        continue-on-error: true
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          if [ -z "$TELEGRAM_API_ID" ] || [ -z "$TELEGRAM_API_HASH" ]; then
+            echo "No TELEGRAM_API_ID or TELEGRAM_API_HASH, announcing without files"
+            exit 0
+          fi
+          # A pasted value often carries a space or line break.
+          export TELEGRAM_API_ID=$(printf '%s' "$TELEGRAM_API_ID" | tr -d '[:space:]')
+          export TELEGRAM_API_HASH=$(printf '%s' "$TELEGRAM_API_HASH" | tr -d '[:space:]')
+          if [[ ! "$TELEGRAM_API_ID" =~ ^[0-9]+$ ]]; then
+            echo "TELEGRAM_API_ID is not a number" >&2
+            exit 1
+          fi
+          if [[ ! "$TELEGRAM_API_HASH" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "TELEGRAM_API_HASH is not 32 hex digits (it has ${#TELEGRAM_API_HASH} characters)" >&2
+            exit 1
+          fi
+          docker run -d --name telegram-bot-api -p 8081:8081 \
+            -e TELEGRAM_API_ID -e TELEGRAM_API_HASH -e TELEGRAM_LOCAL=1 \
+            aiogram/telegram-bot-api:10.2
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8081/; then
+              echo "api=http://localhost:8081" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The local Bot API server did not start" >&2
+          docker logs telegram-bot-api >&2 || true
+          exit 1
       # A failed announcement must not stop the version commit below.
       - name: Announce on Telegram
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_API: ${{ steps.telegram_api.outputs.api }}
           RELEASE_BODY: ${{ github.event.release.body }}
           RELEASE_URL: ${{ github.event.release.html_url }}
-        run: bash repo/.github/scripts/telegram_release.sh "${{ github.ref_name }}"
+        run: |
+          if [ -n "$TELEGRAM_API" ]; then
+            bash repo/.github/scripts/telegram_release.sh "${{ github.ref_name }}" outputs
+          else
+            bash repo/.github/scripts/telegram_release.sh "${{ github.ref_name }}"
+          fi
       - name: Write the version into master
         working-directory: repo
         run: |
