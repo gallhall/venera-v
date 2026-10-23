@@ -139,6 +139,27 @@ class AppDio with DioMixin {
 
   static final Map<String, bool> _requests = {};
 
+  /// The url to retry [path] at after [error], or null.
+  ///
+  /// On some networks in China, cdn.jsdelivr.net resets the connections of
+  /// some files (the sources of venera-v, not those of venera) while
+  /// gcore.jsdelivr.net, which serves the same files, does not. Only GET
+  /// requests that got no response at all are retried.
+  static String? jsDelivrFallback(
+      String path, String? method, DioException error) {
+    if (error.response != null || error.type == DioExceptionType.cancel) {
+      return null;
+    }
+    if ((method ?? "GET").toUpperCase() != "GET") {
+      return null;
+    }
+    var uri = Uri.tryParse(path);
+    if (uri == null || uri.host != "cdn.jsdelivr.net") {
+      return null;
+    }
+    return uri.replace(host: "gcore.jsdelivr.net").toString();
+  }
+
   @override
   Future<Response<T>> request<T>(
     String path, {
@@ -157,8 +178,22 @@ class AppDio with DioMixin {
       options!.headers!.remove('prevent-parallel');
     }
     try {
-      return super.request<T>(
+      return await super.request<T>(
         path,
+        data: data,
+        queryParameters: queryParameters,
+        cancelToken: cancelToken,
+        options: options,
+        onSendProgress: onSendProgress,
+        onReceiveProgress: onReceiveProgress,
+      );
+    } on DioException catch (e) {
+      var method = options?.method ?? this.options.method;
+      var fallback = jsDelivrFallback(path, method, e);
+      if (fallback == null) rethrow;
+      Log.info("Network", "Retrying $path on $fallback");
+      return await super.request<T>(
+        fallback,
         data: data,
         queryParameters: queryParameters,
         cancelToken: cancelToken,
