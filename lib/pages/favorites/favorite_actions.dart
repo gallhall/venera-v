@@ -1,8 +1,9 @@
 part of 'favorites_page.dart';
 
-/// Open a dialog to create a new favorite folder.
-Future<void> newFolder() async {
-  return showDialog(
+/// Open a dialog to create a new favorite folder. Returns the name of the
+/// folder created, or null if none was or it was imported from a file.
+Future<String?> newFolder() async {
+  return showDialog<String>(
       context: App.rootContext,
       builder: (context) {
         var controller = TextEditingController();
@@ -54,7 +55,7 @@ Future<void> newFolder() async {
                     });
                   } else {
                     LocalFavoritesManager().createFolder(controller.text);
-                    context.pop();
+                    context.pop(controller.text);
                   }
                 },
                 child: Text("Create".tl),
@@ -102,6 +103,20 @@ void addFavorite(List<Comic> comics) {
             ),
           ),
           actions: [
+            // Without leaving for the favorites page, and selected once
+            // created.
+            TextButton.icon(
+              icon: const Icon(Icons.add, size: 20),
+              label: Text("New Folder".tl),
+              onPressed: () async {
+                var name = await newFolder();
+                if (!context.mounted) return;
+                setState(() {
+                  folders = LocalFavoritesManager().folderNames;
+                  if (name != null) selectedFolder = name;
+                });
+              },
+            ).paddingRight(4),
             FilledButton(
               onPressed: () {
                 if (selectedFolder != null) {
