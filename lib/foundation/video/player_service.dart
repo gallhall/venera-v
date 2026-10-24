@@ -315,9 +315,17 @@ class PlayerService implements VideoPlayback {
   String? appliedProxy;
 
   static PlayerTracks _mapTracks(Tracks t) {
+    // media_kit adds an external track without a language as language
+    // "auto", which is no language to show.
+    String? language(String? value) => value == 'auto' ? null : value;
     return PlayerTracks(
-      t.audio.map((e) => PlayerTrack(e.id, e.title, e.language)).toList(),
-      t.subtitle.map((e) => PlayerTrack(e.id, e.title, e.language)).toList(),
+      [
+        for (var e in t.audio) PlayerTrack(e.id, e.title, language(e.language)),
+      ],
+      [
+        for (var e in t.subtitle)
+          PlayerTrack(e.id, e.title, language(e.language)),
+      ],
     );
   }
 
