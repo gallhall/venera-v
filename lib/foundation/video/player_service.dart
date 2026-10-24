@@ -58,7 +58,7 @@ class PlayerTrack {
     if (id == 'auto') return 'Auto';
     if (id == 'no') return 'Off';
     var parts = [title, language].nonNulls;
-    return parts.isEmpty ? id : '$id 路 ${parts.join(' 路 ')}';
+    return parts.isEmpty ? id : '$id · ${parts.join(' · ')}';
   }
 }
 
