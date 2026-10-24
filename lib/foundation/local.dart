@@ -156,10 +156,9 @@ class LocalComic with HistoryMixin implements Comic {
   }
 
   void read() {
-    // Imported videos have no source; a downloaded one needs its source,
-    // whose key the player uses.
-    if (isLocalVideo(this) &&
-        (comicType == ComicType.local || comicType.comicSource != null)) {
+    // Also once the source of a downloaded video is gone: the player plays
+    // the episodes downloaded without it.
+    if (isLocalVideo(this)) {
       App.rootContext.to(() => videoPlayer(sourceKey));
       return;
     }
