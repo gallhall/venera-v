@@ -8,6 +8,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/video/stream_failures.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/io.dart';
@@ -124,7 +125,14 @@ abstract interface class VideoPlayback {
 
   Stream<bool> get playing;
 
+  /// True once the stream played to its end, not when it broke off before:
+  /// see [interrupted].
   Stream<bool> get completed;
+
+  /// The stream stopped playing before its end, as its data could not be
+  /// loaded: the connection dropped for good, the link expired... Gives
+  /// what the engine reported. The position stays where it stopped.
+  Stream<String> get interrupted;
 
   Stream<double> get rate;
 
@@ -170,7 +178,15 @@ abstract interface class VideoPlayback {
 /// Pages should only talk to this class, so that the engine can be replaced
 /// without touching the UI.
 class PlayerService implements VideoPlayback {
-  PlayerService._(this._player, this._controller);
+  PlayerService._(this._player, this._controller) {
+    _subscriptions.addAll([
+      _player.stream.log.listen(
+        (e) => _failures.log(e.prefix, e.level, e.text),
+      ),
+      _player.stream.completed.listen(_onCompleted),
+      _player.stream.buffering.listen(_onBuffering),
+    ]);
+  }
 
   static bool _initialized = false;
 
@@ -193,6 +209,12 @@ class PlayerService implements VideoPlayback {
     );
     return PlayerService._(player, VideoController(player));
   }
+
+  /// A service on [player] that has no view to show the video in, for
+  /// tests, where the view's platform side is missing.
+  @visibleForTesting
+  factory PlayerService.withoutView(Player player) =>
+      PlayerService._(player, null);
 
   /// A JPEG frame from a tenth into the local video [path], for a cover.
   /// Null if the video cannot be read in time.
@@ -231,9 +253,49 @@ class PlayerService implements VideoPlayback {
 
   final Player _player;
 
-  final VideoController _controller;
+  /// Null without a view, see [PlayerService.withoutView].
+  final VideoController? _controller;
 
   bool _disposed = false;
+
+  final _subscriptions = <StreamSubscription>[];
+
+  /// What mpv reported about the network for the current stream.
+  final _failures = StreamFailures();
+
+  final _completed = StreamController<bool>.broadcast();
+
+  final _interrupted = StreamController<String>.broadcast();
+
+  /// Checks a wait for data, see [StreamFailures.stalled].
+  Timer? _stallTimer;
+
+  /// mpv reports the end of what it could load as the end of the stream:
+  /// the end is reported as an interruption if data was lost on the way.
+  void _onCompleted(bool completed) {
+    var interruption = completed ? _failures.atEnd() : null;
+    if (interruption != null) {
+      Log.warning('Video', 'The stream broke off: $interruption');
+      _interrupted.add(interruption);
+    } else {
+      _completed.add(completed);
+    }
+  }
+
+  void _onBuffering(bool buffering) {
+    _stallTimer?.cancel();
+    if (!buffering) return;
+    var since = DateTime.now();
+    _stallTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      // Not paused by the user meanwhile.
+      if (!_player.state.playing) return;
+      var interruption = _failures.stalled(since);
+      if (interruption == null) return;
+      timer.cancel();
+      Log.warning('Video', 'The stream stalled: $interruption');
+      _interrupted.add(interruption);
+    });
+  }
 
   @override
   Stream<Duration> get position => _player.stream.position;
@@ -250,7 +312,10 @@ class PlayerService implements VideoPlayback {
   Stream<bool> get buffering => _player.stream.buffering;
 
   @override
-  Stream<bool> get completed => _player.stream.completed;
+  Stream<bool> get completed => _completed.stream;
+
+  @override
+  Stream<String> get interrupted => _interrupted.stream;
 
   @override
   Stream<double> get rate => _player.stream.rate;
@@ -343,6 +408,8 @@ class PlayerService implements VideoPlayback {
       httpHeaders: buildHeaders(request.url, request.headers),
       start: start,
     );
+    _stallTimer?.cancel();
+    _failures.reset();
     await _player.open(media, play: play);
     if (request.audioUrl == null && request.subtitles.isEmpty) {
       return;
@@ -491,6 +558,7 @@ class PlayerService implements VideoPlayback {
   /// The video view, with media_kit's own controls if [controls]. The video
   /// page draws `VideoControls` over a view without them.
   Widget buildView({bool controls = true, BoxFit fit = BoxFit.contain}) {
+    if (_controller == null) return const SizedBox.expand();
     return Video(
       controller: _controller,
       fit: fit,
@@ -502,6 +570,12 @@ class PlayerService implements VideoPlayback {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _stallTimer?.cancel();
+    for (var s in _subscriptions) {
+      await s.cancel();
+    }
     await _player.dispose();
+    await _completed.close();
+    await _interrupted.close();
   }
 }
