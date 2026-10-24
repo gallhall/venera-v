@@ -31,6 +31,9 @@ class _Server {
 
   final clip = List.generate(300 * 1024, (i) => Random(i).nextInt(256));
 
+  /// A clip of the same size, from another source.
+  final otherClip = List.generate(300 * 1024, (i) => Random(-i).nextInt(256));
+
   final segments = [
     for (int i = 0; i < 3; i++) List.generate(4096, (j) => (i * 7 + j) % 256),
   ];
@@ -132,6 +135,23 @@ class _Server {
             await res.flush();
             await Future.delayed(const Duration(milliseconds: 30));
           }
+        case '/broken':
+          // Sends half of the clip, then drops the connection.
+          var socket = await res.detachSocket(writeHeaders: false);
+          socket.write('HTTP/1.1 200 OK\r\n'
+              'Content-Length: ${clip.length}\r\n\r\n');
+          socket.add(clip.sublist(0, clip.length ~/ 2));
+          await socket.flush();
+          socket.destroy();
+          return;
+        case '/ranged':
+          var range = req.headers.value('range');
+          var start = range == null
+              ? 0
+              : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+          if (start > 0) res.statusCode = HttpStatus.partialContent;
+          res.contentLength = otherClip.length - start;
+          res.add(otherClip.sublist(start));
         case '/dash/stream.mpd':
           res.write(dashMpd);
         case '/dash/v/init.mp4':
@@ -219,7 +239,7 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: id === "slow" ? null
+      chapters: id === "slow" || id === "fallback" ? null
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
@@ -231,6 +251,11 @@ class TestVideo extends ComicSource {
       ? {url: "${server.base}/dash/" + (epId === "dash" ? "stream" : "webm") + ".mpd"}
       : id === "slow"
       ? {url: "${server.base}/slow", type: "mp4"}
+      : id === "fallback"
+      ? {sources: [
+          {url: "${server.base}/broken", name: "HD", type: "mp4"},
+          {url: "${server.base}/ranged", name: "SD", type: "mp4"},
+        ]}
       : epId === "mp4"
       ? new VideoPlayInfo({
           sources: [{url: "${server.base}/clip", name: "SD"}],
@@ -393,5 +418,31 @@ class TestVideo extends ComicSource {
       RegExp(r'bytes=(\d+)-').firstMatch(server.ranges.last!)!.group(1)!,
     );
     expect(resumedFrom, greaterThanOrEqualTo(saved));
+  }, skip: skip);
+
+  test('the source tried after a failed one starts over', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'fallback');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('fallback', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('fallback', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    expect(episode.sources.single.name, 'SD');
+    // Not continued from the half the failed source sent.
+    expect(
+      File(episode.sources.single.url).readAsBytesSync(),
+      server.otherClip,
+    );
+    // The cover stays, the record of the source being downloaded goes.
+    expect(
+      Directory(local.baseDir)
+          .listSync()
+          .map((e) => e.path.split(RegExp(r'[\\/]')).last),
+      unorderedEquals(['cover.png', 'video.mp4', 'episode.json']),
+    );
   }, skip: skip);
 }

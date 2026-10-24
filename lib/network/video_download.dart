@@ -290,6 +290,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       if (!_isRunning) return;
       var headers = _headers(info.headersFor(source));
       try {
+        await _claimDirectory(
+          dir,
+          "${info.sources.indexOf(source)}:${source.name}",
+        );
         var kind = await _detect(source, headers);
         String video;
         String? audio;
@@ -339,6 +343,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         for (var d in temporary) {
           await d.deleteIgnoreError(recursive: true);
         }
+        await dir.joinFile(_sourceMarkerName).deleteIgnoreError();
         return;
       } catch (e) {
         if (!_isRunning) return;
@@ -347,6 +352,27 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
     }
     throw lastError ?? "No source to download";
+  }
+
+  /// Names the source the files of an unfinished episode come from.
+  static const _sourceMarkerName = 'downloading_source';
+
+  /// Files of an unfinished episode are kept to resume it, but only with the
+  /// same [source]: those of another source would be taken as its own, as
+  /// segments have the same names and a `.part` file would be continued
+  /// with the other stream. Empties [dir] if they come from another source,
+  /// and records [source] as the one being downloaded.
+  Future<void> _claimDirectory(Directory dir, String source) async {
+    var marker = dir.joinFile(_sourceMarkerName);
+    if (await marker.exists() && await marker.readAsString() == source) {
+      return;
+    }
+    await for (var entry in dir.list()) {
+      // The cover of a video without episodes, which shares its directory.
+      if (entry is File && entry.name.startsWith('cover.')) continue;
+      await entry.delete(recursive: true);
+    }
+    await marker.writeAsString(source);
   }
 
   /// The highest resolution to download, see [VideoQuality.maxHeight].
