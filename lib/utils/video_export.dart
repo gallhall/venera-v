@@ -33,8 +33,9 @@ class VideoExporter {
   /// - a direct or merged video is copied;
   /// - an HLS stream is joined into one file, decrypted if it uses
   ///   AES-128: `.mp4` for fMP4 segments, `.ts` for MPEG-TS ones;
-  /// - a separate audio track is merged into an MP4 video if it can be,
-  ///   otherwise saved as `<baseName>.audio.<ext>`;
+  /// - a separate audio track, joined first if it is an HLS stream too, is
+  ///   merged into an MP4 video if it can be, otherwise saved as
+  ///   `<baseName>.audio.<ext>`;
   /// - subtitles are saved as `<baseName>.<language>.<ext>`, which players
   ///   load along with the video.
   ///
@@ -56,38 +57,55 @@ class VideoExporter {
     var video = json['video'] as String;
     var audio = json['audio'] as String?;
     var audioFile = audio == null ? null : File(_join(episodeDir, audio));
-    if (video.toLowerCase().endsWith('.m3u8')) {
-      var hls = await _HlsJoin.read(File(_join(episodeDir, video)));
-      if (hls.isFmp4) {
-        var joined = File(out('.joined.part'));
-        try {
-          await hls.writeTo(joined);
-          var target = File(out('.mp4'));
-          if (await _mergeMp4([joined, ?audioFile], target)) {
-            audioFile = null;
-          } else {
-            await _replace(joined, target);
+    var audioExtension = audio == null ? null : _extension(audio, '.m4a');
+    // The audio of an HLS stream that serves it apart, once joined.
+    File? joinedAudio;
+    try {
+      if (audio != null && audio.toLowerCase().endsWith('.m3u8')) {
+        var hls = await _HlsJoin.read(audioFile!);
+        joinedAudio = audioFile = File(out('.audio.joined.part'));
+        await hls.writeTo(joinedAudio);
+        audioExtension = hls.isFmp4 ? '.m4a' : hls.segmentExtension;
+      }
+      if (video.toLowerCase().endsWith('.m3u8')) {
+        var hls = await _HlsJoin.read(File(_join(episodeDir, video)));
+        if (hls.isFmp4) {
+          var joined = File(out('.joined.part'));
+          try {
+            await hls.writeTo(joined);
+            var target = File(out('.mp4'));
+            if (await _mergeMp4([joined, ?audioFile], target)) {
+              audioFile = null;
+            } else {
+              await _replace(joined, target);
+            }
+            written.add(target);
+          } finally {
+            await _deleteIfExists(joined);
           }
+        } else {
+          var target = File(out('.ts'));
+          var part = File('${target.path}.part');
+          await hls.writeTo(part);
+          await _replace(part, target);
           written.add(target);
-        } finally {
-          await _deleteIfExists(joined);
         }
       } else {
-        var target = File(out('.ts'));
-        var part = File('${target.path}.part');
-        await hls.writeTo(part);
-        await _replace(part, target);
+        var target = File(out(_extension(video, '.mp4')));
+        await _copy(File(_join(episodeDir, video)), target);
         written.add(target);
       }
-    } else {
-      var target = File(out(_extension(video, '.mp4')));
-      await _copy(File(_join(episodeDir, video)), target);
-      written.add(target);
-    }
-    if (audioFile != null) {
-      var target = File(out('.audio${_extension(audio!, '.m4a')}'));
-      await _copy(audioFile, target);
-      written.add(target);
+      if (audioFile != null) {
+        var target = File(out('.audio$audioExtension'));
+        if (identical(audioFile, joinedAudio)) {
+          await _replace(audioFile, target);
+        } else {
+          await _copy(audioFile, target);
+        }
+        written.add(target);
+      }
+    } finally {
+      if (joinedAudio != null) await _deleteIfExists(joinedAudio);
     }
 
     var subtitles = (json['subtitles'] as List?) ?? const [];
@@ -189,6 +207,10 @@ class _HlsJoin {
   const _HlsJoin(this.segments);
 
   bool get isFmp4 => segments.any((s) => s.init != null);
+
+  /// Extension of the segment files, e.g. `.ts` or `.aac`.
+  String get segmentExtension =>
+      VideoExporter._extension(segments.first.piece.file.path, '.ts');
 
   static Future<_HlsJoin> read(File playlist) async {
     var dir = playlist.parent.path;

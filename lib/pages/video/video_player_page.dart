@@ -114,6 +114,10 @@ class VideoPlayerPage extends StatefulWidget {
   /// Updated while playing. Loaded from [HistoryManager] if null.
   final History? history;
 
+  /// Creates the media_kit player.
+  @visibleForTesting
+  static PlayerService Function() createPlayer = PlayerService.create;
+
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
@@ -232,6 +236,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Skip ranges of the current episode already handled, by index.
   final handledSkips = <int>{};
 
+  /// Set while playback is brought back after the stream broke off.
+  _Recovery? recovery;
+
+  /// Whether the stream played to its end and was not played on since:
+  /// saved as finished, not at the position, which stops short of the
+  /// duration.
+  bool playedToEnd = false;
+
   @override
   void initState() {
     super.initState();
@@ -275,7 +287,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (engineError != null) return null;
     PlayerService p;
     try {
-      p = player = PlayerService.create();
+      p = player = VideoPlayerPage.createPlayer();
     } catch (e, s) {
       Log.error('Video', 'Failed to load the video engine: $e', s);
       engineError = e.toString();
@@ -302,6 +314,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     subscriptions.addAll([
       p.errors.listen(ifActive(onPlayerError)),
+      p.interrupted.listen(ifActive(onInterrupted)),
       p.duration.listen(
         ifActive((d) {
           duration = d;
@@ -309,6 +322,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             started = true;
             // The seek to the start position may not be applied yet.
             saveHistory(position: openedAt);
+            var r = recovery;
+            if (r != null && !r.restored) {
+              setState(() => r.restored = true);
+              context.showMessage(message: "Playback resumed".tl);
+            }
           }
         }),
       ),
@@ -316,6 +334,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ifActive((playing) {
           historyTimer?.cancel();
           if (playing) {
+            playedToEnd = false;
             historyTimer = Timer.periodic(
               const Duration(seconds: 15),
               (_) => saveHistory(),
@@ -328,13 +347,98 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.completed.listen(
         ifActive((completed) {
           if (!completed || !started || isLoading) return;
-          saveHistory(position: duration);
+          recovery = null;
+          playedToEnd = true;
+          saveHistory();
           if (hasNext) loadEpisode(current + 1);
         }),
       ),
       p.rate.listen(ifActive((v) => setState(() => rate = v))),
-      p.position.listen(ifActive(checkSkip)),
+      p.position.listen(
+        ifActive((position) {
+          checkSkip(position);
+          // Played on well past where it broke off: a new break is another
+          // one, which starts over from the same stream.
+          var r = recovery;
+          if (r != null && r.restored && position > r.position + _recovered) {
+            recovery = null;
+          }
+        }),
+      ),
     ]);
+  }
+
+  /// How far playback goes on after it was brought back for that to be
+  /// done.
+  static const _recovered = Duration(seconds: 10);
+
+  /// The stream broke off while it played: it is opened again where it
+  /// stopped, rather than taken as played to the end.
+  void onInterrupted(String reason) {
+    Log.warning('Video', 'Playback interrupted: $reason');
+    var p = active;
+    if (!mounted || p == null || playInfo == null || isLoading) return;
+    // It never played: it failed to open.
+    if (!started) return onPlayerError(reason);
+    var position = p.currentPosition;
+    saveHistory(position: position);
+    var r = recovery;
+    // Broke off again right after it came back: the attempts go on.
+    if (r == null || position > r.position + _recovered) {
+      recovery = _Recovery(position, reason);
+    }
+    recover();
+  }
+
+  /// The next attempt to play on where the stream broke off: the same
+  /// stream again, as the connection may only have dropped; then the links
+  /// loaded again from the source, as links expire; then the other
+  /// sources. Shows the error once none plays.
+  Future<void> recover() async {
+    var r = recovery;
+    var info = playInfo;
+    if (r == null || info == null) return;
+    var start = r.position == Duration.zero ? null : r.position;
+    var attempt = r.attempts++;
+    setState(() => r.restored = false);
+    if (attempt == 0) return openSource(sourceIndex, start: start);
+    // Not for a downloaded episode, which has no links.
+    if (attempt == 1 &&
+        localPlayInfo(current) == null &&
+        source?.loadVideoPlayInfo != null) {
+      var token = loadToken;
+      var name = info.sources[sourceIndex].name;
+      var res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
+      if (!mounted || token != loadToken || recovery != r) return;
+      if (!res.error) {
+        var sources = res.data.sources;
+        var index = sources.indexWhere((s) => s.name == name);
+        setState(() {
+          playInfo = res.data;
+          failedSources.clear();
+          nativeFailedSources.clear();
+          retriedSources.clear();
+        });
+        return openSource(index < 0 ? 0 : index, start: start);
+      }
+      Log.warning(
+        'Video',
+        'Could not load the links again: ${res.errorMessage}',
+      );
+      info = playInfo!;
+    }
+    failedSources.add(sourceIndex);
+    var next = Iterable.generate(
+      info.sources.length,
+    ).where((i) => !failedSources.contains(i)).firstOrNull;
+    if (next == null) {
+      setState(() => error = r.reason);
+      return;
+    }
+    context.showMessage(
+      message: "Switched to @s".tlParams({"s": info.sources[next].name}),
+    );
+    return openSource(next, start: start);
   }
 
   @override
@@ -362,7 +466,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     history
       ..ep = h.ep
       ..group = h.group
-      ..page = (position ?? p.currentPosition).inSeconds
+      ..page = (position ?? (playedToEnd ? duration : p.currentPosition))
+          .inSeconds
       ..maxPage = duration.inSeconds
       ..time = DateTime.now();
     history.readEpisode.add(episodes.historyKey(current));
@@ -420,6 +525,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       playInfo = null;
       currentSkip = null;
       handledSkips.clear();
+      recovery = null;
     });
     await active?.pause();
     // A downloaded episode plays from its files, without the source.
@@ -465,6 +571,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Future<void> openSource(int index, {Duration? start}) async {
     openedAt = start ?? Duration.zero;
+    playedToEnd = false;
     var info = playInfo;
     if (info == null) return;
     setState(() {
@@ -531,6 +638,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       );
       return;
     }
+    // Playback is being brought back: the attempts go on there.
+    if (recovery != null) {
+      recover();
+      return;
+    }
     // Opening a stream takes several requests (a DASH stream fetches every
     // quality's init segment), so a single dropped one fails it: try the
     // same source again once first.
@@ -564,7 +676,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void switchSource(int index) {
     if (index == sourceIndex && error == null) return;
     failedSources.remove(index);
-    openSource(index, start: started ? active!.currentPosition : null);
+    // Picked by hand: no more attempts of its own.
+    recovery = null;
+    // Before the stream plays, e.g. after it failed, where it was to start.
+    var start = started ? active!.currentPosition : openedAt;
+    openSource(index, start: start == Duration.zero ? null : start);
   }
 
   /// Applies fullscreen to the window or the system UI.
@@ -962,6 +1078,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           view,
           if (isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.white)),
+          if (recovery != null && !started && error == null)
+            buildReconnecting(),
           if (currentSkip != null && !isLocked)
             Positioned(
               right: 16,
@@ -1001,6 +1119,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
+  /// Says why the player waits while the stream that broke off is opened
+  /// again, under the loading indicator of the controls.
+  Widget buildReconnecting() {
+    return IgnorePointer(
+      child: Align(
+        alignment: const Alignment(0, 0.45),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            "Playback interrupted, reconnecting...".tl,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget buildError() {
     var info = playInfo;
     var untried = info == null
@@ -1026,7 +1165,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             ),
           const Spacer(),
           Text(
-            "Playback failed".tl,
+            (recovery != null ? "Playback interrupted" : "Playback failed").tl,
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
           const SizedBox(height: 8),
@@ -1127,4 +1266,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       style: ts.s16,
     ).paddingHorizontal(16).paddingTop(16).paddingBottom(8);
   }
+}
+
+/// Bringing back playback after the stream broke off at [position].
+class _Recovery {
+  _Recovery(this.position, this.reason);
+
+  /// Where the stream broke off, where it is opened again.
+  final Duration position;
+
+  /// What the engine reported when the stream broke off, shown if playback
+  /// cannot be brought back: why the attempts failed tells less.
+  final String reason;
+
+  /// Attempts made, see [_VideoPlayerPageState.recover].
+  int attempts = 0;
+
+  /// Whether the stream opened again plays.
+  bool restored = false;
 }

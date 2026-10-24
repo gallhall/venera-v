@@ -99,6 +99,8 @@ class NativeVideoPlayer implements VideoPlayback {
 
   final _errors = StreamController<String>.broadcast();
 
+  final _interrupted = StreamController<String>.broadcast();
+
   final _actions = StreamController<String>.broadcast();
 
   final _buffering = StreamController<bool>.broadcast();
@@ -145,6 +147,9 @@ class NativeVideoPlayer implements VideoPlayback {
 
   @override
   Stream<String> get errors => _errors.stream;
+
+  @override
+  Stream<String> get interrupted => _interrupted.stream;
 
   /// Ids of the [NativePlayerAction]s pressed.
   Stream<String> get actions => _actions.stream;
@@ -206,7 +211,14 @@ class NativeVideoPlayer implements VideoPlayback {
       case 'completed':
         _completed.add(true);
       case 'error':
-        _errors.add(event['message']?.toString() ?? 'Playback failed');
+        var message = event['message']?.toString() ?? 'Playback failed';
+        // AVPlayer only fails once it gave up loading the stream: after
+        // the stream started, it broke off.
+        if (_currentDuration > Duration.zero) {
+          _interrupted.add(message);
+        } else {
+          _errors.add(message);
+        }
       case 'action':
         _actions.add(event['id'].toString());
     }
@@ -312,6 +324,7 @@ class NativeVideoPlayer implements VideoPlayback {
       _completed,
       _rate,
       _errors,
+      _interrupted,
       _actions,
       _buffering,
       _pickedRate,

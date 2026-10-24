@@ -25,6 +25,9 @@ class _ReaderWithLoadingState
     extends LoadingState<ReaderWithLoading, ReaderProps> {
   @override
   Widget buildContent(BuildContext context, ReaderProps data) {
+    if (data.localVideo != null) {
+      return data.localVideo!.videoPlayer(widget.sourceKey);
+    }
     if (data.videoDetails != null) {
       return VideoPlayerPage(
         sourceKey: widget.sourceKey,
@@ -76,6 +79,7 @@ class _ReaderWithLoadingState
               ),
           author: localComic.subtitle,
           tags: localComic.tags,
+          localVideo: isLocalVideo(localComic) ? localComic : null,
         ),
       );
     } else {
@@ -122,8 +126,13 @@ class ReaderProps {
   /// Set for video sources, which open the player instead of the reader.
   final ComicDetails? videoDetails;
 
+  /// Set for an imported video, or a downloaded one whose source is gone,
+  /// which opens the player too.
+  final LocalComic? localVideo;
+
   const ReaderProps({
     this.videoDetails,
+    this.localVideo,
     required this.type,
     required this.cid,
     required this.name,
