@@ -258,6 +258,13 @@ class _LogsPageState extends State<LogsPage> {
                         child: Text("Export".tl),
                         onTap: () => saveLog(Log().toString()),
                       ),
+                      PopupMenuItem(
+                        child: Text("Previous Run".tl),
+                        // Once the menu is closed.
+                        onTap: () => Future.microtask(
+                          () => context.to(() => const _PreviousRunLogPage()),
+                        ),
+                      ),
                     ]);
                   }),
               icon: const Icon(Icons.more_horiz))
@@ -339,6 +346,63 @@ class _LogsPageState extends State<LogsPage> {
 
   void saveLog(String log) async {
     saveFile(data: utf8.encode(log), filename: 'log.txt');
+  }
+}
+
+/// The log of the previous run, e.g. of one that died while starting: its
+/// end, the whole of it once exported.
+class _PreviousRunLogPage extends StatelessWidget {
+  const _PreviousRunLogPage();
+
+  static const _shownBytes = 256 * 1024;
+
+  @override
+  Widget build(BuildContext context) {
+    var file = Log.previousRunFile;
+    var length = file.existsSync() ? file.lengthSync() : 0;
+    String? text;
+    if (length > 0) {
+      var raf = file.openSync();
+      try {
+        raf.setPositionSync(length > _shownBytes ? length - _shownBytes : 0);
+        text = utf8.decode(raf.readSync(_shownBytes), allowMalformed: true);
+      } finally {
+        raf.closeSync();
+      }
+    }
+    return Scaffold(
+      appBar: Appbar(
+        title: Text("Previous Run".tl),
+        actions: [
+          if (text != null)
+            IconButton(
+              icon: const Icon(Icons.file_download_outlined),
+              tooltip: "Export".tl,
+              onPressed: () => saveFile(
+                data: file.readAsBytesSync(),
+                filename: 'log_previous_run.txt',
+              ),
+            ),
+        ],
+      ),
+      body: text == null
+          ? Center(child: Text("No log of a previous run".tl))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (length > _shownBytes)
+                    Text(
+                      "Only the end of the log is shown, export it for all of it"
+                          .tl,
+                      style: ts.s12,
+                    ).paddingBottom(8),
+                  SelectableText(text),
+                ],
+              ),
+            ),
+    );
   }
 }
 
