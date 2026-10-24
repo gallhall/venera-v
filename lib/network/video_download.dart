@@ -311,12 +311,14 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         String? audio;
         var temporary = <Directory>[];
         if (kind == VideoStreamType.hls) {
-          video = await _downloadHls(
+          // A separate audio url of the source replaces that of the stream.
+          (video, audio) = await _downloadHls(
             Uri.parse(source.url),
             dir,
             headers,
             label,
             run,
+            withAudio: source.audioUrl == null,
           );
           if (source.audioUrl != null && _isCurrent(run)) {
             _message = "${label}Downloading audio...";
@@ -468,29 +470,47 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     return VideoStreamType.mp4;
   }
 
-  Future<String> _downloadHls(
+  /// Downloads an HLS stream, with the audio the master playlist serves
+  /// apart from the video unless not [withAudio]. Returns the local video
+  /// and audio playlists.
+  Future<(String, String?)> _downloadHls(
     Uri url,
     Directory dir,
     Map<String, String> headers,
     String label,
-    int run,
-  ) async {
+    int run, {
+    required bool withAudio,
+  }) async {
     _message = "${label}Fetching playlist...";
     notifyListeners();
     var text = await _readText(url.toString(), headers);
+    Uri? audioUrl;
     if (HlsPlaylist.isMaster(text)) {
-      url = HlsPlaylist.pickVariant(text, url, _maxHeight);
+      var variant = HlsPlaylist.pickVariant(text, url, _maxHeight);
+      url = variant.uri;
+      if (withAudio) audioUrl = variant.audio;
       text = await _readText(url.toString(), headers);
     }
     var playlist = HlsPlaylist.localize(text, url);
+    var audio = audioUrl == null
+        ? null
+        : HlsPlaylist.localize(
+            await _readText(audioUrl.toString(), headers),
+            audioUrl,
+            prefix: 'audio_',
+          );
     await _downloadAll([
-      for (var r in playlist.resources)
-        (r.uri.toString(), null, dir.joinFile(r.fileName)),
+      for (var p in [playlist, ?audio])
+        for (var r in p.resources)
+          (r.uri.toString(), null, dir.joinFile(r.fileName)),
     ], headers, label, run);
     if (_isCurrent(run)) {
       await dir.joinFile('index.m3u8').writeAsString(playlist.localText);
+      if (audio != null) {
+        await dir.joinFile('audio.m3u8').writeAsString(audio.localText);
+      }
     }
-    return 'index.m3u8';
+    return ('index.m3u8', audio == null ? null : 'audio.m3u8');
   }
 
   /// Downloads the video and audio tracks of a DASH stream and merges them

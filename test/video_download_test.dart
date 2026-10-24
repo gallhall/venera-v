@@ -200,6 +200,24 @@ class _Server {
               '#EXT-X-KEY:METHOD=AES-128,URI="/key?k=1"\n'
               '#EXTINF:2,\n0.ts\n#EXTINF:2,\n1.jpg\n#EXTINF:2,\n2.ts\n'
               '#EXT-X-ENDLIST\n');
+        case '/hlsa/master.m3u8':
+          // The audio as its own media playlist.
+          res.write('#EXTM3U\n'
+              '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",DEFAULT=YES,'
+              'URI="audio/index.m3u8"\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO="a"\nvideo/index.m3u8\n');
+        case '/hlsa/video/index.m3u8':
+          res.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n'
+              '#EXTINF:2,\n0.ts\n#EXT-X-ENDLIST\n');
+        case '/hlsa/audio/index.m3u8':
+          res.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n'
+              '#EXTINF:2,\n0.aac\n#EXTINF:2,\n1.aac\n#EXT-X-ENDLIST\n');
+        case '/hlsa/video/0.ts':
+          res.add(segments[0]);
+        case '/hlsa/audio/0.aac':
+          res.add(segments[1]);
+        case '/hlsa/audio/1.aac':
+          res.add(segments[2]);
         case '/key':
           res.add(key);
         case '/hls/high/0.ts':
@@ -246,7 +264,7 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: ["slow", "fallback", "race"].includes(id) ? null
+      chapters: ["slow", "fallback", "race", "hlsa"].includes(id) ? null
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
@@ -261,6 +279,8 @@ class TestVideo extends ComicSource {
       ? {url: "${server.base}/dash/" + (epId === "dash" ? "stream" : "webm") + ".mpd"}
       : id === "slow"
       ? {url: "${server.base}/slow", type: "mp4"}
+      : id === "hlsa"
+      ? "${server.base}/hlsa/master.m3u8"
       : id === "fallback"
       ? {sources: [
           {url: "${server.base}/broken", name: "HD", type: "mp4"},
@@ -428,6 +448,33 @@ class TestVideo extends ComicSource {
       RegExp(r'bytes=(\d+)-').firstMatch(server.ranges.last!)!.group(1)!,
     );
     expect(resumedFrom, greaterThanOrEqualTo(saved));
+  }, skip: skip);
+
+  test('downloads the audio an HLS master serves apart', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'hlsa');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('hlsa', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('hlsa', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    var stream = episode.sources.single;
+    expect(stream.url, endsWith('index.m3u8'));
+    expect(stream.audioUrl, endsWith('audio.m3u8'));
+    List<int> segment(String playlist, int i) {
+      var name = RegExp(r'^[^#\s].*$', multiLine: true)
+          .allMatches(File(playlist).readAsStringSync())
+          .elementAt(i)
+          .group(0)!;
+      return File(FilePath.join(local.baseDir, name)).readAsBytesSync();
+    }
+
+    expect(segment(stream.url, 0), server.segments[0]);
+    expect(segment(stream.audioUrl!, 0), server.segments[1]);
+    expect(segment(stream.audioUrl!, 1), server.segments[2]);
   }, skip: skip);
 
   test('a pause and a quick resume do not download twice', () async {
