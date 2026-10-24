@@ -36,11 +36,16 @@ class HlsVariant {
 
   final int bandwidth;
 
+  /// The media playlist of the variant's audio, if the master serves it
+  /// apart (`#EXT-X-MEDIA:TYPE=AUDIO`); null if the variant has its audio.
+  final Uri? audio;
+
   const HlsVariant(
     this.uri, {
     this.height,
     this.resolution,
     this.bandwidth = 0,
+    this.audio,
   });
 }
 
@@ -52,6 +57,7 @@ class HlsPlaylist {
   /// The variants of a master playlist.
   static List<HlsVariant> variants(String text, Uri base) {
     var lines = _lines(text);
+    var audio = _audioGroups(lines, base);
     var variants = <HlsVariant>[];
     for (int i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
@@ -76,14 +82,40 @@ class HlsPlaylist {
         height: height,
         resolution: height == null ? null : resolution,
         bandwidth: bandwidth,
+        audio: audio[_attribute(lines[i], 'AUDIO')],
       ));
     }
     return variants;
   }
 
+  /// The audio playlist of each audio group of a master playlist: that of
+  /// its default rendition, or else of its first one. Null for a group
+  /// whose rendition has no uri, as its audio is in the variants.
+  static Map<String, Uri?> _audioGroups(List<String> lines, Uri base) {
+    var groups = <String, ({Uri? uri, bool isDefault})>{};
+    for (var line in lines) {
+      if (!line.startsWith('#EXT-X-MEDIA:') ||
+          _attribute(line, 'TYPE') != 'AUDIO') {
+        continue;
+      }
+      var group = _attribute(line, 'GROUP-ID');
+      if (group == null) continue;
+      var uri = _attribute(line, 'URI');
+      var isDefault = _attribute(line, 'DEFAULT') == 'YES';
+      var old = groups[group];
+      if (old == null || isDefault && !old.isDefault) {
+        groups[group] = (
+          uri: uri == null ? null : base.resolve(uri),
+          isDefault: isDefault,
+        );
+      }
+    }
+    return {for (var e in groups.entries) e.key: e.value.uri};
+  }
+
   /// The variant of a master playlist that best matches [maxHeight] (see
   /// [VideoQuality.sort]), the highest bandwidth one without a limit.
-  static Uri pickVariant(String text, Uri base, [int? maxHeight]) {
+  static HlsVariant pickVariant(String text, Uri base, [int? maxHeight]) {
     var list = variants(text, base);
     if (list.isEmpty) {
       throw const FormatException('No variant in the playlist');
@@ -94,12 +126,16 @@ class HlsPlaylist {
       // Without a limit the bandwidth decides, as before.
       height: (v) => maxHeight == null ? null : v.height,
       bandwidth: (v) => v.bandwidth,
-    ).first.uri;
+    ).first;
   }
 
-  /// Rewrites a media playlist to local files. Throws for a live stream,
-  /// which has no end.
-  static HlsMediaPlaylist localize(String text, Uri base) {
+  /// Rewrites a media playlist to local files, whose names start with
+  /// [prefix]. Throws for a live stream, which has no end.
+  static HlsMediaPlaylist localize(
+    String text,
+    Uri base, {
+    String prefix = '',
+  }) {
     if (!text.contains('#EXT-X-ENDLIST')) {
       throw const FormatException('Live streams cannot be downloaded');
     }
@@ -107,11 +143,11 @@ class HlsPlaylist {
     var names = <String, String>{};
     int segments = 0, keys = 0, maps = 0;
 
-    String local(String uri, String prefix, int number, String defaultExt) {
+    String local(String uri, String kind, int number, String defaultExt) {
       var url = base.resolve(uri);
       var key = url.toString();
       return names.putIfAbsent(key, () {
-        var name = '${prefix}_${number.toString().padLeft(5, '0')}'
+        var name = '$prefix${kind}_${number.toString().padLeft(5, '0')}'
             '${_extension(url, defaultExt)}';
         resources.add(HlsResource(url, name));
         return name;

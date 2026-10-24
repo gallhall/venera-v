@@ -131,6 +131,52 @@ seg_00002.m4s
     expect(Directory(out).listSync().length, 1, reason: 'no temporary file');
   });
 
+  test('joins the separate HLS audio and merges it', () async {
+    write('init_00001.mp4', init(1, 1000, 90000));
+    write('seg_00001.m4s', segment(1, 1, 0, [1, 1]));
+    write('index.m3u8', utf8.encode('''#EXTM3U
+#EXT-X-MAP:URI="init_00001.mp4"
+#EXTINF:1,
+seg_00001.m4s
+#EXT-X-ENDLIST
+'''));
+    write('audio_init_00001.mp4', init(1, 1000, 48000));
+    write('audio_seg_00001.m4s', segment(1, 1, 0, [7]));
+    write('audio_seg_00002.m4s', segment(1, 2, 48000, [8]));
+    write('audio.m3u8', utf8.encode('''#EXTM3U
+#EXT-X-MAP:URI="audio_init_00001.mp4"
+#EXTINF:1,
+audio_seg_00001.m4s
+#EXTINF:1,
+audio_seg_00002.m4s
+#EXT-X-ENDLIST
+'''));
+    manifest({'video': 'index.m3u8', 'audio': 'audio.m3u8'});
+    var files = await VideoExporter.exportEpisode(ep, out, 'v');
+    expect(names(files), ['v.mp4']);
+    var text = String.fromCharCodes(files.single.readAsBytesSync());
+    expect('trak'.allMatches(text).length, 2);
+    expect('moof'.allMatches(text).length, 3);
+    expect(Directory(out).listSync().length, 1, reason: 'no temporary file');
+  });
+
+  test('saves the separate HLS audio of TS segments as one file', () async {
+    write('seg_00001.ts', [1, 1]);
+    write('index.m3u8', utf8.encode(
+      '#EXTM3U\n#EXTINF:1,\nseg_00001.ts\n#EXT-X-ENDLIST\n',
+    ));
+    write('audio_seg_00001.aac', [7]);
+    write('audio_seg_00002.aac', [8, 8]);
+    write('audio.m3u8', utf8.encode('#EXTM3U\n'
+        '#EXTINF:1,\naudio_seg_00001.aac\n#EXTINF:1,\naudio_seg_00002.aac\n'
+        '#EXT-X-ENDLIST\n'));
+    manifest({'video': 'index.m3u8', 'audio': 'audio.m3u8'});
+    var files = await VideoExporter.exportEpisode(ep, out, 'v');
+    expect(names(files), ['v.ts', 'v.audio.aac']);
+    expect(files.last.readAsBytesSync(), [7, 8, 8]);
+    expect(Directory(out).listSync().length, 2, reason: 'no temporary file');
+  });
+
   test('keeps an audio that cannot be merged apart', () async {
     write('video.webm', [1]);
     write('audio.weba', [2]);

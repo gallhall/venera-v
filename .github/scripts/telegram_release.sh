@@ -6,7 +6,7 @@
 # Reads RELEASE_BODY (the release notes, Markdown) and RELEASE_URL from the
 # environment, and the bot token from TELEGRAM_BOT_TOKEN. The bot must be an
 # admin of the channel that may post messages. With a directory, the
-# installers in it follow the message, as albums of up to 10 files.
+# installers in it follow the message, as albums of 2 to 10 files.
 #
 # TELEGRAM_API is the Bot API server, https://api.telegram.org by default.
 # That one takes files of up to 50 MB; a local server started with --local
@@ -63,12 +63,28 @@ if [ -n "$dir" ]; then
   shopt -u nullglob
 fi
 
+# An album takes 2 to 10 files: the files go in albums of even sizes (11
+# files as 6 and 5, not 10 and 1), and a single file on its own.
+albums=()
+left=${#files[@]}
+for ((count = (left + 9) / 10; count > 0; count--)); do
+  size=$(((left + count - 1) / count))
+  albums+=("$((${#files[@]} - left)):$size")
+  left=$((left - size))
+done
+
+# The method that sends [count] files.
+method_for() {
+  if [ "$1" -eq 1 ]; then echo sendDocument; else echo sendMediaGroup; fi
+}
+
 if [ "${DRY_RUN:-}" = 1 ]; then
   echo "POST $API/bot<token>/sendMessage"
   echo "$payload"
-  for ((i = 0; i < ${#files[@]}; i += 10)); do
-    echo "POST $API/bot<token>/sendMediaGroup"
-    printf '  %s\n' "${files[@]:i:10}"
+  for album in "${albums[@]}"; do
+    group=("${files[@]:${album%:*}:${album#*:}}")
+    echo "POST $API/bot<token>/$(method_for ${#group[@]})"
+    printf '  %s\n' "${group[@]}"
   done
   exit 0
 fi
@@ -99,16 +115,20 @@ call() {
 call sendMessage -H "Content-Type: application/json" -d "$payload"
 echo "Announced ${tag} on ${CHANNEL}"
 
-for ((i = 0; i < ${#files[@]}; i += 10)); do
-  group=("${files[@]:i:10}")
+for album in "${albums[@]}"; do
+  group=("${files[@]:${album%:*}:${album#*:}}")
   args=(--form-string "chat_id=$CHANNEL")
-  media="["
-  for j in "${!group[@]}"; do
-    [ "$j" -gt 0 ] && media+=","
-    media+="{\"type\":\"document\",\"media\":\"attach://file$j\"}"
-    args+=(-F "file$j=@${group[$j]}")
-  done
-  media+="]"
-  call sendMediaGroup "${args[@]}" --form-string "media=$media"
+  if [ ${#group[@]} -eq 1 ]; then
+    call sendDocument "${args[@]}" -F "document=@${group[0]}"
+  else
+    media="["
+    for j in "${!group[@]}"; do
+      [ "$j" -gt 0 ] && media+=","
+      media+="{\"type\":\"document\",\"media\":\"attach://file$j\"}"
+      args+=(-F "file$j=@${group[$j]}")
+    done
+    media+="]"
+    call sendMediaGroup "${args[@]}" --form-string "media=$media"
+  fi
   echo "Sent $(printf '%s ' "${group[@]##*/}")"
 done

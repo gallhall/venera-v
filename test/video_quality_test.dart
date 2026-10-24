@@ -69,7 +69,7 @@ void main() {
 720/index.m3u8
 ''';
     String pick(int? max) =>
-        HlsPlaylist.pickVariant(master, base, max).pathSegments[1];
+        HlsPlaylist.pickVariant(master, base, max).uri.pathSegments[1];
     expect(pick(null), '1080');
     expect(pick(720), '720');
     expect(pick(480), '360');

@@ -11,11 +11,14 @@ class ComicType {
   @override
   int get hashCode => value.hashCode;
 
+  /// The key of the source, or `Unknown:<value>` for a source that was
+  /// removed, e.g. one of downloaded comics, as favorites and history name
+  /// it. [ComicType.fromKey] takes it back.
   String get sourceKey {
     if(this == local) {
       return "local";
     } else {
-      return comicSource!.key;
+      return comicSource?.key ?? "Unknown:$value";
     }
   }
 
@@ -32,8 +35,11 @@ class ComicType {
   factory ComicType.fromKey(String key) {
     if(key == "local") {
       return local;
-    } else {
-      return ComicType(key.hashCode);
     }
+    if (key.startsWith("Unknown:")) {
+      var value = int.tryParse(key.substring(8));
+      if (value != null) return ComicType(value);
+    }
+    return ComicType(key.hashCode);
   }
 }

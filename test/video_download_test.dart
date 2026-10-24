@@ -31,6 +31,9 @@ class _Server {
 
   final clip = List.generate(300 * 1024, (i) => Random(i).nextInt(256));
 
+  /// A clip of the same size, from another source.
+  final otherClip = List.generate(300 * 1024, (i) => Random(-i).nextInt(256));
+
   final segments = [
     for (int i = 0; i < 3; i++) List.generate(4096, (j) => (i * 7 + j) % 256),
   ];
@@ -100,6 +103,9 @@ class _Server {
   /// Range headers seen for the slow clip.
   final ranges = <String?>[];
 
+  /// Requests for the clip of the video whose source answers slowly.
+  var raceRequests = 0;
+
   String get base => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
@@ -132,6 +138,27 @@ class _Server {
             await res.flush();
             await Future.delayed(const Duration(milliseconds: 30));
           }
+        case '/race':
+          raceRequests++;
+          res.contentLength = clip.length;
+          res.add(clip);
+        case '/broken':
+          // Sends half of the clip, then drops the connection.
+          var socket = await res.detachSocket(writeHeaders: false);
+          socket.write('HTTP/1.1 200 OK\r\n'
+              'Content-Length: ${clip.length}\r\n\r\n');
+          socket.add(clip.sublist(0, clip.length ~/ 2));
+          await socket.flush();
+          socket.destroy();
+          return;
+        case '/ranged':
+          var range = req.headers.value('range');
+          var start = range == null
+              ? 0
+              : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+          if (start > 0) res.statusCode = HttpStatus.partialContent;
+          res.contentLength = otherClip.length - start;
+          res.add(otherClip.sublist(start));
         case '/dash/stream.mpd':
           res.write(dashMpd);
         case '/dash/v/init.mp4':
@@ -173,6 +200,24 @@ class _Server {
               '#EXT-X-KEY:METHOD=AES-128,URI="/key?k=1"\n'
               '#EXTINF:2,\n0.ts\n#EXTINF:2,\n1.jpg\n#EXTINF:2,\n2.ts\n'
               '#EXT-X-ENDLIST\n');
+        case '/hlsa/master.m3u8':
+          // The audio as its own media playlist.
+          res.write('#EXTM3U\n'
+              '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",DEFAULT=YES,'
+              'URI="audio/index.m3u8"\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO="a"\nvideo/index.m3u8\n');
+        case '/hlsa/video/index.m3u8':
+          res.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n'
+              '#EXTINF:2,\n0.ts\n#EXT-X-ENDLIST\n');
+        case '/hlsa/audio/index.m3u8':
+          res.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n'
+              '#EXTINF:2,\n0.aac\n#EXTINF:2,\n1.aac\n#EXT-X-ENDLIST\n');
+        case '/hlsa/video/0.ts':
+          res.add(segments[0]);
+        case '/hlsa/audio/0.aac':
+          res.add(segments[1]);
+        case '/hlsa/audio/1.aac':
+          res.add(segments[2]);
         case '/key':
           res.add(key);
         case '/hls/high/0.ts':
@@ -219,18 +264,28 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: id === "slow" ? null
+      chapters: ["slow", "fallback", "race", "hlsa"].includes(id) ? null
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
   }
   video = {
-    loadPlayInfo: async (id, epId) => epId === "split"
+    loadPlayInfo: async (id, epId) => id === "race"
+      ? await new Promise((r) => setTimeout(
+          () => r({url: "${server.base}/race", type: "mp4"}), 800))
+      : epId === "split"
       ? {url: "${server.base}/split/v.mp4", audioUrl: "${server.base}/split/a.m4a"}
       : id === "dash"
       ? {url: "${server.base}/dash/" + (epId === "dash" ? "stream" : "webm") + ".mpd"}
       : id === "slow"
       ? {url: "${server.base}/slow", type: "mp4"}
+      : id === "hlsa"
+      ? "${server.base}/hlsa/master.m3u8"
+      : id === "fallback"
+      ? {sources: [
+          {url: "${server.base}/broken", name: "HD", type: "mp4"},
+          {url: "${server.base}/ranged", name: "SD", type: "mp4"},
+        ]}
       : epId === "mp4"
       ? new VideoPlayInfo({
           sources: [{url: "${server.base}/clip", name: "SD"}],
@@ -393,5 +448,83 @@ class TestVideo extends ComicSource {
       RegExp(r'bytes=(\d+)-').firstMatch(server.ranges.last!)!.group(1)!,
     );
     expect(resumedFrom, greaterThanOrEqualTo(saved));
+  }, skip: skip);
+
+  test('downloads the audio an HLS master serves apart', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'hlsa');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('hlsa', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('hlsa', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    var stream = episode.sources.single;
+    expect(stream.url, endsWith('index.m3u8'));
+    expect(stream.audioUrl, endsWith('audio.m3u8'));
+    List<int> segment(String playlist, int i) {
+      var name = RegExp(r'^[^#\s].*$', multiLine: true)
+          .allMatches(File(playlist).readAsStringSync())
+          .elementAt(i)
+          .group(0)!;
+      return File(FilePath.join(local.baseDir, name)).readAsBytesSync();
+    }
+
+    expect(segment(stream.url, 0), server.segments[0]);
+    expect(segment(stream.audioUrl!, 0), server.segments[1]);
+    expect(segment(stream.audioUrl!, 1), server.segments[2]);
+  }, skip: skip);
+
+  test('a pause and a quick resume do not download twice', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'race');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    Future<void> waitFor(bool Function() done) async {
+      while (!done()) {
+        expect(task.isError, isFalse, reason: task.message);
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    }
+
+    // The run paused while the source answers goes on waiting for it.
+    await waitFor(() => task.message == "Fetching play info...");
+    task.pause();
+    task.resume();
+    await waitFor(() => LocalManager().find('race', task.comicType) != null);
+    // Time for the paused run to get its answer and stop.
+    await Future.delayed(const Duration(seconds: 1));
+    expect(server.raceRequests, 1);
+    var local = LocalManager().find('race', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    expect(File(episode.sources.single.url).readAsBytesSync(), server.clip);
+  }, skip: skip);
+
+  test('the source tried after a failed one starts over', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'fallback');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('fallback', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('fallback', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    expect(episode.sources.single.name, 'SD');
+    // Not continued from the half the failed source sent.
+    expect(
+      File(episode.sources.single.url).readAsBytesSync(),
+      server.otherClip,
+    );
+    // The cover stays, the record of the source being downloaded goes.
+    expect(
+      Directory(local.baseDir)
+          .listSync()
+          .map((e) => e.path.split(RegExp(r'[\\/]')).last),
+      unorderedEquals(['cover.png', 'video.mp4', 'episode.json']),
+    );
   }, skip: skip);
 }

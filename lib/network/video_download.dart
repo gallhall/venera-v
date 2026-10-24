@@ -62,6 +62,15 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   bool _isRunning = false;
 
+  /// Increased by each [resume]. A run stops at its next check once it is
+  /// not the latest one: after a pause and a quick resume, the paused run
+  /// may still be waiting for a request or the source, and must not go on
+  /// next to the new one, writing the same files.
+  int _runId = 0;
+
+  /// Whether the run [run] is to go on.
+  bool _isCurrent(int run) => _isRunning && run == _runId;
+
   bool _isError = false;
 
   String _message = "Fetching video info...";
@@ -178,6 +187,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   @override
   void resume() async {
     if (_isRunning) return;
+    var run = ++_runId;
     _isError = false;
     _isRunning = true;
     _message = "Resuming...";
@@ -192,7 +202,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         var r = await source.loadComicInfo!(videoId);
         return r.error ? throw r.errorMessage! : r.data;
       });
-      if (!_isRunning) return;
+      if (!_isCurrent(run)) return;
       if (res.error) return _setError("Error: ${res.errorMessage}");
       comic = res.data;
     }
@@ -207,11 +217,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         if (!await dir.exists()) await dir.create(recursive: true);
         path = dir.path;
       } catch (e, s) {
+        if (!_isCurrent(run)) return;
         Log.error("Download", e.toString(), s);
         return _setError("Error: $e");
       }
     }
     await LocalManager().saveCurrentDownloadingTasks();
+    if (!_isCurrent(run)) return;
 
     if (_cover == null) {
       _message = "Downloading cover...";
@@ -231,7 +243,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         await file.writeAsBytes(data);
         return "file://${file.path}";
       });
-      if (!_isRunning) return;
+      if (!_isCurrent(run)) return;
       if (res.error) return _setError("Error: ${res.errorMessage}");
       _cover = res.data;
       await LocalManager().saveCurrentDownloadingTasks();
@@ -244,13 +256,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       _episodeProgress = 0;
       var label = targets.length > 1 ? "${i + 1}/${targets.length} " : "";
       try {
-        await _downloadEpisode(ep, label);
+        await _downloadEpisode(ep, label, run);
       } catch (e, s) {
-        if (!_isRunning) return;
+        if (!_isCurrent(run)) return;
         Log.error("Download", "$e", s);
         return _setError("Error: $e");
       }
-      if (!_isRunning) return;
+      if (!_isCurrent(run)) return;
       _completed.add(ep ?? '');
       _episodeProgress = 0;
       await LocalManager().saveCurrentDownloadingTasks();
@@ -261,7 +273,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     LocalManager().completeTask(this);
   }
 
-  Future<void> _downloadEpisode(String? ep, String label) async {
+  Future<void> _downloadEpisode(String? ep, String label, int run) async {
     var dir = Directory(episodeDirectory(path!, ep));
     if (await dir.joinFile(manifestName).exists()) return;
     await dir.create(recursive: true);
@@ -287,16 +299,28 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     );
     Object? lastError;
     for (var source in sources) {
-      if (!_isRunning) return;
+      if (!_isCurrent(run)) return;
       var headers = _headers(info.headersFor(source));
       try {
+        await _claimDirectory(
+          dir,
+          "${info.sources.indexOf(source)}:${source.name}",
+        );
         var kind = await _detect(source, headers);
         String video;
         String? audio;
         var temporary = <Directory>[];
         if (kind == VideoStreamType.hls) {
-          video = await _downloadHls(Uri.parse(source.url), dir, headers, label);
-          if (source.audioUrl != null && _isRunning) {
+          // A separate audio url of the source replaces that of the stream.
+          (video, audio) = await _downloadHls(
+            Uri.parse(source.url),
+            dir,
+            headers,
+            label,
+            run,
+            withAudio: source.audioUrl == null,
+          );
+          if (source.audioUrl != null && _isCurrent(run)) {
             _message = "${label}Downloading audio...";
             notifyListeners();
             audio = "audio${_fileExtension(source.audioUrl!, '.m4a')}";
@@ -305,6 +329,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
               dir.joinFile(audio),
               headers,
               null,
+              run,
             );
           }
         } else if (kind == VideoStreamType.dash) {
@@ -314,39 +339,63 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
             headers,
             label,
             temporary,
+            run,
           );
         } else {
           var name = "video${_fileExtension(source.url, '.mp4')}";
           await _downloadFile(source.url, dir.joinFile(name), headers, (p) {
             _episodeProgress = p;
             _message = "$label${(p * 100).toStringAsFixed(1)}%";
-          });
+          }, run);
           video = name;
-          if (source.audioUrl != null && _isRunning) {
+          if (source.audioUrl != null && _isCurrent(run)) {
             (video, audio) = await _downloadSeparateAudio(
               dir,
               video,
               source.audioUrl!,
               headers,
               label,
+              run,
             );
           }
         }
-        if (!_isRunning) return;
-        await _writeManifest(dir, info, source, headers, video, audio);
+        if (!_isCurrent(run)) return;
+        await _writeManifest(dir, info, source, headers, video, audio, run);
         // Segments are kept until the manifest is written, so that an
         // interrupted episode can be finished without downloading again.
         for (var d in temporary) {
           await d.deleteIgnoreError(recursive: true);
         }
+        await dir.joinFile(_sourceMarkerName).deleteIgnoreError();
         return;
       } catch (e) {
-        if (!_isRunning) return;
+        if (!_isCurrent(run)) return;
         Log.warning("Download", "Source ${source.name} failed: $e");
         lastError = e;
       }
     }
     throw lastError ?? "No source to download";
+  }
+
+  /// Names the source the files of an unfinished episode come from.
+  static const _sourceMarkerName = 'downloading_source';
+
+  /// Files of an unfinished episode are kept to resume it, but only with the
+  /// same [source]: those of another source would be taken as its own, as
+  /// segments have the same names and a `.part` file would be continued
+  /// with the other stream. Empties [dir] if they come from another source,
+  /// and records [source] as the one being downloaded.
+  Future<void> _claimDirectory(Directory dir, String source) async {
+    var marker = dir.joinFile(_sourceMarkerName);
+    if (await marker.exists() && await marker.readAsString() == source) {
+      return;
+    }
+    await for (var entry in dir.list()) {
+      // The cover of a video without episodes, which shares its directory.
+      if (entry is File && entry.name.startsWith('cover.')) continue;
+      await entry.delete(recursive: true);
+    }
+    await marker.writeAsString(source);
   }
 
   /// The highest resolution to download, see [VideoQuality.maxHeight].
@@ -421,28 +470,47 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     return VideoStreamType.mp4;
   }
 
-  Future<String> _downloadHls(
+  /// Downloads an HLS stream, with the audio the master playlist serves
+  /// apart from the video unless not [withAudio]. Returns the local video
+  /// and audio playlists.
+  Future<(String, String?)> _downloadHls(
     Uri url,
     Directory dir,
     Map<String, String> headers,
     String label,
-  ) async {
+    int run, {
+    required bool withAudio,
+  }) async {
     _message = "${label}Fetching playlist...";
     notifyListeners();
     var text = await _readText(url.toString(), headers);
+    Uri? audioUrl;
     if (HlsPlaylist.isMaster(text)) {
-      url = HlsPlaylist.pickVariant(text, url, _maxHeight);
+      var variant = HlsPlaylist.pickVariant(text, url, _maxHeight);
+      url = variant.uri;
+      if (withAudio) audioUrl = variant.audio;
       text = await _readText(url.toString(), headers);
     }
     var playlist = HlsPlaylist.localize(text, url);
+    var audio = audioUrl == null
+        ? null
+        : HlsPlaylist.localize(
+            await _readText(audioUrl.toString(), headers),
+            audioUrl,
+            prefix: 'audio_',
+          );
     await _downloadAll([
-      for (var r in playlist.resources)
-        (r.uri.toString(), null, dir.joinFile(r.fileName)),
-    ], headers, label);
-    if (_isRunning) {
+      for (var p in [playlist, ?audio])
+        for (var r in p.resources)
+          (r.uri.toString(), null, dir.joinFile(r.fileName)),
+    ], headers, label, run);
+    if (_isCurrent(run)) {
       await dir.joinFile('index.m3u8').writeAsString(playlist.localText);
+      if (audio != null) {
+        await dir.joinFile('audio.m3u8').writeAsString(audio.localText);
+      }
     }
-    return 'index.m3u8';
+    return ('index.m3u8', audio == null ? null : 'audio.m3u8');
   }
 
   /// Downloads the video and audio tracks of a DASH stream and merges them
@@ -458,6 +526,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     Map<String, String> headers,
     String label,
     List<Directory> temporary,
+    int run,
   ) async {
     _message = "${label}Fetching manifest...";
     notifyListeners();
@@ -481,8 +550,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       files[track] = list;
     }
-    await _downloadAll(downloads, headers, label);
-    if (!_isRunning) return ('', null);
+    await _downloadAll(downloads, headers, label, run);
+    if (!_isCurrent(run)) return ('', null);
 
     var video = dash.video;
     var audio = dash.audio;
@@ -522,12 +591,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String audioUrl,
     Map<String, String> headers,
     String label,
+    int run,
   ) async {
     _message = "${label}Downloading audio...";
     notifyListeners();
     var audio = "audio${_fileExtension(audioUrl, '.m4a')}";
-    await _downloadFile(audioUrl, dir.joinFile(audio), headers, null);
-    if (!_isRunning) return (video, audio);
+    await _downloadFile(audioUrl, dir.joinFile(audio), headers, null, run);
+    if (!_isCurrent(run)) return (video, audio);
     var merged = 'merged.mp4';
     try {
       _message = "${label}Merging video and audio...";
@@ -567,6 +637,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     List<(String, String?, File)> items,
     Map<String, String> headers,
     String label,
+    int run,
   ) async {
     var done = 0;
     var next = 0;
@@ -574,11 +645,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     var failed = false;
 
     Future<void> worker() async {
-      while (_isRunning && !failed && next < items.length) {
+      while (_isCurrent(run) && !failed && next < items.length) {
         var (url, range, file) = items[next++];
         if (!await file.exists()) {
           var res = await _runWithRetry(
-            () => _downloadFile(url, file, headers, null, range: range),
+            () => _downloadFile(url, file, headers, null, run, range: range),
           );
           if (res.error) {
             failed = true;
@@ -604,20 +675,21 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     Map<String, String> headers,
     String video,
     String? audio,
+    int run,
   ) async {
     var subtitles = <Map<String, dynamic>>[];
     for (int i = 0; i < info.subtitles.length; i++) {
       var s = info.subtitles[i];
       var name = "sub_$i${_fileExtension(s.url, '.vtt')}";
       try {
-        await _downloadFile(s.url, dir.joinFile(name), headers, null);
+        await _downloadFile(s.url, dir.joinFile(name), headers, null, run);
         subtitles.add({"file": name, "name": s.name, "language": s.language});
       } catch (e) {
         // A missing subtitle should not fail the episode.
         Log.warning("Download", "Subtitle ${s.url}: $e");
       }
     }
-    if (!_isRunning) return;
+    if (!_isCurrent(run)) return;
     await DownloadedEpisode.write(
       dir,
       video: video,
@@ -629,18 +701,20 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   }
 
   /// Downloads [url] into [file] through a `.part` file, resuming it if it
-  /// exists and the server supports ranges.
+  /// exists and the server supports ranges. Stops without an error once
+  /// [run] is not current.
   ///
   /// With [range] (`first-last`), only that part of [url] is downloaded.
   Future<void> _downloadFile(
     String url,
     File file,
     Map<String, String> headers,
-    void Function(double progress)? onProgress, {
+    void Function(double progress)? onProgress,
+    int run, {
     String? range,
   }) async {
     // Paused: do not start a new request.
-    if (!_isRunning) return;
+    if (!_isCurrent(run)) return;
     var part = File("${file.path}.part");
     // A byte range is small: download it again rather than resume it.
     var start = range == null && await part.exists() ? await part.length() : 0;
@@ -657,6 +731,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         validateStatus: (_) => true,
       ),
     );
+    // Another run may be writing the part file by now.
+    if (!_isCurrent(run)) return;
     var status = response.statusCode ?? 0;
     if (status == 416 && start > 0) {
       // The part file is already complete.
@@ -678,7 +754,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       await for (var chunk in response.data!.stream.timeout(
         const Duration(seconds: 30),
       )) {
-        if (!_isRunning) return;
+        if (!_isCurrent(run)) return;
         await raf.writeFrom(chunk);
         received += chunk.length;
         onData(chunk.length);
