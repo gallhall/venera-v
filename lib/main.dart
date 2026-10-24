@@ -28,6 +28,9 @@ void main(List<String> args) {
       WidgetsFlutterBinding.ensureInitialized();
       await init();
       runApp(const MyApp());
+      WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
+        Log.info("Startup", Log.startedMessage);
+      });
       if (App.isDesktop) {
         await windowManager.ensureInitialized();
         windowManager.waitUntilReadyToShow().then((_) async {
