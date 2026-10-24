@@ -103,6 +103,9 @@ class _Server {
   /// Range headers seen for the slow clip.
   final ranges = <String?>[];
 
+  /// Requests for the clip of the video whose source answers slowly.
+  var raceRequests = 0;
+
   String get base => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
@@ -135,6 +138,10 @@ class _Server {
             await res.flush();
             await Future.delayed(const Duration(milliseconds: 30));
           }
+        case '/race':
+          raceRequests++;
+          res.contentLength = clip.length;
+          res.add(clip);
         case '/broken':
           // Sends half of the clip, then drops the connection.
           var socket = await res.detachSocket(writeHeaders: false);
@@ -239,13 +246,16 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: id === "slow" || id === "fallback" ? null
+      chapters: ["slow", "fallback", "race"].includes(id) ? null
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
   }
   video = {
-    loadPlayInfo: async (id, epId) => epId === "split"
+    loadPlayInfo: async (id, epId) => id === "race"
+      ? await new Promise((r) => setTimeout(
+          () => r({url: "${server.base}/race", type: "mp4"}), 800))
+      : epId === "split"
       ? {url: "${server.base}/split/v.mp4", audioUrl: "${server.base}/split/a.m4a"}
       : id === "dash"
       ? {url: "${server.base}/dash/" + (epId === "dash" ? "stream" : "webm") + ".mpd"}
@@ -418,6 +428,31 @@ class TestVideo extends ComicSource {
       RegExp(r'bytes=(\d+)-').firstMatch(server.ranges.last!)!.group(1)!,
     );
     expect(resumedFrom, greaterThanOrEqualTo(saved));
+  }, skip: skip);
+
+  test('a pause and a quick resume do not download twice', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'race');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    Future<void> waitFor(bool Function() done) async {
+      while (!done()) {
+        expect(task.isError, isFalse, reason: task.message);
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    }
+
+    // The run paused while the source answers goes on waiting for it.
+    await waitFor(() => task.message == "Fetching play info...");
+    task.pause();
+    task.resume();
+    await waitFor(() => LocalManager().find('race', task.comicType) != null);
+    // Time for the paused run to get its answer and stop.
+    await Future.delayed(const Duration(seconds: 1));
+    expect(server.raceRequests, 1);
+    var local = LocalManager().find('race', task.comicType)!;
+    var episode = DownloadedEpisode.load(local.baseDir)!;
+    expect(File(episode.sources.single.url).readAsBytesSync(), server.clip);
   }, skip: skip);
 
   test('the source tried after a failed one starts over', () async {
