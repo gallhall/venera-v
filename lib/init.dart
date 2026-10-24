@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:display_mode/display_mode.dart';
 import 'package:flutter/foundation.dart';
@@ -34,19 +35,36 @@ extension _FutureInit<T> on Future<T> {
   }
 }
 
+/// Runs a step of the startup, logged when it starts and ends. The log is
+/// on disk at once: if the app dies while starting, the log of that run,
+/// kept as the previous run's, tells in which step.
+Future<T> _step<T>(String name, Future<T> Function() step) async {
+  var watch = Stopwatch()..start();
+  Log.info("Startup", "$name...");
+  var result = await step();
+  Log.info("Startup", "$name done in ${watch.elapsedMilliseconds} ms");
+  return result;
+}
+
 Future<void> init() async {
   await App.init().wait();
-  await SingleInstanceCookieJar.createInstance();
+  Log.startRun();
+  Log.info(
+    "Startup",
+    "venera-v ${App.version} on ${Platform.operatingSystem} "
+        "${Platform.operatingSystemVersion}",
+  );
+  await _step("Cookies", SingleInstanceCookieJar.createInstance);
   try {
     var futures = [
-      Rhttp.init(),
-      App.initComponents(),
-      SAFTaskWorker().init().wait(),
-      AppTranslation.init().wait(),
-      TagsTranslation.readData().wait(),
-      JsEngine().init().wait(),
-      ComicSourceManager().init().wait(),
-      OpenCC.init(),
+      _step("Network", Rhttp.init),
+      _step("Databases", App.initComponents),
+      _step("SAF", SAFTaskWorker().init).wait(),
+      _step("Translations", AppTranslation.init).wait(),
+      _step("Tag translations", TagsTranslation.readData).wait(),
+      _step("JavaScript engine", JsEngine().init).wait(),
+      _step("Comic sources", ComicSourceManager().init).wait(),
+      _step("OpenCC", OpenCC.init),
     ];
     await Future.wait(futures);
   } catch (e, s) {
