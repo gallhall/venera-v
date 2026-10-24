@@ -1,8 +1,8 @@
-import 'dart:ffi';
 import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/utils/database.dart';
 import 'package:venera/utils/io.dart';
 
 import 'app.dart';
@@ -23,27 +23,31 @@ class CacheManager {
 
   int _limitSize = 2 * 1024 * 1024 * 1024;
 
-  static Future<int> _scanDir(Pointer<void> dbP, String dir) async {
+  static Future<int> _scanDir(String dbPath, String dir) async {
     var res = await Isolate.run(() async {
       int totalSize = 0;
       List<String> unmanagedFiles = [];
-      var db = sqlite3.fromPointer(dbP);
-      await for (var file in Directory(dir).list(recursive: true)) {
-        if (file is File) {
-          var size = await file.length();
-          var segments = file.uri.pathSegments;
-          var name = segments.last;
-          var dir = segments.elementAtOrNull(segments.length - 2) ?? "*";
-          var res = db.select('''
-            SELECT * FROM cache
-            WHERE dir = ? AND name = ?
-          ''', [dir, name]);
-          if (res.isEmpty) {
-            unmanagedFiles.add(file.path);
-          } else {
-            totalSize += size;
+      var db = openForIsolate(dbPath);
+      try {
+        await for (var file in Directory(dir).list(recursive: true)) {
+          if (file is File) {
+            var size = await file.length();
+            var segments = file.uri.pathSegments;
+            var name = segments.last;
+            var dir = segments.elementAtOrNull(segments.length - 2) ?? "*";
+            var res = db.select('''
+              SELECT * FROM cache
+              WHERE dir = ? AND name = ?
+            ''', [dir, name]);
+            if (res.isEmpty) {
+              unmanagedFiles.add(file.path);
+            } else {
+              totalSize += size;
+            }
           }
         }
+      } finally {
+        db.dispose();
       }
       return {
         'totalSize': totalSize,
@@ -70,7 +74,9 @@ class CacheManager {
 
   CacheManager._create() {
     Directory(cachePath).createSync(recursive: true);
-    _db = sqlite3.open('${App.dataPath}/cache.db');
+    var dbPath = '${App.dataPath}/cache.db';
+    _db = sqlite3.open(dbPath);
+    waitForLocks(_db);
     _db.execute('''
       CREATE TABLE IF NOT EXISTS cache (
         key TEXT PRIMARY KEY NOT NULL,
@@ -80,7 +86,7 @@ class CacheManager {
         type TEXT
       )
     ''');
-    _scanDir(_db.handle, cachePath).then((value) {
+    _scanDir(dbPath, cachePath).then((value) {
       _currentSize = value;
       checkCache();
     });

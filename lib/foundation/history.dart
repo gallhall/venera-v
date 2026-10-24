@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math';
-import 'dart:ffi' as ffi;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +15,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/utils/channel.dart';
+import 'package:venera/utils/database.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -240,7 +240,8 @@ class HistoryManager with ChangeNotifier {
     if (isInitialized) {
       return;
     }
-    _db = sqlite3.open("${App.dataPath}/history.db");
+    _db = sqlite3.open(_dbPath);
+    waitForLocks(_db);
 
     _db.execute("""
         create table if not exists history  (
@@ -273,22 +274,29 @@ class HistoryManager with ChangeNotifier {
         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       """;
 
-  static Future<void> _addHistoryAsync(int dbAddr, History newItem) {
+  /// Opened again by the isolate writing it, see [openForIsolate].
+  String get _dbPath => "${App.dataPath}/history.db";
+
+  static Future<void> _addHistoryAsync(String dbPath, History newItem) {
     return Isolate.run(() {
-      var db = sqlite3.fromPointer(ffi.Pointer.fromAddress(dbAddr));
-      db.execute(_insertHistorySql, [
-        newItem.id,
-        newItem.title,
-        newItem.subtitle,
-        newItem.cover,
-        newItem.time.millisecondsSinceEpoch,
-        newItem.type.value,
-        newItem.ep,
-        newItem.page,
-        newItem.readEpisode.join(','),
-        newItem.maxPage,
-        newItem.group
-      ]);
+      var db = openForIsolate(dbPath, readOnly: false);
+      try {
+        db.execute(_insertHistorySql, [
+          newItem.id,
+          newItem.title,
+          newItem.subtitle,
+          newItem.cover,
+          newItem.time.millisecondsSinceEpoch,
+          newItem.type.value,
+          newItem.ep,
+          newItem.page,
+          newItem.readEpisode.join(','),
+          newItem.maxPage,
+          newItem.group
+        ]);
+      } finally {
+        db.dispose();
+      }
     });
   }
 
@@ -301,8 +309,11 @@ class HistoryManager with ChangeNotifier {
     }
 
     _haveAsyncTask = true;
-    await _addHistoryAsync(_db.handle.address, newItem);
-    _haveAsyncTask = false;
+    try {
+      await _addHistoryAsync(_dbPath, newItem);
+    } finally {
+      _haveAsyncTask = false;
+    }
     if (_cachedHistoryIds == null) {
       updateCache();
     } else {
