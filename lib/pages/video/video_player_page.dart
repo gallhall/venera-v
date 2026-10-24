@@ -232,6 +232,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Skip ranges of the current episode already handled, by index.
   final handledSkips = <int>{};
 
+  /// Whether the stream played to its end and was not played on since:
+  /// saved as finished, not at the position, which stops short of the
+  /// duration.
+  bool playedToEnd = false;
+
   @override
   void initState() {
     super.initState();
@@ -316,6 +321,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ifActive((playing) {
           historyTimer?.cancel();
           if (playing) {
+            playedToEnd = false;
             historyTimer = Timer.periodic(
               const Duration(seconds: 15),
               (_) => saveHistory(),
@@ -328,7 +334,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.completed.listen(
         ifActive((completed) {
           if (!completed || !started || isLoading) return;
-          saveHistory(position: duration);
+          playedToEnd = true;
+          saveHistory();
           if (hasNext) loadEpisode(current + 1);
         }),
       ),
@@ -362,7 +369,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     history
       ..ep = h.ep
       ..group = h.group
-      ..page = (position ?? p.currentPosition).inSeconds
+      ..page = (position ?? (playedToEnd ? duration : p.currentPosition))
+          .inSeconds
       ..maxPage = duration.inSeconds
       ..time = DateTime.now();
     history.readEpisode.add(episodes.historyKey(current));
@@ -465,6 +473,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Future<void> openSource(int index, {Duration? start}) async {
     openedAt = start ?? Duration.zero;
+    playedToEnd = false;
     var info = playInfo;
     if (info == null) return;
     setState(() {
