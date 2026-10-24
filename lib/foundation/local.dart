@@ -109,60 +109,63 @@ class LocalComic with HistoryMixin implements Comic {
   @override
   int? get maxPage => null;
 
-  void read() {
-    var history = HistoryManager().find(id, comicType);
-    int? firstDownloadedChapter;
-    int? firstDownloadedChapterGroup;
-    if (downloadedChapters.isNotEmpty && chapters != null) {
-      final chapters = this.chapters!;
-      if (chapters.isGrouped) {
-        groups:
-        for (int i=0; i<chapters.groupCount; i++) {
-          var group = chapters.getGroupByIndex(i);
-          var keys = group.keys.toList();
-          for (int j=0; j<keys.length; j++) {
-            var chapterId = keys[j];
-            if (downloadedChapters.contains(chapterId)) {
-              firstDownloadedChapter = j + 1;
-              firstDownloadedChapterGroup = i + 1;
-              break groups;
-            }
-          }
+  /// The first downloaded chapter, 1-based, and its group, 1-based too.
+  (int?, int?) _firstDownloadedChapter() {
+    final chapters = this.chapters;
+    if (downloadedChapters.isEmpty || chapters == null) return (null, null);
+    if (chapters.isGrouped) {
+      for (int i=0; i<chapters.groupCount; i++) {
+        var group = chapters.getGroupByIndex(i);
+        var keys = group.keys.toList();
+        for (int j=0; j<keys.length; j++) {
+          if (downloadedChapters.contains(keys[j])) return (j + 1, i + 1);
         }
-      } else {
-        var keys = chapters.allChapters.keys;
-        for (int i = 0; i < keys.length; i++) {
-          if (downloadedChapters.contains(keys.elementAt(i))) {
-            firstDownloadedChapter = i + 1;
-            break;
-          }
+      }
+    } else {
+      var keys = chapters.allChapters.keys;
+      for (int i = 0; i < keys.length; i++) {
+        if (downloadedChapters.contains(keys.elementAt(i))) {
+          return (i + 1, null);
         }
       }
     }
+    return (null, null);
+  }
+
+  /// The player for this video, downloaded from the source [sourceKey]
+  /// or imported (`local`). Starts where the history is, or else with the
+  /// first downloaded episode.
+  VideoPlayerPage videoPlayer(String sourceKey) {
+    var history = HistoryManager().find(id, comicType);
+    var (ep, group) = _firstDownloadedChapter();
+    return VideoPlayerPage(
+      sourceKey: sourceKey,
+      details: ComicDetails.fromJson({
+        "title": title,
+        "subtitle": subtitle,
+        "cover": "file://${coverFile.path}",
+        "tags": <String, dynamic>{},
+        "chapters": chapters?.toJson(),
+        "sourceKey": sourceKey,
+        "comicId": id,
+      }),
+      initialEp: history == null ? ep : null,
+      initialGroup: history == null ? group : null,
+      history: history ?? History.fromModel(model: this, ep: 0, page: 0),
+    );
+  }
+
+  void read() {
     // Imported videos have no source; a downloaded one needs its source,
     // whose key the player uses.
     if (isLocalVideo(this) &&
         (comicType == ComicType.local || comicType.comicSource != null)) {
-      App.rootContext.to(
-        () => VideoPlayerPage(
-          sourceKey: sourceKey,
-          details: ComicDetails.fromJson({
-            "title": title,
-            "subtitle": subtitle,
-            "cover": "file://${coverFile.path}",
-            "tags": <String, dynamic>{},
-            "chapters": chapters?.toJson(),
-            "sourceKey": sourceKey,
-            "comicId": id,
-          }),
-          // Without a history, start with the first downloaded episode.
-          initialEp: history == null ? firstDownloadedChapter : null,
-          initialGroup: history == null ? firstDownloadedChapterGroup : null,
-          history: history ?? History.fromModel(model: this, ep: 0, page: 0),
-        ),
-      );
+      App.rootContext.to(() => videoPlayer(sourceKey));
       return;
     }
+    var history = HistoryManager().find(id, comicType);
+    var (firstDownloadedChapter, firstDownloadedChapterGroup) =
+        _firstDownloadedChapter();
     App.rootContext.to(
       () => Reader(
         type: comicType,
