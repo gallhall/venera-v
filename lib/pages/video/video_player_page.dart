@@ -564,7 +564,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void switchSource(int index) {
     if (index == sourceIndex && error == null) return;
     failedSources.remove(index);
-    openSource(index, start: started ? active!.currentPosition : null);
+    // Before the stream plays, e.g. after it failed, where it was to start.
+    var start = started ? active!.currentPosition : openedAt;
+    openSource(index, start: start == Duration.zero ? null : start);
   }
 
   /// Applies fullscreen to the window or the system UI.
