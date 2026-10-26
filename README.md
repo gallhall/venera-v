@@ -26,6 +26,7 @@ It keeps everything venera does and adds video playback.
 - Download episodes (including DASH streams) in a chosen quality, play them offline, and export them as files
 - Import local videos and subtitles
 - Find streams by opening the web page of a video
+- Use [Kazumi](https://github.com/Predidit/Kazumi) anime rules as video sources, see [Kazumi Rules](doc/kazumi_rules.md)
 - On iOS, playback in the system player
 
 ## Download
@@ -62,6 +63,11 @@ See [Video Source](doc/video_source.md). [demo_video.js](doc/demo_video.js) is a
 [EhTagTranslation](https://github.com/EhTagTranslation/Database)
 
 The Chinese translation of the manga tags is from this project.
+
+### Kazumi
+[Kazumi](https://github.com/Predidit/Kazumi) and [KazumiRules](https://github.com/Predidit/KazumiRules)
+
+venera-v reads the anime rule format of Kazumi.
 
 ## Headless Mode
 See [Headless Doc](doc/headless_doc.md)

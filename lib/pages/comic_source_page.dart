@@ -7,9 +7,11 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/kazumi/kazumi_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/pages/kazumi_rules_page.dart';
 import 'package:venera/pages/webview.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
@@ -50,8 +52,12 @@ class ComicSourcePage extends StatelessWidget {
       );
       if (cancel) return;
       controller?.close();
-      await ComicSourceParser().parse(res.data!, source.filePath);
-      await io.File(source.filePath).writeAsString(res.data!);
+      if (source.isKazumi) {
+        await KazumiSource.saveUpdate(source, res.data!);
+      } else {
+        await ComicSourceParser().parse(res.data!, source.filePath);
+        await io.File(source.filePath).writeAsString(res.data!);
+      }
       if (ComicSourceManager().availableUpdates.containsKey(source.key)) {
         ComicSourceManager().availableUpdates.remove(source.key);
       }
@@ -69,24 +75,48 @@ class ComicSourcePage extends StatelessWidget {
     }
   }
 
+  /// Whether [version] is newer than the version of [source].
+  static bool isNewer(ComicSource source, String version) {
+    return source.isKazumi
+        ? KazumiRule.isNewer(version, source.version)
+        : compareSemVer(version, source.version);
+  }
+
+  /// Adds a source the user just installed, with its pages.
+  static void onSourceAdded(ComicSource source) {
+    ComicSourceManager().add(source);
+    _addAllPagesWithComicSource(source);
+    appdata.saveData();
+    App.forceRebuild();
+  }
+
   static Future<int> checkComicSourceUpdate() async {
     if (ComicSource.all().isEmpty) {
       return 0;
     }
-    var dio = AppDio();
-    var res = await dio.get<String>(appdata.settings['comicSourceListUrl']);
-    if (res.statusCode != 200) {
-      return -1;
-    }
-    var list = jsonDecode(res.data!) as List;
     var versions = <String, String>{};
-    for (var source in list) {
-      versions[source['key']] = source['version'];
+    if (ComicSource.all().any((s) => !s.isKazumi)) {
+      var dio = AppDio();
+      var res = await dio.get<String>(appdata.settings['comicSourceListUrl']);
+      if (res.statusCode != 200) {
+        return -1;
+      }
+      var list = jsonDecode(res.data!) as List;
+      for (var source in list) {
+        versions[source['key']] = source['version'];
+      }
+    }
+    if (ComicSource.all().any((s) => s.isKazumi)) {
+      try {
+        versions.addAll(await KazumiSource.repoVersions());
+      } catch (e) {
+        Log.error("Kazumi", "Failed to check rule updates: $e");
+      }
     }
     var shouldUpdate = <String>[];
     for (var source in ComicSource.all()) {
       if (versions.containsKey(source.key) &&
-          compareSemVer(versions[source.key]!, source.version)) {
+          isNewer(source, versions[source.key]!)) {
         shouldUpdate.add(source.key);
       }
     }
@@ -249,6 +279,13 @@ class _BodyState extends State<_Body> {
                   },
                 ),
                 FilledButton.tonalIcon(
+                  icon: Icon(Icons.movie_filter_outlined),
+                  label: Text("Kazumi Rules".tl),
+                  onPressed: () {
+                    showPopUpWidget(App.rootContext, const KazumiRulesPage());
+                  },
+                ),
+                FilledButton.tonalIcon(
                   icon: Icon(Icons.file_open_outlined),
                   label: Text("Use a config file".tl),
                   onPressed: _selectFile,
@@ -269,7 +306,8 @@ class _BodyState extends State<_Body> {
   }
 
   void _selectFile() async {
-    final file = await selectFile(ext: ["js"]);
+    // .json files are Kazumi rules.
+    final file = await selectFile(ext: ["js", "json"]);
     if (file == null) return;
     try {
       var fileName = file.name;
@@ -320,11 +358,10 @@ class _BodyState extends State<_Body> {
   }
 
   Future<void> addSource(String js, String fileName) async {
-    var comicSource = await ComicSourceParser().createAndParse(js, fileName);
-    ComicSourceManager().add(comicSource);
-    _addAllPagesWithComicSource(comicSource);
-    appdata.saveData();
-    App.forceRebuild();
+    var comicSource = KazumiSource.isRule(js)
+        ? await KazumiSource.install(js)
+        : await ComicSourceParser().createAndParse(js, fileName);
+    ComicSourcePage.onSourceAdded(comicSource);
   }
 }
 
@@ -802,7 +839,7 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
   Widget build(BuildContext context) {
     var newVersion = ComicSourceManager().availableUpdates[source.key];
     bool hasUpdate =
-        newVersion != null && compareSemVer(newVersion, source.version);
+        newVersion != null && ComicSourcePage.isNewer(source, newVersion);
 
     return SliverMainAxisGroup(
       slivers: [
@@ -827,6 +864,21 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
+                if (source.isKazumi)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.colorScheme.tertiaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      "Kazumi",
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ).paddingLeft(4),
                 if (hasUpdate)
                   Tooltip(
                     message: newVersion,

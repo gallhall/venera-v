@@ -132,6 +132,7 @@ class JsEngine with _JSEngineApi, JsUiApi, Init {
           : const {},
       userAgent: userAgent is String ? userAgent : null,
       script: script is String ? script : null,
+      embedded: message["embedded"] == true,
     );
     return result.toJson();
   }

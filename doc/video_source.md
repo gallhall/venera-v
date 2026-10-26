@@ -231,6 +231,9 @@ loadPlayInfo: async (id, epId) => {
 | `headers` | `object?` | Headers used to load the page. |
 | `userAgent` | `string?` | User-Agent of the hidden browser. |
 | `script` | `string?` | JavaScript run in the page after it loads, e.g. to click a play button: `"document.querySelector('.play-btn').click()"`. |
+| `embedded` | `boolean?` | Also take a stream url found in the query of a request or an iframe, e.g. `https://player.example.com/?url=https://cdn.example.com/a.m3u8`, if the page plays no other stream within 8 seconds (players often play a signed url made from it). `false` by default. |
+
+Without `match`, a response whose content is an HLS playlist (`#EXTM3U`) and the source of a `<video>` element count as streams even without a stream extension.
 
 The result is the **first** matching request:
 
@@ -299,5 +302,5 @@ new VideoSubtitle({url, name, language})
 new VideoSkip({start, end, type})
 
 // see Web page sniffing
-await Video.sniff(url, {match, exclude, timeout, headers, userAgent, script})
+await Video.sniff(url, {match, exclude, timeout, headers, userAgent, script, embedded})
 ```

@@ -12,6 +12,9 @@ ImageProvider? _findImageProvider(Comic comic) {
       return null;
     }
     image = FileImage(localComic.coverFile);
+  } else if (comic.cover.isEmpty && comic is! FavoriteItem) {
+    // e.g. search results of Kazumi rules, which have no covers
+    return null;
   } else {
     image = CachedImageProvider(
       comic.cover,
