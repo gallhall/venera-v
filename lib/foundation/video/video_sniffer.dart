@@ -12,7 +12,8 @@ class VideoSniffResult {
   final String url;
 
   /// `Referer`, `Origin`, `User-Agent` and `Cookie` of the page's request,
-  /// for the player and downloads to fetch the stream the same way.
+  /// for the player and downloads to fetch the stream the same way. No
+  /// `Referer` if the page's referrer policy sends none.
   final Map<String, String> headers;
 
   final VideoStreamType type;
@@ -36,6 +37,11 @@ class VideoSniffResult {
 /// also reports HLS playlists by their content, for urls without an
 /// extension. Videos in the page are started muted, as many players load
 /// the stream on play.
+///
+/// Only Android's intercepted requests have the `Referer` the page sent.
+/// Otherwise it follows the frame's referrer policy, see [refererFor]: CDNs
+/// often reject a foreign referer, which players avoid with
+/// `<meta name="referrer" content="never">`.
 class VideoSniffer {
   static bool get isSupported => !App.isLinux;
 
@@ -99,6 +105,72 @@ class VideoSniffer {
     };
   }
 
+  /// Referrer policies by the values `<meta name="referrer">` accepts,
+  /// legacy ones included.
+  static const _referrerPolicies = {
+    'no-referrer': 'no-referrer',
+    'never': 'no-referrer',
+    'no-referrer-when-downgrade': 'no-referrer-when-downgrade',
+    'same-origin': 'same-origin',
+    'origin': 'origin',
+    'strict-origin': 'strict-origin',
+    'origin-when-cross-origin': 'origin-when-cross-origin',
+    'origin-when-crossorigin': 'origin-when-cross-origin',
+    'strict-origin-when-cross-origin': 'strict-origin-when-cross-origin',
+    'default': 'strict-origin-when-cross-origin',
+    'unsafe-url': 'unsafe-url',
+    'always': 'unsafe-url',
+  };
+
+  /// The referrer policy [value] sets, a comma-separated list of policies
+  /// where the last valid one wins, as browsers read `<meta name="referrer">`
+  /// and `Referrer-Policy`. Null if there is none.
+  static String? referrerPolicy(String? value) {
+    if (value == null) return null;
+    return value
+        .split(',')
+        .map((e) => _referrerPolicies[e.trim().toLowerCase()])
+        .lastWhere((e) => e != null, orElse: () => null);
+  }
+
+  /// The `Referer` a page at [pageUrl] sends with a request for
+  /// [streamUrl] under [policy] (see [referrerPolicy]): none, its origin
+  /// or its url. Without a policy, its url: the page may have one in a
+  /// `Referrer-Policy` response header, which scripts cannot read, and CDNs
+  /// that check the referer check its site.
+  static String? refererFor(
+    String pageUrl,
+    String streamUrl, [
+    String? policy,
+  ]) {
+    var page = Uri.tryParse(pageUrl);
+    var pageOrigin = _origin(page);
+    if (pageOrigin == null) return null;
+    var url = page!.removeFragment().replace(userInfo: '').toString();
+    var origin = '$pageOrigin/';
+    var stream = Uri.tryParse(streamUrl);
+    var sameOrigin = _origin(stream) == pageOrigin;
+    var downgrade = page.isScheme('https') && stream?.isScheme('https') != true;
+    return switch (referrerPolicy(policy)) {
+      'no-referrer' => null,
+      'no-referrer-when-downgrade' => downgrade ? null : url,
+      'same-origin' => sameOrigin ? url : null,
+      'origin' => origin,
+      'strict-origin' => downgrade ? null : origin,
+      'origin-when-cross-origin' => sameOrigin ? url : origin,
+      'strict-origin-when-cross-origin' =>
+        sameOrigin ? url : (downgrade ? null : origin),
+      _ => url,
+    };
+  }
+
+  static String? _origin(Uri? uri) =>
+      uri != null &&
+          (uri.isScheme('http') || uri.isScheme('https')) &&
+          uri.host.isNotEmpty
+      ? uri.origin
+      : null;
+
   static String _headerName(String name) => name
       .split('-')
       .map((e) => e.isEmpty ? e : e[0].toUpperCase() + e.substring(1).toLowerCase())
@@ -109,27 +181,42 @@ class VideoSniffer {
   /// Reports the urls of the frame it runs in, and starts its videos
   /// muted. The kind of a url is `frame` (the frame's own), `request`,
   /// `m3u8` (a response that is an HLS playlist) or `media` (the source of
-  /// a media element).
+  /// a media element). Each report has the referrer policy of the request:
+  /// the frame's `<meta name="referrer">` values, then the one of a `fetch`
+  /// call, see [referrerPolicy].
   static const _frameScript = r'''
 (function () {
   if (window.__veneraSniff) return;
   window.__veneraSniff = true;
-  function report(url, kind) {
+  function policy(own) {
+    var values = [];
+    var metas = document.querySelectorAll('meta[name="referrer" i]');
+    for (var i = 0; i < metas.length; i++) values.push(metas[i].content || '');
+    if (own) values.push(own);
+    return values.join(',');
+  }
+  function report(url, kind, own) {
     try {
       if (!url || typeof url !== 'string' || url.startsWith('blob:')) return;
       url = new URL(url, location.href).href;
       var bridge = window.flutter_inappwebview;
-      if (bridge && bridge.callHandler) bridge.callHandler('veneraSniff', url, location.href, kind || 'request');
+      if (bridge && bridge.callHandler) bridge.callHandler('veneraSniff', url, location.href, kind || 'request', policy(own));
     } catch (e) {}
   }
   function isPlaylist(text) {
     return typeof text === 'string' && text.trim().startsWith('#EXTM3U');
   }
+  function fetchPolicy(options) {
+    if (!options) return '';
+    return options.referrer === '' ? 'no-referrer' : options.referrerPolicy || '';
+  }
   report(location.href, 'frame');
   var fetch = window.fetch;
   if (fetch) {
     window.fetch = function (input, init) {
-      report(typeof input === 'string' ? input : input && input.url);
+      var request = typeof input === 'string' ? null : input;
+      report(request ? request.url : input, 'request',
+          fetchPolicy(init) || fetchPolicy(request));
       return fetch.apply(this, arguments);
     };
   }
@@ -204,6 +291,8 @@ class VideoSniffer {
     InAppWebViewController? controller;
     // What the page loaded, for the log when no stream is found.
     var seen = <String>{};
+    // Headers of the requests intercepted natively, by url.
+    var intercepted = <String, Map<String, String>>{};
     Timer? embeddedTimer;
 
     Future<void> found(
@@ -211,6 +300,7 @@ class VideoSniffer {
       Map<String, String>? requestHeaders,
       String? frameUrl, [
       String kind = 'request',
+      String? policy,
     ]) async {
       if (completer.isCompleted) return;
       if (seen.length < 200) seen.add("$kind $streamUrl");
@@ -233,12 +323,20 @@ class VideoSniffer {
       )) {
         return;
       }
+      // On Android, natively intercepted requests have the Referer the page
+      // sent, if any. Elsewhere it is unknown for them, and the frame script
+      // cannot see request headers: it is guessed from the page.
+      if (App.isAndroid) requestHeaders ??= intercepted[streamUrl];
+      var refererKnown = App.isAndroid && requestHeaders != null;
       var replay = replayHeaders(requestHeaders);
       bool has(String name) =>
           replay.keys.any((k) => k.toLowerCase() == name.toLowerCase());
       try {
-        if (!has('referer')) {
-          var referer = frameUrl ?? (await controller?.getUrl())?.toString();
+        if (!has('referer') && !refererKnown) {
+          var page = frameUrl ?? (await controller?.getUrl())?.toString();
+          var referer = page == null
+              ? null
+              : refererFor(page, streamUrl, policy);
           if (referer != null) replay['Referer'] = referer;
         }
         if (!has('user-agent')) {
@@ -296,13 +394,18 @@ class VideoSniffer {
                 null,
                 args.length > 1 ? args[1]?.toString() : null,
                 args.length > 2 ? args[2].toString() : 'request',
+                args.length > 3 ? args[3]?.toString() : null,
               );
             }
           },
         );
       },
       shouldInterceptRequest: (c, request) async {
-        found(request.url.toString(), request.headers, null);
+        var requestUrl = request.url.toString();
+        if (intercepted.length < 1000) {
+          intercepted[requestUrl] = request.headers ?? const {};
+        }
+        found(requestUrl, request.headers, null);
         return null;
       },
       onLoadResource: (c, resource) {

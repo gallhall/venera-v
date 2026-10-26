@@ -71,7 +71,8 @@ class VideoPlaySource {
 
   final VideoStreamType type;
 
-  /// Headers for this stream, merged over [VideoPlayInfo.headers].
+  /// Headers for this stream, merged over [VideoPlayInfo.headers]. An empty
+  /// value removes the shared header.
   final Map<String, String> headers;
 
   /// External audio stream, for sites that serve audio and video separately.
@@ -282,9 +283,11 @@ class VideoPlayInfo {
   }
 
   /// Headers to use for [source]: shared headers overridden by the
-  /// stream's own ones (case-insensitive).
+  /// stream's own ones (case-insensitive). A header the stream sets to an
+  /// empty value is not sent.
   Map<String, String> headersFor(VideoPlaySource source) =>
-      _mergeHeaders(headers, source.headers);
+      _mergeHeaders(headers, source.headers)
+        ..removeWhere((_, value) => value.isEmpty);
 
   /// [over] merged over [base], header names being case-insensitive.
   static Map<String, String> _mergeHeaders(
@@ -303,9 +306,10 @@ class VideoPlayInfo {
       sources.any((s) => s.type == VideoStreamType.web);
 
   /// Replaces each [VideoStreamType.web] source, a page with a player, by
-  /// the stream [sniff] finds in it, with the headers the page used. The
-  /// pages are loaded with the source's headers, in parallel. Sources
-  /// whose page has no stream are dropped; throws if none is left.
+  /// the stream [sniff] finds in it, with the headers the page used (no
+  /// `Referer` if it sent none). The pages are loaded with the source's
+  /// headers, in parallel. Sources whose page has no stream are dropped;
+  /// throws if none is left.
   Future<VideoPlayInfo> resolveWebSources(
     Future<({String url, Map<String, String> headers, VideoStreamType type})>
             Function(String url, Map<String, String> headers)
@@ -323,7 +327,12 @@ class VideoPlayInfo {
               url: r.url,
               name: s.name,
               type: r.type,
-              headers: _mergeHeaders(s.headers, r.headers),
+              headers: _mergeHeaders(s.headers, {
+                // The page sent no referer: neither do the shared headers.
+                if (!r.headers.keys.any((k) => k.toLowerCase() == 'referer'))
+                  'Referer': '',
+                ...r.headers,
+              }),
               audioUrl: s.audioUrl,
             ),
             onError: (Object e) {
