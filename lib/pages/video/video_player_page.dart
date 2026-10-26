@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/video_controls.dart';
+import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -1148,48 +1150,88 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             info.sources.length,
           ).where((i) => !failedSources.contains(i)).firstOrNull;
     return Container(
-      color: Colors.black87,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (showPlayerBack || isFullscreen)
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                color: Colors.white,
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () =>
-                    isFullscreen ? setFullscreen(false) : context.pop(),
-              ),
-            ),
-          const Spacer(),
-          Text(
-            (recovery != null ? "Playback interrupted" : "Playback failed").tl,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error!,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
+      // Opaque: the buffering indicator of the player would show through.
+      color: Colors.black,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // In the small player above the episodes, long errors (e.g. a
+          // url) would push the buttons out of the player.
+          var compact = constraints.maxHeight < 300;
+          return Stack(
             children: [
-              FilledButton(onPressed: retry, child: Text("Retry".tl)),
-              if (untried != null)
-                OutlinedButton(
-                  onPressed: () => switchSource(untried),
-                  child: Text("Next source".tl),
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 56,
+                    vertical: 16,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        (recovery != null
+                                ? "Playback interrupted"
+                                : "Playback failed")
+                            .tl,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        maxLines: compact ? 2 : 4,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 8 : 16),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          FilledButton(
+                            onPressed: retry,
+                            child: Text("Retry".tl),
+                          ),
+                          if (untried != null)
+                            OutlinedButton(
+                              onPressed: () => switchSource(untried),
+                              child: Text("Next source".tl),
+                            ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white70,
+                            ),
+                            onPressed: () => saveFile(
+                              data: utf8.encode(Log().toString()),
+                              filename: 'log.txt',
+                            ),
+                            child: Text("Export logs".tl),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (showPlayerBack || isFullscreen)
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: IconButton(
+                    color: Colors.white,
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () =>
+                        isFullscreen ? setFullscreen(false) : context.pop(),
+                  ),
                 ),
             ],
-          ),
-          const Spacer(),
-        ],
+          );
+        },
       ),
     );
   }
