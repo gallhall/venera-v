@@ -48,8 +48,16 @@ class MainActivity : FlutterFragmentActivity() {
 
     private var textShareHandler: ((String) -> Unit)? = null
 
+    /// The app was opened from a notification of [DownloadService] to resume
+    /// the downloads.
+    private var resumeDownloads = false
+
+    private val notificationRequestCode = 0x11
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        resumeDownloads = intent?.getBooleanExtra(DownloadService.EXTRA_RESUME, false) == true
 
         if (intent?.action == Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
@@ -62,6 +70,10 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra(DownloadService.EXTRA_RESUME, false)) {
+            val action = DownloadService.onAction
+            if (action != null) action("resume") else resumeDownloads = true
+        }
         if (intent.action == Intent.ACTION_SEND) {
             if (intent.type == "text/plain") {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
@@ -186,6 +198,56 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
 
+        val downloadChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/download_service")
+        DownloadService.onAction = { action -> downloadChannel.invokeMethod(action, null) }
+        downloadChannel.setMethodCallHandler { call, res ->
+            when (call.method) {
+                "update" -> {
+                    DownloadService.update(
+                        applicationContext,
+                        DownloadService.Status(
+                            state = call.argument<String>("state")!!,
+                            title = call.argument<String>("title")!!,
+                            text = call.argument<String>("text")!!,
+                            subText = call.argument<String>("subText"),
+                            progress = call.argument<Double>("progress")!!,
+                            pauseLabel = call.argument<String>("pause")!!,
+                            resumeLabel = call.argument<String>("resume")!!,
+                        )
+                    )
+                    res.success(null)
+                }
+
+                "finish" -> {
+                    DownloadService.finish(
+                        applicationContext,
+                        call.argument<String>("title"),
+                        call.argument<String>("text")
+                    )
+                    res.success(null)
+                }
+
+                "requestPermission" -> {
+                    requestNotificationPermission()
+                    res.success(null)
+                }
+
+                "takeResumeRequest" -> {
+                    res.success(resumeDownloads)
+                    resumeDownloads = false
+                }
+
+                // Finishing the activity destroys the Flutter engine, and
+                // the downloads with it.
+                "moveTaskToBack" -> {
+                    moveTaskToBack(true)
+                    res.success(null)
+                }
+
+                else -> res.notImplemented()
+            }
+        }
+
         val shareTextChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/text_share")
         shareTextChannel.setStreamHandler(
             object : EventChannel.StreamHandler {
@@ -205,6 +267,31 @@ class MainActivity : FlutterFragmentActivity() {
                     textShareHandler = null
                 }
             })
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        super.cleanUpFlutterEngine(flutterEngine)
+        DownloadService.engineGone(applicationContext)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DownloadService.onAppVisible(applicationContext)
+    }
+
+    /// Asks for the permission to post notifications (Android 13+), which
+    /// show the progress of the downloads. Android asks the user at most
+    /// twice.
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+        ) return
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            notificationRequestCode
+        )
     }
 
     private fun getProxy(): String {

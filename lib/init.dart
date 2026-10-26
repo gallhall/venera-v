@@ -12,6 +12,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/network/download_notification.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
@@ -75,6 +76,7 @@ Future<void> init() async {
   if (App.isAndroid) {
     handleLinks();
     handleTextShare();
+    DownloadNotification.init().wait();
     try {
       await FlutterDisplayMode.setHighRefreshRate();
     } catch(e) {
