@@ -308,8 +308,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         children: [
           const SizedBox(width: 16),
           GestureDetector(
-            onTap: () => _viewCover(context),
-            onLongPress: () => _saveCover(context),
+            onTap: coverUrl.isEmpty ? null : () => _viewCover(context),
+            onLongPress: coverUrl.isEmpty ? null : () => _saveCover(context),
             child: Hero(
               tag: "cover${widget.heroID}",
               child: Container(
@@ -327,15 +327,17 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 height: 144,
                 width: 144 * 0.72,
                 clipBehavior: Clip.antiAlias,
-                child: AnimatedImage(
-                  image: CachedImageProvider(
-                    widget.cover ?? comic.cover,
-                    sourceKey: comic.sourceKey,
-                    cid: comic.id,
-                  ),
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
+                child: coverUrl.isEmpty
+                    ? const SizedBox()
+                    : AnimatedImage(
+                        image: CachedImageProvider(
+                          coverUrl,
+                          sourceKey: comic.sourceKey,
+                          cid: comic.id,
+                        ),
+                        width: double.infinity,
+                        height: double.infinity,
+                      ),
               ),
             ),
           ),
@@ -753,9 +755,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     return _CommentsPart(comments: comic.comments!, showMore: showComments);
   }
 
+  /// The cover of the tile that opened the page, else the one of the
+  /// details. Empty for sources without covers, e.g. some Kazumi rules.
+  String get coverUrl {
+    var cover = widget.cover;
+    return cover == null || cover.isEmpty ? comic.cover : cover;
+  }
+
   void _viewCover(BuildContext context) {
     final imageProvider = CachedImageProvider(
-      widget.cover ?? comic.cover,
+      coverUrl,
       sourceKey: comic.sourceKey,
       cid: comic.id,
     );
@@ -772,7 +781,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   void _saveCover(BuildContext context) async {
     try {
       final imageProvider = CachedImageProvider(
-        widget.cover ?? comic.cover,
+        coverUrl,
         sourceKey: comic.sourceKey,
         cid: comic.id,
       );
@@ -1055,7 +1064,7 @@ class _ComicPageLoadingPlaceHolder extends StatelessWidget {
 
   Widget buildImage(BuildContext context) {
     Widget child;
-    if (cover != null) {
+    if (cover != null && cover!.isNotEmpty) {
       child = AnimatedImage(
         image: CachedImageProvider(cover!, sourceKey: sourceKey, cid: cid),
         width: double.infinity,
