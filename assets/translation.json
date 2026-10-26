@@ -533,7 +533,16 @@
     "No subtitles": "无字幕",
     "Not matched": "未匹配",
     "Add subtitles": "添加字幕",
-    "Title cannot be empty": "标题不能为空"
+    "Title cannot be empty": "标题不能为空",
+    "Kazumi Rules": "Kazumi 规则",
+    "The URL should point to a folder with an 'index.json' file and the rules": "URL 应指向包含 'index.json' 和规则文件的目录",
+    "Kazumi rules play episodes by sniffing their web pages": "Kazumi 规则通过嗅探剧集网页来播放",
+    "Requires captcha verification, not supported yet": "需要人机验证，暂不支持",
+    "@name requires a captcha verification, which is not supported yet": "@name 需要人机验证，暂不支持",
+    "Rule @name is already installed": "规则 @name 已安装",
+    "Rule @a is not @b": "规则 @a 不是 @b",
+    "No episodes found": "没有找到剧集",
+    "Line @n": "线路 @n"
   },
   "zh_TW": {
     "Home": "首頁",
@@ -1069,6 +1078,15 @@
     "No subtitles": "無字幕",
     "Not matched": "未匹配",
     "Add subtitles": "新增字幕",
-    "Title cannot be empty": "標題不能為空"
+    "Title cannot be empty": "標題不能為空",
+    "Kazumi Rules": "Kazumi 規則",
+    "The URL should point to a folder with an 'index.json' file and the rules": "URL 應指向包含 'index.json' 和規則檔案的目錄",
+    "Kazumi rules play episodes by sniffing their web pages": "Kazumi 規則透過嗅探劇集網頁來播放",
+    "Requires captcha verification, not supported yet": "需要人機驗證，暫不支援",
+    "@name requires a captcha verification, which is not supported yet": "@name 需要人機驗證，暫不支援",
+    "Rule @name is already installed": "規則 @name 已安裝",
+    "Rule @a is not @b": "規則 @a 不是 @b",
+    "No episodes found": "沒有找到劇集",
+    "Line @n": "線路 @n"
   }
 }

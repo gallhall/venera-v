@@ -219,6 +219,7 @@ class Settings with ChangeNotifier {
     'sni': true,
     'autoAddLanguageFilter': 'none', // none, chinese, english, japanese
     'comicSourceListUrl': defaultSourceListUrl,
+    'kazumiRuleRepoUrl': '', // empty for KazumiSource.defaultRepoUrl
     'preloadImageCount': 4,
     'followUpdatesFolder': null,
     'initialPage': '0',

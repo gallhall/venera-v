@@ -5,6 +5,12 @@ ImageProvider? _findImageProvider(Comic comic) {
   if (comic is LocalComic) {
     image = LocalComicImageProvider(comic);
   } else if (comic is History) {
+    // An empty cover is not a key to look up: the source has none, and
+    // HistoryImageProvider would load the details again for nothing.
+    if (comic.cover.isEmpty &&
+        LocalManager().find(comic.id, comic.type) == null) {
+      return null;
+    }
     image = HistoryImageProvider(comic);
   } else if (comic.sourceKey == 'local') {
     var localComic = LocalManager().find(comic.id, ComicType.local);
@@ -12,6 +18,9 @@ ImageProvider? _findImageProvider(Comic comic) {
       return null;
     }
     image = FileImage(localComic.coverFile);
+  } else if (comic.cover.isEmpty && comic is! FavoriteItem) {
+    // e.g. search results of Kazumi rules, which have no covers
+    return null;
   } else {
     image = CachedImageProvider(
       comic.cover,

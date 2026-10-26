@@ -26,6 +26,7 @@ venera-v 保留了 venera 的全部功能，并增加了视频播放。
 - 按选择的画质下载剧集（包括 DASH 流），离线播放，并可导出为文件
 - 导入本地视频和字幕
 - 打开视频网页来查找视频流
+- 把 [Kazumi](https://github.com/Predidit/Kazumi) 的动漫规则用作视频源，见 [Kazumi Rules](doc/kazumi_rules.md)
 - iOS 上使用系统播放器播放
 
 ## 下载
@@ -62,6 +63,11 @@ venera-v 是独立的应用（Android 包名为 `com.github.gallhall.venerav`）
 [EhTagTranslation](https://github.com/EhTagTranslation/Database)
 
 漫画标签的中文翻译来自这个项目。
+
+### Kazumi
+[Kazumi](https://github.com/Predidit/Kazumi) 和 [KazumiRules](https://github.com/Predidit/KazumiRules)
+
+venera-v 支持 Kazumi 的动漫规则格式。
 
 ## Headless 模式
 见 [Headless Doc](doc/headless_doc.md)

@@ -20,6 +20,7 @@ import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 
 import '../js_engine.dart';
+import '../kazumi/kazumi_source.dart';
 import '../log.dart';
 import '../video/video_sniffer.dart';
 
@@ -71,6 +72,13 @@ class ComicSourceManager with ChangeNotifier, Init {
           _sources.add(source);
         } catch (e, s) {
           Log.error("ComicSource", "$e\n$s");
+        }
+      } else if (entity is File &&
+          entity.path.endsWith(KazumiSource.fileExtension)) {
+        try {
+          _sources.add(await KazumiSource.load(entity.absolute));
+        } catch (e, s) {
+          Log.error("ComicSource", "${entity.path}: $e\n$s");
         }
       }
     }
@@ -215,6 +223,12 @@ class ComicSource {
   /// Load the streams of an episode. Only set for video sources.
   final LoadVideoPlayInfoFunc? loadVideoPlayInfo;
 
+  /// The Kazumi rule this source is made from, null for JS sources. See
+  /// [KazumiSource].
+  final KazumiRule? kazumiRule;
+
+  bool get isKazumi => kazumiRule != null;
+
   Future<void> loadData() async {
     var file = File("${App.dataPath}/comic_source/$key.data");
     if (await file.exists()) {
@@ -257,6 +271,7 @@ class ComicSource {
   /// Get settings dynamically from JavaScript source.
   /// This allows sources to use getters for dynamic settings that can change at runtime.
   Map<String, Map<String, dynamic>>? getSettingsDynamic() {
+    if (isKazumi) return settings;
     try {
       var value = JsEngine().runCode("ComicSource.sources.$key.settings");
       if (value is Map) {
@@ -323,6 +338,7 @@ class ComicSource {
     this.archiveDownloader, [
     this.mediaType = SourceMediaType.comic,
     this.loadVideoPlayInfo,
+    this.kazumiRule,
   ]);
 }
 

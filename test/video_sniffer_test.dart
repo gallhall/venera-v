@@ -44,6 +44,52 @@ void main() {
         isFalse,
       );
     });
+
+    test('confirmed streams need no extension, unless there is a match', () {
+      const url = 'https://e.com/api/play?id=1';
+      expect(VideoSniffer.isStream(url), isFalse);
+      expect(VideoSniffer.isStream(url, confirmed: true), isTrue);
+      expect(
+        VideoSniffer.isStream(url, confirmed: true, match: RegExp(r'\.m3u8')),
+        isFalse,
+      );
+      expect(
+        VideoSniffer.isStream(url, confirmed: true, exclude: RegExp('api')),
+        isFalse,
+      );
+      expect(
+        VideoSniffer.isStream('blob:https://e.com/1', confirmed: true),
+        isFalse,
+      );
+    });
+  });
+
+  test('stream urls embedded in iframe player urls', () {
+    expect(
+      VideoSniffer.embeddedStream(
+        'https://player.e.com/?url=https%3A%2F%2Fcdn.e.com%2Fa%2Findex.m3u8&next=1',
+      ),
+      'https://cdn.e.com/a/index.m3u8',
+    );
+    expect(
+      VideoSniffer.embeddedStream(
+        'https://player.e.com/m3u8.php?id=1&v=https://cdn.e.com/b.mp4?sign=x',
+      ),
+      'https://cdn.e.com/b.mp4?sign=x',
+    );
+    expect(
+      VideoSniffer.embeddedStream('https://player.e.com/?url=/a.m3u8'),
+      isNull,
+    );
+    expect(VideoSniffer.embeddedStream('https://e.com/play/1.html'), isNull);
+    expect(VideoSniffer.embeddedStream('https://e.com/?a=%E0%A4%A'), isNull);
+    expect(
+      VideoSniffer.embeddedStream(
+        'https://player.e.com/?url=https://ads.e.com/a.mp4',
+        exclude: RegExp(r'ads\.'),
+      ),
+      isNull,
+    );
   });
 
   test('replays referer, origin, user agent and cookie only', () {

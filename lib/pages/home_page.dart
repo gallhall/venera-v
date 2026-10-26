@@ -687,7 +687,7 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
     ComicSourceManager().availableUpdates.forEach((key, version) {
       var source = ComicSource.find(key);
       if (source != null) {
-        if (compareSemVer(version, source.version)) {
+        if (ComicSourcePage.isNewer(source, version)) {
           c++;
         }
       }
