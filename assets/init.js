@@ -1142,15 +1142,17 @@ function ImageLoadingConfig({url, method, data, headers, onResponse, modifyImage
  * @param type {string?} - "auto" | "mp4" | "hls" | "dash". A hint, the player detects the format by itself.
  * @param headers {Object?} - request headers for this stream, merged over `VideoPlayInfo.headers`
  * @param audioUrl {string?} - external audio stream, for sites that serve audio and video separately
+ * @param filterAds {boolean?} - remove the ads the site splices into the HLS stream (since 2.2.0)
  * @constructor
  * @since 2.0.0
  */
-function VideoPlaySource({url, name, type, headers, audioUrl}) {
+function VideoPlaySource({url, name, type, headers, audioUrl, filterAds}) {
     this.url = url;
     this.name = name;
     this.type = type;
     this.headers = headers;
     this.audioUrl = audioUrl;
+    this.filterAds = filterAds;
 }
 
 /**

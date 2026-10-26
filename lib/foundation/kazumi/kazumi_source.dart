@@ -337,6 +337,7 @@ abstract final class KazumiSource {
             url: url,
             name: rule.name,
             type: VideoSniffer.typeOf(url),
+            filterAds: rule.adBlocker,
           ),
         ],
         headers: headers,
@@ -353,7 +354,12 @@ abstract final class KazumiSource {
     // foreign referers.
     return VideoPlayInfo(
       sources: [
-        VideoPlaySource(url: result.url, name: rule.name, type: result.type),
+        VideoPlaySource(
+          url: result.url,
+          name: rule.name,
+          type: result.type,
+          filterAds: rule.adBlocker,
+        ),
       ],
       headers: headers,
     );

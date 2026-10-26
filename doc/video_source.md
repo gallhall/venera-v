@@ -150,8 +150,15 @@ video = {
 | `type` | `string?` | `"auto"` (default), `"mp4"`, `"hls"`, `"dash"`, or `"web"` for a web page with a player, see [Web page sniffing](#web-page-sniffing). Other values are hints only: the player detects the format by itself. |
 | `headers` | `object?` | Request headers for this stream. Merged over `VideoPlayInfo.headers`, a header set here wins (names are case-insensitive). |
 | `audioUrl` | `string?` | External audio stream, for sites that serve audio and video separately. |
+| `filterAds` | `boolean?` | Remove the ads the site splices into the HLS stream, for playback and downloads. See [HLS ads](#hls-ads). |
 
 A source can also be just a url string.
+
+### HLS ads
+
+Some sites insert ads into their HLS streams between `#EXT-X-DISCONTINUITY` tags. With `filterAds: true` the app groups the segments of the media playlist (of the highest bandwidth variant of a master playlist) by those tags and removes the ads, as [Kazumi](https://github.com/Predidit/Kazumi) does for rules with `adBlocker`: the longest group is the episode, and a group is an ad if it is shorter than 30 % of it, shorter than 10 s, or the first or last group and shorter than 30 s.
+
+The filtered playlist is played from a local file, so the system player on iOS is not used for such a stream; its segments are still loaded from the site with the stream's headers. Playlists without ads, and live playlists (without `#EXT-X-ENDLIST`), are played as they are.
 
 ### VideoSubtitle
 
@@ -270,7 +277,7 @@ You can try a page in **Settings > Debug > Video Player Test > Web Page Sniffing
 Users can download episodes from the details page, after picking a quality among the ones the first episode offers (resolutions of HLS variants, DASH video tracks, and sources named like `"720P"`). The app calls `video.loadPlayInfo` for each episode, sniffing `"web"` sources as for playback, and saves the first source it can download, with the same request headers as playback:
 
 - MP4 and other direct files, resumed after a pause or a restart;
-- HLS: the variant of a master playlist at the picked quality (the highest one below it, or the lowest), with its segments, AES-128 keys and init segments;
+- HLS: the variant of a master playlist at the picked quality (the highest one below it, or the lowest), with its segments, AES-128 keys and init segments, without the ads if `filterAds` is set;
 - DASH: the video representation at the picked quality and the highest bandwidth audio one, preferring MP4 ones. Segment templates (`$Number$`, `$Time$` with a `SegmentTimeline`), segment lists with byte ranges and single files are supported;
 - `audioUrl` and the subtitles.
 
