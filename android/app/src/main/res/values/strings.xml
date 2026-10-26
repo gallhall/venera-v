@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="share_text">Search</string>
+    <string name="download_channel">Downloads</string>
+    <string name="download_interrupted">Downloads have stopped. Tap to open venera-v and continue.</string>
+    <string name="download_time_limit">Android limits how long downloads run in the background. Tap to open venera-v and continue.</string>
 </resources>

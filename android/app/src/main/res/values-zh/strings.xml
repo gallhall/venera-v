@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="share_text">搜尋</string>
+    <string name="download_channel">下載</string>
+    <string name="download_interrupted">下載已停止，點按開啟 venera-v 繼續。</string>
+    <string name="download_time_limit">Android 限制了背景下載的時長，點按開啟 venera-v 繼續。</string>
 </resources>

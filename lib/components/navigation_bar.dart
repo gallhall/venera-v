@@ -226,14 +226,22 @@ class NaviPaneState extends State<NaviPane>
   Widget buildMainView() {
     return HeroControllerScope(
       controller: MaterialApp.createMaterialHeroController(),
-      child: PopScope(
-        canPop: _canPop,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop) {
-            return;
-          }
-          widget.navigatorKey.currentState?.maybePop(result);
-        },
+      child: ValueListenableBuilder(
+        valueListenable: DownloadNotification.keepAppOpen,
+        builder: (context, keepAppOpen, child) => PopScope(
+          canPop: _canPop && !keepAppOpen,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) {
+              return;
+            }
+            if (_canPop) {
+              DownloadNotification.moveToBackground();
+            } else {
+              widget.navigatorKey.currentState?.maybePop(result);
+            }
+          },
+          child: child!,
+        ),
         child: NotificationListener<NavigationNotification>(
           onNotification: (NavigationNotification notification) {
             final bool nextCanPop = !notification.canHandlePop;

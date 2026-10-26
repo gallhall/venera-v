@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -528,8 +529,14 @@ class LocalManager with ChangeNotifier {
     return Directory(FilePath.join(path, dir)).create().then((value) => value);
   }
 
+  final _completedTasks = StreamController<DownloadTask>.broadcast(sync: true);
+
+  /// Tasks that have completed, before they leave [downloadingTasks].
+  Stream<DownloadTask> get completedTasks => _completedTasks.stream;
+
   void completeTask(DownloadTask task) {
     add(task.toLocalComic());
+    _completedTasks.add(task);
     downloadingTasks.remove(task);
     notifyListeners();
     saveCurrentDownloadingTasks();
