@@ -92,6 +92,85 @@ void main() {
     );
   });
 
+  test('referrer policies, legacy values and lists', () {
+    expect(VideoSniffer.referrerPolicy('never'), 'no-referrer');
+    expect(VideoSniffer.referrerPolicy(' No-Referrer '), 'no-referrer');
+    expect(VideoSniffer.referrerPolicy('always'), 'unsafe-url');
+    expect(VideoSniffer.referrerPolicy('origin'), 'origin');
+    expect(
+      VideoSniffer.referrerPolicy('origin-when-crossorigin'),
+      'origin-when-cross-origin',
+    );
+    expect(
+      VideoSniffer.referrerPolicy('default'),
+      'strict-origin-when-cross-origin',
+    );
+    // The last valid value wins: meta tags in order, then a fetch call's.
+    expect(VideoSniffer.referrerPolicy('never,origin'), 'origin');
+    expect(VideoSniffer.referrerPolicy('never,unknown,'), 'no-referrer');
+    expect(VideoSniffer.referrerPolicy('unknown'), isNull);
+    expect(VideoSniffer.referrerPolicy(''), isNull);
+    expect(VideoSniffer.referrerPolicy(null), isNull);
+  });
+
+  group('refererFor', () {
+    const page = 'https://player.e.com/play/1?id=2#t=3';
+    const cdn = 'https://v.bdxiguavod.com/video/abc/';
+    const same = 'https://player.e.com/video.mp4';
+    String? referer(String policy, [String stream = cdn]) =>
+        VideoSniffer.refererFor(page, stream, policy);
+
+    test('page url without a policy, as before', () {
+      expect(
+        VideoSniffer.refererFor(page, cdn),
+        'https://player.e.com/play/1?id=2',
+      );
+      expect(referer('unknown'), 'https://player.e.com/play/1?id=2');
+      expect(referer('always'), 'https://player.e.com/play/1?id=2');
+      expect(
+        VideoSniffer.refererFor('https://u:p@e.com:8443/a', cdn),
+        'https://e.com:8443/a',
+      );
+    });
+
+    test('none for no-referrer', () {
+      expect(referer('never'), isNull);
+      expect(referer('no-referrer'), isNull);
+      expect(referer('origin,never'), isNull);
+    });
+
+    test('origin only for origin policies', () {
+      expect(referer('origin'), 'https://player.e.com/');
+      expect(referer('origin', same), 'https://player.e.com/');
+      expect(referer('strict-origin'), 'https://player.e.com/');
+      expect(referer('origin-when-cross-origin'), 'https://player.e.com/');
+      expect(referer('default'), 'https://player.e.com/');
+      expect(
+        referer('origin-when-cross-origin', same),
+        'https://player.e.com/play/1?id=2',
+      );
+    });
+
+    test('same-origin and downgrades', () {
+      expect(referer('same-origin'), isNull);
+      expect(referer('same-origin', same), 'https://player.e.com/play/1?id=2');
+      const http = 'http://cdn.e.com/a.mp4';
+      expect(referer('strict-origin', http), isNull);
+      expect(referer('strict-origin-when-cross-origin', http), isNull);
+      expect(referer('no-referrer-when-downgrade', http), isNull);
+      expect(
+        referer('no-referrer-when-downgrade'),
+        'https://player.e.com/play/1?id=2',
+      );
+      expect(referer('origin', http), 'https://player.e.com/');
+    });
+
+    test('none from pages that are not http', () {
+      expect(VideoSniffer.refererFor('about:srcdoc', cdn), isNull);
+      expect(VideoSniffer.refererFor('about:blank', cdn, 'always'), isNull);
+    });
+  });
+
   test('replays referer, origin, user agent and cookie only', () {
     expect(
       VideoSniffer.replayHeaders({
@@ -154,6 +233,34 @@ void main() {
         'referer': 'https://player.com/embed',
       });
       expect(resolved.hasWebSources, isFalse);
+    });
+
+    test('no referer when the page sent none', () async {
+      var resolved = await info.resolveWebSources(
+        (url, headers) async => (
+          url: 'https://v.bdxiguavod.com/video/abc/',
+          headers: {'User-Agent': 'UA'},
+          type: VideoStreamType.auto,
+        ),
+      );
+      // Not even the play info's one.
+      expect(resolved.headersFor(resolved.sources.first), {'User-Agent': 'UA'});
+      expect(resolved.headersFor(resolved.sources[1]), {
+        'Referer': 'https://site.com/',
+      });
+    });
+
+    test('an empty source header removes the shared one', () {
+      var info = VideoPlayInfo.fromJson({
+        'headers': {'Referer': 'https://site.com/', 'X-A': '1'},
+        'sources': [
+          {
+            'url': 'https://cdn.com/a.mp4',
+            'headers': {'referer': '', 'X-B': '2'},
+          },
+        ],
+      });
+      expect(info.headersFor(info.sources.first), {'X-A': '1', 'X-B': '2'});
     });
 
     test('throws when no source is left', () async {

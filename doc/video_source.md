@@ -148,7 +148,7 @@ video = {
 | `url` | `string` | Required. Stream url: MP4, HLS (`.m3u8`), DASH (`.mpd`) or anything else libmpv can play. |
 | `name` | `string?` | Label in the source picker, e.g. `"1080P"`, `"Line 2"`. Defaults to `"Source n"`. |
 | `type` | `string?` | `"auto"` (default), `"mp4"`, `"hls"`, `"dash"`, or `"web"` for a web page with a player, see [Web page sniffing](#web-page-sniffing). Other values are hints only: the player detects the format by itself. |
-| `headers` | `object?` | Request headers for this stream. Merged over `VideoPlayInfo.headers`, a header set here wins (names are case-insensitive). |
+| `headers` | `object?` | Request headers for this stream. Merged over `VideoPlayInfo.headers`, a header set here wins (names are case-insensitive). An empty value removes the shared header, e.g. `{"Referer": ""}` sends no Referer for this stream. |
 | `audioUrl` | `string?` | External audio stream, for sites that serve audio and video separately. |
 
 A source can also be just a url string.
@@ -241,6 +241,7 @@ The result is the **first** matching request:
 {
     url: "https://cdn.example.com/hls/index.m3u8",
     // what the page sent with that request, to fetch the stream the same way
+    // (no Referer if the page sends none, see "Referer" below)
     headers: {"Referer": "https://player.example.com/embed/1", "User-Agent": "...", "Cookie": "..."},
     type: "hls",  // from the extension, "auto" if unknown
 }
@@ -252,6 +253,7 @@ Use it as a whole play info, or put it in a `VideoPlaySource` among others.
 
 Without any code, a source can set `type: "web"` on a `VideoPlaySource` whose `url` is a page.
 After `loadPlayInfo` returns, the app sniffs each such page with the default patterns, using the source's headers to load it, and replaces the source with the stream it found and the page's headers.
+If the page sent no Referer, the stream is played without one, even if `VideoPlayInfo.headers` has one.
 Pages are opened in parallel; a page without a stream is dropped, and loading fails if no source is left.
 Use `Video.sniff` for anything else, e.g. a `match` pattern or a script.
 
@@ -260,6 +262,7 @@ Use `Video.sniff` for anything else, e.g. a `match` pattern or a script.
 - The page runs in a hidden webview (WebView2 on Windows, the system webview on Android, WKWebView on iOS and macOS) with the app's proxy and its own cookies, shared with webview logins.
 - Requests are intercepted natively on Android and Windows, including the ones of iframes and media elements. On iOS and macOS, a script in every frame reports `fetch`, `XMLHttpRequest` and `<video>` urls instead.
 - Videos in the page are started muted, as many players only request the stream on play.
+- The result has the Referer the page sent, as many CDNs answer 403 to a Referer from another site, including to a page that sends none. On Android it is read from the intercepted request. Elsewhere, and for streams the script reports before they are intercepted, it follows the frame's referrer policy from `<meta name="referrer">` (legacy values such as `never` included) or the `fetch` call: none for `no-referrer`, the page's origin for `origin` (or for a stream on another site with `strict-origin`, `origin-when-cross-origin`...), and the page's url otherwise. A `Referrer-Policy` response header is only seen on Android. `referrerpolicy` on a `<video>` element changes nothing, in browsers neither.
 - Sniffing takes seconds, and `loadPlayInfo` is called every time an episode is played or downloaded. Prefer reading the stream url from the page or an API when you can.
 - Not available on Linux: `Video.sniff` throws.
 
