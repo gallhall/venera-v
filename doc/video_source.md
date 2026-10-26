@@ -158,6 +158,8 @@ A source can also be just a url string.
 
 Some sites insert ads into their HLS streams between `#EXT-X-DISCONTINUITY` tags. With `filterAds: true` the app groups the segments of the media playlist (of the highest bandwidth variant of a master playlist) by those tags and removes the ads, as [Kazumi](https://github.com/Predidit/Kazumi) does for rules with `adBlocker`: the longest group is the episode, and a group is an ad if it is shorter than 30 % of it, shorter than 10 s, or the first or last group and shorter than 30 s.
 
+Some streams split the episode itself into short groups and splice the ads into them, so that parts of the episode are shorter than the ads. Ads are usually served from another directory than the episode, so when one directory holds most of the stream and every group is served either from there or from elsewhere, the groups served from there are always kept, and the others are ads if the rules above say so or if they are shorter than 30 % of the episode.
+
 The filtered playlist is played from a local file, so the system player on iOS is not used for such a stream; its segments are still loaded from the site with the stream's headers. Playlists without ads, and live playlists (without `#EXT-X-ENDLIST`), are played as they are.
 
 ### VideoSubtitle

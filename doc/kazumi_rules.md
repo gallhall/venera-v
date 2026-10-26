@@ -35,7 +35,7 @@ Rule API levels up to 9, the same as Kazumi at the time of writing:
 | `searchMode` / `chapterMode` `"api"` | JSON APIs: `searchApiConfig` and `chapterApiConfig` with requests (GET or POST, JSON or form bodies, `@keyword`, `@source` and other variables), JSONPath (`$`, `.name`, `[0]`, `[*]`, `['name']`), `sourceTemplate`, nested and delimited play lines, `variables` and `episodePage`. |
 | `userAgent`, `referer`, `useLegacyParser` | See above. |
 | `antiCrawlerConfig` | Captcha pages are recognized and reported, but not solved: verifying in a webview is not supported yet. A Cloudflare challenge shows the same verify button as for JS sources. |
-| `adBlocker` | Ads between `#EXT-X-DISCONTINUITY` tags of HLS streams are removed for playback and downloads, with the rules of Kazumi's playlist filter, see [HLS ads](video_source.md#hls-ads). Kazumi plays such streams with a patched FFmpeg that skips the ads by their timestamps while playing; venera-v filters the playlist instead, so that the duration and seeking leave the ads out too. |
+| `adBlocker` | Ads between `#EXT-X-DISCONTINUITY` tags of HLS streams are removed for playback and downloads, with the rules of Kazumi's playlist filter and the directory the segments come from, see [HLS ads](video_source.md#hls-ads). Kazumi plays such streams with a patched FFmpeg that skips the ads by their timestamps while playing; venera-v filters the playlist instead, so that the duration and seeking leave the ads out too. |
 
 Not supported yet: captcha verification. `muliSources`, `useWebview` and `useNativePlayer` are ignored, as in recent Kazumi versions.
 

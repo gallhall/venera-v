@@ -17,12 +17,20 @@ class HlsAdFilterResult {
   );
 }
 
-/// Finds ads in a media playlist the way Kazumi does for rules with
-/// `adBlocker`: sites insert them between `#EXT-X-DISCONTINUITY` tags, so
-/// the segments are grouped by those tags, the longest group is taken as
-/// the episode and the short groups around it as ads.
+/// Finds ads in a media playlist: sites insert them between
+/// `#EXT-X-DISCONTINUITY` tags, so the segments are grouped by those tags.
+///
+/// The groups are told apart by their length, as Kazumi does for rules
+/// with `adBlocker`: the longest group is taken as the episode and the
+/// short groups around it as ads. Lengths alone fail on streams whose
+/// episode is itself split into short groups, which some sites splice
+/// ads into; but ads are usually served from another directory than the
+/// episode. So if one directory holds most of the stream, the groups
+/// with segments there are kept whatever their length, and the other
+/// groups are ads if short.
 abstract final class HlsAdFilter {
-  /// Groups shorter than this part of the longest one are ads.
+  /// Groups shorter than this part of the longest one are ads. Groups
+  /// from another directory are ads below this part of the episode.
   static const _minShare = 0.3;
 
   /// The first and the last group are ads below this.
@@ -46,14 +54,18 @@ abstract final class HlsAdFilter {
     '#EXT-X-DEFINE',
   ];
 
-  /// [text], a media playlist, without its ads; null if it has none.
+  /// [text], a media playlist from [base], without its ads; null if it
+  /// has none.
   ///
   /// Live playlists, without `#EXT-X-ENDLIST`, are left as they are: the
   /// groups change as segments come and go.
-  static HlsAdFilterResult? filter(String text) {
+  static HlsAdFilterResult? filter(String text, [Uri? base]) {
     if (!text.contains('#EXT-X-ENDLIST')) return null;
     var playlist = _parse(text);
-    var ads = _adGroups(playlist.segments);
+    var ads = _adGroups(
+      playlist.segments,
+      base ?? Uri.parse('https://playlist.invalid/index.m3u8'),
+    );
     if (ads.isEmpty) return null;
     return _write(playlist, ads);
   }
@@ -85,12 +97,62 @@ abstract final class HlsAdFilter {
     return _Playlist(segments, lines);
   }
 
-  static Set<int> _adGroups(List<_Segment> segments) {
+  static Set<int> _adGroups(List<_Segment> segments, Uri base) {
     var durations = <int, double>{};
     for (var s in segments) {
       durations[s.group] = (durations[s.group] ?? 0) + s.duration;
     }
     if (durations.length < 2) return const {};
+    var byLength = _adGroupsByLength(durations);
+    var episode = _episode(segments, base);
+    if (episode == null) return byLength;
+    // Parts of the episode are never ads; short groups from elsewhere are.
+    return {
+      for (var MapEntry(key: group, value: duration) in durations.entries)
+        if (!episode.groups.contains(group) &&
+            (duration < episode.seconds * _minShare ||
+                byLength.contains(group)))
+          group,
+    };
+  }
+
+  /// The groups served from the directory that holds most of the stream,
+  /// and the length of its segments. Null if no directory holds most of
+  /// it, if all segments are in one, or if a group has segments both there
+  /// and elsewhere: ads are whole groups.
+  static ({Set<int> groups, double seconds})? _episode(
+    List<_Segment> segments,
+    Uri base,
+  ) {
+    String directory(_Segment s) {
+      try {
+        return base.resolve(s.uri).resolve('.').toString();
+      } catch (_) {
+        return s.uri;
+      }
+    }
+
+    var segmentDirectories = segments.map(directory).toList();
+    var directories = <String, double>{};
+    var total = 0.0;
+    for (var (i, s) in segments.indexed) {
+      var dir = segmentDirectories[i];
+      directories[dir] = (directories[dir] ?? 0) + s.duration;
+      total += s.duration;
+    }
+    if (directories.length < 2) return null;
+    var main = directories.entries.reduce((a, b) => a.value >= b.value ? a : b);
+    if (main.value < total / 2) return null;
+    var groups = <int>{}, elsewhere = <int>{};
+    for (var (i, s) in segments.indexed) {
+      (segmentDirectories[i] == main.key ? groups : elsewhere).add(s.group);
+    }
+    if (groups.any(elsewhere.contains)) return null;
+    return (groups: groups, seconds: main.value);
+  }
+
+  /// Kazumi's rules: groups much shorter than the longest one are ads.
+  static Set<int> _adGroupsByLength(Map<int, double> durations) {
     var longest = durations.values.reduce((a, b) => a > b ? a : b);
     var first = durations.keys.first;
     var last = durations.keys.last;

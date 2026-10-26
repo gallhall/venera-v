@@ -292,6 +292,56 @@ m3.m4s
     expect('#EXT-X-KEY'.allMatches(result.text), hasLength(2));
   });
 
+  test('finds ads by their directory in an episode of short groups', () {
+    // As served by a CDN of the MXdm rule: the episode has a discontinuity
+    // every 20 segments, and ads are spliced into those groups, so that
+    // some parts of the episode are shorter than the ads.
+    var episode = 'https://cdn.example.com:65/20231008/ep/2000kb/hls';
+    var ad = 'https://cdn.example.com:65/20261009/ad/10103kb/hls';
+    var groups = <(String, int, double)>[
+      (episode, 20, 2.0),
+      (episode, 7, 2.0),
+      (ad, 6, 2.94),
+      (episode, 13, 2.0),
+      (episode, 20, 2.0),
+      (episode, 4, 2.3),
+      (ad, 6, 2.94),
+      (episode, 16, 2.0),
+      (episode, 8, 2.0),
+      (ad, 6, 2.94),
+    ];
+    var b = StringBuffer('#EXTM3U\n#EXT-X-TARGETDURATION:3\n');
+    var n = 0;
+    for (var (g, (dir, count, seconds)) in groups.indexed) {
+      if (g > 0) b.writeln('#EXT-X-DISCONTINUITY');
+      for (int i = 0; i < count; i++) {
+        b.writeln('#EXTINF:$seconds,\n$dir/${n++}.ts');
+      }
+    }
+    b.writeln('#EXT-X-ENDLIST');
+    var base = Uri.parse('https://cdn.example.com/20231008/ep/index.m3u8');
+    var result = HlsAdFilter.filter(b.toString(), base)!;
+    var kept = segments(result.text);
+    expect(kept, hasLength(88));
+    expect(kept, everyElement(startsWith(episode)));
+    // The 9.2 s part of the episode is kept.
+    expect(kept, contains('$episode/66.ts'));
+    expect(result.removedSegments, 18);
+  });
+
+  test('keeps an episode served from two directories', () {
+    var text = StringBuffer('#EXTM3U\n#EXT-X-TARGETDURATION:10\n');
+    for (int i = 0; i < 60; i++) {
+      text.writeln('#EXTINF:10,\nhttps://a.example.com/part1/$i.ts');
+    }
+    text.writeln('#EXT-X-DISCONTINUITY');
+    for (int i = 0; i < 40; i++) {
+      text.writeln('#EXTINF:10,\nhttps://b.example.com/part2/$i.ts');
+    }
+    text.writeln('#EXT-X-ENDLIST');
+    expect(HlsAdFilter.filter(text.toString()), isNull);
+  });
+
   test('reads CRLF playlists', () {
     var text = playlist([
       [5],

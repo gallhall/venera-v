@@ -51,7 +51,7 @@ abstract final class AdFreeStream {
       playlist = await _read(variant.uri, headers);
       if (playlist == null) return null;
     }
-    var video = HlsAdFilter.filter(playlist.text);
+    var video = HlsAdFilter.filter(playlist.text, playlist.url);
     if (video == null) return null;
     Log.info(
       'Video',
@@ -69,7 +69,7 @@ abstract final class AdFreeStream {
       var audioPlaylist = await _read(audioUrl, headers);
       var filtered = audioPlaylist == null
           ? null
-          : HlsAdFilter.filter(audioPlaylist.text);
+          : HlsAdFilter.filter(audioPlaylist.text, audioPlaylist.url);
       if (filtered != null) {
         audio = (await _write(dir, audioPlaylist!.url, filtered.text)).path;
       }

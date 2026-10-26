@@ -488,7 +488,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     notifyListeners();
     String withoutAds(String text, Uri url) {
       if (!filterAds) return text;
-      var result = HlsAdFilter.filter(text);
+      var result = HlsAdFilter.filter(text, url);
       if (result == null) return text;
       Log.info(
         "Download",
