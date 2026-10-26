@@ -27,11 +27,16 @@ class VideoStreamRequest {
   /// External subtitle files (WebVTT, SRT, ASS...).
   final List<VideoSubtitle> subtitles;
 
+  /// Whether the ads of the HLS stream are to be removed before it is
+  /// opened, see [AdFreeStream.prepare].
+  final bool filterAds;
+
   const VideoStreamRequest(
     this.url, {
     this.headers = const {},
     this.audioUrl,
     this.subtitles = const [],
+    this.filterAds = false,
   });
 
   /// Request for the [index]-th stream of a video source's play info.
@@ -42,6 +47,7 @@ class VideoStreamRequest {
       headers: info.headersFor(source),
       audioUrl: source.audioUrl,
       subtitles: info.subtitles,
+      filterAds: source.filterAds,
     );
   }
 }

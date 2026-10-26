@@ -266,6 +266,8 @@ class KazumiRule {
   /// stream url in its query.
   final bool useLegacyParser;
 
+  /// The site's HLS streams carry ads between discontinuities, to be
+  /// removed (`VideoPlaySource.filterAds`).
   final bool adBlocker;
 
   final KazumiRuleMode searchMode;

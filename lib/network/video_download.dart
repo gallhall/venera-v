@@ -319,6 +319,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
             label,
             run,
             withAudio: source.audioUrl == null,
+            filterAds: source.filterAds,
           );
           if (source.audioUrl != null && _isCurrent(run)) {
             _message = "${label}Downloading audio...";
@@ -471,8 +472,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   }
 
   /// Downloads an HLS stream, with the audio the master playlist serves
-  /// apart from the video unless not [withAudio]. Returns the local video
-  /// and audio playlists.
+  /// apart from the video unless not [withAudio], without their ads if
+  /// [filterAds] (see [HlsAdFilter]). Returns the local video and audio
+  /// playlists.
   Future<(String, String?)> _downloadHls(
     Uri url,
     Directory dir,
@@ -480,9 +482,22 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String label,
     int run, {
     required bool withAudio,
+    bool filterAds = false,
   }) async {
     _message = "${label}Fetching playlist...";
     notifyListeners();
+    String withoutAds(String text, Uri url) {
+      if (!filterAds) return text;
+      var result = HlsAdFilter.filter(text, url);
+      if (result == null) return text;
+      Log.info(
+        "Download",
+        "Removed ${result.removedSegments} ad segments "
+            "(${result.removedDuration.inSeconds} s) from $url",
+      );
+      return result.text;
+    }
+
     var text = await _readText(url.toString(), headers);
     Uri? audioUrl;
     if (HlsPlaylist.isMaster(text)) {
@@ -491,11 +506,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       if (withAudio) audioUrl = variant.audio;
       text = await _readText(url.toString(), headers);
     }
-    var playlist = HlsPlaylist.localize(text, url);
+    var playlist = HlsPlaylist.localize(withoutAds(text, url), url);
     var audio = audioUrl == null
         ? null
         : HlsPlaylist.localize(
-            await _readText(audioUrl.toString(), headers),
+            withoutAds(await _readText(audioUrl.toString(), headers), audioUrl),
             audioUrl,
             prefix: 'audio_',
           );

@@ -175,6 +175,25 @@ class HlsPlaylist {
     return HlsMediaPlaylist(out.toString(), resources);
   }
 
+  /// [text], a media playlist from [base], with absolute uris, so that it
+  /// plays from another place, e.g. a local file.
+  static String resolveUris(String text, Uri base) {
+    var out = StringBuffer();
+    for (var line in _lines(text)) {
+      if (line.isEmpty) continue;
+      if (line.startsWith('#EXT-X-KEY') || line.startsWith('#EXT-X-MAP')) {
+        var uri = _attribute(line, 'URI');
+        if (uri != null) {
+          line = line.replaceFirst('URI="$uri"', 'URI="${base.resolve(uri)}"');
+        }
+      } else if (!line.startsWith('#')) {
+        line = base.resolve(line).toString();
+      }
+      out.writeln(line);
+    }
+    return out.toString();
+  }
+
   static List<String> _lines(String text) =>
       text.split(RegExp(r'\r?\n')).map((e) => e.trim()).toList();
 

@@ -106,12 +106,18 @@ class _Server {
   /// Requests for the clip of the video whose source answers slowly.
   var raceRequests = 0;
 
+  /// Paths of the stream with ads that were requested.
+  final adStreamRequests = <String>[];
+
   String get base => 'http://127.0.0.1:${server.port}';
 
   Future<void> start() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
       var res = req.response;
+      if (req.uri.path.startsWith('/ads/')) {
+        adStreamRequests.add(req.uri.path);
+      }
       switch (req.uri.path) {
         case '/cover.png':
           // 1x1 transparent PNG
@@ -218,6 +224,18 @@ class _Server {
           res.add(segments[1]);
         case '/hlsa/audio/1.aac':
           res.add(segments[2]);
+        case '/ads/index.m3u8':
+          // An ad before the episode and one in the middle of it.
+          res.write('#EXTM3U\n#EXT-X-TARGETDURATION:10\n'
+              '#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n'
+              '#EXTINF:10,\n0.ts\n#EXTINF:10,\n1.ts\n#EXT-X-DISCONTINUITY\n'
+              '#EXTINF:3,\nad1.ts\n#EXT-X-DISCONTINUITY\n'
+              '#EXTINF:10,\n2.ts\n#EXTINF:10,\n3.ts\n#EXTINF:10,\n4.ts\n'
+              '#EXT-X-ENDLIST\n');
+        case '/ads/0.ts' || '/ads/1.ts' || '/ads/2.ts':
+          res.add(segments[int.parse(req.uri.path[5])]);
+        case '/ads/3.ts' || '/ads/4.ts' || '/ads/ad0.ts' || '/ads/ad1.ts':
+          res.add(segments[0]);
         case '/key':
           res.add(key);
         case '/hls/high/0.ts':
@@ -264,7 +282,7 @@ class TestVideo extends ComicSource {
       title: "Test Video " + id,
       cover: "${server.base}/cover.png",
       tags: {},
-      chapters: ["slow", "fallback", "race", "hlsa"].includes(id) ? null
+      chapters: ["slow", "fallback", "race", "hlsa", "ads"].includes(id) ? null
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
@@ -281,6 +299,8 @@ class TestVideo extends ComicSource {
       ? {url: "${server.base}/slow", type: "mp4"}
       : id === "hlsa"
       ? "${server.base}/hlsa/master.m3u8"
+      : id === "ads"
+      ? {url: "${server.base}/ads/index.m3u8", filterAds: true}
       : id === "fallback"
       ? {sources: [
           {url: "${server.base}/broken", name: "HD", type: "mp4"},
@@ -475,6 +495,35 @@ class TestVideo extends ComicSource {
     expect(segment(stream.url, 0), server.segments[0]);
     expect(segment(stream.audioUrl!, 0), server.segments[1]);
     expect(segment(stream.audioUrl!, 1), server.segments[2]);
+  }, skip: skip);
+
+  test('downloads an HLS stream without its ads', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'ads');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (LocalManager().find('ads', task.comicType) == null) {
+      expect(task.isError, isFalse, reason: task.message);
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    var local = LocalManager().find('ads', task.comicType)!;
+    var text = File(DownloadedEpisode.load(local.baseDir)!.sources.single.url)
+        .readAsStringSync();
+    var names = RegExp(r'^[^#\s].*$', multiLine: true)
+        .allMatches(text)
+        .map((m) => m.group(0)!)
+        .toList();
+    expect(names, hasLength(5));
+    for (int i = 0; i < 3; i++) {
+      expect(
+        File(FilePath.join(local.baseDir, names[i])).readAsBytesSync(),
+        server.segments[i],
+      );
+    }
+    expect('#EXT-X-DISCONTINUITY'.allMatches(text), hasLength(1));
+    expect(server.adStreamRequests, isNot(contains('/ads/ad0.ts')));
+    expect(server.adStreamRequests, isNot(contains('/ads/ad1.ts')));
+    expect(server.adStreamRequests, contains('/ads/4.ts'));
   }, skip: skip);
 
   test('a pause and a quick resume do not download twice', () async {

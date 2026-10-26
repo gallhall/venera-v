@@ -13,6 +13,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/video/ad_free_stream.dart';
 import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/network/download.dart';
@@ -581,8 +582,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       error = null;
       started = false;
     });
-    openToken++;
-    var request = VideoStreamRequest.fromPlayInfo(info, index);
+    var token = ++openToken;
+    var request = await AdFreeStream.prepare(
+      VideoStreamRequest.fromPlayInfo(info, index),
+    );
+    if (!mounted || token != openToken) return;
     VideoPlayback? next;
     var n = native;
     if (n != null &&

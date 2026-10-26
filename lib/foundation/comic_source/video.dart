@@ -78,12 +78,17 @@ class VideoPlaySource {
   /// External audio stream, for sites that serve audio and video separately.
   final String? audioUrl;
 
+  /// Whether to remove the ads the site splices into the HLS stream, see
+  /// [HlsAdFilter].
+  final bool filterAds;
+
   const VideoPlaySource({
     required this.url,
     required this.name,
     this.type = VideoStreamType.auto,
     this.headers = const {},
     this.audioUrl,
+    this.filterAds = false,
   });
 
   factory VideoPlaySource.fromJson(dynamic json, int index) {
@@ -108,6 +113,7 @@ class VideoPlaySource {
       type: VideoStreamType.parse(json["type"]),
       headers: _parseHeaders(json["headers"], "$field.headers"),
       audioUrl: audioUrl == '' ? null : audioUrl,
+      filterAds: json["filterAds"] == true,
     );
   }
 
@@ -117,6 +123,7 @@ class VideoPlaySource {
     "type": type.name,
     "headers": headers,
     "audioUrl": audioUrl,
+    "filterAds": filterAds,
   };
 }
 
@@ -249,6 +256,7 @@ class VideoPlayInfo {
           "name": json["name"],
           "type": json["type"],
           "audioUrl": json["audioUrl"],
+          "filterAds": json["filterAds"],
         },
       ];
     } else {
@@ -334,6 +342,7 @@ class VideoPlayInfo {
                 ...r.headers,
               }),
               audioUrl: s.audioUrl,
+              filterAds: s.filterAds,
             ),
             onError: (Object e) {
               error = e;
