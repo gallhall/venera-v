@@ -45,7 +45,15 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void search([String? text]) {
-    if (searchSources.isEmpty) return;
+    if (searchSources.isEmpty) {
+      if (!ComicSource.all().any((s) => s.isVideoSource)) return;
+      var keyword = text ?? controller.text;
+      appdata.addSearchHistory(keyword);
+      context
+          .to(() => BangumiSearchPage(keyword: keyword))
+          .then((_) => update());
+      return;
+    }
     if (aggregatedSearch) {
       context
           .to(
@@ -85,6 +93,10 @@ class _SearchPageState extends State<SearchPage> {
     var suggestions = this.suggestions;
 
     suggestions.clear();
+    if (searchSources.isEmpty) {
+      update();
+      return;
+    }
 
     if (canHandleUrl(controller.text)) {
       suggestions.add(Pair("**URL**", TranslationType.other));
@@ -224,15 +236,8 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (searchSources.isEmpty) {
-      if (ComicSource.all().any((s) => s.isVideoSource)) {
-        return Scaffold(body: Column(children: [
-          SafeArea(bottom: false, child: ListTile(
-            leading: const Icon(Icons.live_tv), title: Text('Search anime on Bangumi'.tl),
-            onTap: () => context.to(() => const BangumiSearchPage()))),
-          const Spacer(),
-        ]));
-      }
+    if (searchSources.isEmpty &&
+        !ComicSource.all().any((s) => s.isVideoSource)) {
       return buildEmpty();
     }
     return Scaffold(
@@ -260,14 +265,16 @@ class _SearchPageState extends State<SearchPage> {
         ),
       );
     }
-    if (suggestions.isNotEmpty) {
+    if (searchSources.isNotEmpty && suggestions.isNotEmpty) {
       yield buildSuggestions(context);
     } else {
-      yield buildSearchTarget();
-      yield SliverAnimatedPaintExtent(
-        duration: const Duration(milliseconds: 200),
-        child: buildSearchOptions(),
-      );
+      if (searchSources.isNotEmpty) {
+        yield buildSearchTarget();
+        yield SliverAnimatedPaintExtent(
+          duration: const Duration(milliseconds: 200),
+          child: buildSearchOptions(),
+        );
+      }
       yield _SearchHistory(search);
     }
   }
