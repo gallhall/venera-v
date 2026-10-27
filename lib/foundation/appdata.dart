@@ -247,6 +247,9 @@ class Settings with ChangeNotifier {
     'bangumiSearchHistory': <String>[],
     'bangumiSubjectProgress': <String, dynamic>{},
     'bangumiSourceChoices': <String, dynamic>{},
+    'bangumiSourceKeywords': <String, dynamic>{},
+    'bangumiCustomAliases': <String, dynamic>{},
+    'bangumiManualSourceChoices': <String, dynamic>{},
     'bangumiToken': '', // access token of the Bangumi user
     'bangumiUser': null, // the token's user, [BangumiUser.toJson]
     'bangumiAutoSync': true, // mark finished episodes and chapters

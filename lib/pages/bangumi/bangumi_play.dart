@@ -5,7 +5,39 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/translations.dart';
 
+class BangumiEpisodeUnavailable implements Exception {
+  @override
+  String toString() =>
+      'This source has no matching episode. Try switching source.'.tl;
+}
+
 Future<VideoPlayerPage> bangumiPlayer(
+  BangumiPlaybackContext context,
+  Comic candidate, {
+  Duration? position,
+  bool startFullscreen = false,
+  void Function(Comic)? onSourceChanged,
+}) {
+  var seen = <String>{candidate.sourceKey};
+  var choices = [
+    candidate,
+    for (var c in context.matchedCandidates)
+      if (seen.add(c.sourceKey)) c,
+  ];
+  return bangumiLoadEpisode(
+    choices,
+    (c) => _loadBangumiPlayer(
+      context,
+      c,
+      position: position,
+      startFullscreen: startFullscreen,
+    ),
+    missingEpisode: (e) => e is BangumiEpisodeUnavailable,
+    onSwitch: onSourceChanged,
+  );
+}
+
+Future<VideoPlayerPage> _loadBangumiPlayer(
   BangumiPlaybackContext context,
   Comic candidate, {
   Duration? position,
@@ -37,9 +69,7 @@ Future<VideoPlayerPage> bangumiPlayer(
               : 0,
         );
   if (index == null) {
-    throw Exception(
-      'This source has no matching episode. Try switching source.'.tl,
-    );
+    throw BangumiEpisodeUnavailable();
   }
   var manager = BangumiManager();
   manager.bind(
@@ -69,7 +99,20 @@ Future<void> openBangumiPlayer(
   Duration? position,
   bool replace = false,
 }) async {
-  var page = await bangumiPlayer(playback, candidate, position: position);
+  var page = await bangumiPlayer(
+    playback,
+    candidate,
+    position: position,
+    onSourceChanged: (c) {
+      if (context.mounted) {
+        context.showMessage(
+          message: 'Switched playback source to @source'.tlParams({
+            'source': ComicSource.find(c.sourceKey)?.name ?? c.sourceKey,
+          }),
+        );
+      }
+    },
+  );
   if (!context.mounted) return;
   if (replace) {
     App.rootContext.toReplacement(() => page);

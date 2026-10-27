@@ -960,6 +960,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         candidate,
         position: position,
         startFullscreen: isFullscreen,
+        onSourceChanged: (c) {
+          if (mounted) {
+            context.showMessage(
+              message: 'Switched playback source to @source'.tlParams({
+                'source': ComicSource.find(c.sourceKey)?.name ?? c.sourceKey,
+              }),
+            );
+          }
+        },
       );
       if (!mounted) return;
       await active?.pause();

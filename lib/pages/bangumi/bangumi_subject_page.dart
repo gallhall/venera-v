@@ -65,9 +65,12 @@ class _SourceResult {
   final ComicSource source;
   _SourceResult(this.source);
   List<Comic> results = [];
-  Comic? chosen;
+  Comic? chosen, matched;
   String? error;
-  bool loading = true;
+  String keyword = '';
+  final resultKeywords = <String, String>{};
+  bool loading = true, expanded = false;
+  int generation = 0;
 }
 
 class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
@@ -77,6 +80,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   final sources = <_SourceResult>[];
   Comic? current;
   final candidates = <Comic>[];
+  final matchedCandidates = <Comic>[];
   String? error, playError;
   bool loading = true, playing = false;
   final scrollController = ScrollController();
@@ -87,10 +91,17 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   BangumiCollection? collection;
   String? collectionError, collectionToken;
   final sourceUpdates = ValueNotifier<int>(0);
+  late (Object?, Object?) observedChoice;
+
+  (Object?, Object?) get sourceChoiceId {
+    var choice = manager.sourceChoice(widget.subjectId);
+    return (choice?['sourceKey'], choice?['id']);
+  }
 
   @override
   void initState() {
     super.initState();
+    observedChoice = sourceChoiceId;
     scrollController.addListener(onScroll);
     appdata.settings.addListener(onSettingsChanged);
     HistoryManager().addListener(onSettingsChanged);
@@ -112,16 +123,20 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       if (!mounted) return;
       if (collectionToken != manager.token) loadCollection();
       setState(() {
-        var choice = manager.sourceChoice(widget.subjectId);
-        current =
-            candidates
-                .where(
-                  (c) =>
-                      c.sourceKey == choice?['sourceKey'] &&
-                      c.id == choice?['id'],
-                )
-                .firstOrNull ??
-            current;
+        var choice = sourceChoiceId;
+        if (choice != observedChoice) {
+          observedChoice = choice;
+          var selected = candidates
+              .where((c) => c.sourceKey == choice.$1 && c.id == choice.$2)
+              .firstOrNull;
+          if (selected != null) {
+            current = selected;
+            var row = sources
+                .where((s) => s.source.key == selected.sourceKey)
+                .firstOrNull;
+            if (row != null) row.chosen = selected;
+          }
+        }
       });
       sourceUpdates.value++;
     });
@@ -202,71 +217,112 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     }
   }
 
-  Future<void> search(_SourceResult row) async {
+  List<String> get allNames => bangumiNames([
+    ...?subject?.allNames,
+    ...manager.customAliases(widget.subjectId),
+  ]);
+
+  Comic? rememberedCandidate(_SourceResult row) {
+    var value = manager.manualSourceChoice(widget.subjectId, row.source.key);
+    var choice = manager.sourceChoice(widget.subjectId);
+    if (value == null && choice?['sourceKey'] == row.source.key) value = choice;
+    var id = value?['id'];
+    if (id is! String) return null;
+    return row.results.where((c) => c.id == id).firstOrNull ??
+        Comic(
+          value?['title'] is String ? value!['title'] : subject!.displayName,
+          value?['cover'] is String ? value!['cover'] : subject!.image,
+          id,
+          null,
+          null,
+          '',
+          row.source.key,
+          null,
+          null,
+        );
+  }
+
+  Future<void> search(_SourceResult row, {String? keyword}) async {
+    var generation = ++row.generation;
     setState(() {
       row.loading = true;
       row.error = null;
       row.results = [];
+      row.resultKeywords.clear();
+      row.matched = null;
+      row.chosen = rememberedCandidate(row);
+      updateCandidates();
     });
+    var names = allNames;
+    var keywords = keyword == null
+        ? bangumiKeywordChain(
+            subject!.allNames,
+            remembered: manager.sourceKeyword(widget.subjectId, row.source.key),
+            customAliases: manager.customAliases(widget.subjectId),
+          )
+        : [BangumiTitleMatch.searchKeyword(keyword)];
+    var data = row.source.searchPageData!;
+    var options = (data.searchOptions ?? [])
+        .map((e) => e.defaultValue)
+        .toList();
     try {
-      var data = row.source.searchPageData!;
-      var options = (data.searchOptions ?? [])
-          .map((e) => e.defaultValue)
-          .toList();
-      for (var keyword in {subject!.displayName, subject!.name}) {
-        if (keyword.isEmpty) continue;
-        var res = data.loadPage != null
-            ? await data.loadPage!(keyword, 1, options)
-            : await data.loadNext!(keyword, null, options);
-        if (res.error) {
-          row.error = res.errorMessage;
-          continue;
+      for (var query in keywords) {
+        if (query.isEmpty) continue;
+        row.keyword = query;
+        try {
+          var res = data.loadPage != null
+              ? await data.loadPage!(query, 1, options)
+              : await data.loadNext!(query, null, options);
+          if (!mounted || generation != row.generation) return;
+          if (res.error) {
+            row.error = res.errorMessage;
+            continue;
+          }
+          row.error = null;
+          for (var c in res.data) {
+            if (!row.results.any((old) => old.id == c.id)) row.results.add(c);
+            row.resultKeywords[c.id] = query;
+          }
+          var index = BangumiTitleMatch.best(
+            names,
+            row.results.map((c) => c.title).toList(),
+          );
+          row.matched = index == null ? null : row.results[index];
+          setState(() => updateCandidates());
+          if (row.matched != null) {
+            manager.rememberKeyword(widget.subjectId, row.source.key, query);
+            break;
+          }
+        } catch (e) {
+          if (!mounted || generation != row.generation) return;
+          row.error = '$e';
         }
-        row.error = null;
-        row.results.addAll(
-          res.data.where((c) => !row.results.any((old) => old.id == c.id)),
-        );
-        var index = BangumiTitleMatch.best([
-          subject!.nameCn,
-          subject!.name,
-        ], row.results.map((c) => c.title).toList());
-        row.chosen = index == null ? null : row.results[index];
-        if (row.chosen != null) break;
       }
+      if (!mounted || generation != row.generation) return;
+      // Re-read after searching: a user may have picked a result in the meantime.
+      row.chosen = rememberedCandidate(row) ?? row.matched;
+      updateCandidates();
       var choice = manager.sourceChoice(widget.subjectId);
-      if (choice?['sourceKey'] == row.source.key) {
-        row.chosen =
-            row.results.where((c) => c.id == choice?['id']).firstOrNull ??
-            Comic(
-              subject!.displayName,
-              subject!.image,
-              choice!['id'] as String,
-              null,
-              null,
-              '',
-              row.source.key,
-              null,
-              null,
-            );
+      var chosen = [
+        for (var source in sources)
+          if (source.chosen != null) source.chosen!,
+      ];
+      var preferred = chosen
+          .where((c) => c.sourceKey == choice?['sourceKey'])
+          .firstOrNull;
+      var previous = chosen
+          .where(
+            (c) => c.sourceKey == current?.sourceKey && c.id == current?.id,
+          )
+          .firstOrNull;
+      var selected = preferred ?? previous ?? chosen.firstOrNull;
+      if (selected != null) {
+        select(selected, remember: false);
+      } else {
+        setState(() => current = null);
       }
-      if (!mounted) return;
-      var matches = sources
-          .where((s) => s.chosen != null)
-          .map((s) => s.chosen!);
-      var preferred =
-          matches
-              .where(
-                (c) =>
-                    c.sourceKey == choice?['sourceKey'] &&
-                    c.id == choice?['id'],
-              )
-              .firstOrNull ??
-          matches.firstOrNull;
-      if (preferred != null) select(preferred, remember: false);
-    } catch (e) {
-      row.error = e.toString();
     } finally {
-      if (mounted) {
+      if (mounted && generation == row.generation) {
         setState(() {
           row.loading = false;
           updateCandidates();
@@ -276,16 +332,34 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   void updateCandidates() {
-    candidates
-      ..clear()
-      ..addAll([
-        for (var row in sources)
-          if (row.chosen != null) row.chosen!,
-      ]);
+    candidates.clear();
+    matchedCandidates.clear();
+    var names = allNames;
+    for (var row in sources) {
+      if (row.matched != null) matchedCandidates.add(row.matched!);
+      var seen = <String>{};
+      for (var comic in [
+        if (row.chosen != null) row.chosen!,
+        ...row.results.where(
+          (c) => BangumiTitleMatch.match(names, c.title).matches,
+        ),
+      ]) {
+        if (seen.add(comic.id)) candidates.add(comic);
+      }
+    }
     sourceUpdates.value++;
   }
 
   void select(Comic comic, {bool remember = true}) {
+    var row = sources.where((s) => s.source.key == comic.sourceKey).firstOrNull;
+    if (row != null) row.chosen = comic;
+    if (remember) {
+      manager.rememberSourceResult(widget.subjectId, comic);
+      var keyword = row?.resultKeywords[comic.id];
+      if (keyword != null) {
+        manager.rememberKeyword(widget.subjectId, comic.sourceKey, keyword);
+      }
+    }
     updateCandidates();
     var binding = manager.bindingOf(comic.sourceKey, comic.id);
     manager.bind(
@@ -302,6 +376,49 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     sourceUpdates.value++;
   }
 
+  String matchLabel(Comic comic) {
+    var match = BangumiTitleMatch.match(allNames, comic.title);
+    return switch (match.kind) {
+      BangumiMatchKind.exact => 'Exact match'.tl,
+      BangumiMatchKind.contains => 'Contains name'.tl,
+      BangumiMatchKind.fuzzy => 'Similar @rate%'.tlParams({
+        'rate': match.rate.toStringAsFixed(0),
+      }),
+      BangumiMatchKind.none => 'No match'.tl,
+    };
+  }
+
+  Widget resultTile(Comic comic, VoidCallback onTap) => ListTile(
+    selected: current?.sourceKey == comic.sourceKey && current?.id == comic.id,
+    leading: comic.cover.isEmpty
+        ? const Icon(Icons.movie_outlined)
+        : SizedBox(
+            width: 40,
+            height: 56,
+            child: AnimatedImage(
+              image: CachedImageProvider(
+                comic.cover,
+                sourceKey: comic.sourceKey,
+                cid: comic.id,
+              ),
+              width: 40,
+              height: 56,
+            ),
+          ),
+    title: Text(comic.title),
+    trailing: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: BangumiTitleMatch.match(allNames, comic.title).matches
+            ? context.colorScheme.primaryContainer
+            : context.colorScheme.surfaceContainerLow,
+      ),
+      child: Text(matchLabel(comic), style: ts.s12),
+    ),
+    onTap: onTap,
+  );
+
   Future<void> choose(_SourceResult row) async {
     var comic = await showDialog<Comic>(
       context: context,
@@ -309,20 +426,50 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         title: Text(row.source.name),
         children: [
           for (var c in row.results)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, c),
-              child: Text(c.title),
-            ),
+            resultTile(c, () => Navigator.pop(context, c)),
         ],
       ),
     );
     if (!mounted || comic == null) return;
-    setState(() => row.chosen = comic);
     select(comic);
   }
 
+  Future<void> searchAlias(_SourceResult row) async {
+    var keyword = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Search with alias'.tl),
+        children: [
+          for (var name in allNames)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, name),
+              child: Text(name),
+            ),
+        ],
+      ),
+    );
+    if (mounted && keyword != null) await search(row, keyword: keyword);
+  }
+
+  Future<void> searchCustom(_SourceResult row) async {
+    await showInputDialog(
+      context: context,
+      title: 'Custom search keyword'.tl,
+      initialValue: row.keyword,
+      onConfirm: (value) {
+        var keyword = value.trim();
+        if (BangumiTitleMatch.searchKeyword(keyword).isEmpty) {
+          return 'Enter a search keyword'.tl;
+        }
+        manager.addCustomAlias(widget.subjectId, keyword);
+        search(row, keyword: keyword);
+        return null;
+      },
+    );
+  }
+
   Future<void> play(BangumiEpisode episode) async {
-    if (current == null || playing) return;
+    if (!canPlay) return;
     setState(() {
       playing = true;
       playError = null;
@@ -335,6 +482,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           subject: subject!,
           episodes: episodes,
           candidates: candidates,
+          matchedCandidates: matchedCandidates,
           number: episode.number,
         ),
         current!,
@@ -374,7 +522,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         episodes.firstOrNull;
   }
 
-  bool get canPlay => current != null && !playing && episodes.isNotEmpty;
+  bool get canPlay =>
+      current != null &&
+      !playing &&
+      episodes.isNotEmpty &&
+      candidates.any(
+        (c) => c.sourceKey == current!.sourceKey && c.id == current!.id,
+      );
 
   void playFirst() {
     var episode = episodes.firstOrNull;
@@ -744,6 +898,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 style: TextStyle(color: context.colorScheme.error),
               ),
             ),
+          if (playError != null)
+            TextButton.icon(
+              onPressed: pickSource,
+              icon: const Icon(Icons.swap_horiz),
+              label: Text('Switch source'.tl),
+            ),
           const Divider(),
         ],
       ).paddingTop(16),
@@ -1001,8 +1161,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     VoidCallback? onChoose,
   }) {
     return ListTile(
-      selected:
-          current?.sourceKey == row.source.key && current?.id == row.chosen?.id,
+      selected: current?.sourceKey == row.source.key,
       leading: row.chosen?.cover.isNotEmpty == true
           ? SizedBox(
               width: 40,
@@ -1018,7 +1177,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       subtitle: Text(
         row.error ??
             row.chosen?.title ??
-            (row.loading ? 'Loading'.tl : 'No results'.tl),
+            (row.loading ? 'Loading'.tl : 'No matching result'.tl),
       ),
       onTap: onSelect,
       trailing: row.loading
@@ -1038,6 +1197,54 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
+  Widget sourceGroup(_SourceResult row) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        sourceTile(
+          row,
+          onSelect: row.chosen == null ? null : () => select(row.chosen!),
+          onChoose: () => row.results.isEmpty ? search(row) : choose(row),
+        ),
+        if (row.keyword.isNotEmpty && row.keyword != subject?.displayName)
+          Text(
+            'Search keyword: @keyword'.tlParams({'keyword': row.keyword}),
+            style: ts.s12,
+          ).paddingHorizontal(16),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: () => searchAlias(row),
+              icon: const Icon(Icons.translate, size: 18),
+              label: Text('Search with alias'.tl),
+            ),
+            TextButton.icon(
+              onPressed: () => searchCustom(row),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: Text('Custom search keyword'.tl),
+            ),
+            TextButton.icon(
+              onPressed: () => setState(() => row.expanded = !row.expanded),
+              icon: Icon(
+                row.expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+              ),
+              label: Text(
+                'All results (@n)'.tlParams({'n': row.results.length}),
+              ),
+            ),
+          ],
+        ).paddingHorizontal(8),
+        if (row.expanded) ...[
+          if (row.results.isEmpty)
+            ListTile(title: Text((row.loading ? 'Loading' : 'No results').tl)),
+          for (var comic in row.results) resultTile(comic, () => select(comic)),
+        ],
+      ],
+    );
+  }
+
   Widget buildSources() {
     return SliverMainAxisGroup(
       slivers: [
@@ -1047,14 +1254,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             child: ListTile(title: Text('Please add some sources'.tl)),
           ),
         SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            var row = sources[index];
-            return sourceTile(
-              row,
-              onSelect: row.chosen == null ? null : () => select(row.chosen!),
-              onChoose: () => row.results.isEmpty ? search(row) : choose(row),
-            );
-          }, childCount: sources.length),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => sourceGroup(sources[index]),
+            childCount: sources.length,
+          ),
         ),
       ],
     );

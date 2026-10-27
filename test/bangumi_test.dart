@@ -284,6 +284,234 @@ void main() {
   // Errors are translated; no translations are loaded in unit tests.
   AppTranslation.translations = {};
 
+  group('subject names and source matching', () {
+    test(
+      'infobox aliases accept string and v records, ignore malformed fields',
+      () {
+        var subject = BangumiSubject.fromJson({
+          'id': 1,
+          'name_cn': 'Chinese',
+          'name': 'Original',
+          'infobox': [
+            {'key': '\u522b\u540d', 'value': 'Alias'},
+            {
+              'key': '\u522b\u540d',
+              'value': [
+                {'k': 'en', 'v': ' English '},
+                {'v': 'Alias'},
+                {'v': 'Chinese'},
+                {'v': ''},
+                {'v': 42},
+                null,
+                'bad',
+              ],
+            },
+            {'key': '\u4e2d\u6587\u540d', 'value': 'Other Chinese'},
+            {'key': 'unrelated', 'value': 'Ignore'},
+            {'key': '\u522b\u540d', 'value': 42},
+            null,
+          ],
+        })!;
+        expect(subject.aliases, ['Alias', 'English', 'Other Chinese']);
+        expect(subject.allNames, [
+          'Chinese',
+          'Original',
+          'Alias',
+          'English',
+          'Other Chinese',
+        ]);
+        expect(bangumiInfoboxAliases(null), isEmpty);
+        expect(bangumiInfoboxAliases({'key': '\u522b\u540d'}), isEmpty);
+        expect(
+          const BangumiSubject(
+            id: 2,
+            type: 2,
+            name: ' ',
+            nameCn: 'Name',
+            aliases: ['Name', ' Alias ', ''],
+          ).allNames,
+          ['Name', 'Alias'],
+        );
+      },
+    );
+
+    test(
+      'numerals and season syntax agree for Chinese, digits and Roman suffixes',
+      () {
+        for (var title in [
+          'Anime \u7b2c\u4e8c\u5b63',
+          'Anime \u7b2c2\u5b63',
+          'Anime II',
+          'Anime \u2161',
+          'Anime Season 2',
+          'Anime S2',
+        ]) {
+          expect(BangumiTitleMatch.season(title), 2, reason: title);
+          expect(BangumiTitleMatch.normalize(title), 'animes2', reason: title);
+        }
+        expect(BangumiTitleMatch.season('Anime \u7b2c\u5341\u4e8c\u5b63'), 12);
+        expect(BangumiTitleMatch.numerals('\u4e00\u767e\u96f6\u4e8c'), '102');
+        for (var numeral in [
+          'I',
+          'II',
+          'III',
+          'IV',
+          'V',
+          'VI',
+          'VII',
+          'VIII',
+          'IX',
+          'X',
+        ]) {
+          expect(
+            BangumiTitleMatch.numerals('Anime $numeral'),
+            'Anime ${['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'].indexOf(numeral) + 1}',
+          );
+        }
+        expect(BangumiTitleMatch.normalize('Re:Zero'), 'rezero');
+        expect(BangumiTitleMatch.numerals('Vivy OVA MIX'), 'Vivy OVA MIX');
+        expect(BangumiTitleMatch.best(['Anime II'], ['Anime', 'Anime S2']), 1);
+        expect(BangumiTitleMatch.best(['Anime II'], ['Anime II [Dub]']), 0);
+      },
+    );
+
+    test(
+      'rank exact then contains with fewer extras then fuzzy at inclusive 80%',
+      () {
+        expect(BangumiTitleMatch.levenshteinRate('abcde', 'abcdx'), 80);
+        expect(
+          BangumiTitleMatch.match(['abcde'], 'abcdx').kind,
+          BangumiMatchKind.fuzzy,
+        );
+        expect(
+          BangumiTitleMatch.match(['abcde'], 'abcxx').kind,
+          BangumiMatchKind.none,
+        );
+        expect(
+          BangumiTitleMatch.best(
+            ['abcde'],
+            ['abcdx', 'abcde extended', 'abcde TV', 'abcde'],
+          ),
+          3,
+        );
+        expect(
+          BangumiTitleMatch.best(
+            ['abcde'],
+            ['abcdx', 'abcde extended', 'abcde TV'],
+          ),
+          2,
+        );
+        expect(
+          BangumiTitleMatch.best(['abcde'], ['abcd']),
+          0,
+        ); // exactly 80%, not reciprocal containment
+        expect(BangumiTitleMatch.match(['abcdef'], 'abc').matches, isFalse);
+        expect(
+          BangumiTitleMatch.best(['abcde'], ['abcxx', 'unrelated']),
+          isNull,
+        );
+        expect(BangumiTitleMatch.best(['  '], ['Anything']), isNull);
+        expect(BangumiTitleMatch.best(['Original', 'Alias'], ['Alias']), 0);
+        expect(
+          BangumiTitleMatch.best(['Anime Season 2', 'Alias'], ['Alias']),
+          isNull,
+        );
+        expect(
+          BangumiTitleMatch.best(['Anime Season 2', 'Alias'], ['Alias II']),
+          0,
+        );
+      },
+    );
+
+    test(
+      'marker words are stripped only for search, not for title matching',
+      () {
+        expect(
+          BangumiTitleMatch.searchKeyword(
+            '\u5267\u573a\u7248 Anime OVA OAD \u603b\u96c6\u7bc7 \u7535\u5f71',
+          ),
+          'Anime',
+        );
+        expect(BangumiTitleMatch.normalize('Anime OVA'), 'animeova');
+        expect(
+          BangumiTitleMatch.normalize('Anime OVA', forSearch: true),
+          'anime',
+        );
+        expect(
+          BangumiTitleMatch.match(['Anime OVA'], 'Anime').matches,
+          isFalse,
+        );
+        expect(
+          BangumiTitleMatch.searchKeyword('[Anime] Season 2'),
+          'Anime Season 2',
+        );
+      },
+    );
+
+    test(
+      'bounded keyword chain prioritizes remembered, primary then custom and aliases',
+      () {
+        expect(
+          bangumiKeywordChain(
+            ['Chinese', 'Japanese', 'Alias1', 'Alias2'],
+            remembered: 'Alias2',
+            customAliases: ['Custom'],
+          ),
+          ['Alias2', 'Chinese', 'Japanese', 'Custom'],
+        );
+        expect(
+          bangumiKeywordChain(
+            [' Chinese ', 'Chinese OVA', 'Alias'],
+            remembered: 'Chinese',
+            customAliases: ['Custom'],
+          ),
+          ['Chinese', 'Custom', 'Alias'],
+        );
+        expect(bangumiKeywordChain(['', 'OVA', 'Alias'], limit: 0), isEmpty);
+        expect(bangumiKeywordChain(['', 'OVA', 'Alias']), ['Alias']);
+      },
+    );
+
+    test(
+      'episode fallback is lazy, skips failed alternatives and stops after success',
+      () async {
+        var calls = <String>[];
+        String? switched;
+        var result = await bangumiLoadEpisode(
+          ['preferred', 'broken', 'working', 'unused'],
+          (source) async {
+            calls.add(source);
+            if (source == 'preferred') throw const FormatException('missing');
+            if (source == 'broken') throw StateError('network');
+            return source;
+          },
+          missingEpisode: (e) => e is FormatException,
+          onSwitch: (s) => switched = s,
+        );
+        expect(result, 'working');
+        expect(calls, ['preferred', 'broken', 'working']);
+        expect(switched, 'working');
+        calls.clear();
+        await expectLater(
+          bangumiLoadEpisode(['preferred', 'unused'], (source) async {
+            calls.add(source);
+            throw StateError('not an episode error');
+          }, missingEpisode: (e) => e is FormatException),
+          throwsStateError,
+        );
+        expect(calls, ['preferred']);
+        var original = const FormatException('missing');
+        await expectLater(
+          bangumiLoadEpisode(['preferred', 'alternative'], (source) async {
+            if (source == 'preferred') throw original;
+            throw StateError('broken');
+          }, missingEpisode: (e) => e is FormatException),
+          throwsA(same(original)),
+        );
+      },
+    );
+  });
+
   group('Bangumi-first playback', () {
     test('normalizes punctuation, brackets and case', () {
       expect(BangumiTitleMatch.normalize(' [Anime] A - B！'), 'animeab');
@@ -311,7 +539,7 @@ void main() {
       'uses containment then similarity; unrelated titles have no match',
       () {
         expect(BangumiTitleMatch.best(['abcdef'], ['abxxef', 'abcdef TV']), 1);
-        expect(BangumiTitleMatch.best(['abcdef'], ['abxxef']), 0);
+        expect(BangumiTitleMatch.best(['abcdef'], ['abxxef']), isNull);
         expect(BangumiTitleMatch.best(['abcdef'], ['xyz']), isNull);
       },
     );

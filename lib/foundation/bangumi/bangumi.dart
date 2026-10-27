@@ -208,6 +208,63 @@ class BangumiManager with ChangeNotifier {
     appdata.saveData();
   }
 
+  List<String> customAliases(int subjectId) {
+    var value =
+        (appdata.settings['bangumiCustomAliases'] as Map?)?['$subjectId'];
+    return bangumiNames(value is List ? value.whereType<String>() : <String>[]);
+  }
+
+  void _saveBounded(String setting, String key, Object value, int limit) {
+    var all = Map<String, dynamic>.from(
+      appdata.settings[setting] as Map? ?? {},
+    );
+    all.remove(key);
+    all[key] = value;
+    while (all.length > limit) {
+      all.remove(all.keys.first);
+    }
+    appdata.settings[setting] = all;
+    appdata.saveData();
+  }
+
+  void addCustomAlias(int subjectId, String alias) {
+    var values = bangumiNames([
+      alias,
+      ...customAliases(subjectId),
+    ]).take(20).toList();
+    _saveBounded('bangumiCustomAliases', '$subjectId', values, 200);
+  }
+
+  String? sourceKeyword(int subjectId, String sourceKey) {
+    var value =
+        (appdata.settings['bangumiSourceKeywords']
+            as Map?)?['$subjectId@$sourceKey'];
+    return value is String ? value : null;
+  }
+
+  void rememberKeyword(int subjectId, String sourceKey, String keyword) {
+    _saveBounded(
+      'bangumiSourceKeywords',
+      '$subjectId@$sourceKey',
+      keyword,
+      500,
+    );
+  }
+
+  Map? manualSourceChoice(int subjectId, String sourceKey) =>
+      (appdata.settings['bangumiManualSourceChoices']
+              as Map?)?['$subjectId@$sourceKey']
+          as Map?;
+
+  void rememberSourceResult(int subjectId, Comic comic) {
+    _saveBounded(
+      'bangumiManualSourceChoices',
+      '$subjectId@${comic.sourceKey}',
+      {'id': comic.id, 'title': comic.title, 'cover': comic.cover},
+      500,
+    );
+  }
+
   BangumiApi? _api;
 
   BangumiProgress? _progress;
@@ -371,12 +428,14 @@ class BangumiPlaybackContext {
   final BangumiSubject subject;
   final List<BangumiEpisode> episodes;
   final List<Comic> candidates;
+  final List<Comic> matchedCandidates;
   final int number;
 
   const BangumiPlaybackContext({
     required this.subject,
     required this.episodes,
     required this.candidates,
+    this.matchedCandidates = const [],
     required this.number,
   });
 
@@ -384,6 +443,7 @@ class BangumiPlaybackContext {
     subject: subject,
     episodes: episodes,
     candidates: candidates,
+    matchedCandidates: matchedCandidates,
     number: number,
   );
 }

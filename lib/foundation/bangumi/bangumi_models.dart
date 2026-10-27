@@ -1,3 +1,5 @@
+import 'bangumi_matching.dart';
+
 /// Types of Bangumi subjects that venera-v links to.
 abstract final class BangumiSubjectType {
   /// Books, which comics are on Bangumi.
@@ -93,6 +95,8 @@ class BangumiSubject {
 
   final List<BangumiTag> tags;
 
+  final List<String> aliases;
+
   const BangumiSubject({
     required this.id,
     required this.type,
@@ -107,9 +111,12 @@ class BangumiSubject {
     this.summary = '',
     this.platform = '',
     this.tags = const [],
+    this.aliases = const [],
   });
 
   String get displayName => nameCn.isNotEmpty ? nameCn : name;
+
+  List<String> get allNames => bangumiNames([nameCn, name, ...aliases]);
 
   String get url => 'https://bgm.tv/subject/$id';
 
@@ -141,6 +148,11 @@ class BangumiSubject {
       date: _string(json['date'] ?? json['air_date']),
       summary: _string(json['summary']),
       platform: _string(json['platform']),
+      aliases: bangumiInfoboxAliases(
+        json['infobox'],
+        name: _string(json['name']),
+        nameCn: _string(json['name_cn'] ?? json['nameCN']),
+      ),
       tags: [
         if (json['tags'] is List)
           for (var tag in json['tags']) ?BangumiTag.fromJson(tag),
