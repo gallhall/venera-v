@@ -712,6 +712,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                     id: c.id,
                     sourceKey: c.sourceKey,
                     cover: c.cover,
+                    coverProvider: comicCoverProvider(c),
                     title: c.title,
                     heroID: heroID,
                   )

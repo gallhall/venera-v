@@ -6,6 +6,10 @@ ImageProvider? _historyCoverFallback(Comic comic) {
   return cover == null || cover.isEmpty ? null : CachedImageProvider(cover);
 }
 
+/// The cover provider comic tiles use, for pages opened from a tile to show
+/// the same cached image.
+ImageProvider? comicCoverProvider(Comic comic) => _findImageProvider(comic);
+
 ImageProvider? _findImageProvider(Comic comic) {
   ImageProvider image;
   if (comic is LocalComic) {
@@ -74,6 +78,7 @@ class ComicTile extends StatelessWidget {
         id: comic.id,
         sourceKey: comic.sourceKey,
         cover: comic.cover,
+        coverProvider: _findImageProvider(comic),
         title: comic.title,
         heroID: heroID,
       ),
@@ -115,6 +120,7 @@ class ComicTile extends StatelessWidget {
                 id: comic.id,
                 sourceKey: comic.sourceKey,
                 cover: comic.cover,
+                coverProvider: _findImageProvider(comic),
                 title: comic.title,
               ),
             );
@@ -1700,6 +1706,7 @@ class SimpleComicTile extends StatelessWidget {
                 id: comic.id,
                 sourceKey: comic.sourceKey,
                 cover: comic.cover,
+                coverProvider: _findImageProvider(comic),
                 title: comic.title,
                 heroID: heroID,
               ),
