@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_qjs/flutter_qjs.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
@@ -10,6 +11,7 @@ import 'package:venera/utils/image.dart';
 import 'package:venera/utils/ugoira.dart';
 
 import 'app_dio.dart';
+import 'bangumi_network.dart';
 
 abstract class ImageDownloader {
   static Stream<ImageDownloadProgress> loadThumbnail(
@@ -48,7 +50,7 @@ abstract class ImageDownloader {
       }
     }
 
-    var dio = AppDio(BaseOptions(
+    var dio = BangumiNetwork.dio(BaseOptions(
       headers: Map<String, dynamic>.from(configs['headers']),
       method: configs['method'] ?? 'GET',
       responseType: ResponseType.stream,
@@ -57,6 +59,13 @@ abstract class ImageDownloader {
     String requestUrl = configs['url'] ?? url;
     if (requestUrl.startsWith('//')) {
       requestUrl = 'https:$requestUrl';
+    }
+    final originalRequestUrl = requestUrl;
+    final imageBase = appdata.settings['bangumiImageBase'] as String? ?? '';
+    requestUrl = rewriteBangumiImageUrl(requestUrl, imageBase);
+    if (imageBase.trim().isNotEmpty &&
+        Uri.tryParse(originalRequestUrl)?.host.toLowerCase() == 'lain.bgm.tv') {
+      dio.httpClientAdapter = RHttpAdapter();
     }
     var req = await dio.request<ResponseBody>(requestUrl,
         data: configs['data']);

@@ -243,6 +243,10 @@ class Settings with ChangeNotifier {
     'videoFit': 'contain', // contain, cover, fill
     'videoAutoSkip': false, // skip the ranges a video source marks
     'disabledComicSources': <String>[],
+    'bangumiEchMode': 'doh',
+    'bangumiEchDohUrl': 'https://dns.alidns.com/resolve',
+    'bangumiEchConfig': '',
+    'bangumiImageBase': '',
     'bangumiApiBase': 'https://api.bgm.tv',
     'bangumiNextApiBase': 'https://next.bgm.tv',
     'bangumiSearchHistory': <String>[],

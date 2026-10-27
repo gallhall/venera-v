@@ -144,6 +144,75 @@ class _AppSettingsState extends State<AppSettings> {
           title: "Bangumi",
           icon: Icons.live_tv_outlined,
         ),
+        SelectSetting(
+          title: "Bangumi ECH mode".tl,
+          settingKey: 'bangumiEchMode',
+          optionTranslation: const {
+            'off': 'Off',
+            'doh': 'DNS over HTTPS',
+            'manual': 'Manual ECH config',
+          },
+          help: "Encrypted access to resist targeted blocking; automatically falls back on failure"
+              .tl,
+        ).toSliver(),
+        _CallbackSetting(
+          title: "Bangumi ECH DoH URL".tl,
+          actionTitle: "Edit".tl,
+          callback: () => showInputDialog(
+            context: context,
+            title: "Bangumi ECH DoH URL".tl,
+            hintText: "https://dns.alidns.com/resolve",
+            initialValue: appdata.settings['bangumiEchDohUrl'] as String? ?? '',
+            onConfirm: (value) {
+              var uri = Uri.tryParse(value.trim());
+              if (uri == null || !uri.hasAuthority ||
+                  !['http', 'https'].contains(uri.scheme) ||
+                  uri.userInfo.isNotEmpty) {
+                return "Invalid API address".tl;
+              }
+              appdata.settings['bangumiEchDohUrl'] = value.trim();
+              appdata.saveData();
+              return null;
+            },
+          ),
+        ).toSliver(),
+        _CallbackSetting(
+          title: "Bangumi manual ECH config".tl,
+          actionTitle: "Edit".tl,
+          callback: () => showInputDialog(
+            context: context,
+            title: "Bangumi manual ECH config".tl,
+            hintText: "Base64 ECHConfigList".tl,
+            initialValue: appdata.settings['bangumiEchConfig'] as String? ?? '',
+            onConfirm: (value) {
+              appdata.settings['bangumiEchConfig'] = value.trim();
+              appdata.saveData();
+              return null;
+            },
+          ),
+        ).toSliver(),
+        _CallbackSetting(
+          title: "Bangumi image reverse proxy".tl,
+          actionTitle: "Edit".tl,
+          callback: () => showInputDialog(
+            context: context,
+            title: "Bangumi image reverse proxy".tl,
+            hintText: "Empty uses official images".tl,
+            initialValue: appdata.settings['bangumiImageBase'] as String? ?? '',
+            onConfirm: (value) {
+              var uri = Uri.tryParse(value.trim());
+              if (value.trim().isNotEmpty &&
+                  (uri == null || !uri.hasAuthority ||
+                      !['http', 'https'].contains(uri.scheme) ||
+                      uri.userInfo.isNotEmpty)) {
+                return "Invalid API address".tl;
+              }
+              appdata.settings['bangumiImageBase'] = value.trim();
+              appdata.saveData();
+              return null;
+            },
+          ),
+        ).toSliver(),
         _CallbackSetting(
           title: "Bangumi API address".tl,
           actionTitle: "Edit".tl,

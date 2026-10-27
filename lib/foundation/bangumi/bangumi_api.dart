@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:venera/foundation/appdata.dart';
 
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/bangumi_network.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'bangumi_models.dart';
@@ -25,7 +26,7 @@ class BangumiApi {
   BangumiApi({this.token, Dio? dio})
     : dio =
           dio ??
-          AppDio(
+          BangumiNetwork.dio(
             BaseOptions(
               baseUrl: baseUrl,
               connectTimeout: const Duration(seconds: 8),

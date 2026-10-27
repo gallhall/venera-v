@@ -1,5 +1,15 @@
 {
   "zh_CN": {
+    "Bangumi ECH mode": "Bangumi ECH 模式",
+    "Off": "关闭",
+    "DNS over HTTPS": "DNS over HTTPS",
+    "Manual ECH config": "手动 ECH 配置",
+    "Encrypted access to resist targeted blocking; automatically falls back on failure": "加密访问，防针对性封锁；失败自动降级",
+    "Bangumi ECH DoH URL": "Bangumi ECH DoH 地址",
+    "Bangumi manual ECH config": "Bangumi 手动 ECH 配置",
+    "Bangumi image reverse proxy": "Bangumi 图片反向代理",
+    "Base64 ECHConfigList": "Base64 ECHConfigList",
+    "Empty uses official images": "留空使用官方图片地址 https://lain.bgm.tv",
     "Please enable a source": "请启用一个源",
     "Kazumi": "Kazumi",
     "Video": "视频",
@@ -639,6 +649,16 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Bangumi ECH mode": "Bangumi ECH 模式",
+    "Off": "關閉",
+    "DNS over HTTPS": "DNS over HTTPS",
+    "Manual ECH config": "手動 ECH 設定",
+    "Encrypted access to resist targeted blocking; automatically falls back on failure": "加密存取，防針對性封鎖；失敗自動降級",
+    "Bangumi ECH DoH URL": "Bangumi ECH DoH 位址",
+    "Bangumi manual ECH config": "Bangumi 手動 ECH 設定",
+    "Bangumi image reverse proxy": "Bangumi 圖片反向代理",
+    "Base64 ECHConfigList": "Base64 ECHConfigList",
+    "Empty uses official images": "留空使用官方圖片位址 https://lain.bgm.tv",
     "Please enable a source": "請啟用一個來源",
     "Kazumi": "Kazumi",
     "Video": "影片",
