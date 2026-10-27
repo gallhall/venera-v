@@ -9,6 +9,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/pages/bangumi/bangumi_calendar_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/downloading_page.dart';
@@ -35,6 +36,7 @@ class HomePage extends StatelessWidget {
         const _SearchBar(),
         const _SyncDataWidget(),
         const _History(),
+        const BangumiCalendarWidget(),
         const _Local(),
         const FollowUpdatesWidget(),
         const _ComicSourceWidget(),

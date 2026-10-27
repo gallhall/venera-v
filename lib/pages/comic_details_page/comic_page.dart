@@ -10,6 +10,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
@@ -20,6 +21,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
+import 'package:venera/pages/bangumi/bangumi_panel.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
@@ -418,6 +420,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 onPressed: openFavPanel,
                 onLongPressed: quickFavorite,
                 iconColor: context.useTextColor(Colors.purple),
+              ),
+              _ActionButton(
+                icon: const Icon(Icons.live_tv_outlined),
+                activeIcon: const Icon(Icons.connected_tv),
+                isActive:
+                    BangumiManager().bindingOf(comic.sourceKey, comic.id) !=
+                    null,
+                text: 'Bangumi',
+                onPressed: openBangumi,
+                iconColor: context.useTextColor(Colors.pink),
               ),
               if (comicSource.commentsLoader != null)
                 _ActionButton(

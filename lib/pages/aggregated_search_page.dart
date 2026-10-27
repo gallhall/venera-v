@@ -8,9 +8,16 @@ import "package:venera/pages/search_result_page.dart";
 import "package:venera/utils/translations.dart";
 
 class AggregatedSearchPage extends StatefulWidget {
-  const AggregatedSearchPage({super.key, required this.keyword});
+  const AggregatedSearchPage({
+    super.key,
+    required this.keyword,
+    this.videoOnly = false,
+  });
 
   final String keyword;
+
+  /// Searches only the video sources, if any is enabled.
+  final bool videoOnly;
 
   @override
   State<AggregatedSearchPage> createState() => _AggregatedSearchPageState();
@@ -37,6 +44,9 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
       }
     }
     this.sources = sources.map((e) => ComicSource.find(e)!).toList();
+    if (widget.videoOnly && this.sources.any((e) => e.isVideoSource)) {
+      this.sources.removeWhere((e) => !e.isVideoSource);
+    }
     _keyword = widget.keyword;
     controller = SearchBarController(
       currentText: widget.keyword,

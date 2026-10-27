@@ -7,6 +7,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
@@ -353,6 +354,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           recovery = null;
           playedToEnd = true;
           saveHistory();
+          checkWatched(duration);
           if (hasNext) loadEpisode(current + 1);
         }),
       ),
@@ -360,6 +362,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.position.listen(
         ifActive((position) {
           checkSkip(position);
+          checkWatched(position);
           // Played on well past where it broke off: a new break is another
           // one, which starts over from the same stream.
           var r = recovery;
@@ -483,6 +486,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
+  /// Whether the current episode was marked as watched on Bangumi.
+  bool markedWatched = false;
+
+  /// Marks the current episode as watched on Bangumi once most of it has
+  /// played, as the ending is often skipped.
+  void checkWatched(Duration position) {
+    if (markedWatched || !started || duration <= Duration.zero) return;
+    if (position < duration * 0.85) return;
+    markedWatched = true;
+    BangumiManager().onFinished(
+      sourceKey: widget.sourceKey,
+      id: widget.details.id,
+      // A video without episodes is the first one.
+      title: episode.id == null ? '' : episode.title,
+      position: episodes.toHistory(current).ep,
+    );
+  }
+
   /// Where to start episode [index]: the saved position if it is the
   /// episode in the history and it was not finished.
   Duration? resumePosition(int index) {
@@ -529,6 +550,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       currentSkip = null;
       handledSkips.clear();
       recovery = null;
+      markedWatched = false;
     });
     await active?.pause();
     // A downloaded episode plays from its files, without the source.

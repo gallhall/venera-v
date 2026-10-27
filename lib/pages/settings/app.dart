@@ -141,6 +141,47 @@ class _AppSettingsState extends State<AppSettings> {
           actionTitle: 'Set'.tl,
         ).toSliver(),
         _SettingPartTitle(
+          title: "Bangumi",
+          icon: Icons.live_tv_outlined,
+        ),
+        ListenableBuilder(
+          listenable: BangumiManager(),
+          builder: (context, _) {
+            var user = BangumiManager().isLoggedIn
+                ? BangumiManager().user
+                : null;
+            return ListTile(
+              title: Text("Bangumi Account".tl),
+              subtitle: Text(user?.displayName ?? "Not logged in".tl),
+              trailing: user == null
+                  ? Button.normal(
+                      onPressed: () => showBangumiLoginDialog(context),
+                      child: Text("Log in".tl),
+                    ).fixHeight(32)
+                  : Button.normal(
+                      onPressed: () => showConfirmDialog(
+                        context: context,
+                        title: "Log out".tl,
+                        content: "Log out of Bangumi?".tl,
+                        onConfirm: BangumiManager().logout,
+                      ),
+                      child: Text("Log out".tl),
+                    ).fixHeight(32),
+            );
+          },
+        ).toSliver(),
+        _SwitchSetting(
+          title: "Sync progress automatically".tl,
+          subtitle:
+              "Mark episodes and chapters on Bangumi once they are finished".tl,
+          settingKey: "bangumiAutoSync",
+        ).toSliver(),
+        _SwitchSetting(
+          title: "Show airing schedule on home page".tl,
+          subtitle: "Only when a video source is installed".tl,
+          settingKey: "showBangumiCalendar",
+        ).toSliver(),
+        _SettingPartTitle(
           title: "User".tl,
           icon: Icons.person_outline,
         ),

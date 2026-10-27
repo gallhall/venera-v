@@ -242,6 +242,11 @@ class Settings with ChangeNotifier {
     'videoPlaybackRate': 1.0, // last speed picked in the player
     'videoFit': 'contain', // contain, cover, fill
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'bangumiToken': '', // access token of the Bangumi user
+    'bangumiUser': null, // the token's user, [BangumiUser.toJson]
+    'bangumiAutoSync': true, // mark finished episodes and chapters
+    'bangumiBindings': <String, dynamic>{}, // "<id>@<source key>": subject
+    'showBangumiCalendar': true, // today's anime on the home page
   };
 
   operator [](String key) {
