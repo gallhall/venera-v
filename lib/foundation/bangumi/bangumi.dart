@@ -4,13 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'bangumi_api.dart';
 import 'bangumi_models.dart';
+import 'bangumi_playback.dart';
 
 export 'bangumi_api.dart';
 export 'bangumi_models.dart';
+export 'bangumi_playback.dart';
 
 /// Marks episodes and chapters as watched or read in the Bangumi
 /// collection of a user.
@@ -156,6 +159,48 @@ class BangumiManager with ChangeNotifier {
     appdata.settings['bangumiAutoSync'] = value;
     appdata.saveData();
     notifyListeners();
+  }
+
+  void resetApi() {
+    _api = null;
+    _progress = null;
+    _calendar = null;
+    _watching = null;
+    notifyListeners();
+  }
+
+  BangumiLocalProgress localProgress(int subjectId) =>
+      BangumiLocalProgress.fromJson(
+        (appdata.settings['bangumiSubjectProgress'] as Map?)?['$subjectId'],
+      );
+
+  void saveLocalProgress(int subjectId, BangumiLocalProgress progress) {
+    var all = Map<String, dynamic>.from(
+      appdata.settings['bangumiSubjectProgress'] as Map? ?? {},
+    );
+    all.remove('$subjectId');
+    all['$subjectId'] = progress.toJson();
+    while (all.length > 200) {
+      all.remove(all.keys.first);
+    }
+    appdata.settings['bangumiSubjectProgress'] = all;
+    appdata.saveData();
+  }
+
+  Map? sourceChoice(int subjectId) =>
+      (appdata.settings['bangumiSourceChoices'] as Map?)?['$subjectId'] as Map?;
+
+  void chooseSource(int subjectId, String sourceKey, String id) {
+    var all = Map<String, dynamic>.from(
+      appdata.settings['bangumiSourceChoices'] as Map? ?? {},
+    );
+    all.remove('$subjectId');
+    all['$subjectId'] = {'sourceKey': sourceKey, 'id': id};
+    while (all.length > 200) {
+      all.remove(all.keys.first);
+    }
+    appdata.settings['bangumiSourceChoices'] = all;
+    appdata.saveData();
   }
 
   BangumiApi? _api;
@@ -315,4 +360,25 @@ class BangumiManager with ChangeNotifier {
       type: BangumiCollectionType.doing,
     );
   }
+}
+
+class BangumiPlaybackContext {
+  final BangumiSubject subject;
+  final List<BangumiEpisode> episodes;
+  final List<Comic> candidates;
+  final int number;
+
+  const BangumiPlaybackContext({
+    required this.subject,
+    required this.episodes,
+    required this.candidates,
+    required this.number,
+  });
+
+  BangumiPlaybackContext at(int number) => BangumiPlaybackContext(
+    subject: subject,
+    episodes: episodes,
+    candidates: candidates,
+    number: number,
+  );
 }

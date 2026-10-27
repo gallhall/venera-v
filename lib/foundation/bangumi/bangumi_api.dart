@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:venera/foundation/appdata.dart';
+
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -21,9 +23,26 @@ class BangumiException implements Exception {
 /// access token if there is one.
 class BangumiApi {
   BangumiApi({this.token, Dio? dio})
-    : dio = dio ?? AppDio(BaseOptions(baseUrl: baseUrl));
+    : dio =
+          dio ??
+          AppDio(
+            BaseOptions(
+              baseUrl: baseUrl,
+              connectTimeout: const Duration(seconds: 8),
+            ),
+          );
 
-  static const baseUrl = 'https://api.bgm.tv';
+  static String get baseUrl => endpoint('bangumiApiBase', 'https://api.bgm.tv');
+
+  static String get nextBaseUrl =>
+      endpoint('bangumiNextApiBase', 'https://next.bgm.tv');
+
+  static String endpoint(String key, String fallback) {
+    var value = appdata.settings[key];
+    return value is String && value.trim().isNotEmpty
+        ? value.trim().replaceAll(RegExp(r'/+$'), '')
+        : fallback;
+  }
 
   /// Bangumi asks apps to name themselves in the user agent.
   static const userAgent =
@@ -44,11 +63,15 @@ class BangumiApi {
   }
 
   /// Subjects of [type] (see [BangumiSubjectType]) matching [keyword].
-  Future<List<BangumiSubject>> search(String keyword, int type) async {
+  Future<List<BangumiSubject>> search(
+    String keyword,
+    int type, {
+    int offset = 0,
+  }) async {
     var data = await _request(
       'POST',
       '/v0/search/subjects',
-      query: {'limit': 20},
+      query: {'limit': 20, 'offset': offset},
       body: {
         'keyword': keyword,
         'sort': 'match',
@@ -75,7 +98,7 @@ class BangumiApi {
   }) async {
     var data = await _request(
       'GET',
-      'https://next.bgm.tv/p1/subjects/$subjectId/comments',
+      '$nextBaseUrl/p1/subjects/$subjectId/comments',
       query: {'limit': limit, 'offset': offset},
     );
     var items = data is Map && data['data'] is List
@@ -267,10 +290,18 @@ class BangumiApi {
           },
           extra: {
             'maskHeadersInLog': ['Authorization'],
+            'connectTimeout': const Duration(seconds: 8),
           },
         ),
       );
     } on DioException catch (e) {
+      if (e.response == null && e.type != DioExceptionType.cancel) {
+        throw BangumiException(
+          null,
+          'Bangumi could not be reached. Try a proxy or change the API address in Settings > App > Bangumi.'
+              .tl,
+        );
+      }
       throw BangumiException(null, e.message ?? e.error?.toString() ?? '$e');
     }
     var status = response.statusCode ?? 0;

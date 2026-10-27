@@ -16,6 +16,7 @@ import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'bangumi/bangumi_search_page.dart';
 import 'comic_details_page/comic_page.dart';
 import 'comic_source_page.dart';
 
@@ -225,6 +226,14 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     if (searchSources.isEmpty) {
+      if (ComicSource.all().any((s) => s.isVideoSource)) {
+        return Scaffold(body: Column(children: [
+          SafeArea(bottom: false, child: ListTile(
+            leading: const Icon(Icons.live_tv), title: Text('Search anime on Bangumi'.tl),
+            onTap: () => context.to(() => const BangumiSearchPage()))),
+          Expanded(child: buildEmpty()),
+        ]));
+      }
       return buildEmpty();
     }
     return Scaffold(
@@ -242,6 +251,16 @@ class _SearchPageState extends State<SearchPage> {
       },
       focusNode: focusNode,
     );
+    if (ComicSource.all().any((s) => s.isVideoSource)) {
+      yield SliverToBoxAdapter(
+        child: ListTile(
+          leading: const Icon(Icons.live_tv),
+          title: Text('Search anime on Bangumi'.tl),
+          onTap: () =>
+              context.to(() => BangumiSearchPage(keyword: controller.text)),
+        ),
+      );
+    }
     if (suggestions.isNotEmpty) {
       yield buildSuggestions(context);
     } else {

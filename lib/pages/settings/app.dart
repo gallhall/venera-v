@@ -144,6 +144,44 @@ class _AppSettingsState extends State<AppSettings> {
           title: "Bangumi",
           icon: Icons.live_tv_outlined,
         ),
+        _CallbackSetting(
+          title: "Bangumi API address".tl,
+          actionTitle: "Edit".tl,
+          callback: () => showInputDialog(
+            context: context,
+            title: "Bangumi API address".tl,
+            initialValue: appdata.settings['bangumiApiBase'] as String? ?? '',
+            onConfirm: (value) {
+              var uri = Uri.tryParse(value.trim());
+              if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
+                return "Invalid API address".tl;
+              }
+              appdata.settings['bangumiApiBase'] = value.trim();
+              appdata.saveData();
+              BangumiManager().resetApi();
+              return null;
+            },
+          ),
+        ).toSliver(),
+        _CallbackSetting(
+          title: "Bangumi next API address".tl,
+          actionTitle: "Edit".tl,
+          callback: () => showInputDialog(
+            context: context,
+            title: "Bangumi next API address".tl,
+            initialValue: appdata.settings['bangumiNextApiBase'] as String? ?? '',
+            onConfirm: (value) {
+              var uri = Uri.tryParse(value.trim());
+              if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
+                return "Invalid API address".tl;
+              }
+              appdata.settings['bangumiNextApiBase'] = value.trim();
+              appdata.saveData();
+              BangumiManager().resetApi();
+              return null;
+            },
+          ),
+        ).toSliver(),
         ListenableBuilder(
           listenable: BangumiManager(),
           builder: (context, _) {

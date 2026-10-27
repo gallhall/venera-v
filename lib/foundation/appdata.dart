@@ -242,6 +242,10 @@ class Settings with ChangeNotifier {
     'videoPlaybackRate': 1.0, // last speed picked in the player
     'videoFit': 'contain', // contain, cover, fill
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'bangumiApiBase': 'https://api.bgm.tv',
+    'bangumiNextApiBase': 'https://next.bgm.tv',
+    'bangumiSubjectProgress': <String, dynamic>{},
+    'bangumiSourceChoices': <String, dynamic>{},
     'bangumiToken': '', // access token of the Bangumi user
     'bangumiUser': null, // the token's user, [BangumiUser.toJson]
     'bangumiAutoSync': true, // mark finished episodes and chapters

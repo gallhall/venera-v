@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/utils/translations.dart';
 
 /// Answers requests of [BangumiApi] with [handler], and records them.
 class _Adapter implements HttpClientAdapter {
@@ -99,6 +101,90 @@ List<BangumiEpisode> _season(int count, {int firstSort = 1}) => [
 ];
 
 void main() {
+  // Errors are translated; no translations are loaded in unit tests.
+  AppTranslation.translations = {};
+
+  group('Bangumi-first playback', () {
+    test('normalizes punctuation, brackets and case', () {
+      expect(BangumiTitleMatch.normalize(' [Anime] A - B！'), 'animeab');
+      expect(BangumiTitleMatch.best(['A B'], ['A B extra', '[A-B]']), 1);
+    });
+    test(
+      'detects Chinese and English seasons and rejects a different season',
+      () {
+        for (var title in [
+          '作品第二季',
+          'Series 2nd Season',
+          'Series S2',
+          'Series Season 2',
+        ]) {
+          expect(BangumiTitleMatch.season(title), 2);
+        }
+        expect(
+          BangumiTitleMatch.best(['作品第二季', 'Series'], ['Series', '作品第二季']),
+          1,
+        );
+        expect(BangumiTitleMatch.best(['作品第二季'], ['作品第一季']), isNull);
+      },
+    );
+    test(
+      'uses containment then similarity; unrelated titles have no match',
+      () {
+        expect(BangumiTitleMatch.best(['abcdef'], ['abxxef', 'abcdef TV']), 1);
+        expect(BangumiTitleMatch.best(['abcdef'], ['abxxef']), 0);
+        expect(BangumiTitleMatch.best(['abcdef'], ['xyz']), isNull);
+      },
+    );
+    test('maps ep before sort and positions restart within each line', () {
+      const target = BangumiEpisode(id: 1, ep: 2, sort: 14);
+      expect(
+        bangumiSourceEpisode(target, [
+          (title: 'EP14', position: 1),
+          (title: 'EP2', position: 2),
+        ]),
+        1,
+      );
+      expect(
+        bangumiSourceEpisode(target, [
+          (title: 'PV', position: 1),
+          (title: 'episode', position: 1),
+          (title: 'episode', position: 2),
+        ]),
+        2,
+      );
+      expect(bangumiSourceEpisode(target, [(title: 'EP14', position: 1)]), 0);
+      expect(
+        bangumiSourceEpisode(target, [(title: 'EP1', position: 1)], offset: 1),
+        0,
+      );
+      expect(
+        bangumiSourceEpisode(target, [(title: 'SP2', position: 1)]),
+        isNull,
+      );
+    });
+    test('progress serialization is stable and tolerates malformed data', () {
+      var progress = BangumiLocalProgress.fromJson({
+        'episode': 2,
+        'position': 40,
+        'duration': 100,
+        'watched': [2, 1, 2, -1, 'bad'],
+      });
+      expect(progress.toJson(), {
+        'episode': 2,
+        'position': 40,
+        'duration': 100,
+        'watched': [1, 2],
+      });
+      expect(progress.finished, isFalse);
+      expect(BangumiLocalProgress.fromJson(null).episode, 0);
+      expect(BangumiLocalProgress.fromJson({'position': -4}).position, 0);
+      expect(
+        const BangumiLocalProgress(position: 100, duration: 100).finished,
+        isTrue,
+      );
+    });
+  });
+
   group('episode numbers', () {
     int? of(String title, [int position = 7]) =>
         BangumiEpisodeNumber.of(title, position);
@@ -298,6 +384,46 @@ void main() {
   });
 
   group('api', () {
+    test('configured bases retain proxy paths and search paging', () async {
+      var oldBase = appdata.settings['bangumiApiBase'];
+      var oldNext = appdata.settings['bangumiNextApiBase'];
+      addTearDown(() {
+        appdata.settings['bangumiApiBase'] = oldBase;
+        appdata.settings['bangumiNextApiBase'] = oldNext;
+      });
+      appdata.settings['bangumiApiBase'] = 'https://mirror.example/api/';
+      appdata.settings['bangumiNextApiBase'] = 'https://mirror.example/next/';
+      var adapter = _Adapter((_) => (200, {'data': [], 'total': 0}));
+      var api = _api(adapter);
+      await api.search('anime', BangumiSubjectType.anime, offset: 20);
+      expect(adapter.requests.last.uri.path, '/api/v0/search/subjects');
+      expect(adapter.requests.last.uri.queryParameters['offset'], '20');
+      expect(adapter.requests.last.headers['User-Agent'], BangumiApi.userAgent);
+      await api.comments(42);
+      expect(adapter.requests.last.uri.path, '/next/p1/subjects/42/comments');
+    });
+
+    test('connection failures suggest proxy and API settings', () async {
+      var adapter = _Adapter(
+        (options) => throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionTimeout,
+        ),
+      );
+      await expectLater(
+        _api(adapter).calendar(),
+        throwsA(
+          isA<BangumiException>()
+              .having((e) => e.statusCode, 'no response', isNull)
+              .having(
+                (e) => e.message,
+                'actionable message',
+                contains('Bangumi'),
+              ),
+        ),
+      );
+    });
+
     test('loads public comments with paging and no token', () async {
       var adapter = _Adapter(
         (o) => (

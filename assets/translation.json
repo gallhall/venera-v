@@ -1,5 +1,20 @@
 {
   "zh_CN": {
+    "Summary": "简介",
+    "Bangumi API address": "Bangumi API 地址",
+    "Bangumi next API address": "Bangumi next API 地址",
+    "Invalid API address": "无效的 API 地址",
+    "Bangumi could not be reached. Try a proxy or change the API address in Settings > App > Bangumi.": "无法连接 Bangumi。请尝试使用代理，或在设置 → APP → Bangumi 中修改 API 地址。",
+    "Search anime on Bangumi": "在 Bangumi 搜索动画",
+    "Load more": "加载更多",
+    "Playback sources": "播放源",
+    "Choose source result": "选择该源的搜索结果",
+    "Bangumi collection and progress": "Bangumi 收藏与进度",
+    "This source has no matching episode. Try switching source.": "该播放源没有匹配的剧集，请尝试切换播放源。",
+    "Try another playback source": "请在播放源列表中选择其他来源",
+    "Switch source": "切换播放源",
+    "Loading": "加载中",
+
     "Home": "主页",
     "Favorites": "收藏",
     "Explore": "发现",
@@ -598,6 +613,21 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Summary": "簡介",
+    "Bangumi API address": "Bangumi API 位址",
+    "Bangumi next API address": "Bangumi next API 位址",
+    "Invalid API address": "無效的 API 位址",
+    "Bangumi could not be reached. Try a proxy or change the API address in Settings > App > Bangumi.": "無法連線至 Bangumi。請嘗試使用代理，或在設定 → APP → Bangumi 中修改 API 位址。",
+    "Search anime on Bangumi": "在 Bangumi 搜尋動畫",
+    "Load more": "載入更多",
+    "Playback sources": "播放來源",
+    "Choose source result": "選擇此來源的搜尋結果",
+    "Bangumi collection and progress": "Bangumi 收藏與進度",
+    "This source has no matching episode. Try switching source.": "此播放來源沒有相符的集數，請嘗試切換播放來源。",
+    "Try another playback source": "請在播放來源清單中選擇其他來源",
+    "Switch source": "切換播放來源",
+    "Loading": "載入中",
+
     "Home": "首頁",
     "Favorites": "收藏",
     "Explore": "探索",

@@ -117,6 +117,7 @@ class BangumiPanel extends StatefulWidget {
     required this.isVideo,
     this.chapters,
     this.history,
+    this.subject,
   });
 
   final String sourceKey;
@@ -130,6 +131,8 @@ class BangumiPanel extends StatefulWidget {
   final ComicChapters? chapters;
 
   final History? history;
+
+  final BangumiSubject? subject;
 
   @override
   State<BangumiPanel> createState() => _BangumiPanelState();
@@ -163,7 +166,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
   @override
   void initState() {
     super.initState();
-    binding = manager.bindingOf(widget.sourceKey, widget.id);
+    binding = widget.subject != null
+        ? BangumiBinding.fromSubject(widget.subject!)
+        : manager.bindingOf(widget.sourceKey, widget.id);
     if (binding == null) {
       isSearching = true;
       search();
@@ -407,48 +412,49 @@ class _BangumiPanelState extends State<BangumiPanel> {
           leading: const Icon(Icons.comment_outlined),
           title: Text("Bangumi comments".tl),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => App.rootContext.to(
-            () => BangumiCommentsPage(binding: binding),
-          ),
+          onTap: () =>
+              App.rootContext.to(() => BangumiCommentsPage(binding: binding)),
         ),
         if (manager.isLoggedIn) ...buildProgress() else buildLogin(),
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.exposure),
-          title: Text(
-            (binding.isBook ? "Chapter offset" : "Episode offset").tl,
+        if (widget.subject == null) ...[
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.exposure),
+            title: Text(
+              (binding.isBook ? "Chapter offset" : "Episode offset").tl,
+            ),
+            subtitle: Text(
+              "Added to the numbers of this source to get those on Bangumi".tl,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  onPressed: () => setOffset(binding.offset - 1),
+                ),
+                Text("${binding.offset}", style: ts.s16),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () => setOffset(binding.offset + 1),
+                ),
+              ],
+            ),
           ),
-          subtitle: Text(
-            "Added to the numbers of this source to get those on Bangumi".tl,
+          ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: Text("Link another subject".tl),
+            onTap: () {
+              setState(() => isSearching = true);
+              if (results == null) search();
+            },
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove),
-                onPressed: () => setOffset(binding.offset - 1),
-              ),
-              Text("${binding.offset}", style: ts.s16),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: () => setOffset(binding.offset + 1),
-              ),
-            ],
+          ListTile(
+            leading: Icon(Icons.link_off, color: context.colorScheme.error),
+            title: Text("Unlink".tl),
+            onTap: unbind,
           ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.swap_horiz),
-          title: Text("Link another subject".tl),
-          onTap: () {
-            setState(() => isSearching = true);
-            if (results == null) search();
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.link_off, color: context.colorScheme.error),
-          title: Text("Unlink".tl),
-          onTap: unbind,
-        ),
+        ],
       ],
     );
   }

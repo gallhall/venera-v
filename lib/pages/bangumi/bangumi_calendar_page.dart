@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -7,7 +6,8 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/log.dart';
-import 'package:venera/pages/aggregated_search_page.dart';
+import 'bangumi_search_page.dart';
+import 'bangumi_subject_page.dart';
 import 'package:venera/utils/translations.dart';
 
 const _weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -18,54 +18,6 @@ List<BangumiSubject> _sorted(List<BangumiSubject> day, Set<int> watching) {
     ...day.where((s) => watching.contains(s.id)),
     ...day.where((s) => !watching.contains(s.id)),
   ];
-}
-
-/// What can be done with an airing anime: searching the video sources for
-/// it, or opening it on Bangumi.
-void _showSubject(BuildContext context, BangumiSubject subject) {
-  showDialog(
-    context: context,
-    builder: (context) => ContentDialog(
-      title: subject.displayName,
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (subject.nameCn.isNotEmpty && subject.name != subject.nameCn)
-            SelectableText(subject.name, style: ts.s14),
-          if (subject.date.isNotEmpty)
-            Text("${"First aired".tl}: ${subject.date}", style: ts.s14),
-          if (subject.score > 0)
-            Text(
-              "${"Score".tl}: ${subject.score.toStringAsFixed(1)}"
-              "${subject.rank > 0 ? "  #${subject.rank}" : ""}",
-              style: ts.s14,
-            ),
-        ],
-      ).paddingHorizontal(16),
-      actions: [
-        TextButton(
-          onPressed: () {
-            context.pop();
-            launchUrlString(subject.url);
-          },
-          child: Text("Open in Bangumi".tl),
-        ),
-        FilledButton(
-          onPressed: () {
-            context.pop();
-            App.rootContext.to(
-              () => AggregatedSearchPage(
-                keyword: subject.displayName,
-                videoOnly: true,
-              ),
-            );
-          },
-          child: Text("Search".tl),
-        ),
-      ],
-    ),
-  );
 }
 
 class _SubjectCover extends StatelessWidget {
@@ -79,7 +31,9 @@ class _SubjectCover extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => _showSubject(context, subject),
+      onTap: () => context.to(
+        () => BangumiSubjectPage(subjectId: subject.id, preview: subject),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -248,6 +202,11 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
         title: Text("Airing Schedule".tl),
         actions: [
           IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search anime on Bangumi'.tl,
+            onPressed: () => context.to(() => const BangumiSearchPage()),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: "Refresh".tl,
             onPressed: () => load(refresh: true),
@@ -398,6 +357,12 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
                       ),
                     ),
                     const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: 'Search anime on Bangumi'.tl,
+                      onPressed: () =>
+                          context.to(() => const BangumiSearchPage()),
+                    ),
                     const Icon(Icons.arrow_right),
                   ],
                 ),

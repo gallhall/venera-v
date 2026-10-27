@@ -118,7 +118,8 @@ class MyLogInterceptor implements Interceptor {
                 : options.data
             }"
     );
-    options.connectTimeout = const Duration(seconds: 15);
+    options.connectTimeout = options.extra['connectTimeout'] as Duration? ??
+        const Duration(seconds: 15);
     options.receiveTimeout = const Duration(seconds: 15);
     options.sendTimeout = const Duration(seconds: 15);
     handler.next(options);
@@ -225,7 +226,9 @@ class RHttpAdapter implements HttpClientAdapter {
     return RHttpAdapter(client: client);
   }
 
-  Future<rhttp.ClientSettings> get settings async {
+  Future<rhttp.ClientSettings> get settings => settingsFor(null);
+
+  Future<rhttp.ClientSettings> settingsFor(Duration? connectTimeout) async {
     var proxy = await getProxy();
 
     return rhttp.ClientSettings(
@@ -233,8 +236,8 @@ class RHttpAdapter implements HttpClientAdapter {
           ? const rhttp.ProxySettings.noProxy()
           : rhttp.ProxySettings.proxy(proxy),
       redirectSettings: const rhttp.RedirectSettings.limited(5),
-      timeoutSettings: const rhttp.TimeoutSettings(
-        connectTimeout: Duration(seconds: 15),
+      timeoutSettings: rhttp.TimeoutSettings(
+        connectTimeout: connectTimeout ?? const Duration(seconds: 15),
         keepAliveTimeout: Duration(seconds: 60),
         keepAlivePing: Duration(seconds: 30),
       ),
@@ -299,7 +302,7 @@ class RHttpAdapter implements HttpClientAdapter {
         : await rhttp.Rhttp.request(
             method: method,
             url: url,
-            settings: await settings,
+            settings: await settingsFor(options.extra['connectTimeout'] as Duration?),
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
