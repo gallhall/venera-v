@@ -1,5 +1,9 @@
 {
   "zh_CN": {
+    "No history yet": "暂无阅读记录",
+    "Nothing to follow yet": "暂无追更",
+    "No image favorites": "暂无图片收藏",
+    "No local comics": "暂无本地作品",
     "Bangumi ECH mode": "Bangumi ECH 模式",
     "Off": "关闭",
     "DNS over HTTPS": "DNS over HTTPS",
@@ -646,6 +650,8 @@
     "First aired": "首播",
     "Score": "评分",
     "Airing Schedule": "放送表",
+    "Today's anime": "今日新番",
+    "Downloads": "下载任务",
     "Nothing airing": "这天没有番剧放送",
     "Bangumi Account": "Bangumi 账号",
     "Not logged in": "未登录",
@@ -655,6 +661,10 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "No history yet": "暫無閱讀記錄",
+    "Nothing to follow yet": "暫無追更",
+    "No image favorites": "暫無圖片收藏",
+    "No local comics": "暫無本地作品",
     "Bangumi ECH mode": "Bangumi ECH 模式",
     "Off": "關閉",
     "DNS over HTTPS": "DNS over HTTPS",
@@ -1301,6 +1311,8 @@
     "First aired": "首播",
     "Score": "評分",
     "Airing Schedule": "放送表",
+    "Today's anime": "今日新番",
+    "Downloads": "下載任務",
     "Nothing airing": "這天沒有番劇放送",
     "Bangumi Account": "Bangumi 帳號",
     "Not logged in": "未登入",
