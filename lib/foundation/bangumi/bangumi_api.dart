@@ -106,7 +106,8 @@ class BangumiApi {
   }
 
   /// Adds the subject to the collection of the token's user, or changes it
-  /// there. [epStatus] only works for books.
+  /// there. Without [type], the subject must be in the collection already.
+  /// [epStatus] only works for books.
   Future<void> updateCollection(
     int subjectId, {
     int? type,
@@ -114,7 +115,9 @@ class BangumiApi {
     int? epStatus,
   }) async {
     await _request(
-      'POST',
+      // POST creates the collection, which needs a type; PATCH only
+      // changes the given fields of one.
+      type == null ? 'PATCH' : 'POST',
       '/v0/users/-/collections/$subjectId',
       body: {'type': ?type, 'rate': ?rate, 'ep_status': ?epStatus},
     );

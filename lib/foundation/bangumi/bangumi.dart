@@ -85,6 +85,7 @@ class BangumiProgress {
     var subjectId = binding.subjectId;
     var collection = await api.collection(username, subjectId);
     var start = number > 0 && _shouldStart(collection);
+    if (collection == null && number == 0) return;
     if (binding.isBook) {
       await api.updateCollection(
         subjectId,
@@ -93,7 +94,6 @@ class BangumiProgress {
       );
       return;
     }
-    if (collection == null && number == 0) return;
     if (start) {
       await api.updateCollection(subjectId, type: BangumiCollectionType.doing);
     }
@@ -228,8 +228,8 @@ class BangumiManager with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Episodes and chapters marked in this run, `<subject>:<number>`, so
-  /// that each is marked once.
+  /// Episodes and chapters marked in this run, by subject and number on
+  /// Bangumi (`<subject>:<number>`), so that each is marked once.
   final _marked = <String>{};
 
   /// Marks the episode or chapter titled [title] of a comic or video as
@@ -247,12 +247,17 @@ class BangumiManager with ChangeNotifier {
     if (binding == null) return;
     var number = BangumiEpisodeNumber.of(title, position);
     if (number == null) return;
-    var key = '${binding.subjectId}:$number';
+    // The number on Bangumi, as sources linked to a subject may number it
+    // differently.
+    var key = '${binding.subjectId}:${number + binding.offset}';
     if (!_marked.add(key)) return;
     try {
       var marked = await progress.markFinished(binding, number);
       if (marked == null) {
         Log.info('Bangumi', 'Nothing to mark for $title in $key');
+        // No such episode: tried again, e.g. once the offset is fixed. A
+        // chapter already read stays done.
+        if (!binding.isBook) _marked.remove(key);
         return;
       }
       Log.info('Bangumi', 'Marked $marked of ${binding.subjectId}');

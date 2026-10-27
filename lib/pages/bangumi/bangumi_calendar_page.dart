@@ -300,14 +300,14 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
   void initState() {
     super.initState();
     appdata.settings.addListener(onSettingsChanged);
-    BangumiManager().addListener(onSettingsChanged);
+    BangumiManager().addListener(onAccountChanged);
     if (isShown) load();
   }
 
   @override
   void dispose() {
     appdata.settings.removeListener(onSettingsChanged);
-    BangumiManager().removeListener(onSettingsChanged);
+    BangumiManager().removeListener(onAccountChanged);
     super.dispose();
   }
 
@@ -315,6 +315,33 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
     if (!mounted) return;
     setState(() {});
     if (isShown && today == null && error == null) load();
+  }
+
+  /// The user the anime being watched were loaded for.
+  String? watchingOf;
+
+  void onAccountChanged() {
+    var user = BangumiManager().isLoggedIn
+        ? BangumiManager().user?.username
+        : null;
+    if (!mounted || user == watchingOf) return;
+    setState(() => watching = {});
+    if (today != null) loadWatching();
+  }
+
+  Future<void> loadWatching() async {
+    var manager = BangumiManager();
+    var user = manager.isLoggedIn ? manager.user?.username : null;
+    watchingOf = user;
+    try {
+      var watching = await manager.watching();
+      // Not for an account logged out of meanwhile.
+      if (mounted && watchingOf == user) {
+        setState(() => this.watching = watching);
+      }
+    } catch (e) {
+      Log.warning('Bangumi', 'Failed to load the anime being watched: $e');
+    }
   }
 
   Future<void> load() async {
@@ -327,12 +354,7 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
       if (mounted) setState(() => error = e.toString());
       return;
     }
-    try {
-      var watching = await BangumiManager().watching();
-      if (mounted) setState(() => this.watching = watching);
-    } catch (e) {
-      Log.warning('Bangumi', 'Failed to load the anime being watched: $e');
-    }
+    await loadWatching();
   }
 
   @override

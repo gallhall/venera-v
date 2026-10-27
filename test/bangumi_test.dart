@@ -277,7 +277,12 @@ void main() {
     test('only the given fields of a collection change', () async {
       var adapter = _Adapter((o) => (204, null));
       await _api(adapter).updateCollection(1, epStatus: 5);
+      expect(adapter.requests.single.method, 'PATCH');
       expect(adapter.requests.single.data, {'ep_status': 5});
+      // Only POST creates a collection, which needs a type.
+      await _api(adapter).updateCollection(1, type: 3, epStatus: 5);
+      expect(adapter.requests.last.method, 'POST');
+      expect(adapter.requests.last.data, {'type': 3, 'ep_status': 5});
     });
 
     test('loads every page of episodes', () async {
@@ -402,10 +407,8 @@ void main() {
     });
 
     test('a book set by hand can go back', () async {
-      var api = _FakeApi([])..collected = const BangumiCollection(
-        type: 3,
-        epStatus: 9,
-      );
+      var api = _FakeApi([])
+        ..collected = const BangumiCollection(type: 3, epStatus: 9);
       await BangumiProgress(api, 'user').setProgress(book, 4);
       expect(api.calls, ['collection type=null ep=4']);
     });
