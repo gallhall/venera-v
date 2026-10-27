@@ -100,6 +100,30 @@ class RhttpConnectionException extends RhttpException {
       '[$runtimeType] Connection error. URL: ${request.url} ($message)';
 }
 
+/// The server rejected ECH before any HTTP request bytes were sent.
+/// Retry configs are authenticated by the outer TLS handshake, when supplied.
+class RhttpEchRejectedException extends RhttpConnectionException {
+  RhttpEchRejectedException(super.request, super.message);
+
+  Uint8List? get retryConfigList {
+    if (!message.startsWith('ECH_REJECTED:')) return null;
+    final hex = message.substring('ECH_REJECTED:'.length);
+    if (hex.isEmpty ||
+        hex.length.isOdd ||
+        !RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex)) {
+      return null;
+    }
+    return Uint8List.fromList([
+      for (var i = 0; i < hex.length; i += 2)
+        int.parse(hex.substring(i, i + 2), radix: 16),
+    ]);
+  }
+
+  @override
+  String toString() =>
+      '[$runtimeType] Server rejected ECH. URL: ${request.url}';
+}
+
 /// An exception thrown a request is made with an invalid client.
 class RhttpClientDisposedException extends RhttpException {
   const RhttpClientDisposedException(super.request);
@@ -155,7 +179,9 @@ RhttpException parseError(HttpRequest request, rust.RhttpError error) {
     rust.RhttpError_RhttpInvalidCertificateError(field0: final message) =>
       RhttpInvalidCertificateException(request: request, message: message),
     rust.RhttpError_RhttpConnectionError(field0: final message) =>
-      RhttpConnectionException(request, message),
+      message.startsWith('ECH_REJECTED:')
+          ? RhttpEchRejectedException(request, message)
+          : RhttpConnectionException(request, message),
     rust.RhttpError_RhttpUnknownError(field0: final message) =>
       RhttpUnknownException(request, message),
   };

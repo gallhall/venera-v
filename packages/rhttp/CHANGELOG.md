@@ -1,5 +1,9 @@
 > venera-v fork of rhttp 0.15.1 (MIT): adds Encrypted Client Hello (ECH) using pure Rust HPKE, retaining the ring TLS provider.
 
+- Surface rustls 0.23.35 ECH rejection and authenticated retry configs as
+  `RhttpEchRejectedException.retryConfigList`. Uses the existing connection-error
+  payload, so the FRB schema and generated bindings are unchanged.
+
 ## venera-v fork (unreleased)
 
 - Add optional Dart `TlsSettings.echConfigList` / Rust `ech_config_list`.

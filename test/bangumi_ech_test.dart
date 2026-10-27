@@ -1,10 +1,519 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/network/bangumi_ech.dart';
 
+Uint8List _hex(String value) => Uint8List.fromList([
+  for (var i = 0; i < value.length; i += 2)
+    int.parse(value.substring(i, i + 2), radix: 16),
+]);
+
+const _httpsReply =
+    '000081800001000100000000036170690362676d0274760000410001'
+    'c00c004100010000012c005d000100000100030268320004000467fc733100050047'
+    '0045fe0d0041a5002000204dfce7524bef8da72d1e509cbf7069cb99edb24b123800619614297bbe3240770'
+    '004000100010012636c6f7564666c6172652d6563682e636f6d0000';
+const _aReply =
+    '000081800001000200000000036170690362676d0274760000010001'
+    'c00c000500010000012c00060363646ec010c028000100010000012c0004681a0817';
+
 void main() {
+  test(
+    'late rejected fetch cannot overwrite a learned server retry config',
+    () async {
+      final pending = Completer<Object?>();
+      var queries = 0;
+      final provider = EchConfigProvider(
+        firstWait: const Duration(milliseconds: 1),
+        fetchJson: (_) {
+          queries++;
+          return pending.future;
+        },
+      );
+      final old = decodeEchConfig(builtInEchConfig)!;
+      final fresh = Uint8List.fromList([0, 4, 0xfe, 0x0d, 0, 0]);
+      expect(
+        await provider.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        old,
+      );
+      expect(
+        await provider.recover(
+          'api.bgm.tv',
+          old,
+          retryConfigs: fresh,
+          dohUrl: 'https://dns.test',
+        ),
+        fresh,
+      );
+      pending.complete({
+        'Answer': [
+          {'type': 65, 'data': 'ech=$builtInEchConfig'},
+        ],
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        await provider.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        fresh,
+      );
+      // A parallel connection that rejected the same old config must retain it.
+      expect(
+        await provider.recover('api.bgm.tv', old, dohUrl: 'https://dns.test'),
+        fresh,
+      );
+      expect(queries, 1);
+    },
+  );
+  test('wire query fixtures use ID zero, RD, and unpadded base64url', () {
+    final https = _hex(
+      '000001000001000000000000036170690362676d0274760000410001',
+    );
+    final a = _hex('000001000001000000000000036170690362676d0274760000010001');
+    expect(buildDohQuery('API.BGM.TV.', 65), https);
+    expect(buildDohQuery('api.bgm.tv', 1), a);
+    expect(
+      base64Url.decode(base64.normalize(encodeDohQuery('api.bgm.tv', 65))),
+      https,
+    );
+    expect(encodeDohQuery('api.bgm.tv', 65).contains('='), isFalse);
+  });
+  test(
+    'wire HTTPS decodes key 5 among other SvcParams and compressed owner',
+    () {
+      final json = decodeDohAnswer(
+        _hex(_httpsReply),
+        host: 'api.bgm.tv',
+        type: 65,
+      );
+      expect(parseDohEchConfig(json), decodeEchConfig(builtInEchConfig));
+      expect(
+        parseDohAddresses(json),
+        [],
+      ); // Poisoned ipv4hint is never an A RR.
+    },
+  );
+  test('wire A decodes CNAME and nested compression pointers', () {
+    final json = decodeDohAnswer(_hex(_aReply), host: 'api.bgm.tv', type: 1);
+    expect(parseDohAddresses(json), ['104.26.8.23']);
+    expect((json['Answer'] as List).first['name'], 'cdn.bgm.tv');
+  });
+  test(
+    'wire decoder rejects truncation, bad pointers and question mismatch',
+    () {
+      final loop = _hex(_httpsReply)..[29] = 28;
+      final truncated = _hex(_httpsReply)..[2] = 0x83;
+      for (final bytes in [
+        <int>[],
+        _hex(_httpsReply).sublist(0, 40),
+        loop,
+        truncated,
+      ]) {
+        var rejected = false;
+        try {
+          decodeDohAnswer(bytes, host: 'api.bgm.tv', type: 65);
+        } on FormatException {
+          rejected = true;
+        }
+        expect(rejected, isTrue);
+      }
+      var mismatch = false;
+      try {
+        decodeDohAnswer(_hex(_httpsReply), host: 'chii.in', type: 65);
+      } on FormatException {
+        mismatch = true;
+      }
+      expect(mismatch, isTrue);
+    },
+  );
+  test('DoH transport retries and endpoint order are deterministic', () async {
+    final events = <String>[], delays = <int>[];
+    var targetCalls = 0;
+    final sample = base64Encode([0, 4, 0xfe, 0x0d, 0, 0]);
+    final provider = EchConfigProvider(
+      delay: (duration) async {
+        delays.add(duration.inMilliseconds);
+      },
+      endpoints: const [
+        DohEndpoint('https://second.test/resolve', wire: false),
+      ],
+      fetchJson: (uri) async {
+        final host = uri.queryParameters['name'];
+        events.add('${uri.host} $host');
+        if (uri.host == 'first.test') {
+          if (host == 'api.bgm.tv' && ++targetCalls > 2) return {'Answer': []};
+          throw StateError('reset');
+        }
+        return {
+          'Answer': [
+            {'type': 65, 'data': '1 . ech=$sample'},
+          ],
+        };
+      },
+    );
+    expect(
+      await provider.get(
+        'api.bgm.tv',
+        mode: 'doh',
+        dohUrl: 'https://first.test/resolve',
+        manual: '',
+      ),
+      decodeEchConfig(sample),
+    );
+    expect(events, [
+      'first.test api.bgm.tv',
+      'first.test api.bgm.tv',
+      'first.test api.bgm.tv',
+      'first.test cloudflare-ech.com',
+      'first.test cloudflare-ech.com',
+      'first.test cloudflare-ech.com',
+      'second.test api.bgm.tv',
+    ]);
+    expect(delays, [300, 1000, 300, 1000]);
+  });
+  test('JSON then wire endpoint fallback works for both HTTPS and A', () async {
+    for (final type in [65, 1]) {
+      final events = <String>[];
+      Object? persisted;
+      final provider = EchConfigProvider(
+        endpoints: const [DohEndpoint('https://wire.test/dns-query')],
+        writePersisted: (value) {
+          persisted = value;
+        },
+        fetchJson: (uri) async {
+          events.add('json ${uri.queryParameters['name']}');
+          return {'Answer': []};
+        },
+        fetchWire: (uri) async {
+          events.add('wire ${uri.host}');
+          expect(
+            base64Url.decode(base64.normalize(uri.queryParameters['dns']!)),
+            buildDohQuery('api.bgm.tv', type),
+          );
+          return _hex(type == 65 ? _httpsReply : _aReply);
+        },
+      );
+      if (type == 65) {
+        expect(
+          await provider.get(
+            'api.bgm.tv',
+            mode: 'doh',
+            dohUrl: 'https://json.test',
+            manual: '',
+          ),
+          decodeEchConfig(builtInEchConfig),
+        );
+        expect(
+          persisted is Map,
+          isTrue,
+        ); // Was fetched, not the bootstrap fallback.
+        expect(events, [
+          'json api.bgm.tv',
+          'json cloudflare-ech.com',
+          'wire wire.test',
+        ]);
+      } else {
+        expect(
+          await provider.addresses('api.bgm.tv', dohUrl: 'https://json.test'),
+          ['104.26.8.23'],
+        );
+        expect(events, ['json api.bgm.tv', 'wire wire.test']);
+      }
+    }
+  });
+  test('negative cache retries at 5s then grows to a 60s cap', () async {
+    var now = DateTime.utc(2026), calls = 0;
+    final provider = EchConfigProvider(
+      now: () => now,
+      endpoints: const [],
+      fetchJson: (_) async {
+        calls++;
+        return {'Answer': []};
+      },
+    );
+    Future<Uint8List?> get() => provider.get(
+      'api.bgm.tv',
+      mode: 'doh',
+      dohUrl: 'https://dns.test',
+      manual: '',
+    );
+    expect(await get(), decodeEchConfig(builtInEchConfig));
+    expect(calls, 2);
+    for (final seconds in [5, 10, 20, 40, 60, 60]) {
+      final before = calls;
+      now = now.add(Duration(seconds: seconds - 1));
+      await get();
+      expect(calls, before);
+      now = now.add(const Duration(seconds: 1));
+      await get();
+      expect(calls, before + 2);
+    }
+  });
+  test(
+    'callers arriving during a timed-out flight still wait for it',
+    () async {
+      final pending = Completer<Object?>();
+      var calls = 0;
+      final provider = EchConfigProvider(
+        firstWait: const Duration(milliseconds: 10),
+        fetchJson: (_) {
+          calls++;
+          return pending.future;
+        },
+      );
+      Future<Uint8List?> get() => provider.get(
+        'api.bgm.tv',
+        mode: 'doh',
+        dohUrl: 'https://dns.test',
+        manual: '',
+      );
+      expect(await get(), decodeEchConfig(builtInEchConfig));
+      var completed = false;
+      final second = get().then((value) {
+        completed = true;
+        return value;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, isFalse);
+      final bytes = [0, 4, 0xfe, 0x0d, 0, 0];
+      pending.complete({
+        'Answer': [
+          {'type': 65, 'data': 'ech=${base64Encode(bytes)}'},
+        ],
+      });
+      expect(await second, bytes);
+      expect(calls, 1);
+    },
+  );
+  test(
+    'persistence round-trip uses fresh config without a DNS request',
+    () async {
+      var now = DateTime.utc(2026);
+      Object? persisted;
+      final bytes = [0, 4, 0xfe, 0x0d, 0, 0];
+      final provider = EchConfigProvider(
+        now: () => now,
+        writePersisted: (value) {
+          persisted = jsonDecode(jsonEncode(value));
+        },
+        fetchJson: (_) async => {
+          'Answer': [
+            {'type': 65, 'data': 'ech=${base64Encode(bytes)}'},
+          ],
+        },
+      );
+      await provider.get(
+        'api.bgm.tv',
+        mode: 'doh',
+        dohUrl: 'https://dns.test',
+        manual: '',
+      );
+      final stored = ((persisted as Map)['configs'] as Map)['api.bgm.tv'];
+      expect(EchStoredConfig.fromJson(stored, now)!.bytes, bytes);
+      now = now.add(const Duration(minutes: 10));
+      var calls = 0;
+      final cold = EchConfigProvider(
+        now: () => now,
+        readPersisted: () => persisted,
+        fetchJson: (_) async {
+          calls++;
+          throw StateError('must not query');
+        },
+      );
+      expect(
+        await cold.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        bytes,
+      );
+      expect(calls, 0);
+      expect(
+        EchStoredConfig.fromJson({'config': 'bad', 'fetchedAt': 0}, now),
+        isNull,
+      );
+      expect(
+        EchStoredConfig.fromJson({
+          'config': base64Encode(bytes),
+          'fetchedAt': -1,
+        }, now),
+        isNull,
+      );
+    },
+  );
+  test(
+    'stale persisted config is immediate while refresh runs in background',
+    () async {
+      final now = DateTime.utc(2026);
+      final bytes = Uint8List.fromList([0, 4, 0xfe, 0x0d, 0, 0]);
+      final pending = Completer<Object?>();
+      var calls = 0;
+      final provider = EchConfigProvider(
+        now: () => now,
+        readPersisted: () => {
+          'version': 1,
+          'configs': {
+            'api.bgm.tv': EchStoredConfig(
+              bytes,
+              now.subtract(const Duration(minutes: 21)),
+            ).toJson(),
+          },
+        },
+        fetchJson: (_) {
+          calls++;
+          return pending.future;
+        },
+      );
+      expect(
+        await provider.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        bytes,
+      );
+      expect(calls, 1);
+      pending.complete({
+        'Answer': [
+          {'type': 65, 'data': 'ech=${base64Encode(bytes)}'},
+        ],
+      });
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+  test(
+    'built-in fallback is usable but never persisted as a fresh answer',
+    () async {
+      var writes = 0;
+      final logs = <String>[];
+      final provider = EchConfigProvider(
+        endpoints: const [],
+        log: logs.add,
+        writePersisted: (_) {
+          writes++;
+        },
+        fetchJson: (_) async => {'Answer': []},
+      );
+      final config = await provider.get(
+        'api.bgm.tv',
+        mode: 'doh',
+        dohUrl: 'https://dns.test',
+        manual: '',
+      );
+      expect(config, decodeEchConfig(builtInEchConfig));
+      expect(config!.length, 71);
+      expect(writes, 0);
+      expect(
+        logs.any(
+          (line) =>
+              line.contains('built-in') && line.contains('possibly stale'),
+        ),
+        isTrue,
+      );
+    },
+  );
+  test(
+    'server retry configs replace and invalidate persisted shared config',
+    () async {
+      final now = DateTime.utc(2026), old = decodeEchConfig(builtInEchConfig)!;
+      final fresh = Uint8List.fromList([0, 4, 0xfe, 0x0d, 0, 0]);
+      Object? stored = {
+        'version': 1,
+        'configs': {'cloudflare-ech.com': EchStoredConfig(old, now).toJson()},
+      };
+      var queries = 0;
+      final provider = EchConfigProvider(
+        now: () => now,
+        readPersisted: () => stored,
+        writePersisted: (value) {
+          stored = value;
+        },
+        fetchJson: (_) async {
+          queries++;
+          return {'Answer': []};
+        },
+      );
+      expect(
+        await provider.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        old,
+      );
+      expect(
+        await provider.recover(
+          'api.bgm.tv',
+          old,
+          retryConfigs: fresh,
+          dohUrl: 'https://dns.test',
+        ),
+        fresh,
+      );
+      expect(queries, 0);
+      expect(
+        ((stored as Map)['configs'] as Map).containsKey('cloudflare-ech.com'),
+        isFalse,
+      );
+      expect(
+        await provider.get(
+          'api.bgm.tv',
+          mode: 'doh',
+          dohUrl: 'https://dns.test',
+          manual: '',
+        ),
+        fresh,
+      );
+    },
+  );
+  test(
+    'rejection without retry configs refetches and concurrent recovery shares flight',
+    () async {
+      final old = decodeEchConfig(builtInEchConfig)!;
+      final pending = Completer<Object?>();
+      var calls = 0;
+      final provider = EchConfigProvider(
+        fetchJson: (_) {
+          calls++;
+          return pending.future;
+        },
+      );
+      final first = provider.recover(
+        'api.bgm.tv',
+        old,
+        dohUrl: 'https://dns.test',
+      );
+      final second = provider.recover(
+        'api.bgm.tv',
+        old,
+        dohUrl: 'https://dns.test',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 1);
+      final fresh = [0, 4, 0xfe, 0x0d, 0, 0];
+      pending.complete({
+        'Answer': [
+          {'type': 65, 'data': 'ech=${base64Encode(fresh)}'},
+        ],
+      });
+      expect(await first, fresh);
+      expect(await second, fresh);
+    },
+  );
   test(
     'failed plain fallback preserves ECH error and stack without backoff',
     () async {
@@ -484,7 +993,7 @@ void main() {
       expect(names.length, 2);
       now = now.add(const Duration(minutes: 20));
       refresh = Completer();
-      expect(await get(), isNull); // Must not wait for refresh.
+      expect(await get(), bytes); // Use the last good config during refresh.
       refresh.complete({
         'Answer': [answer('1 . ech=$encoded')],
       });
@@ -553,8 +1062,9 @@ void main() {
       );
     },
   );
-  test('config errors and first wait timeout return normal TLS', () async {
+  test('config errors and first wait timeout retain bootstrap ECH', () async {
     final failed = EchConfigProvider(
+      delay: (_) async {},
       fetchJson: (_) async => throw StateError('offline'),
     );
     expect(
@@ -564,7 +1074,7 @@ void main() {
         dohUrl: 'https://dns.test',
         manual: '',
       ),
-      isNull,
+      decodeEchConfig(builtInEchConfig),
     );
     final pending = Completer<Object?>();
     final slow = EchConfigProvider(
@@ -578,7 +1088,7 @@ void main() {
         dohUrl: 'https://dns.test',
         manual: '',
       ),
-      isNull,
+      decodeEchConfig(builtInEchConfig),
     );
     pending.complete({
       'Answer': [answer('ech=$encoded')],

@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'bangumi_dns.dart';
+export 'bangumi_dns.dart';
+
 bool isBangumiHost(String host) {
   host = host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
   return ['bgm.tv', 'chii.in'].any((s) => host == s || host.endsWith('.$s'));
@@ -270,6 +273,51 @@ class EchLogThrottle {
   }
 }
 
+// Successful phone-test config; a possibly stale bootstrap, never a DNS answer.
+const builtInEchConfig =
+    'AEX+DQBBpQAgACBN/OdSS++Npy0eUJy/cGnLme2ySxI4AGGWFCl7vjJAdwAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=';
+
+class DohEndpoint {
+  const DohEndpoint(this.url, {this.wire = true});
+  final String url;
+  final bool wire;
+  String get format => wire ? 'wire' : 'json';
+}
+
+const bangumiDohEndpoints = [
+  DohEndpoint('https://doh.pub/dns-query'),
+  DohEndpoint('https://dns.alidns.com/dns-query'),
+  DohEndpoint('https://1.12.12.12/dns-query'),
+];
+
+class EchStoredConfig {
+  EchStoredConfig(this.bytes, this.fetchedAt);
+  final Uint8List bytes;
+  final DateTime fetchedAt;
+  Map<String, Object> toJson() => {
+    'config': base64Encode(bytes),
+    'fetchedAt': fetchedAt.millisecondsSinceEpoch,
+  };
+  static EchStoredConfig? fromJson(Object? value, DateTime now) {
+    if (value is! Map ||
+        value['config'] is! String ||
+        value['fetchedAt'] is! int) {
+      return null;
+    }
+    final bytes = decodeEchConfig(value['config'] as String);
+    final time = value['fetchedAt'] as int;
+    if (bytes == null ||
+        time < 0 ||
+        time > now.add(const Duration(minutes: 5)).millisecondsSinceEpoch) {
+      return null;
+    }
+    return EchStoredConfig(
+      bytes,
+      DateTime.fromMillisecondsSinceEpoch(time, isUtc: true),
+    );
+  }
+}
+
 class _EchAddressEntry {
   List<String> ips = List.of(bangumiFallbackIps);
   DateTime? expires;
@@ -277,69 +325,187 @@ class _EchAddressEntry {
 }
 
 class _EchCacheEntry {
-  Uint8List? bytes;
-  DateTime? expires;
-  bool attempted = false;
+  EchStoredConfig? good;
   Future<Uint8List?>? flight;
+  DateTime? retryAt;
+  int failures = 0;
+  int generation = 0;
+  bool loggedFallback = false;
 }
 
-/// All DoH queries are serialized, with one flight per target host. Expired
-/// entries refresh in the background while requests use ordinary TLS.
+/// Only successful configs have a 20 minute lifetime. Failures retry in 5..60s.
 class EchConfigProvider {
   EchConfigProvider({
     required this.fetchJson,
+    this.fetchWire,
     DateTime Function()? now,
+    Future<void> Function(Duration)? delay,
+    this.isTransportError,
+    this.readPersisted,
+    this.writePersisted,
+    this.endpoints = bangumiDohEndpoints,
     this.log,
     this.firstWait = const Duration(seconds: 10),
-  }) : now = now ?? DateTime.now;
+  }) : now = now ?? DateTime.now,
+       delay = delay ?? Future<void>.delayed;
   final Future<Object?> Function(Uri) fetchJson;
+  final Future<List<int>> Function(Uri)? fetchWire;
   final DateTime Function() now;
+  final Future<void> Function(Duration) delay;
+  final bool Function(Object)? isTransportError;
+  final Object? Function()? readPersisted;
+  final void Function(Map<String, dynamic>)? writePersisted;
+  final List<DohEndpoint> endpoints;
   final void Function(String)? log;
   final Duration firstWait;
   final _cache = <String, _EchCacheEntry>{};
-  Future<void> _queue = Future.value();
-  String? _settingsKey;
   final _addresses = <String, _EchAddressEntry>{};
-  String? _addressEndpoint;
+  final _stored = <String, EchStoredConfig>{};
+  final _rejected = <String>{};
+  final _manualOverrides = <String, Uint8List>{};
+  Future<void> _queue = Future.value();
+  String? _settingsKey, _addressEndpoint;
+  bool _loaded = false;
+
+  void _load() {
+    if (_loaded) return;
+    _loaded = true;
+    final data = readPersisted?.call();
+    if (data is! Map || data['version'] != 1 || data['configs'] is! Map) return;
+    for (final item in (data['configs'] as Map).entries) {
+      if (item.key is! String) continue;
+      final config = EchStoredConfig.fromJson(item.value, now());
+      if (config != null) _stored[item.key as String] = config;
+    }
+  }
+
+  void _save() {
+    try {
+      writePersisted?.call({
+        'version': 1,
+        'configs': {
+          for (final item in _stored.entries) item.key: item.value.toJson(),
+        },
+      });
+    } catch (e) {
+      log?.call('config persistence failed: $e');
+    }
+  }
+
+  _EchCacheEntry _entry(String host) {
+    _load();
+    return _cache.putIfAbsent(host, () {
+      final entry = _EchCacheEntry();
+      entry.good = _stored[host] ?? _stored['cloudflare-ech.com'];
+      if (entry.good != null) {
+        log?.call(
+          '$host using persisted config, ${entry.good!.bytes.length} bytes',
+        );
+      }
+      return entry;
+    });
+  }
+
+  List<DohEndpoint> _sources(String configured) {
+    final all = [
+      DohEndpoint(
+        configured,
+        wire: Uri.tryParse(configured)?.path.endsWith('/dns-query') ?? false,
+      ),
+      ...endpoints,
+    ];
+    final seen = <String>{};
+    return all
+        .where(
+          (e) =>
+              (!e.wire || fetchWire != null) &&
+              seen.add('${e.url}/${e.format}'),
+        )
+        .toList();
+  }
+
+  Future<Object?> _query(DohEndpoint endpoint, String host, int type) async {
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      if (attempt > 1) {
+        await delay(Duration(milliseconds: attempt == 2 ? 300 : 1000));
+      }
+      try {
+        // Serialize HTTP exchanges, not entire endpoint chains or retry delays.
+        final request = _queue.then((_) async {
+          final uri = Uri.parse(endpoint.url);
+          if (!uri.hasAuthority || !['https', 'http'].contains(uri.scheme)) {
+            throw const FormatException('Invalid DoH endpoint');
+          }
+          final params = Map<String, String>.from(uri.queryParameters)
+            ..remove('dns')
+            ..remove('name')
+            ..remove('type');
+          if (endpoint.wire) {
+            params['dns'] = encodeDohQuery(host, type);
+            final wire = await fetchWire!(
+              uri.replace(queryParameters: params),
+            ).timeout(const Duration(seconds: 4));
+            return decodeDohAnswer(wire, host: host, type: type);
+          }
+          params.addAll({'name': host, 'type': '$type'});
+          return fetchJson(
+            uri.replace(queryParameters: params),
+          ).timeout(const Duration(seconds: 4));
+        });
+        _queue = request.then<void>((_) {}, onError: (Object _) {});
+        final answer = await request;
+        log?.call(
+          'DoH ${endpoint.url} ${endpoint.format} $host type $type attempt $attempt ok',
+        );
+        return answer;
+      } catch (e) {
+        log?.call(
+          'DoH ${endpoint.url} ${endpoint.format} $host type $type attempt $attempt failed: $e',
+        );
+        if (attempt == 3 ||
+            !(isTransportError?.call(e) ?? e is! FormatException)) {
+          rethrow;
+        }
+      }
+    }
+    return null;
+  }
 
   Future<List<String>> addresses(String host, {required String dohUrl}) async {
     if (_addressEndpoint != dohUrl) {
-      _addressEndpoint = dohUrl;
       _addresses.clear();
+      _addressEndpoint = dohUrl;
     }
     final entry = _addresses.putIfAbsent(host, _EchAddressEntry.new);
     if (entry.expires?.isAfter(now()) ?? false) return List.of(entry.ips);
     final first = entry.expires == null;
     if (entry.flight == null) {
-      final flight = _queue.then((_) async {
+      final flight = () async {
         var ips = <String>[];
-        try {
-          final uri = Uri.parse(dohUrl);
-          if (!uri.hasAuthority || !['https', 'http'].contains(uri.scheme)) {
-            throw const FormatException('Invalid DoH URL');
+        for (final endpoint in _sources(dohUrl)) {
+          try {
+            ips = parseDohAddresses(await _query(endpoint, host, 1));
+          } catch (_) {
+            continue;
           }
-          ips = parseDohAddresses(
-            await fetchJson(
-              uri.replace(
-                queryParameters: {
-                  ...uri.queryParameters,
-                  'name': host,
-                  'type': '1',
-                },
-              ),
-            ).timeout(const Duration(seconds: 4)),
+          if (ips.isNotEmpty) break;
+          log?.call(
+            'DoH ${endpoint.url} ${endpoint.format} $host no usable A records',
           );
-        } catch (e) {
-          log?.call('$host DoH A failed: $e; using built-in addresses');
         }
         entry.ips = bangumiAddresses(ips);
-        entry.expires = now().add(const Duration(minutes: 20));
+        entry.expires = now().add(Duration(seconds: ips.isEmpty ? 5 : 1200));
+        if (ips.isEmpty) {
+          log?.call('$host DoH A unavailable; using built-in IPs');
+        }
         return List.of(entry.ips);
-      });
+      }();
       entry.flight = flight;
-      _queue = flight.then<void>((_) {
-        entry.flight = null;
-      });
+      unawaited(
+        flight.then((_) {
+          entry.flight = null;
+        }),
+      );
     }
     if (!first) return List.of(entry.ips);
     try {
@@ -349,6 +515,16 @@ class EchConfigProvider {
     }
   }
 
+  Uint8List? _fallback(String host, _EchCacheEntry entry) {
+    if (entry.good != null) return entry.good!.bytes;
+    if (_rejected.contains(builtInEchConfig)) return null;
+    if (!entry.loggedFallback) {
+      entry.loggedFallback = true;
+      log?.call('$host using built-in config (possibly stale), 71 bytes');
+    }
+    return decodeEchConfig(builtInEchConfig);
+  }
+
   Future<Uint8List?> get(
     String host, {
     required String mode,
@@ -356,73 +532,154 @@ class EchConfigProvider {
     required String manual,
   }) async {
     final key = jsonEncode([mode, dohUrl, manual]);
-    final changed = key != _settingsKey;
-    if (changed) {
+    if (key != _settingsKey) {
       _cache.clear();
+      _manualOverrides.clear();
       _settingsKey = key;
     }
     if (mode == 'off') return null;
     if (mode == 'manual') {
-      final bytes = decodeEchConfig(manual);
-      if (bytes == null) log?.call('invalid manual config; fallback');
-      if (bytes != null && changed) {
-        log?.call('config loaded from manual input, ${bytes.length} bytes');
+      final bytes = _manualOverrides[host] ?? decodeEchConfig(manual);
+      if (bytes == null) {
+        log?.call('invalid manual config; fallback');
+        return null;
       }
-      return bytes;
-    }
-    if (mode != 'doh') return null;
-    final entry = _cache.putIfAbsent(host, _EchCacheEntry.new);
-    if (entry.expires?.isAfter(now()) ?? false) return entry.bytes;
-    final first = !entry.attempted;
-    if (entry.flight == null) {
-      final flight = _queue.then((_) => _fetch(host, dohUrl)).then((bytes) {
-        entry.bytes = bytes;
-        entry.attempted = true;
-        entry.expires = now().add(const Duration(minutes: 20));
-        return bytes;
-      });
-      entry.flight = flight;
-      _queue = flight.then<void>((_) {
-        entry.flight = null;
-      });
-    }
-    if (!first) return null;
-    try {
-      return await entry.flight!.timeout(firstWait);
-    } on TimeoutException {
-      log?.call('config wait timed out; fallback');
+      if (!_rejected.contains(base64Encode(bytes))) return bytes;
+    } else if (mode != 'doh') {
       return null;
+    }
+    final entry = _entry(host);
+    if (entry.good != null &&
+        entry.good!.fetchedAt.add(const Duration(minutes: 20)).isAfter(now())) {
+      return entry.good!.bytes;
+    }
+    if (entry.flight != null) return _wait(host, entry);
+    if (entry.retryAt?.isAfter(now()) ?? false) return _fallback(host, entry);
+    _refresh(host, dohUrl, entry);
+    // Good cached/persisted configs remain available during the first refresh.
+    // Other callers join that flight rather than downgrading straight to TLS.
+    if (entry.good != null) return entry.good!.bytes;
+    return _wait(host, entry);
+  }
+
+  Future<Uint8List?> _wait(String host, _EchCacheEntry entry) async {
+    try {
+      return await entry.flight!.timeout(firstWait) ?? _fallback(host, entry);
+    } on TimeoutException {
+      log?.call('$host config wait timed out; retaining last resort ECH');
+      return _fallback(host, entry);
     }
   }
 
-  Future<Uint8List?> _fetch(String host, String endpoint) async {
-    try {
-      final uri = Uri.parse(endpoint);
-      if (!uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
-        throw const FormatException('Invalid DoH URL');
-      }
-      for (final name in [host, 'cloudflare-ech.com']) {
-        final data = await fetchJson(
-          uri.replace(
-            queryParameters: {
-              ...uri.queryParameters,
-              'name': name,
-              'type': '65',
-            },
-          ),
-        ).timeout(const Duration(seconds: 4));
-        final bytes = parseDohEchConfig(data);
-        if (bytes != null) {
+  Future<Uint8List?> _refresh(
+    String host,
+    String dohUrl,
+    _EchCacheEntry entry,
+  ) {
+    final generation = entry.generation;
+    final flight = () async {
+      for (final endpoint in _sources(dohUrl)) {
+        for (final name in [host, 'cloudflare-ech.com']) {
+          if (!identical(_cache[host], entry) || generation != entry.generation) {
+            return null;
+          }
+          Uint8List? bytes;
+          try {
+            bytes = parseDohEchConfig(await _query(endpoint, name, 65));
+          } catch (_) {
+            continue;
+          }
+          if (!identical(_cache[host], entry) || generation != entry.generation) {
+            return null;
+          }
+          if (bytes == null || _rejected.contains(base64Encode(bytes))) {
+            log?.call(
+              'DoH ${endpoint.url} ${endpoint.format} $name no usable ECH config',
+            );
+            continue;
+          }
+          _accept(host, bytes, shared: name == 'cloudflare-ech.com');
           log?.call(
-            'config fetched from $endpoint ($name), ${bytes.length} bytes',
+            'config fetched from ${endpoint.url} ${endpoint.format} ($name), ${bytes.length} bytes',
           );
           return bytes;
         }
       }
-      log?.call('no ECH config for $host; fallback');
-    } catch (e) {
-      log?.call('config fetch failed: $e; fallback');
+      if (identical(_cache[host], entry) && generation == entry.generation) {
+        entry.failures++;
+        final seconds = (5 * (1 << (entry.failures - 1).clamp(0, 4))).clamp(
+          5,
+          60,
+        );
+        entry.retryAt = now().add(Duration(seconds: seconds));
+        log?.call('$host config fetch failed; retry in $seconds seconds');
+      }
+      return null;
+    }();
+    entry.flight = flight;
+    unawaited(
+      flight.then((_) {
+        if (identical(entry.flight, flight)) entry.flight = null;
+      }),
+    );
+    return flight;
+  }
+
+  void _accept(String host, Uint8List bytes, {bool shared = false}) {
+    final config = EchStoredConfig(Uint8List.fromList(bytes), now());
+    final entry = _entry(host);
+    entry.good = config;
+    entry.retryAt = null;
+    entry.failures = 0;
+    entry.loggedFallback = false;
+    _stored[host] = config;
+    if (shared) _stored['cloudflare-ech.com'] = config;
+    _save();
+  }
+
+  void invalidate(String host, Uint8List rejected) {
+    _load();
+    final encoded = base64Encode(rejected);
+    if (!_rejected.add(encoded)) return;
+    _stored.removeWhere((_, config) => base64Encode(config.bytes) == encoded);
+    for (final item in _cache.entries) {
+      if ((item.key == host && item.value.good == null) ||
+          (item.value.good != null &&
+              base64Encode(item.value.good!.bytes) == encoded)) {
+        item.value.generation++;
+        item.value.good = null;
+        item.value.retryAt = null;
+        item.value.flight = null;
+        item.value.failures = 0;
+      }
     }
-    return null;
+    _manualOverrides.remove(host);
+    _save();
+    log?.call('$host rejected config invalidated (including persistence)');
+  }
+
+  Future<Uint8List?> recover(
+    String host,
+    Uint8List rejected, {
+    Uint8List? retryConfigs,
+    required String dohUrl,
+    bool manual = false,
+  }) async {
+    invalidate(host, rejected);
+    final retry = retryConfigs == null
+        ? null
+        : decodeEchConfig(base64Encode(retryConfigs));
+    if (retry != null && !_rejected.contains(base64Encode(retry))) {
+      _accept(host, retry);
+      if (manual) _manualOverrides[host] = retry;
+      log?.call('$host using server ECH retry config, ${retry.length} bytes');
+      return retry;
+    }
+    final entry = _entry(host);
+    if (entry.good != null) return entry.good!.bytes;
+    if (entry.flight == null) _refresh(host, dohUrl, entry);
+    final bytes = await _wait(host, entry);
+    if (manual && bytes != null) _manualOverrides[host] = bytes;
+    return bytes;
   }
 }

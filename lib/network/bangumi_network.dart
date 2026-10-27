@@ -17,6 +17,39 @@ void _echLog(String message) => Log.info('Network', '[ECH] $message');
 class BangumiNetwork {
   static final backoff = EchBackoff();
   static final provider = EchConfigProvider(
+    fetchWire: (uri) async {
+      final dio = AppDio();
+      dio.httpClientAdapter = RHttpAdapter(
+        receiveTimeout: const Duration(seconds: 4),
+      );
+      try {
+        return (await dio.get<List<int>>(
+              uri.toString(),
+              options: Options(
+                responseType: ResponseType.bytes,
+                headers: {
+                  'Accept': 'application/dns-message',
+                  'cache-time': 'no',
+                },
+                extra: {'connectTimeout': const Duration(seconds: 4)},
+              ),
+            )).data ??
+            <int>[];
+      } finally {
+        dio.close();
+      }
+    },
+    readPersisted: () => appdata.implicitData['bangumiEchConfigs'],
+    writePersisted: (data) {
+      appdata.implicitData['bangumiEchConfigs'] = data;
+      appdata.writeImplicitData();
+    },
+    isTransportError: (error) =>
+        error is TimeoutException ||
+        (error is DioException &&
+            error.response == null &&
+            error.error is! FormatException &&
+            error.type != DioExceptionType.cancel),
     fetchJson: (uri) async {
       final dio = AppDio(); // Never recurse into the ECH adapter for DoH.
       dio.httpClientAdapter = RHttpAdapter(
@@ -26,6 +59,10 @@ class BangumiNetwork {
         return (await dio.get<Object?>(
           uri.toString(),
           options: Options(
+            headers: {
+              'Accept': 'application/dns-json, application/json',
+              'cache-time': 'no',
+            },
             receiveTimeout: const Duration(seconds: 4),
             extra: {'connectTimeout': const Duration(seconds: 4)},
           ),
@@ -410,7 +447,11 @@ class BangumiAdapter implements HttpClientAdapter {
     Object? echError;
     StackTrace? echStack;
     _EchClient? failed;
-    for (var attempt = 1; attempt <= 2; attempt++) {
+    var config = bytes;
+    var retriedConnection = false, retriedRejection = false;
+    var echAttempts = 0;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      echAttempts = attempt;
       _EchClient? slot;
       var beforeSend = true;
       try {
@@ -422,7 +463,7 @@ class BangumiAdapter implements HttpClientAdapter {
         }
         slot = await BangumiNetwork._client(
           host,
-          bytes,
+          config,
           addresses,
           failed: failed,
         );
@@ -503,6 +544,33 @@ class BangumiAdapter implements HttpClientAdapter {
           error: e,
         );
         options.extra['bangumiEchError'] = e.toString();
+        if (e is rhttp.RhttpEchRejectedException &&
+            !isCancelled &&
+            !hasResponse) {
+          BangumiNetwork._discard(host);
+          if (!retriedRejection && attempt < 3) {
+            retriedRejection = true;
+            final fresh = await BangumiNetwork.provider.recover(
+              host,
+              config,
+              retryConfigs: e.retryConfigList,
+              dohUrl:
+                  appdata.settings['bangumiEchDohUrl'] as String? ??
+                  'https://dns.alidns.com/resolve',
+              manual: appdata.settings['bangumiEchMode'] == 'manual',
+            );
+            if (fresh != null) {
+              config = fresh;
+              failed = null;
+              continue;
+            }
+          } else {
+            BangumiNetwork.provider.invalidate(host, config);
+          }
+          // A rejection precedes HTTP bytes even for writes, but repeated
+          // rejection must not loop indefinitely or reuse the rejected list.
+          break;
+        }
         if (!connectionFailure ||
             !canReplayEchRequest(
               method: options.method,
@@ -512,6 +580,8 @@ class BangumiAdapter implements HttpClientAdapter {
             )) {
           rethrow;
         }
+        if (retriedConnection || attempt == 3) break;
+        retriedConnection = true;
         failed = slot;
       }
     }
@@ -535,13 +605,19 @@ class BangumiAdapter implements HttpClientAdapter {
         ).fetch(options, replay(), cancelFuture);
       },
       onFailure: (error) {
-        BangumiNetwork._outcome(host, [], 3, false, error: error);
+        BangumiNetwork._outcome(host, [], echAttempts + 1, false, error: error);
         _echLog('$host fallback also failed; keeping ECH enabled');
       },
     );
     options.extra.remove('bangumiEchError');
     BangumiNetwork._discard(host);
-    BangumiNetwork._outcome(host, [], 3, false, response: response);
+    BangumiNetwork._outcome(
+      host,
+      [],
+      echAttempts + 1,
+      false,
+      response: response,
+    );
     _echLog('$host fallback succeeded; ECH backoff for 10 minutes');
     return response;
   }
