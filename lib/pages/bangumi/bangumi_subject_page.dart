@@ -88,7 +88,34 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   final scrollController = ScrollController();
   final coverHero = Object();
   bool showAppbarTitle = false, showFAB = false;
-  bool showDescription = false, showAllEpisodes = false;
+  bool showAllEpisodes = false;
+  ColorScheme? _coverTint;
+  (ImageProvider, Brightness)? _tintKey;
+
+  void _updateCoverTint(Brightness brightness) {
+    final image = subject?.image ?? '';
+    if (image.isEmpty) {
+      _tintKey = null;
+      _coverTint = null;
+      return;
+    }
+    final key = (CachedImageProvider(image), brightness);
+    if (_tintKey == key) {
+      return;
+    }
+    _tintKey = key;
+    _coverTint = null;
+    ColorScheme.fromImageProvider(provider: key.$1, brightness: brightness)
+        .then((colors) {
+          if (mounted && _tintKey == key) {
+            setState(() => _coverTint = colors);
+          }
+        })
+        .catchError((Object error) {
+          // An unavailable cover leaves the application palette in place.
+        });
+  }
+
   late bool reverseEpisodes = appdata.settings['reverseChapterOrder'] ?? false;
   BangumiCollection? collection;
   String? collectionError, collectionToken;
@@ -445,35 +472,38 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     };
   }
 
-  Widget resultTile(Comic comic, VoidCallback onTap) => ListTile(
-    selected: current?.sourceKey == comic.sourceKey && current?.id == comic.id,
-    leading: comic.cover.isEmpty
-        ? const Icon(Icons.movie_outlined)
-        : SizedBox(
-            width: 40,
-            height: 56,
-            child: AnimatedImage(
-              image: CachedImageProvider(
-                comic.cover,
-                sourceKey: comic.sourceKey,
-                cid: comic.id,
-              ),
+  Widget resultTile(Comic comic, VoidCallback onTap) => Builder(
+    builder: (context) => ListTile(
+      selected:
+          current?.sourceKey == comic.sourceKey && current?.id == comic.id,
+      leading: comic.cover.isEmpty
+          ? const Icon(Icons.movie_outlined)
+          : SizedBox(
               width: 40,
               height: 56,
+              child: AnimatedImage(
+                image: CachedImageProvider(
+                  comic.cover,
+                  sourceKey: comic.sourceKey,
+                  cid: comic.id,
+                ),
+                width: 40,
+                height: 56,
+              ),
             ),
-          ),
-    title: Text(comic.title),
-    trailing: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: BangumiTitleMatch.match(allNames, comic.title).matches
-            ? context.colorScheme.primaryContainer
-            : context.colorScheme.surfaceContainerLow,
+      title: Text(comic.title),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: BangumiTitleMatch.match(allNames, comic.title).matches
+              ? context.colorScheme.primaryContainer
+              : context.colorScheme.surfaceContainerLow,
+        ),
+        child: Text(matchLabel(comic), style: ts.s12),
       ),
-      child: Text(matchLabel(comic), style: ts.s12),
+      onTap: onTap,
     ),
-    onTap: onTap,
   );
 
   Future<void> searchAlias(_SourceResult row) async {
@@ -672,7 +702,45 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
 
   @override
   Widget build(BuildContext context) {
+    _updateCoverTint(Theme.of(context).brightness);
+    return Theme(
+      data: posterTheme(Theme.of(context), _coverTint),
+      child: Builder(builder: _buildPage),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     var subject = this.subject;
+    if (subject == null && loading) {
+      final preview = widget.preview;
+      return Scaffold(
+        body: DetailsLoadingView(
+          cover: preview != null && preview.image.isNotEmpty
+              ? CachedImageProvider(preview.image)
+              : null,
+          title: preview?.displayName,
+        ),
+      );
+    }
+    final appbarTitle = AnimatedOpacity(
+      opacity: showAppbarTitle ? 1 : 0,
+      duration: const Duration(milliseconds: 200),
+      child: Text(subject?.displayName ?? 'Bangumi'),
+    );
+    final appbarActions = [
+      IconButton(
+        icon: const Icon(Icons.open_in_new),
+        tooltip: 'Open in Bangumi'.tl,
+        onPressed: () =>
+            launchUrlString('https://bgm.tv/subject/${widget.subjectId}'),
+      ),
+      if (subject != null)
+        IconButton(
+          icon: const Icon(Icons.more_horiz),
+          tooltip: 'More'.tl,
+          onPressed: showMoreActions,
+        ),
+    ];
     return Scaffold(
       floatingActionButton: showFAB
           ? FloatingActionButton(
@@ -684,129 +752,123 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               child: const Icon(Icons.arrow_upward),
             )
           : null,
-      body: SmoothCustomScrollView(
-        controller: scrollController,
-        slivers: [
-          SliverAppbar(
-            title: AnimatedOpacity(
-              opacity: showAppbarTitle ? 1 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: Text(subject?.displayName ?? 'Bangumi'),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.open_in_new),
-                tooltip: 'Open in Bangumi'.tl,
-                onPressed: () => launchUrlString(
-                  'https://bgm.tv/subject/${widget.subjectId}',
-                ),
-              ),
-              if (subject != null)
-                IconButton(
-                  icon: const Icon(Icons.more_horiz),
-                  tooltip: 'More'.tl,
-                  onPressed: showMoreActions,
-                ),
-            ],
-          ),
-          if (loading)
-            const SliverToBoxAdapter(child: LinearProgressIndicator()),
-          if (error != null)
-            SliverToBoxAdapter(
-              child: ListTile(
-                title: Text(error!),
-                trailing: TextButton(onPressed: load, child: Text('Retry'.tl)),
-              ),
-            ),
-          if (subject != null) ...[
-            const SliverPadding(padding: EdgeInsets.only(top: 8)),
-            buildTitle(subject),
-            buildActions(),
-            if (collectionError != null)
-              SliverToBoxAdapter(
-                child: ListTile(
-                  title: Text(collectionError!),
-                  trailing: TextButton(
-                    onPressed: loadCollection,
-                    child: Text('Retry'.tl),
+      body: Stack(
+        children: [
+          SmoothCustomScrollView(
+            controller: scrollController,
+            slivers: [
+              if (subject == null)
+                SliverAppbar(title: appbarTitle, actions: appbarActions),
+              if (subject != null) buildTitle(subject, context),
+              if (error != null)
+                SliverToBoxAdapter(
+                  child: ListTile(
+                    title: Text(error!),
+                    trailing: TextButton(
+                      onPressed: load,
+                      child: Text('Retry'.tl),
+                    ),
                   ),
                 ),
-              ),
-            buildDescription(subject),
-            buildInfo(subject),
-            buildEpisodes(),
-          ],
-          buildSources(),
-          SliverPadding(
-            padding: EdgeInsets.only(bottom: context.padding.bottom + 80),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget buildTitle(BangumiSubject subject) {
-    return SliverLazyToBoxAdapter(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(width: 16),
-          GestureDetector(
-            onTap: subject.image.isEmpty ? null : viewCover,
-            child: Hero(
-              tag: coverHero,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: context.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: context.colorScheme.outlineVariant,
-                      blurRadius: 1,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                height: 144,
-                width: 144 * 0.72,
-                clipBehavior: Clip.antiAlias,
-                child: subject.image.isEmpty
-                    ? const SizedBox()
-                    : AnimatedImage(
-                        image: CachedImageProvider(subject.image),
-                        width: double.infinity,
-                        height: double.infinity,
+              if (subject != null) ...[
+                buildActions(context),
+                if (collectionError != null)
+                  SliverToBoxAdapter(
+                    child: ListTile(
+                      title: Text(collectionError!),
+                      trailing: TextButton(
+                        onPressed: loadCollection,
+                        child: Text('Retry'.tl),
                       ),
+                    ),
+                  ),
+                if (loading)
+                  const SliverToBoxAdapter(child: DetailsLoadingIndicator())
+                else ...[
+                  buildDescription(subject),
+                  buildInfo(subject, context),
+                  buildEpisodes(),
+                ],
+              ],
+              if (!loading) buildSources(),
+              SliverPadding(
+                padding: EdgeInsets.only(bottom: context.padding.bottom + 80),
+              ),
+            ],
+          ),
+          if (subject != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: FloatingDetailsAppBar(
+                title: appbarTitle,
+                actions: appbarActions,
+                solid: showAppbarTitle,
               ),
             ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SelectableText(subject.displayName, style: ts.s18),
-                if (subject.nameCn.isNotEmpty && subject.name != subject.nameCn)
-                  SelectableText(
-                    subject.name,
-                    style: ts.s14,
-                  ).paddingVertical(4),
-                Text('Bangumi', style: ts.s12),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
         ],
       ),
     );
   }
 
-  Widget buildActions() {
+  Widget buildTitle(BangumiSubject subject, BuildContext context) {
+    return SliverLazyToBoxAdapter(
+      child: PosterHeader(
+        topInset: MediaQuery.paddingOf(context).top + 56,
+        backdrop: subject.image.isEmpty
+            ? null
+            : CachedImageProvider(subject.image),
+        cover: GestureDetector(
+          onTap: subject.image.isEmpty ? null : viewCover,
+          child: Hero(
+            tag: coverHero,
+            child: ColoredBox(
+              color: context.colorScheme.primaryContainer,
+              child: subject.image.isEmpty
+                  ? const SizedBox()
+                  : AnimatedImage(
+                      image: CachedImageProvider(subject.image),
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+            ),
+          ),
+        ),
+        title: SelectableText(
+          subject.displayName,
+          style: ts.s20.copyWith(fontWeight: FontWeight.w600),
+        ),
+        details: [
+          if (subject.nameCn.isNotEmpty && subject.name != subject.nameCn)
+            SelectableText(
+              subject.name,
+              style: ts.s14.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              const AppBadge('Bangumi', highlighted: true),
+              if (subject.date.isNotEmpty) AppBadge(subject.date),
+              if (subject.score > 0)
+                AppBadge('${'Score'.tl}: ${subject.score.toStringAsFixed(1)}'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildActions(BuildContext context) {
     var subject = this.subject!;
     var history = this.history;
     var mobile = context.width < changePoint;
     var progress = manager.localProgress(widget.subjectId);
     var hasHistory = progress.episode > 0;
+    final playLoading = playing || (!canPlay && sources.any((s) => s.loading));
     var playLabel = hasHistory
         ? '${'Continue'.tl} \u00b7 ${'Episode @ep'.tlParams({'ep': progress.episode})}'
         : 'Play'.tl;
@@ -818,36 +880,32 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
               if (hasHistory && !mobile)
-                _SubjectActionButton(
+                ActionPill(
                   icon: const Icon(Icons.play_arrow),
                   text: playLabel,
                   onPressed: canPlay ? continueWatching : pickSource,
-                  isLoading: playing,
-                  iconColor: context.useTextColor(Colors.yellow),
+                  isLoading: playLoading,
                 ),
               if (!mobile || hasHistory)
-                _SubjectActionButton(
+                ActionPill(
                   icon: const Icon(Icons.play_circle_outline),
                   text: 'Play'.tl,
                   onPressed: canPlay ? playFirst : pickSource,
-                  isLoading: playing,
-                  iconColor: context.useTextColor(Colors.orange),
+                  isLoading: playLoading,
                 ),
-              _SubjectActionButton(
+              ActionPill(
                 icon: const Icon(Icons.bookmark_outline_outlined),
                 activeIcon: const Icon(Icons.bookmark),
                 isActive: collection != null,
                 text: 'Bangumi collection and progress'.tl,
                 onPressed: openCollection,
-                iconColor: context.useTextColor(Colors.purple),
               ),
-              _SubjectActionButton(
+              ActionPill(
                 icon: const Icon(Icons.comment),
                 text: 'Comments'.tl,
                 onPressed: showComments,
-                iconColor: context.useTextColor(Colors.green),
               ),
-              _SubjectActionButton(
+              ActionPill(
                 icon: const Icon(Icons.live_tv_outlined),
                 activeIcon: const Icon(Icons.connected_tv),
                 isActive: current != null,
@@ -855,14 +913,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                     ComicSource.find(current?.sourceKey ?? '')?.name ??
                     'Playback sources'.tl,
                 onPressed: pickSource,
-                iconColor: context.useTextColor(Colors.pink),
               ),
-              _SubjectActionButton(
+              ActionPill(
                 icon: const Icon(Icons.share),
                 text: 'Share'.tl,
                 onPressed: () =>
                     Share.shareText('${subject.displayName}\n${subject.url}'),
-                iconColor: context.useTextColor(Colors.blue),
               ),
             ],
           ).fixHeight(48),
@@ -871,6 +927,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               children: [
                 Expanded(
                   child: FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      fixedSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
+                    ),
                     onPressed: pickSource,
                     child: Text('Playback sources'.tl),
                   ),
@@ -878,37 +938,47 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: FilledButton(
-                    onPressed: canPlay ? continueWatching : null,
-                    child: Text(
-                      playLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    style: FilledButton.styleFrom(
+                      fixedSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
                     ),
+                    onPressed: playLoading || !canPlay
+                        ? null
+                        : continueWatching,
+                    child: playLoading
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: context.colorScheme.onPrimary,
+                            ),
+                          )
+                        : Text(
+                            playLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
                 ),
               ],
             ).paddingHorizontal(16).paddingVertical(8),
           if (history != null)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(24),
-              ),
+            AppCard(
+              onTap: canPlay ? continueWatching : null,
+              padding: const EdgeInsets.all(12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.history, color: context.useTextColor(Colors.teal)),
+                  const AppIconBox(Icons.history, size: 36),
                   const SizedBox(width: 8),
-                  Flexible(
+                  Expanded(
                     child: Text('${'Last Watched'.tl}: ${history.description}'),
                   ),
-                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right),
                 ],
               ),
             ).toAlign(Alignment.centerLeft),
-          if (playing) const LinearProgressIndicator(),
           if (playError != null)
             Padding(
               padding: const EdgeInsets.all(16),
@@ -923,9 +993,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               icon: const Icon(Icons.swap_horiz),
               label: Text('Switch source'.tl),
             ),
-          const Divider(),
         ],
-      ).paddingTop(16),
+      ).paddingTop(4),
     );
   }
 
@@ -934,78 +1003,24 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
     return SliverLazyToBoxAdapter(
-      child: Column(
-        children: [
-          ListTile(title: Text('Description'.tl)),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              var painter = TextPainter(
-                text: TextSpan(
-                  text: subject.summary,
-                  style: DefaultTextStyle.of(context).style,
-                ),
-                textDirection: Directionality.of(context),
-                textScaler: MediaQuery.textScalerOf(context),
-                maxLines: 6,
-              )..layout(maxWidth: constraints.maxWidth);
-              var long = painter.didExceedMaxLines;
-              painter.dispose();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectableText(
-                    subject.summary,
-                    maxLines: showDescription ? null : 6,
-                  ).fixWidth(double.infinity),
-                  if (long)
-                    TextButton.icon(
-                      onPressed: () =>
-                          setState(() => showDescription = !showDescription),
-                      icon: Icon(
-                        showDescription
-                            ? Icons.arrow_drop_up
-                            : Icons.arrow_drop_down,
-                      ),
-                      label: Text(
-                        (showDescription ? 'Show less' : 'Show all').tl,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ).paddingHorizontal(16),
-          const SizedBox(height: 16),
-          const Divider(),
-        ],
+      child: SectionCard(
+        icon: Icons.notes,
+        title: 'Description'.tl,
+        body: DescriptionBody(text: subject.summary),
       ),
     );
   }
 
-  Widget buildInfo(BangumiSubject subject) {
+  Widget buildInfo(BangumiSubject subject, BuildContext context) {
     var tags = List<BangumiTag>.of(subject.tags)
       ..sort((a, b) {
         var count = b.count.compareTo(a.count);
         return count != 0 ? count : a.name.compareTo(b.name);
       });
-    var category = 0;
-    Widget tag(String text, {bool title = false, VoidCallback? onTap}) {
-      var radius = BorderRadius.circular(12);
-      const colors = [
-        Colors.blue,
-        Colors.cyan,
-        Colors.red,
-        Colors.pink,
-        Colors.purple,
-        Colors.indigo,
-        Colors.teal,
-        Colors.green,
-        Colors.lime,
-        Colors.yellow,
-      ];
+    Widget tag(String text, {VoidCallback? onTap}) {
+      var radius = BorderRadius.circular(10);
       return Material(
-        color: title
-            ? context.useBackgroundColor(colors[(category++) % colors.length])
-            : context.colorScheme.surfaceContainerLow,
+        color: context.colorScheme.surfaceContainerHigh,
         borderRadius: radius,
         child: InkWell(
           borderRadius: radius,
@@ -1027,33 +1042,40 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 ]),
           child: Text(
             text,
-          ).padding(const EdgeInsets.symmetric(horizontal: 16, vertical: 6)),
+            style: ts.s14,
+          ).padding(const EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
         ),
       );
     }
 
-    Widget row(String label, String value) => Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [tag(label, title: true), tag(value)],
-    ).paddingHorizontal(16).paddingBottom(8);
+    (String?, Widget) infoRow(String label, List<Widget> values) =>
+        (label, Wrap(spacing: 8, runSpacing: 8, children: values));
+    (String?, Widget) row(String label, String value) =>
+        infoRow(label, [tag(value)]);
     return SliverLazyToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(title: Text('Information'.tl)),
-          if (subject.platform.isNotEmpty) row('Platform'.tl, subject.platform),
-          if (subject.date.isNotEmpty) row('Air date'.tl, subject.date),
-          if (subject.eps > 0) row('Episodes'.tl, '${subject.eps}'),
-          if (subject.score > 0)
-            row('Score'.tl, subject.score.toStringAsFixed(1)),
-          if (subject.rank > 0) row('Ranking'.tl, '#${subject.rank}'),
-          if (tags.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                tag('Tags'.tl, title: true),
+      child: SectionCard(
+        icon: Icons.info_outline,
+        title: 'Information'.tl,
+        body: DetailInformation(
+          rows: [
+            if (subject.score > 0)
+              (
+                null,
+                Row(
+                  children: [
+                    StarRating(value: subject.score / 2, size: 24),
+                    const SizedBox(width: 8),
+                    Text(subject.score.toStringAsFixed(1)),
+                  ],
+                ),
+              ),
+            if (subject.platform.isNotEmpty)
+              row('Platform'.tl, subject.platform),
+            if (subject.date.isNotEmpty) row('Air date'.tl, subject.date),
+            if (subject.eps > 0) row('Episodes'.tl, '${subject.eps}'),
+            if (subject.rank > 0) row('Ranking'.tl, '#${subject.rank}'),
+            if (tags.isNotEmpty)
+              infoRow('Tags'.tl, [
                 for (var value in tags.take(10))
                   tag(
                     value.name,
@@ -1061,11 +1083,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       () => BangumiSearchPage(keyword: value.name),
                     ),
                   ),
-              ],
-            ).paddingHorizontal(16).paddingBottom(8),
-          const SizedBox(height: 12),
-          const Divider(),
-        ],
+              ]),
+          ],
+        ),
       ),
     );
   }
@@ -1081,27 +1101,56 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         var length = showAllEpisodes
             ? episodes.length
             : math.min(episodes.length, columns * 8);
-        return SliverMainAxisGroup(
-          slivers: [
-            SliverToBoxAdapter(
-              child: ListTile(
-                title: Text('Episodes'.tl),
-                trailing: IconButton(
-                  tooltip: 'Order'.tl,
-                  icon: Icon(
-                    reverseEpisodes
-                        ? Icons.vertical_align_top
-                        : Icons.vertical_align_bottom_outlined,
-                  ),
-                  onPressed: () =>
-                      setState(() => reverseEpisodes = !reverseEpisodes),
-                ),
+        return SliverSectionCard(
+          icon: Icons.format_list_numbered,
+          title: 'Episodes'.tl,
+          collapseKey: 'chapters',
+          leadingActions: [
+            IconButton(
+              tooltip: 'Order'.tl,
+              iconSize: 20,
+              color: context.colorScheme.onSurfaceVariant,
+              visualDensity: VisualDensity.compact,
+              icon: Transform.flip(
+                flipY: reverseEpisodes,
+                child: const Icon(Icons.sort),
               ),
+              onPressed: () =>
+                  setState(() => reverseEpisodes = !reverseEpisodes),
             ),
+          ],
+          footer: length < episodes.length
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 8),
+                  child: Center(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: context.colorScheme.primary,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => setState(() => showAllEpisodes = true),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text("${"Show all".tl} (${episodes.length})"),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : null,
+          slivers: [
             if (episodes.isEmpty && !loading && error == null)
               SliverToBoxAdapter(child: ListTile(title: Text('No results'.tl))),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: EdgeInsets.zero,
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedHeight(
                   maxCrossAxisExtent: 250,
@@ -1118,17 +1167,19 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       ? episode.name
                       : episode.nameCn;
                   var title = 'Episode @ep'.tlParams({'ep': episode.number});
-                  if (name.isNotEmpty) title += ' \u00b7 $name';
+                  if (name.isNotEmpty) {
+                    title += ' \u00b7 $name';
+                  }
                   return Padding(
                     padding: const EdgeInsets.all(4),
                     child: Material(
                       color: selected
                           ? context.colorScheme.primaryContainer
                           : context.colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         onTap: canPlay ? () => play(episode) : null,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Tooltip(
@@ -1156,18 +1207,6 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 }, childCount: length),
               ),
             ),
-            if (length < episodes.length)
-              SliverToBoxAdapter(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.arrow_drop_down),
-                    onPressed: () => setState(() => showAllEpisodes = true),
-                    label: Text('${'Show all'.tl} (${episodes.length})'),
-                  ).paddingTop(12),
-                ),
-              ),
-            const SliverToBoxAdapter(child: Divider()),
           ],
         );
       },
@@ -1231,31 +1270,50 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   List<Widget> sourceList(void Function(Comic) onPick) {
     var unmatched = sources.where((row) => row.chosen == null && !row.loading);
     return [
-      ListTile(
-        title: Text('Playback sources'.tl),
-        trailing: Text(
-          '${sources.where((row) => row.chosen != null).length}/${sources.length}',
-          style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
+      SectionCard(
+        icon: Icons.live_tv_outlined,
+        title: 'Playback sources'.tl,
+        bodyPadding: const EdgeInsets.symmetric(vertical: 8),
+        actions: [
+          Text(
+            '${sources.where((row) => row.chosen != null).length}/${sources.length}',
+            style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(width: 8),
+        ],
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (sources.isEmpty)
+              AppCard(
+                child: ListTile(
+                  title: Text(
+                    (loading ? 'Loading' : 'Please add some sources').tl,
+                  ),
+                ),
+              ),
+            for (var row in sources.where((row) => row.chosen != null))
+              sourceCard(row, onPick),
+            for (var row in sources.where(
+              (row) => row.chosen == null && row.loading,
+            ))
+              sourceCard(row, onPick),
+            if (unmatched.isNotEmpty)
+              _UnmatchedSources(
+                expanded: unmatchedExpanded,
+                count: unmatched.length,
+                onToggle: () {
+                  setState(() => unmatchedExpanded = !unmatchedExpanded);
+                  sourceUpdates.value++;
+                },
+                children: () => [
+                  for (var row in unmatched) sourceCard(row, onPick),
+                ],
+              ),
+          ],
         ),
       ),
-      if (sources.isEmpty)
-        ListTile(
-          title: Text((loading ? 'Loading' : 'Please add some sources').tl),
-        ),
-      for (var row in sources.where((row) => row.chosen != null))
-        sourceCard(row, onPick),
-      for (var row in sources.where((row) => row.chosen == null && row.loading))
-        sourceCard(row, onPick),
-      if (unmatched.isNotEmpty)
-        _UnmatchedSources(
-          expanded: unmatchedExpanded,
-          count: unmatched.length,
-          onToggle: () {
-            setState(() => unmatchedExpanded = !unmatchedExpanded);
-            sourceUpdates.value++;
-          },
-          children: () => [for (var row in unmatched) sourceCard(row, onPick)],
-        ),
     ];
   }
 
@@ -1427,70 +1485,4 @@ class _UnmatchedSourcesState extends State<_UnmatchedSources> {
       ),
     ],
   );
-}
-
-class _SubjectActionButton extends StatelessWidget {
-  const _SubjectActionButton({
-    required this.icon,
-    required this.text,
-    required this.onPressed,
-    this.activeIcon,
-    this.isActive,
-    this.isLoading,
-    this.iconColor,
-  });
-
-  final Widget icon;
-
-  final Widget? activeIcon;
-
-  final bool? isActive;
-
-  final String text;
-
-  final void Function() onPressed;
-
-  final bool? isLoading;
-
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: context.colorScheme.outlineVariant,
-          width: 0.6,
-        ),
-      ),
-      child: InkWell(
-        onTap: () {
-          if (!(isLoading ?? false)) {
-            onPressed();
-          }
-        },
-        borderRadius: BorderRadius.circular(18),
-        child: IconTheme.merge(
-          data: IconThemeData(size: 20, color: iconColor),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isLoading ?? false)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 1.8),
-                )
-              else
-                (isActive ?? false) ? (activeIcon ?? icon) : icon,
-              const SizedBox(width: 8),
-              Text(text),
-            ],
-          ).paddingHorizontal(16),
-        ),
-      ),
-    );
-  }
 }

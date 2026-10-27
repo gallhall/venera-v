@@ -8,8 +8,19 @@ class AppCard extends StatelessWidget {
     this.highlighted = false,
     this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     this.padding,
-  });
+  }) : _sliver = false;
 
+  /// The same card surface around lazy sliver content.
+  const AppCard.sliver({
+    super.key,
+    required this.child,
+    this.highlighted = false,
+    this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    this.padding = const EdgeInsets.all(8),
+  }) : _sliver = true,
+       onTap = null;
+
+  final bool _sliver;
   final Widget child;
   final VoidCallback? onTap;
   final bool highlighted;
@@ -19,6 +30,28 @@ class AppCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(
+        color: highlighted ? colors.primary : colors.outlineVariant,
+        width: highlighted ? 1.5 : 0.6,
+      ),
+    );
+    if (_sliver) {
+      return SliverPadding(
+        padding: margin,
+        sliver: DecoratedSliver(
+          decoration: ShapeDecoration(
+            color: colors.surfaceContainerLow,
+            shape: shape,
+          ),
+          sliver: SliverPadding(
+            padding: padding ?? EdgeInsets.zero,
+            sliver: child,
+          ),
+        ),
+      );
+    }
     Widget content = padding == null
         ? child
         : Padding(padding: padding!, child: child);
@@ -30,13 +63,7 @@ class AppCard extends StatelessWidget {
       color: colors.surfaceContainerLow,
       margin: margin,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: highlighted ? colors.primary : colors.outlineVariant,
-          width: highlighted ? 1.5 : 0.6,
-        ),
-      ),
+      shape: shape,
       child: content,
     );
   }
@@ -54,13 +81,17 @@ class AppBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: highlighted ? colors.primaryContainer : colors.surfaceContainerHigh,
+        color: highlighted
+            ? colors.primaryContainer
+            : colors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
         style: ts.s12.copyWith(
-          color: highlighted ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+          color: highlighted
+              ? colors.onPrimaryContainer
+              : colors.onSurfaceVariant,
         ),
       ),
     );
@@ -84,7 +115,8 @@ class AppIconBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    final foreground = iconColor ??
+    final foreground =
+        iconColor ??
         (color == null
             ? colors.onSecondaryContainer
             : ThemeData.estimateBrightnessForColor(color!) == Brightness.dark
@@ -118,15 +150,16 @@ class CollapsibleBody extends StatefulWidget {
 
 class _CollapsibleBodyState extends State<CollapsibleBody>
     with SingleTickerProviderStateMixin {
-  late final controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-    value: widget.expanded ? 1 : 0,
-  )..addStatusListener((status) {
-      if (status == AnimationStatus.dismissed) {
-        setState(() {});
-      }
-    });
+  late final controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 200),
+        value: widget.expanded ? 1 : 0,
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.dismissed) {
+          setState(() {});
+        }
+      });
   late final animation = CurvedAnimation(
     parent: controller,
     curve: Curves.easeInOut,
@@ -262,7 +295,9 @@ class OptionRow extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
               color: selected ? colors.primary : colors.onSurfaceVariant,
               size: 20,
             ),
@@ -376,6 +411,784 @@ class AnimatedChevron extends StatelessWidget {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
       child: const Icon(Icons.expand_more),
+    );
+  }
+}
+
+/// A toolbar that floats over a poster until the details scroll underneath it.
+class FloatingDetailsAppBar extends StatelessWidget {
+  const FloatingDetailsAppBar({
+    super.key,
+    required this.title,
+    this.actions,
+    required this.solid,
+  });
+
+  final Widget title;
+  final List<Widget>? actions;
+  final bool solid;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final brightness = Theme.of(context).brightness;
+    final normalStyle = brightness == Brightness.light
+        ? SystemUiOverlayStyle.dark
+        : SystemUiOverlayStyle.light;
+    final overlayStyle = (solid ? normalStyle : SystemUiOverlayStyle.light)
+        .copyWith(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: brightness == Brightness.light
+              ? Brightness.dark
+              : Brightness.light,
+        );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: solid ? 1 : 0),
+        duration: const Duration(milliseconds: 200),
+        builder: (context, value, child) {
+          final foreground = Color.lerp(Colors.white, colors.onSurface, value)!;
+          return SizedBox(
+            height: topPadding + 56,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.25 * (1 - value)),
+                        Colors.black.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
+                ),
+                if (value > 0)
+                  BlurEffect(
+                    blur: 15 * value,
+                    child: ColoredBox(
+                      color: colors.surface.toOpacity(0.86 * value),
+                    ),
+                  ),
+                Material(
+                  type: MaterialType.transparency,
+                  child: IconTheme.merge(
+                    data: IconThemeData(color: foreground),
+                    child: IconButtonTheme(
+                      data: IconButtonThemeData(
+                        style: IconButton.styleFrom(
+                          foregroundColor: foreground,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.only(top: topPadding),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 8),
+                            if (Navigator.of(context).canPop())
+                              IconButton(
+                                tooltip: "Back".tl,
+                                icon: const Icon(Icons.arrow_back),
+                                onPressed: () => Navigator.maybePop(context),
+                              ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: DefaultTextStyle(
+                                style: DefaultTextStyle.of(context).style
+                                    .copyWith(fontSize: 20, color: foreground),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                child: title,
+                              ),
+                            ),
+                            ...?actions,
+                            const SizedBox(width: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A cover and metadata over a softly blurred poster backdrop.
+class PosterHeader extends StatelessWidget {
+  const PosterHeader({
+    super.key,
+    this.backdrop,
+    required this.cover,
+    required this.title,
+    this.details = const [],
+    this.coverHeight = 168,
+    this.topInset = 0,
+  });
+
+  final ImageProvider? backdrop;
+  final Widget cover;
+  final Widget title;
+  final List<Widget> details;
+  final double coverHeight;
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final position = Scrollable.maybeOf(context)?.position;
+    return AnimatedBuilder(
+      animation: position ?? const AlwaysStoppedAnimation<double>(0),
+      builder: (context, child) {
+        final overscroll =
+            position != null &&
+                position.hasPixels &&
+                position.hasContentDimensions
+            ? math.max(0.0, position.minScrollExtent - position.pixels)
+            : 0.0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Keep the backdrop behind the toolbar during a pull past the top.
+            Positioned(
+              top: -overscroll,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ClipRect(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: colors.surface,
+                        child: backdrop == null
+                            ? null
+                            : RepaintBoundary(
+                                child: Opacity(
+                                  opacity: 0.45,
+                                  child: ImageFiltered(
+                                    imageFilter: ui.ImageFilter.blur(
+                                      sigmaX: 24,
+                                      sigmaY: 24,
+                                    ),
+                                    child: Image(
+                                      image: backdrop!,
+                                      fit: BoxFit.cover,
+                                      excludeFromSemantics: true,
+                                      errorBuilder: (context, error, stack) =>
+                                          const SizedBox.shrink(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              colors.surface.withValues(alpha: 0),
+                              colors.surface.withValues(alpha: 0.35),
+                              colors.surface,
+                            ],
+                            stops: const [0, 0.55, 1],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            child!,
+          ],
+        );
+      },
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: coverHeight * 0.72,
+              height: coverHeight,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: cover,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  title,
+                  for (final detail in details) ...[
+                    const SizedBox(height: 6),
+                    detail,
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The poster and floating back button shown while details are loading.
+class DetailsLoadingView extends StatelessWidget {
+  const DetailsLoadingView({
+    super.key,
+    this.cover,
+    this.title,
+    this.coverHeroTag,
+  });
+
+  final ImageProvider? cover;
+  final String? title;
+  final Object? coverHeroTag;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget coverWidget = cover == null
+        ? ColoredBox(color: context.colorScheme.surfaceContainerHigh)
+        : AnimatedImage(
+            image: cover!,
+            width: double.infinity,
+            height: double.infinity,
+            fit: BoxFit.cover,
+          );
+    if (coverHeroTag != null) {
+      coverWidget = Hero(tag: coverHeroTag!, child: coverWidget);
+    }
+    return Stack(
+      children: [
+        Column(
+          children: [
+            PosterHeader(
+              topInset: MediaQuery.paddingOf(context).top + 56,
+              backdrop: cover,
+              cover: coverWidget,
+              title: title == null
+                  ? const SizedBox.shrink()
+                  : Text(
+                      title!,
+                      style: ts.s20.copyWith(fontWeight: FontWeight.w600),
+                    ),
+            ),
+            const DetailsLoadingIndicator(),
+          ],
+        ),
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: FloatingDetailsAppBar(title: SizedBox(), solid: false),
+        ),
+      ],
+    );
+  }
+}
+
+class DetailsLoadingIndicator extends StatelessWidget {
+  const DetailsLoadingIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 48),
+      child: Center(
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      ),
+    );
+  }
+}
+
+/// Applies poster accents while retaining the application's surface palette.
+ThemeData posterTheme(ThemeData theme, ColorScheme? tint) {
+  if (tint == null) {
+    return theme;
+  }
+  final colors = theme.colorScheme;
+  return theme.copyWith(
+    colorScheme: tint.copyWith(
+      surface: colors.surface,
+      surfaceDim: colors.surfaceDim,
+      surfaceBright: colors.surfaceBright,
+      surfaceContainerLowest: colors.surfaceContainerLowest,
+      surfaceContainerLow: colors.surfaceContainerLow,
+      surfaceContainer: colors.surfaceContainer,
+      surfaceContainerHigh: colors.surfaceContainerHigh,
+      surfaceContainerHighest: colors.surfaceContainerHighest,
+      onSurface: colors.onSurface,
+      onSurfaceVariant: colors.onSurfaceVariant,
+    ),
+  );
+}
+
+class ActionPill extends StatelessWidget {
+  const ActionPill({
+    super.key,
+    required this.icon,
+    required this.text,
+    required this.onPressed,
+    this.activeIcon,
+    this.isActive,
+    this.onLongPressed,
+    this.isLoading,
+  });
+
+  final Widget icon;
+  final Widget? activeIcon;
+  final bool? isActive;
+  final String text;
+  final VoidCallback onPressed;
+  final VoidCallback? onLongPressed;
+  final bool? isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final active = isActive ?? false;
+    final foreground = active ? colors.onSecondaryContainer : colors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Material(
+        color: active ? colors.secondaryContainer : colors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: (isLoading ?? false) ? null : onPressed,
+          onLongPress: onLongPressed,
+          borderRadius: BorderRadius.circular(20),
+          child: SizedBox(
+            height: 40,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: IconTheme.merge(
+                data: IconThemeData(size: 20, color: foreground),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isLoading ?? false)
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          color: foreground,
+                        ),
+                      )
+                    else
+                      active ? (activeIcon ?? icon) : icon,
+                    const SizedBox(width: 8),
+                    Text(
+                      text,
+                      style: ts.s14.copyWith(
+                        color: active
+                            ? colors.onSecondaryContainer
+                            : colors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether a detail section is collapsed in the local preferences.
+bool isDetailSectionCollapsed(String key) {
+  final stored = appdata.implicitData['collapsedDetailSections'];
+  return stored is List && stored.contains(key);
+}
+
+void _setDetailSectionCollapsed(String key, bool collapsed) {
+  final stored = appdata.implicitData['collapsedDetailSections'];
+  final keys = stored is List ? stored.whereType<String>().toSet() : <String>{};
+  if (collapsed) {
+    keys.add(key);
+  } else {
+    keys.remove(key);
+  }
+  appdata.implicitData['collapsedDetailSections'] = keys.toList();
+  appdata.writeImplicitData();
+}
+
+class _SectionCardHeader extends StatelessWidget {
+  const _SectionCardHeader({
+    required this.icon,
+    required this.title,
+    required this.actions,
+    required this.leadingActions,
+    required this.expanded,
+    this.onToggle,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> actions;
+  final List<Widget> leadingActions;
+  final bool expanded;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return InkWell(
+      onTap: onToggle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          children: [
+            AppIconBox(
+              icon,
+              size: 40,
+              color: colors.primaryContainer,
+              iconColor: colors.onPrimaryContainer,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  ...leadingActions,
+                ],
+              ),
+            ),
+            ...actions,
+            if (onToggle != null)
+              IconButton(
+                tooltip: (expanded ? 'Collapse' : 'Expand').tl,
+                onPressed: onToggle,
+                icon: AnimatedChevron(expanded: expanded),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SectionCard extends StatefulWidget {
+  const SectionCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.actions = const [],
+    this.leadingActions = const [],
+    this.footer,
+    required this.body,
+    this.bodyPadding = const EdgeInsets.all(16),
+    this.collapseKey,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> actions;
+  final List<Widget> leadingActions;
+  final Widget? footer;
+  final Widget body;
+  final EdgeInsets bodyPadding;
+  final String? collapseKey;
+
+  @override
+  State<SectionCard> createState() => _SectionCardState();
+}
+
+class _SectionCardState extends State<SectionCard> {
+  late bool expanded =
+      widget.collapseKey == null ||
+      !isDetailSectionCollapsed(widget.collapseKey!);
+
+  void toggle() {
+    setState(() => expanded = !expanded);
+    _setDetailSectionCollapsed(widget.collapseKey!, !expanded);
+  }
+
+  @override
+  void didUpdateWidget(covariant SectionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collapseKey != widget.collapseKey) {
+      expanded =
+          widget.collapseKey == null ||
+          !isDetailSectionCollapsed(widget.collapseKey!);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SectionCardHeader(
+            icon: widget.icon,
+            title: widget.title,
+            actions: widget.actions,
+            leadingActions: widget.leadingActions,
+            expanded: expanded,
+            onToggle: widget.collapseKey == null ? null : toggle,
+          ),
+          CollapsibleBody(
+            expanded: expanded,
+            builder: (context) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                Padding(padding: widget.bodyPadding, child: widget.body),
+                if (widget.footer != null) widget.footer!,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SliverSectionCard extends StatefulWidget {
+  const SliverSectionCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.actions = const [],
+    this.leadingActions = const [],
+    this.footer,
+    required this.slivers,
+    this.bodyPadding = const EdgeInsets.all(16),
+    this.collapseKey,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> actions;
+  final List<Widget> leadingActions;
+  final Widget? footer;
+  final List<Widget> slivers;
+  final EdgeInsets bodyPadding;
+  final String? collapseKey;
+
+  @override
+  State<SliverSectionCard> createState() => _SliverSectionCardState();
+}
+
+class _SliverSectionCardState extends State<SliverSectionCard> {
+  late bool expanded =
+      widget.collapseKey == null ||
+      !isDetailSectionCollapsed(widget.collapseKey!);
+
+  void toggle() {
+    setState(() => expanded = !expanded);
+    _setDetailSectionCollapsed(widget.collapseKey!, !expanded);
+  }
+
+  @override
+  void didUpdateWidget(covariant SliverSectionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collapseKey != widget.collapseKey) {
+      expanded =
+          widget.collapseKey == null ||
+          !isDetailSectionCollapsed(widget.collapseKey!);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard.sliver(
+      padding: EdgeInsets.zero,
+      child: SliverMainAxisGroup(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Material(
+              type: MaterialType.transparency,
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
+              child: _SectionCardHeader(
+                icon: widget.icon,
+                title: widget.title,
+                actions: widget.actions,
+                leadingActions: widget.leadingActions,
+                expanded: expanded,
+                onToggle: widget.collapseKey == null ? null : toggle,
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            const SliverToBoxAdapter(
+              child: Divider(height: 1, indent: 16, endIndent: 16),
+            ),
+            SliverPadding(
+              padding: widget.bodyPadding,
+              sliver: SliverMainAxisGroup(slivers: widget.slivers),
+            ),
+            if (widget.footer != null)
+              SliverToBoxAdapter(child: widget.footer!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Aligned plain labels and the existing interactive values of an info card.
+class DetailInformation extends StatelessWidget {
+  const DetailInformation({super.key, required this.rows});
+
+  final List<(String?, Widget)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ts.s14.copyWith(color: context.colorScheme.onSurfaceVariant);
+    final textStyle = DefaultTextStyle.of(context).style.merge(style);
+    var labelWidth = 56.0;
+    for (final row in rows) {
+      if (row.$1 == null) {
+        continue;
+      }
+      final painter = TextPainter(
+        text: TextSpan(text: row.$1, style: textStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.localeOf(context),
+      )..layout();
+      labelWidth = math
+          .max(labelWidth, painter.width)
+          .clamp(56.0, 96.0)
+          .toDouble();
+      painter.dispose();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          if (rows[i].$1 == null)
+            rows[i].$2
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: labelWidth,
+                  child: Text(rows[i].$1!, style: style),
+                ),
+                const SizedBox(width: 16),
+                Expanded(child: rows[i].$2),
+              ],
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class DescriptionBody extends StatefulWidget {
+  const DescriptionBody({super.key, required this.text});
+
+  final String text;
+
+  @override
+  State<DescriptionBody> createState() => _DescriptionBodyState();
+}
+
+class _DescriptionBodyState extends State<DescriptionBody> {
+  bool expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final style = DefaultTextStyle.of(context).style;
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          locale: Localizations.localeOf(context),
+          maxLines: 2,
+        )..layout(maxWidth: constraints.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+        painter.dispose();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (expanded)
+              SelectableText(widget.text, style: style)
+            else
+              Text(
+                widget.text,
+                style: style,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            if (overflows)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.colorScheme.primary,
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => setState(() => expanded = !expanded),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text((expanded ? 'Show less' : 'Show full text').tl),
+                      const SizedBox(width: 4),
+                      Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
