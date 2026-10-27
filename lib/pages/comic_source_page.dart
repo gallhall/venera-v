@@ -136,6 +136,105 @@ class ComicSourcePage extends StatelessWidget {
   }
 }
 
+enum _SourceGroup {
+  comics('comics', 'Comics', Icons.menu_book_outlined),
+  video('video', 'Video', Icons.live_tv_outlined),
+  kazumi('kazumi', 'Kazumi Rules', Icons.movie_filter_outlined);
+
+  const _SourceGroup(this.id, this.title, this.icon);
+
+  final String id;
+  final String title;
+  final IconData icon;
+
+  static _SourceGroup of(ComicSource source) {
+    if (source.isKazumi) {
+      return kazumi;
+    }
+    return source.isVideoSource ? video : comics;
+  }
+}
+
+bool _hasSourceUpdate(ComicSource source) {
+  var version = ComicSourceManager().availableUpdates[source.key];
+  return version != null && ComicSourcePage.isNewer(source, version);
+}
+
+class _SourceGroupHeader extends StatelessWidget {
+  const _SourceGroupHeader({
+    super.key,
+    required this.group,
+    required this.count,
+    required this.collapsed,
+    required this.updateCount,
+    required this.onTap,
+  });
+
+  final _SourceGroup group;
+  final int count;
+  final bool collapsed;
+  final int updateCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        color: context.colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: context.colorScheme.outlineVariant,
+            width: 0.5,
+          ),
+        ),
+        child: ListTile(
+          onTap: onTap,
+          leading: Icon(group.icon, color: context.colorScheme.primary),
+          title: Text(group.title.tl, style: ts.s16),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$count', style: ts.s14),
+              if (collapsed && updateCount > 0) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'New Version'.tl,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$updateCount',
+                      style: ts.s12.copyWith(
+                        color: context.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
+              AnimatedRotation(
+                turns: collapsed ? 0 : 0.5,
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(Icons.expand_more),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Body extends StatefulWidget {
   const _Body();
 
@@ -145,6 +244,34 @@ class _Body extends StatefulWidget {
 
 class _BodyState extends State<_Body> {
   var url = "";
+  final _collapsedGroups = <_SourceGroup>{};
+
+  void _saveCollapsedGroups() {
+    appdata.implicitData['collapsedSourceGroups'] = _SourceGroup.values
+        .where(_collapsedGroups.contains)
+        .map((group) => group.id)
+        .toList();
+    appdata.writeImplicitData();
+  }
+
+  void _toggleGroup(_SourceGroup group) {
+    setState(() {
+      if (!_collapsedGroups.remove(group)) {
+        _collapsedGroups.add(group);
+      }
+    });
+    _saveCollapsedGroups();
+  }
+
+  void _toggleAllGroups(bool collapse) {
+    setState(() {
+      _collapsedGroups.clear();
+      if (collapse) {
+        _collapsedGroups.addAll(_SourceGroup.values);
+      }
+    });
+    _saveCollapsedGroups();
+  }
 
   void updateUI() {
     if (mounted) setState(() {});
@@ -153,6 +280,12 @@ class _BodyState extends State<_Body> {
   @override
   void initState() {
     super.initState();
+    var collapsedGroups = appdata.implicitData['collapsedSourceGroups'];
+    if (collapsedGroups is List) {
+      _collapsedGroups.addAll(
+        _SourceGroup.values.where((group) => collapsedGroups.contains(group.id)),
+      );
+    }
     ComicSourceManager().addListener(updateUI);
     appdata.settings.addListener(updateUI);
   }
@@ -166,6 +299,16 @@ class _BodyState extends State<_Body> {
 
   @override
   Widget build(BuildContext context) {
+    var sources = ComicSource.all();
+    var groups = {
+      for (var group in _SourceGroup.values) group: <ComicSource>[],
+    };
+    for (var source in sources) {
+      groups[_SourceGroup.of(source)]!.add(source);
+    }
+    var anyExpanded = groups.entries.any(
+      (entry) => entry.value.isNotEmpty && !_collapsedGroups.contains(entry.key),
+    );
     return SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
@@ -173,17 +316,45 @@ class _BodyState extends State<_Body> {
         SliverToBoxAdapter(
           child: ListTile(
             title: Text('Installed sources'.tl),
-            trailing: Text('${ComicSource.all().length}', style: ts.s14),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${sources.length}', style: ts.s14),
+                IconButton(
+                  onPressed: sources.isEmpty
+                      ? null
+                      : () => _toggleAllGroups(anyExpanded),
+                  icon: Icon(
+                    anyExpanded ? Icons.unfold_less : Icons.unfold_more,
+                  ),
+                  tooltip: anyExpanded ? 'Collapse all'.tl : 'Expand all'.tl,
+                ),
+              ],
+            ),
           ),
         ),
-        for (var source in ComicSource.all())
-          _SliverComicSource(
-            key: ValueKey(source.key),
-            source: source,
-            edit: edit,
-            update: update,
-            delete: delete,
-          ),
+        for (var group in _SourceGroup.values)
+          if (groups[group]!.isNotEmpty) ...[
+            _SourceGroupHeader(
+              key: ValueKey(group),
+              group: group,
+              count: groups[group]!.length,
+              collapsed: _collapsedGroups.contains(group),
+              updateCount: _collapsedGroups.contains(group)
+                  ? groups[group]!.where(_hasSourceUpdate).length
+                  : 0,
+              onTap: () => _toggleGroup(group),
+            ),
+            if (!_collapsedGroups.contains(group))
+              for (var source in groups[group]!)
+                _SliverComicSource(
+                  key: ValueKey(source.key),
+                  source: source,
+                  edit: edit,
+                  update: update,
+                  delete: delete,
+                ),
+          ],
         SliverPadding(padding: EdgeInsets.only(bottom: context.padding.bottom)),
       ],
     );
