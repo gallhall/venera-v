@@ -428,6 +428,64 @@ void main() {
   });
 
   group('json', () {
+    test(
+      'subject tags preserve names and counts without limiting API data',
+      () {
+        var subject = BangumiSubject.fromJson({
+          'id': 42,
+          'tags': [
+            {'name': ' TV ', 'count': 120},
+            {'name': 'Fantasy', 'count': 30},
+            for (var i = 0; i < 12; i++) {'name': 'tag$i', 'count': i},
+          ],
+        })!;
+        expect(subject.tags.length, 14);
+        expect(subject.tags.first.name, 'TV');
+        expect(subject.tags.first.count, 120);
+        expect(subject.tags[1].name, 'Fantasy');
+        expect(subject.tags[1].count, 30);
+        expect(const BangumiSubject(id: 1, type: 2, name: 'a').tags, isEmpty);
+        expect(BangumiSubject.fromJson({'id': 1})!.tags, isEmpty);
+        expect(
+          BangumiSubject.fromJson({'id': 1, 'tags': 'bad'})!.tags,
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'tag parsing ignores invalid names and tolerates malformed counts',
+      () {
+        var subject = BangumiSubject.fromJson({
+          'id': 42,
+          'tags': [
+            null,
+            'bad',
+            {},
+            {'name': 42},
+            {'name': '  '},
+            {'name': 'missing'},
+            {'name': 'negative', 'count': -3},
+            {'name': 'string', 'count': '5'},
+            {'name': 'fraction', 'count': 3.9},
+            {'name': 'infinite', 'count': double.infinity},
+            {'name': 'nan', 'count': double.nan},
+          ],
+        })!;
+        expect(subject.tags.map((tag) => tag.name), [
+          'missing',
+          'negative',
+          'string',
+          'fraction',
+          'infinite',
+          'nan',
+        ]);
+        expect(subject.tags.map((tag) => tag.count), [0, 0, 0, 3, 0, 0]);
+        expect(BangumiTag.fromJson(null), isNull);
+        expect(BangumiTag.fromJson({'name': ''}), isNull);
+      },
+    );
+
     test('comments include the user, collection status, rating and time', () {
       var comment = BangumiComment.fromJson({
         'id': 54667778,

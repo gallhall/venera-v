@@ -38,6 +38,26 @@ int _int(Object? value) => value is num ? value.toInt() : 0;
 
 String _string(Object? value) => value is String ? value : '';
 
+class BangumiTag {
+  final String name;
+  final int count;
+
+  const BangumiTag({required this.name, this.count = 0});
+
+  static BangumiTag? fromJson(Object? json) {
+    if (json is! Map || json['name'] is! String) return null;
+    var name = (json['name'] as String).trim();
+    if (name.isEmpty) return null;
+    var count = json['count'];
+    return BangumiTag(
+      name: name,
+      count: count is num && count.isFinite
+          ? count.toInt().clamp(0, 2147483647)
+          : 0,
+    );
+  }
+}
+
 class BangumiSubject {
   final int id;
 
@@ -71,6 +91,8 @@ class BangumiSubject {
   /// E.g. TV, 剧场版, 漫画.
   final String platform;
 
+  final List<BangumiTag> tags;
+
   const BangumiSubject({
     required this.id,
     required this.type,
@@ -84,6 +106,7 @@ class BangumiSubject {
     this.date = '',
     this.summary = '',
     this.platform = '',
+    this.tags = const [],
   });
 
   String get displayName => nameCn.isNotEmpty ? nameCn : name;
@@ -118,6 +141,10 @@ class BangumiSubject {
       date: _string(json['date'] ?? json['air_date']),
       summary: _string(json['summary']),
       platform: _string(json['platform']),
+      tags: [
+        if (json['tags'] is List)
+          for (var tag in json['tags']) ?BangumiTag.fromJson(tag),
+      ],
     );
   }
 }

@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Show less": "收起",
+    "Air date": "开播日期",
+    "Platform": "平台",
     "Clear all": "清空",
     "Playback source: @source": "播放源：@source",
     "Trending anime": "热门番剧",
@@ -616,6 +619,9 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Show less": "收合",
+    "Air date": "開播日期",
+    "Platform": "平台",
     "Clear all": "清空",
     "Playback source: @source": "播放來源：@source",
     "Trending anime": "熱門番劇",
