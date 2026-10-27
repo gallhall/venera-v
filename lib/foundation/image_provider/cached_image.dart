@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/network/bangumi_ech.dart';
 import 'package:venera/utils/io.dart';
 import 'base_image_provider.dart';
 import 'cached_image.dart' as image_provider;
@@ -30,6 +31,14 @@ class CachedImageProvider
 
   // Use local cover if network image fails to load.
   final bool fallbackToLocalCover;
+
+  @override
+  bool get handleLoadingErrorsLocally =>
+      isBangumiHost(Uri.tryParse(url)?.host ?? '');
+
+  // The Bangumi adapter already retries and applies replay safety rules.
+  @override
+  bool get retryLoadingErrors => !handleLoadingErrorsLocally;
 
   static int loadingCount = 0;
 

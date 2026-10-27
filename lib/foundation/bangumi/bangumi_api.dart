@@ -310,6 +310,11 @@ class BangumiApi {
         ),
       );
     } on DioException catch (e) {
+      final echError = e.requestOptions.extra['bangumiEchError'];
+      if (echError is String && e.response == null &&
+          e.type != DioExceptionType.cancel) {
+        throw BangumiException(null, echError);
+      }
       if (e.response == null && e.type != DioExceptionType.cancel) {
         throw BangumiException(
           null,

@@ -36,7 +36,7 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
   @override
   ImageStreamCompleter loadImage(T key, ImageDecoderCallback decode) {
     final chunkEvents = StreamController<ImageChunkEvent>();
-    return MultiFrameImageStreamCompleter(
+    final completer = MultiFrameImageStreamCompleter(
       codec: _loadBufferAsync(key, chunkEvents, decode),
       chunkEvents: chunkEvents.stream,
       scale: 1.0,
@@ -48,6 +48,13 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
         );
       },
     );
+    if (handleLoadingErrorsLocally) {
+      // _loadBufferAsync already logs these as Image Loading errors. Keep
+      // failures handled even if a cover scrolled offscreen before it failed;
+      // this listener does not keep the stream or its resources alive.
+      completer.addEphemeralErrorListener((_, _) {});
+    }
+    return completer;
   }
 
   Future<ui.Codec> _loadBufferAsync(
@@ -76,6 +83,7 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
         } on _ImageLoadingStopException {
           rethrow;
         } catch (e) {
+          if (!retryLoadingErrors) rethrow;
           if (e.toString().contains("Invalid Status Code: 404")) {
             rethrow;
           }
@@ -163,6 +171,10 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
   }
 
   bool get enableResize => false;
+
+  bool get handleLoadingErrorsLocally => false;
+
+  bool get retryLoadingErrors => true;
 }
 
 typedef FileDecoderCallback = Future<ui.Codec> Function(Uint8List);

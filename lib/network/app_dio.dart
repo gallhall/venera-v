@@ -215,7 +215,10 @@ class RHttpAdapter implements HttpClientAdapter {
   /// one, every request opens a new connection (and TLS handshake).
   final rhttp.RhttpClient? client;
 
-  RHttpAdapter({this.client});
+  /// Optional response deadline used by the dedicated Bangumi transport.
+  final Duration? receiveTimeout;
+
+  RHttpAdapter({this.client, this.receiveTimeout});
 
   /// An adapter with a client of its own, for many requests in a row such
   /// as a download. Dispose the client when done.
@@ -291,22 +294,39 @@ class RHttpAdapter implements HttpClientAdapter {
         ),
       ),
     );
-    var res = client != null
-        ? await client!.request(
+    final token = receiveTimeout == null ? null : rhttp.CancelToken();
+    if (token != null) {
+      unawaited(cancelFuture?.then((_) => token.cancel()));
+    }
+    final pending = client != null
+        ? client!.request(
             method: method,
             url: url,
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
+            cancelToken: token,
           )
-        : await rhttp.Rhttp.request(
+        : rhttp.Rhttp.request(
             method: method,
             url: url,
             settings: await settingsFor(options.extra['connectTimeout'] as Duration?),
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
+            cancelToken: token,
           );
+    DioException timeoutError() => DioException(
+          requestOptions: options,
+          type: DioExceptionType.receiveTimeout,
+          message: 'Response timed out after ${receiveTimeout!.inSeconds} seconds',
+        );
+    final res = receiveTimeout == null
+        ? await pending
+        : await pending.timeout(receiveTimeout!, onTimeout: () {
+            unawaited(token!.cancel());
+            throw timeoutError();
+          });
     if (res is! rhttp.HttpStreamResponse) {
       throw Exception("Invalid response type: ${res.runtimeType}");
     }
@@ -316,13 +336,21 @@ class RHttpAdapter implements HttpClientAdapter {
       headers[key] ??= [];
       headers[key]!.add(entry.$2);
     }
-    return ResponseBody(
-      res.body,
+    final response = ResponseBody(
+      receiveTimeout == null
+          ? res.body
+          : res.body.timeout(receiveTimeout!, onTimeout: (sink) {
+              unawaited(token!.cancel());
+              sink.addError(timeoutError());
+              sink.close();
+            }),
       res.statusCode,
       statusMessage: _getStatusMessage(res.statusCode),
       isRedirect: false,
       headers: headers,
     );
+    response.extra['remoteIp'] = res.remoteIp;
+    return response;
   }
 
   static String _getStatusMessage(int statusCode) {

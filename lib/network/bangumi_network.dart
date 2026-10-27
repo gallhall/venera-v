@@ -19,6 +19,9 @@ class BangumiNetwork {
   static final provider = EchConfigProvider(
     fetchJson: (uri) async {
       final dio = AppDio(); // Never recurse into the ECH adapter for DoH.
+      dio.httpClientAdapter = RHttpAdapter(
+        receiveTimeout: const Duration(seconds: 4),
+      );
       try {
         return (await dio.get<Object?>(
           uri.toString(),
@@ -54,33 +57,60 @@ class BangumiNetwork {
   static Dio dio([BaseOptions? options]) {
     final dio = AppDio(options);
     dio.httpClientAdapter = BangumiAdapter();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (isBangumiHost(options.uri.host) &&
+              (appdata.settings['bangumiEchMode'] as String? ?? 'doh') !=
+                  'off') {
+            options.connectTimeout = const Duration(seconds: 10);
+            options.receiveTimeout = const Duration(seconds: 20);
+            options.extra['connectTimeout'] = const Duration(seconds: 10);
+          }
+          handler.next(options);
+        },
+      ),
+    );
     return dio;
   }
 
-  static Future<RHttpAdapter> _adapter(
+  static final limiter = EchHostLimiter();
+  static final logThrottle = EchLogThrottle();
+
+  static Future<_EchClient> _client(
     String host,
     Uint8List bytes,
-    Duration? timeout,
-  ) async {
-    final base = await RHttpAdapter().settingsFor(timeout);
+    List<String> addresses, {
+    _EchClient? failed,
+  }) async {
+    final base = await RHttpAdapter().settingsFor(const Duration(seconds: 10));
     final tls = base.tlsSettings!;
     final proxy = base.proxySettings;
+    final overrides = _userOverrides();
+    final ips = bangumiAddresses(addresses, override: overrides[host]);
     final key = jsonEncode([
       base64Encode(bytes),
       proxy is rhttp.StaticProxy ? proxy.url : null,
-      // The DNS settings of [base] come from these.
-      appdata.settings['enableDnsOverrides'],
-      appdata.settings['dnsOverrides'],
+      overrides,
+      ips,
       tls.verifyCertificates,
-      timeout?.inMicroseconds,
     ]);
     var slot = _clients[host];
-    if (slot == null || slot.key != key) {
+    if (slot == null || slot.key != key || identical(slot, failed)) {
+      final ordered = failed == null || failed.key != key
+          ? ips
+          : rotateEchAddresses(failed.addresses, 1);
       slot?.dispose();
       final future = rhttp.RhttpClient.create(
         settings: base.copyWith(
-          // Redirects are routed individually so ECH never reaches a proxy host.
           redirectSettings: const rhttp.RedirectSettings.none(),
+          dnsSettings: rhttp.DnsSettings.static(
+            overrides: {...overrides, host: ordered},
+          ),
+          timeoutSettings: base.timeoutSettings!.copyWith(
+            connectTimeout: const Duration(seconds: 10),
+            timeout: const Duration(seconds: 30),
+          ),
           tlsSettings: rhttp.TlsSettings(
             verifyCertificates: tls.verifyCertificates,
             sni: true,
@@ -88,30 +118,155 @@ class BangumiNetwork {
           ),
         ),
       );
-      slot = _EchClient(key, future);
+      slot = _EchClient(key, ordered, future);
       _clients[host] = slot;
     }
-    return RHttpAdapter(client: await slot.future);
+    // Borrow before yielding to the caller: another request may replace the
+    // pool entry while this request is awaiting its client creation.
+    slot.retain();
+    return slot;
+  }
+
+  static Map<String, List<String>> _userOverrides() {
+    if (appdata.settings['enableDnsOverrides'] != true) return {};
+    final config = appdata.settings['dnsOverrides'];
+    if (config is! Map) return {};
+    return {
+      for (final entry in config.entries)
+        if (entry.key is String &&
+            entry.value is String &&
+            (entry.value as String).trim().isNotEmpty)
+          (entry.key as String).toLowerCase(): [(entry.value as String).trim()],
+    };
   }
 
   static void _discard(String host) => _clients.remove(host)?.dispose();
+
+  static void _outcome(
+    String host,
+    List<String> addresses,
+    int attempt,
+    bool ech, {
+    ResponseBody? response,
+    Object? error,
+  }) {
+    if (!logThrottle.allows(
+      host,
+      failure: error != null || (response?.statusCode ?? 0) >= 400,
+    )) {
+      return;
+    }
+    final ip = response?.extra['remoteIp'];
+    // reqwest exposes the connected peer on responses only. On failure show
+    // the ordered candidates rather than claiming the first one was used.
+    final peer =
+        ip ??
+        (addresses.isEmpty
+            ? 'system DNS'
+            : 'candidates=${addresses.join(',')}');
+    _echLog(
+      '$host $peer ${ech ? "ECH" : "plain"} attempt $attempt '
+      '${error == null ? "ok ${response!.statusCode}" : "failed $error"}',
+    );
+  }
 }
 
 class _EchClient {
-  _EchClient(this.key, this.future);
+  _EchClient(this.key, this.addresses, this.future);
   final String key;
+  final List<String> addresses;
   final Future<rhttp.RhttpClient> future;
-  void dispose() {
-    unawaited(
-      future.then((client) => client.dispose(), onError: (Object _) {}),
-    );
+  int _users = 0;
+  bool _retired = false;
+  bool _disposed = false;
+  void retain() => _users++;
+  void release() {
+    _users--;
+    _disposeIfIdle();
   }
+
+  void dispose() {
+    _retired = true;
+    _disposeIfIdle();
+  }
+
+  void _disposeIfIdle() {
+    if (_retired && _users == 0 && !_disposed) {
+      _disposed = true;
+      unawaited(
+        future.then((client) => client.dispose(), onError: (Object _) {}),
+      );
+    }
+  }
+}
+
+ResponseBody _releaseAfterBody(
+  ResponseBody response,
+  void Function() release, {
+  void Function(Object error)? onError,
+}) {
+  var released = false;
+  void done() {
+    if (!released) {
+      released = true;
+      release();
+    }
+  }
+
+  Stream<Uint8List> stream() async* {
+    try {
+      yield* response.stream;
+    } catch (e) {
+      onError?.call(e);
+      rethrow;
+    } finally {
+      done();
+    }
+  }
+
+  return ResponseBody(
+    stream(),
+    response.statusCode,
+    statusMessage: response.statusMessage,
+    headers: response.headers,
+    isRedirect: response.isRedirect,
+    redirects: response.redirects,
+    onClose: () {
+      try {
+        // Preserve the wrapped adapter's close hook.
+        // ignore: invalid_use_of_internal_member
+        response.close();
+      } finally {
+        done();
+      }
+    },
+  )..extra.addAll(response.extra);
 }
 
 class BangumiAdapter implements HttpClientAdapter {
   final _normal = RHttpAdapter();
   @override
   void close({bool force = false}) => _normal.close(force: force);
+
+  Future<ResponseBody> _plain(
+    RequestOptions options,
+    Stream<Uint8List>? body,
+    Future<void>? cancelFuture,
+  ) async {
+    final host = options.uri.host.toLowerCase();
+    if (!isBangumiHost(host)) return _normal.fetch(options, body, cancelFuture);
+    try {
+      final response = await _normal.fetch(options, body, cancelFuture);
+      BangumiNetwork._outcome(host, [], 1, false, response: response);
+      return response;
+    } catch (e) {
+      BangumiNetwork._outcome(host, [], 1, false, error: e);
+      if (!BangumiNetwork.backoff.allows(host)) {
+        BangumiNetwork.backoff.recordFallback(host, plainHasResponse: false);
+      }
+      rethrow;
+    }
+  }
 
   @override
   Future<ResponseBody> fetch(
@@ -127,6 +282,7 @@ class BangumiAdapter implements HttpClientAdapter {
     int redirects,
   ) async {
     final host = options.uri.host.toLowerCase();
+    options.extra.remove('bangumiEchError');
     BangumiNetwork._syncConfiguration();
     final mode = appdata.settings['bangumiEchMode'] as String? ?? 'doh';
     if (options.uri.scheme != 'https' ||
@@ -134,7 +290,7 @@ class BangumiAdapter implements HttpClientAdapter {
         mode == 'off' ||
         !BangumiNetwork.backoff.allows(host)) {
       if (mode == 'off') BangumiNetwork._discard(host);
-      return _normal.fetch(options, requestStream, cancelFuture);
+      return _plain(options, requestStream, cancelFuture);
     }
     final bytes = await BangumiNetwork.provider.get(
       host,
@@ -147,9 +303,17 @@ class BangumiAdapter implements HttpClientAdapter {
     if (bytes == null) {
       BangumiNetwork._discard(host);
       _echLog('no config for $host; fallback');
-      return _normal.fetch(options, requestStream, cancelFuture);
+      return _plain(options, requestStream, cancelFuture);
     }
-    // Buffer once so a failed TLS connection can replay POST bodies intact.
+    final userIps = BangumiNetwork._userOverrides()[host];
+    final addresses =
+        userIps ??
+        await BangumiNetwork.provider.addresses(
+          host,
+          dohUrl:
+              appdata.settings['bangumiEchDohUrl'] as String? ??
+              'https://dns.alidns.com/resolve',
+        );
     final body = requestStream == null ? null : await requestStream.toList();
     Stream<Uint8List>? replay() =>
         body == null ? null : Stream.fromIterable(body);
@@ -159,35 +323,34 @@ class BangumiAdapter implements HttpClientAdapter {
         cancelled = true;
       }),
     );
-    late ResponseBody response;
+    final permit = await BangumiNetwork.limiter.acquire(host);
+    ResponseBody response;
     try {
-      final adapter = await BangumiNetwork._adapter(
-        host,
-        bytes,
-        options.extra['connectTimeout'] as Duration? ?? options.connectTimeout,
-      );
-      _echLog('used for $host (attempt)');
-      response = await adapter.fetch(options, replay(), cancelFuture);
-    } catch (e) {
-      final hasResponse =
-          (e is DioException && e.response != null) ||
-          e is rhttp.RhttpStatusCodeException;
-      if (!EchBackoff.shouldFallback(
-        hasResponse: hasResponse,
-        cancelled:
-            cancelled ||
-            e is rhttp.RhttpCancelException ||
-            (e is DioException && e.type == DioExceptionType.cancel),
-      )) {
-        rethrow;
+      if (cancelled) {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.cancel,
+        );
       }
-      BangumiNetwork.backoff.failed(host);
-      BangumiNetwork._discard(host);
-      _echLog(
-        '$host connection/config error: $e; fallback (10 minute backoff)',
-      );
-      return _normal.fetch(options, replay(), cancelFuture);
+      // MyLogInterceptor runs first; set these here as well as in the request
+      // interceptor so queue time is not counted against network deadlines.
+      options.connectTimeout = const Duration(seconds: 10);
+      options.receiveTimeout = const Duration(seconds: 20);
+      response = BangumiNetwork.backoff.allows(host)
+          ? await _echThenPlain(
+              options,
+              bytes,
+              addresses,
+              replay,
+              cancelFuture,
+              () => cancelled,
+            )
+          : await _plain(options, replay(), cancelFuture);
+    } catch (_) {
+      permit.release();
+      rethrow;
     }
+    response = _releaseAfterBody(response, permit.release);
     final location = response.headers['location']?.firstOrNull;
     if (options.followRedirects &&
         location != null &&
@@ -232,6 +395,154 @@ class BangumiAdapter implements HttpClientAdapter {
         redirects + 1,
       );
     }
+    return response;
+  }
+
+  Future<ResponseBody> _echThenPlain(
+    RequestOptions options,
+    Uint8List bytes,
+    List<String> addresses,
+    Stream<Uint8List>? Function() replay,
+    Future<void>? cancelFuture,
+    bool Function() cancelled,
+  ) async {
+    final host = options.uri.host.toLowerCase();
+    Object? echError;
+    StackTrace? echStack;
+    _EchClient? failed;
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      _EchClient? slot;
+      var beforeSend = true;
+      try {
+        if (cancelled()) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+          );
+        }
+        slot = await BangumiNetwork._client(
+          host,
+          bytes,
+          addresses,
+          failed: failed,
+        );
+        final client = await slot.future;
+        if (cancelled()) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+          );
+        }
+        beforeSend = false;
+        final response = await RHttpAdapter(
+          client: client,
+          receiveTimeout: const Duration(seconds: 20),
+        ).fetch(options, replay(), cancelFuture);
+        options.extra.remove('bangumiEchError');
+        BangumiNetwork._outcome(
+          host,
+          slot.addresses,
+          attempt,
+          true,
+          response: response,
+        );
+        final active = slot;
+        return _releaseAfterBody(
+          response,
+          active.release,
+          onError: (error) {
+            options.extra['bangumiEchError'] = error.toString();
+            BangumiNetwork._outcome(
+              host,
+              active.addresses,
+              attempt,
+              true,
+              response: response,
+              error: error,
+            );
+          },
+        );
+      } catch (e, stack) {
+        slot?.release();
+        echError = e;
+        echStack = stack;
+        final hasResponse =
+            (e is DioException && e.response != null) ||
+            e is rhttp.RhttpStatusCodeException;
+        final isCancelled =
+            cancelled() ||
+            e is rhttp.RhttpCancelException ||
+            (e is DioException && e.type == DioExceptionType.cancel);
+        // These rhttp errors are mapped from reqwest is_connect(), or TLS
+        // verification failures, and therefore precede sending HTTP bytes.
+        beforeSend =
+            beforeSend ||
+            e is rhttp.RhttpConnectionException ||
+            e is rhttp.RhttpInvalidCertificateException ||
+            (e is DioException && e.type == DioExceptionType.connectionTimeout);
+        final connectionFailure =
+            beforeSend ||
+            e is rhttp.RhttpTimeoutException ||
+            (e is rhttp.RhttpUnknownException &&
+                RegExp(
+                  r'connection|handshake|reset|timed out|eof',
+                  caseSensitive: false,
+                ).hasMatch(e.message)) ||
+            (e is DioException &&
+                [
+                  DioExceptionType.connectionError,
+                  DioExceptionType.connectionTimeout,
+                  DioExceptionType.receiveTimeout,
+                  DioExceptionType.badCertificate,
+                ].contains(e.type));
+        BangumiNetwork._outcome(
+          host,
+          slot?.addresses ?? addresses,
+          attempt,
+          true,
+          error: e,
+        );
+        options.extra['bangumiEchError'] = e.toString();
+        if (!connectionFailure ||
+            !canReplayEchRequest(
+              method: options.method,
+              hasResponse: hasResponse,
+              cancelled: isCancelled,
+              beforeSend: beforeSend,
+            )) {
+          rethrow;
+        }
+        failed = slot;
+      }
+    }
+    final response = await BangumiNetwork.backoff.tryPlain(
+      host,
+      echError: echError!,
+      echStack: echStack!,
+      isCancelled: (e) =>
+          cancelled() ||
+          e is rhttp.RhttpCancelException ||
+          (e is DioException && e.type == DioExceptionType.cancel),
+      plain: () async {
+        if (cancelled()) {
+          throw DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+          );
+        }
+        return RHttpAdapter(
+          receiveTimeout: const Duration(seconds: 20),
+        ).fetch(options, replay(), cancelFuture);
+      },
+      onFailure: (error) {
+        BangumiNetwork._outcome(host, [], 3, false, error: error);
+        _echLog('$host fallback also failed; keeping ECH enabled');
+      },
+    );
+    options.extra.remove('bangumiEchError');
+    BangumiNetwork._discard(host);
+    BangumiNetwork._outcome(host, [], 3, false, response: response);
+    _echLog('$host fallback succeeded; ECH backoff for 10 minutes');
     return response;
   }
 }
