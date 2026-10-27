@@ -859,43 +859,71 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => ContentDialog(
-          title: "Player Settings".tl,
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Video fit".tl, style: ts.s14).paddingHorizontal(16),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: context.colorScheme.surfaceContainerLow,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (var (value, label) in const [
-                    (BoxFit.contain, "Fit"),
-                    (BoxFit.cover, "Crop"),
-                    (BoxFit.fill, "Stretch"),
-                  ])
-                    ChoiceChip(
-                      label: Text(label.tl),
-                      selected: fit == value,
-                      onSelected: (_) {
-                        setFit(value);
-                        setDialogState(() {});
-                      },
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text("Player Settings".tl, style: ts.s18),
+                        ),
+                        IconButton(
+                          tooltip: "Close".tl,
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
                     ),
+                  ),
+                  Text("Video fit".tl, style: ts.s14).paddingHorizontal(16),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (var (value, label) in const [
+                        (BoxFit.contain, "Fit"),
+                        (BoxFit.cover, "Crop"),
+                        (BoxFit.fill, "Stretch"),
+                      ])
+                        ChoiceChip(
+                          shape: const StadiumBorder(),
+                          showCheckmark: false,
+                          selectedColor: context.colorScheme.secondaryContainer,
+                          label: Text(label.tl),
+                          selected: fit == value,
+                          onSelected: (_) {
+                            setFit(value);
+                            setDialogState(() {});
+                          },
+                        ),
+                    ],
+                  ).paddingHorizontal(16),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    title: Text("Skip intro and outro automatically".tl),
+                    subtitle: Text("Only when the video source marks them".tl),
+                    value: appdata.settings['videoAutoSkip'] == true,
+                    onChanged: (v) {
+                      appdata.settings['videoAutoSkip'] = v;
+                      appdata.saveData();
+                      setDialogState(() {});
+                    },
+                  ),
                 ],
-              ).paddingHorizontal(16),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                title: Text("Skip intro and outro automatically".tl),
-                subtitle: Text("Only when the video source marks them".tl),
-                value: appdata.settings['videoAutoSkip'] == true,
-                onChanged: (v) {
-                  appdata.settings['videoAutoSkip'] = v;
-                  appdata.saveData();
-                  setDialogState(() {});
-                },
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -908,21 +936,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     Map<T, String> options,
     T? selected,
   ) {
-    return showDialog<T>(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: title,
-        content: Column(
-          children: [
-            for (var e in options.entries)
-              ListTile(
-                title: Text(e.value),
-                trailing: e.key == selected ? const Icon(Icons.check) : null,
-                onTap: () => Navigator.of(context).pop(e.key),
-              ),
-          ],
-        ),
-      ),
+    return showSidePicker<T>(
+      context,
+      title: title,
+      options: options,
+      selected: selected,
     );
   }
 
@@ -1110,12 +1128,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       actions: [
         if (bangumi != null)
           PlayerControlAction(
-            Icons.swap_horiz,
+            Icons.swap_horiz_rounded,
             'Switch source'.tl,
             (_) => pickBangumiSource(),
           ),
         if (bangumi == null && episodes.length > 1)
-          PlayerControlAction(Icons.format_list_numbered, "Episodes".tl, (
+          PlayerControlAction(Icons.format_list_numbered_rounded, "Episodes".tl, (
             context,
           ) async {
             var i = await pick(context, "Episodes".tl, {
@@ -1125,14 +1143,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (i != null && i != current) loadEpisode(i);
           }),
         if (info != null && info.sources.length > 1)
-          PlayerControlAction(Icons.hd_outlined, "Source".tl, (context) async {
+          PlayerControlAction(Icons.hd_rounded, "Source".tl, (context) async {
             var i = await pick(context, "Source".tl, {
               for (int i = 0; i < info.sources.length; i++)
                 i: info.sources[i].name,
             }, sourceIndex);
             if (i != null) switchSource(i);
           }),
-        PlayerControlAction(Icons.speed, "Speed".tl, (context) async {
+        PlayerControlAction(Icons.speed_rounded, "Speed".tl, (context) async {
           var r = await pick(context, "Speed".tl, {
             for (var r in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0])
               r: '${r}x',
@@ -1140,7 +1158,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (r != null) setRate(r);
         }),
         if (p != null && tracks.audio.length > 3)
-          PlayerControlAction(Icons.audiotrack_outlined, "Audio Track".tl, (
+          PlayerControlAction(Icons.audiotrack_rounded, "Audio Track".tl, (
             context,
           ) async {
             var id = await pick(context, "Audio Track".tl, {
@@ -1149,7 +1167,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (id != null) p.selectAudioTrack(id);
           }),
         if (p != null && tracks.subtitle.length > 2)
-          PlayerControlAction(Icons.subtitles_outlined, "Subtitle".tl, (
+          PlayerControlAction(Icons.subtitles_rounded, "Subtitle".tl, (
             context,
           ) async {
             var id = await pick(context, "Subtitle".tl, {
@@ -1158,12 +1176,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (id != null) p.selectSubtitleTrack(id);
           }),
         PlayerControlAction(
-          Icons.tune,
+          Icons.tune_rounded,
           "Player Settings".tl,
           showPlayerSettings,
         ),
         if (App.isMobile)
-          PlayerControlAction(Icons.lock_outline, "Lock".tl, (_) => lock()),
+          PlayerControlAction(Icons.lock_rounded, "Lock".tl, (_) => lock()),
       ],
     );
   }
@@ -1311,8 +1329,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               right: 16,
               bottom: 64,
               child: FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.black.withValues(alpha: 0.6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
                 onPressed: skipCurrent,
-                icon: const Icon(Icons.skip_next),
+                icon: const Icon(Icons.skip_next_rounded),
                 label: Text(skipLabel(currentSkip!)),
               ),
             ),
@@ -1336,7 +1361,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           child: IgnorePointer(
             ignoring: !showUnlock,
             child: IconButton.filledTonal(
-              icon: const Icon(Icons.lock_open),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.6),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(Icons.lock_open_rounded),
               onPressed: () => setState(() => isLocked = false),
             ).paddingLeft(24),
           ),
@@ -1352,10 +1384,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Align(
         alignment: const Alignment(0, 0.45),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(20),
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
             "Playback interrupted, reconnecting...".tl,
@@ -1448,7 +1480,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   top: 8,
                   child: IconButton(
                     color: Colors.white,
-                    icon: const Icon(Icons.arrow_back),
+                    icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () =>
                         isFullscreen ? setFullscreen(false) : context.pop(),
                   ),
@@ -1465,93 +1497,143 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var local = localVideo;
     var groups = <String?>[];
     for (var e in episodes) {
-      if (!groups.contains(e.group)) groups.add(e.group);
+      if (!groups.contains(e.group)) {
+        groups.add(e.group);
+      }
     }
     return [
-      ListTile(
-        title: Text(details.title, style: ts.s18),
-        subtitle: episode.id == null ? null : Text(episodeLabel(episode)),
-      ),
-      if (info != null && info.sources.length > 1) ...[
-        buildTitle("Source".tl),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (int i = 0; i < info.sources.length; i++)
-              ChoiceChip(
-                label: Text(info.sources[i].name),
-                selected: sourceIndex == i,
-                onSelected: (_) => switchSource(i),
+            Text(
+              details.title,
+              style: ts.s18.copyWith(fontWeight: FontWeight.w600),
+            ),
+            if (episode.id != null)
+              Text(
+                episodeLabel(episode),
+                style: ts.s14.copyWith(
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
               ),
           ],
-        ).paddingHorizontal(16),
-      ],
-      if (bangumi != null) ...[
-        ListTile(
-          title: Text(
-            'Playback source: @source'.tlParams({'source': playingSource}),
-          ),
-          subtitle: Text('Switch source'.tl),
-          leading: const Icon(Icons.swap_horiz),
-          onTap: pickBangumiSource,
         ),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (var e in bangumi!.episodes)
-              ChoiceChip(
-                label: Text('${e.number}'),
-                selected: e.number == bangumi!.number,
-                onSelected: (_) => changeBangumi(bangumi!.at(e.number)),
-              ),
-          ],
-        ).paddingHorizontal(16),
-      ],
-      if (bangumi == null && episodes.length > 1) ...[
-        buildTitle("Episodes".tl),
-        for (var group in groups) ...[
-          if (group != null)
-            Text(group, style: ts.s12).paddingHorizontal(16).paddingTop(8),
-          Wrap(
+      ),
+      if (info != null && info.sources.length > 1)
+        SectionCard(
+          icon: Icons.hd_outlined,
+          title: "Source".tl,
+          body: Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
-              for (int i = 0; i < episodes.length; i++)
-                if (episodes[i].group == group)
-                  ChoiceChip(
-                    avatar: isDownloaded(i, local)
-                        ? const Icon(Icons.download_done, size: 16)
-                        : null,
-                    label: Text(
-                      episodes[i].title,
-                      style: TextStyle(
-                        color:
-                            current != i &&
-                                history.readEpisode.contains(
-                                  episodes.historyKey(i),
-                                )
-                            ? context.colorScheme.outline
-                            : null,
+              for (int i = 0; i < info.sources.length; i++)
+                ChoiceChip(
+                  shape: const StadiumBorder(),
+                  showCheckmark: false,
+                  selectedColor: context.colorScheme.secondaryContainer,
+                  label: Text(info.sources[i].name),
+                  selected: sourceIndex == i,
+                  onSelected: (_) => switchSource(i),
+                ),
+            ],
+          ),
+        ),
+      if (bangumi != null) ...[
+        AppCard(
+          onTap: pickBangumiSource,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const AppIconBox(Icons.live_tv_outlined, size: 36),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Playback source'.tl,
+                      style: ts.s12.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    selected: current == i,
-                    onSelected: (_) {
-                      if (i != current) loadEpisode(i);
-                    },
-                  ),
+                    Text(playingSource, style: ts.s14),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
             ],
-          ).paddingHorizontal(16).paddingTop(4),
-        ],
+          ),
+        ),
+        buildEpisodesCard(
+          bangumi!.episodes.length,
+          EpisodeGrid(
+            items: [
+              for (var e in bangumi!.episodes)
+                EpisodeGridItem(
+                  label: '${e.number}',
+                  selected: e.number == bangumi!.number,
+                  watched: history.readEpisode.contains('${e.number}'),
+                  onTap: () => changeBangumi(bangumi!.at(e.number)),
+                ),
+            ],
+          ),
+        ),
       ],
+      if (bangumi == null && episodes.length > 1)
+        buildEpisodesCard(
+          episodes.length,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var group in groups) ...[
+                if (group != null)
+                  Text(
+                    group,
+                    style: ts.s12.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                  ).paddingBottom(8).paddingTop(group == groups.first ? 0 : 8),
+                EpisodeGrid(
+                  items: [
+                    for (int i = 0; i < episodes.length; i++)
+                      if (episodes[i].group == group)
+                        EpisodeGridItem(
+                          label: episodes[i].title,
+                          selected: current == i,
+                          watched: history.readEpisode.contains(
+                            episodes.historyKey(i),
+                          ),
+                          downloaded: isDownloaded(i, local),
+                          onTap: () => loadEpisode(i),
+                        ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
     ];
   }
 
-  Widget buildTitle(String text) {
-    return Text(
-      text,
-      style: ts.s16,
-    ).paddingHorizontal(16).paddingTop(16).paddingBottom(8);
+  Widget buildEpisodesCard(int count, Widget body) {
+    return SectionCard(
+      icon: Icons.playlist_play_rounded,
+      title: "Episodes".tl,
+      leadingActions: [
+        Text(
+          "@n episodes".tlParams({'n': count}),
+          style: ts.s14.copyWith(color: context.colorScheme.onSurfaceVariant),
+        ).paddingLeft(8),
+      ],
+      collapseKey: 'player_episodes',
+      body: body,
+    );
   }
 }
 

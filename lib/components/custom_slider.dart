@@ -151,7 +151,7 @@ class _CustomSliderState extends State<CustomSlider> {
                         child: Center(
                           child: Container(
                             width: double.infinity,
-                            height: 6,
+                            height: 4,
                             decoration: BoxDecoration(
                                 color: theme.inactiveTrackColor,
                                 borderRadius: const BorderRadius.all(Radius.circular(10))
@@ -188,7 +188,7 @@ class _CustomSliderState extends State<CustomSlider> {
                           child: Center(
                             child: Container(
                               width: constraints.maxWidth * ((value - widget.min) / (widget.max - widget.min)),
-                              height: 8,
+                              height: 4,
                               decoration: BoxDecoration(
                                   color: theme.activeTrackColor,
                                   borderRadius: const BorderRadius.all(Radius.circular(10))
@@ -199,12 +199,12 @@ class _CustomSliderState extends State<CustomSlider> {
                       Positioned(
                         top: 0,
                         bottom: 0,
-                        left: widget.reversed ? null : constraints.maxWidth * ((value - widget.min) / (widget.max - widget.min))-11,
-                        right: !widget.reversed ? null : constraints.maxWidth * ((value - widget.min) / (widget.max - widget.min))-11,
+                        left: widget.reversed ? null : constraints.maxWidth * ((value - widget.min) / (widget.max - widget.min))-7,
+                        right: !widget.reversed ? null : constraints.maxWidth * ((value - widget.min) / (widget.max - widget.min))-7,
                         child: Center(
                           child: Container(
-                            width: 22,
-                            height: 22,
+                            width: 14,
+                            height: 14,
                             decoration: BoxDecoration(
                               color: theme.activeTrackColor,
                               shape: BoxShape.circle,
