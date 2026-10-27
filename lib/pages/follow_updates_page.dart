@@ -11,7 +11,9 @@ import '../foundation/global_state.dart';
 import 'package:venera/foundation/follow_updates.dart';
 
 class FollowUpdatesWidget extends StatefulWidget {
-  const FollowUpdatesWidget({super.key});
+  const FollowUpdatesWidget({super.key, this.onCountChanged});
+
+  final ValueChanged<int>? onCountChanged;
 
   @override
   State<FollowUpdatesWidget> createState() => _FollowUpdatesWidgetState();
@@ -43,66 +45,68 @@ class _FollowUpdatesWidgetState
     setState(() {
       getCount();
     });
+    notifyCount();
   }
 
   @override
   void initState() {
     super.initState();
     getCount();
+    notifyCount();
+    LocalFavoritesManager().addListener(updateCount);
+    appdata.settings.addListener(updateCount);
+  }
+
+  @override
+  void dispose() {
+    LocalFavoritesManager().removeListener(updateCount);
+    appdata.settings.removeListener(updateCount);
+    super.dispose();
+  }
+
+  void notifyCount() {
+    // The initial count is read during mount; notify the parent after build.
+    Future.microtask(() {
+      if (mounted) {
+        widget.onCountChanged?.call(_count);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => FollowUpdatesPage());
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('Follow Updates'.tl, style: ts.s18),
+      child: SectionCard(
+        icon: Icons.update,
+        title: 'Follow Updates'.tl,
+        collapseKey: 'home_follow_updates',
+        onTap: () => context.to(() => const FollowUpdatesPage()),
+        actions: [
+          if (_count > 0) AppBadge(_count.toString(), highlighted: true),
+        ],
+        bodyPadding: EdgeInsets.zero,
+        body: _count == 0
+            ? SectionEmptyState(
+                folder != null && LocalFavoritesManager().count(folder!) > 0
+                    ? 'No updates'.tl
+                    : 'Nothing to follow yet'.tl,
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: InkWell(
+                    onTap: () => context.to(() => const FollowUpdatesPage()),
+                    child: AppBadge(
+                      '@c updates'.tlParams({'c': _count}),
+                      highlighted: _count > 0,
                     ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (_count > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  margin: const EdgeInsets.only(bottom: 16, left: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                  ),
-                  child: Text(
-                    '@c updates'.tlParams({
-                      'c': _count,
-                    }),
-                    style: ts.s16,
                   ),
                 ),
-            ],
-          ),
-        ),
+              ),
       ),
     );
   }

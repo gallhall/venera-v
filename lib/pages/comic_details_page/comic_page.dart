@@ -56,7 +56,12 @@ class ComicPage extends StatefulWidget {
     this.coverProvider,
     this.title,
     this.heroID,
+    this.autoContinue = false,
   });
+
+  /// Continues reading from the history once the details have loaded, as the
+  /// home page's continue card does.
+  final bool autoContinue;
 
   final String id;
 
@@ -410,7 +415,15 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     if (comic.chapters == null) {
       isDownloaded = LocalManager().isDownloaded(comic.id, comic.comicType, 0);
     }
+    if (widget.autoContinue && !_autoContinued) {
+      _autoContinued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) continueRead();
+      });
+    }
   }
+
+  bool _autoContinued = false;
 
   Iterable<Widget> buildTitle(BuildContext context) sync* {
     yield SliverLazyToBoxAdapter(

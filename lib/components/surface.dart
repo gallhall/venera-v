@@ -5,6 +5,7 @@ class AppCard extends StatelessWidget {
     super.key,
     required this.child,
     this.onTap,
+    this.onLongPress,
     this.highlighted = false,
     this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     this.padding,
@@ -18,11 +19,13 @@ class AppCard extends StatelessWidget {
     this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
     this.padding = const EdgeInsets.all(8),
   }) : _sliver = true,
-       onTap = null;
+       onTap = null,
+       onLongPress = null;
 
   final bool _sliver;
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool highlighted;
   final EdgeInsetsGeometry margin;
   final EdgeInsetsGeometry? padding;
@@ -55,8 +58,13 @@ class AppCard extends StatelessWidget {
     Widget content = padding == null
         ? child
         : Padding(padding: padding!, child: child);
-    if (onTap != null) {
-      content = InkWell(onTap: onTap, child: content);
+    if (onTap != null || onLongPress != null) {
+      content = InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        mouseCursor: SystemMouseCursors.click,
+        child: content,
+      );
     }
     return Card(
       elevation: 0,
@@ -856,6 +864,7 @@ class _SectionCardHeader extends StatelessWidget {
     required this.leadingActions,
     required this.expanded,
     this.onToggle,
+    this.onTap,
   });
 
   final IconData icon;
@@ -864,12 +873,13 @@ class _SectionCardHeader extends StatelessWidget {
   final List<Widget> leadingActions;
   final bool expanded;
   final VoidCallback? onToggle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     return InkWell(
-      onTap: onToggle,
+      onTap: onTap ?? onToggle,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
         child: Row(
@@ -919,6 +929,7 @@ class SectionCard extends StatefulWidget {
     required this.body,
     this.bodyPadding = const EdgeInsets.all(16),
     this.collapseKey,
+    this.onTap,
   });
 
   final IconData icon;
@@ -929,6 +940,7 @@ class SectionCard extends StatefulWidget {
   final Widget body;
   final EdgeInsets bodyPadding;
   final String? collapseKey;
+  final VoidCallback? onTap;
 
   @override
   State<SectionCard> createState() => _SectionCardState();
@@ -967,6 +979,7 @@ class _SectionCardState extends State<SectionCard> {
             actions: widget.actions,
             leadingActions: widget.leadingActions,
             expanded: expanded,
+            onTap: widget.onTap,
             onToggle: widget.collapseKey == null ? null : toggle,
           ),
           CollapsibleBody(
@@ -1189,6 +1202,131 @@ class _DescriptionBodyState extends State<DescriptionBody> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Mouse dragging and Shift-wheel scrolling, scoped to a horizontal cover list.
+/// Scrollable reads only dx normally, leaving vertical wheel input to the page.
+class HorizontalCoverList extends StatelessWidget {
+  const HorizontalCoverList({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final behavior = ScrollConfiguration.of(context);
+    return ScrollConfiguration(
+      behavior: behavior.copyWith(
+        dragDevices: {...behavior.dragDevices, PointerDeviceKind.mouse},
+        pointerAxisModifiers: {
+          LogicalKeyboardKey.shiftLeft,
+          LogicalKeyboardKey.shiftRight,
+        },
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Paint the interaction overlay above opaque cover images.
+class CoverButton extends StatelessWidget {
+  const CoverButton({
+    super.key,
+    required this.onTap,
+    required this.child,
+    required this.label,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          ExcludeSemantics(
+            child: ExcludeFocus(child: IgnorePointer(child: child)),
+          ),
+          Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                onTap: onTap,
+                mouseCursor: SystemMouseCursors.click,
+                child: Semantics(label: label, child: const SizedBox.expand()),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SectionEmptyState extends StatelessWidget {
+  const SectionEmptyState(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(Icons.inbox_outlined, size: 18, color: colors.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: ts.s14.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ComicCoverButton extends StatelessWidget {
+  const ComicCoverButton({
+    super.key,
+    required this.comic,
+    required this.heroID,
+    required this.onTap,
+  });
+
+  final Comic comic;
+  final int heroID;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 98,
+      child: CoverButton(
+        label: comic.title,
+        onTap: onTap,
+        child: Hero(
+          tag: 'cover$heroID',
+          child: ColoredBox(
+            color: context.colorScheme.surfaceContainerHigh,
+            child: FallbackImage(
+              image: comicCoverProvider(comic),
+              fallback: _historyCoverFallback(comic),
+              width: 98,
+              height: 132,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

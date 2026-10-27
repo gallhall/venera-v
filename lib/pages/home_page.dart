@@ -26,26 +26,98 @@ import 'package:venera/utils/translations.dart';
 
 import 'local_comics_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  ImageFavoritesComputed? imageFavorites;
+  int followCount = 0;
+  int? animeCount;
+  int imageRequest = 0;
+  late final changes = Listenable.merge([
+    LocalManager(),
+    ComicSourceManager(),
+    appdata.settings,
+    HistoryManager(),
+  ]);
+
+  @override
+  void initState() {
+    super.initState();
+    refreshImageFavorites();
+    ImageFavoriteManager().addListener(refreshImageFavorites);
+  }
+
+  Future<void> refreshImageFavorites() async {
+    final request = ++imageRequest;
+    try {
+      final computed = await ImageFavoriteManager.computeImageFavorites();
+      if (mounted && request == imageRequest) {
+        setState(() => imageFavorites = computed);
+      }
+    } catch (e, stack) {
+      Log.error('Unhandled Exception', e.toString(), stack);
+    }
+  }
+
+  @override
+  void dispose() {
+    ImageFavoriteManager().removeListener(refreshImageFavorites);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: changes,
+      builder: (context, child) => buildHome(context),
+    );
+  }
+
+  Widget buildHome(BuildContext context) {
     var widget = SmoothCustomScrollView(
       slivers: [
         SliverPadding(padding: EdgeInsets.only(top: context.padding.top)),
         const _SearchBar(),
         const _SyncDataWidget(),
+        _ContinueCard(),
+        _HomeBentoGrid(
+          followCount: followCount,
+          animeCount: animeCount,
+          imageCount: imageFavorites?.count,
+        ),
         const _History(),
-        const BangumiCalendarWidget(),
+        BangumiCalendarWidget(
+          onCountChanged: (count) {
+            if (mounted && animeCount != count) {
+              setState(() => animeCount = count);
+            }
+          },
+        ),
         const _Local(),
-        const FollowUpdatesWidget(),
-        const _ComicSourceWidget(),
-        const ImageFavorites(),
+        FollowUpdatesWidget(
+          onCountChanged: (count) {
+            if (mounted && followCount != count) {
+              setState(() => followCount = count);
+            }
+          },
+        ),
+        ImageFavorites(computed: imageFavorites),
         SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
-    return context.width > changePoint ? widget.paddingHorizontal(8) : widget;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: context.width > changePoint
+            ? widget.paddingHorizontal(8)
+            : widget,
+      ),
+    );
   }
 }
 
@@ -56,23 +128,28 @@ class _SearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: Container(
-        height: App.isMobile ? 52 : 46,
+        height: App.isMobile ? 56 : 46,
         width: double.infinity,
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Material(
           color: context.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(32),
+          borderRadius: BorderRadius.circular(28),
           child: InkWell(
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(28),
             onTap: () {
               context.to(() => const SearchPage());
             },
             child: Row(
               children: [
                 const SizedBox(width: 16),
-                const Icon(Icons.search),
+                Icon(Icons.search, color: context.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
-                Text('Search'.tl, style: ts.s16),
+                Text(
+                  'Search'.tl,
+                  style: ts.s16.copyWith(
+                    color: context.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 const Spacer(),
               ],
             ),
@@ -133,35 +210,21 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
       child = const SliverPadding(padding: EdgeInsets.zero);
     } else if (DataSync().isUploading || DataSync().isDownloading) {
       child = SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
+        child: AppCard(
           child: ListTile(
-            leading: const Icon(Icons.sync),
+            leading: const AppIconBox(Icons.sync, size: 36),
             title: Text('Syncing Data'.tl),
-            trailing: const CircularProgressIndicator(strokeWidth: 2)
-                .fixWidth(18)
-                .fixHeight(18),
+            trailing: const CircularProgressIndicator(
+              strokeWidth: 2,
+            ).fixWidth(18).fixHeight(18),
           ),
         ),
       );
     } else {
       child = SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
+        child: AppCard(
           child: ListTile(
-            leading: const Icon(Icons.sync),
+            leading: const AppIconBox(Icons.sync, size: 36),
             title: Text('Sync Data'.tl),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -189,11 +252,16 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
                         children: [
                           Icon(
                             Icons.error_outline,
-                            color: Colors.red,
+                            color: context.colorScheme.onErrorContainer,
                             size: 18,
                           ),
                           const SizedBox(width: 4),
-                          Text('Error'.tl, style: ts.s12),
+                          Text(
+                            'Error'.tl,
+                            style: ts.s12.copyWith(
+                              color: context.colorScheme.onErrorContainer,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -219,6 +287,302 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
     return SliverAnimatedPaintExtent(
       duration: const Duration(milliseconds: 200),
       child: child,
+    );
+  }
+}
+
+class _ContinueCard extends StatelessWidget {
+  const _ContinueCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final recent = HistoryManager().getRecent();
+    if (recent.isEmpty) {
+      return const SliverToBoxAdapter();
+    }
+    final history = recent.first;
+    final heroID = Object.hash('continue', history.id);
+    final cover = comicCoverProvider(history);
+    void openDetails({bool autoContinue = false}) {
+      context.to(
+        () => ComicPage(
+          autoContinue: autoContinue,
+          id: history.id,
+          sourceKey: history.type.sourceKey,
+          cover: history.cover,
+          coverProvider: comicCoverProvider(history),
+          title: history.title,
+          heroID: heroID,
+        ),
+      );
+    }
+
+    return SliverToBoxAdapter(
+      child: AppCard(
+        onTap: openDetails,
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Hero(
+              tag: heroID,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: cover == null
+                    ? SizedBox(
+                        width: 72,
+                        height: 100,
+                        child: Icon(
+                          Icons.image_outlined,
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    : Image(
+                        image: cover,
+                        width: 72,
+                        height: 100,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stack) => SizedBox(
+                          width: 72,
+                          height: 100,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    history.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  AppBadge(
+                    history.type.sourceName ??
+                        (history.type.sourceKey == 'local'
+                            ? 'Local'.tl
+                            : history.type.sourceKey),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${(history.isVideo ? 'Last Watched' : 'Last Reading').tl}: '
+                    '${history.description}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s14.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonal(
+                    onPressed: () => openDetails(autoContinue: true),
+                    child: Text('Continue'.tl),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeBentoGrid extends StatelessWidget {
+  const _HomeBentoGrid({
+    required this.followCount,
+    required this.animeCount,
+    required this.imageCount,
+  });
+
+  final int followCount;
+  final int? animeCount;
+  final int? imageCount;
+
+  int get _availableUpdates {
+    int c = 0;
+    ComicSourceManager().availableUpdates.forEach((key, version) {
+      var source = ComicSource.find(key);
+      if (source != null && source.isEnabled) {
+        if (ComicSourcePage.isNewer(source, version)) {
+          c++;
+        }
+      }
+    });
+    return c;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final updates = _availableUpdates;
+    final tasks = LocalManager().downloadingTasks;
+    final tiles =
+        <
+          ({
+            IconData icon,
+            String label,
+            int? count,
+            int updates,
+            VoidCallback onTap,
+          })
+        >[
+          (
+            icon: Icons.folder_outlined,
+            label: 'Local'.tl,
+            count: LocalManager().count,
+            updates: 0,
+            onTap: () => context.to(() => const LocalComicsPage()),
+          ),
+          (
+            icon: Icons.extension_outlined,
+            label: 'Comic Source'.tl,
+            count: ComicSource.all().length,
+            updates: updates,
+            onTap: () => context.to(() => const ComicSourcePage()),
+          ),
+          (
+            icon: Icons.image_outlined,
+            label: 'Image Favorites'.tl,
+            count: imageCount,
+            updates: 0,
+            onTap: () => context.to(() => const ImageFavoritesPage()),
+          ),
+          if (isHomeBangumiCalendarShown)
+            (
+              icon: Icons.calendar_month_outlined,
+              label: "Today's anime".tl,
+              count: animeCount,
+              updates: 0,
+              onTap: () => context.to(() => const BangumiCalendarPage()),
+            )
+          else
+            (
+              icon: Icons.update,
+              label: 'Follow Updates'.tl,
+              count: followCount,
+              updates: followCount,
+              onTap: () => context.to(() => const FollowUpdatesPage()),
+            ),
+        ];
+    void openDownloads() {
+      showPopUpWidget(context, const DownloadingPage());
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      sliver: SliverLayoutBuilder(
+        builder: (context, constraints) {
+          final width = MediaQuery.sizeOf(context).width;
+          final columns = width < 600 ? 2 : (width < 900 ? 3 : 4);
+          return SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              mainAxisExtent: 76,
+            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final tile = tiles[index];
+              final tones = [
+                colors.primaryContainer,
+                colors.secondaryContainer,
+                colors.tertiaryContainer,
+              ];
+              final foregrounds = [
+                colors.onPrimaryContainer,
+                colors.onSecondaryContainer,
+                colors.onTertiaryContainer,
+              ];
+              return AppCard(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
+                onTap: tile.onTap,
+                onLongPress: index == 0 && tasks.isNotEmpty
+                    ? openDownloads
+                    : null,
+                child: Row(
+                  children: [
+                    AppIconBox(
+                      tile.icon,
+                      size: 44,
+                      color: tones[index % 3],
+                      iconColor: foregrounds[index % 3],
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                tile.count?.toString() ?? '\u2026',
+                                style: ts.s24.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Tooltip(
+                            message: tile.label,
+                            child: Text(
+                              tile.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ts.s14.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (index == 0 && tasks.isNotEmpty)
+                      IconButton(
+                        tooltip: '@a Tasks'.tlParams({'a': tasks.length}),
+                        onPressed: openDownloads,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 36,
+                        ),
+                        icon: tasks.first.isPaused
+                            ? const Icon(Icons.pause_circle_outline, size: 18)
+                            : const _AnimatedDownloadingIcon(),
+                      ),
+                    if (tile.updates > 0)
+                      Tooltip(
+                        message: '@c updates'.tlParams({'c': tile.updates}),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: AppBadge(
+                            tile.updates.toString(),
+                            highlighted: true,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }, childCount: tiles.length),
+          );
+        },
+      ),
     );
   }
 }
@@ -260,55 +624,28 @@ class _HistoryState extends State<_History> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => const HistoryPage());
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      child: SectionCard(
+        icon: Icons.history,
+        title: 'History'.tl,
+        collapseKey: 'home_history',
+        onTap: () => context.to(() => const HistoryPage()),
+        actions: [if (count > 0) AppBadge(count.toString())],
+        bodyPadding: EdgeInsets.zero,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (history.isEmpty) SectionEmptyState('No history yet'.tl),
+            if (history.isNotEmpty)
               SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('History'.tl, style: ts.s18),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(count.toString(), style: ts.s12),
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (history.isNotEmpty)
-                SizedBox(
-                  height: 136,
+                height: 136,
+                child: HorizontalCoverList(
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: history.length,
                     itemBuilder: (context, index) {
                       // Per section: a comic can be both in the history and local.
                       final heroID = Object.hash('history', history[index].id);
-                      return SimpleComicTile(
+                      return ComicCoverButton(
                         comic: history[index],
                         heroID: heroID,
                         onTap: () {
@@ -326,9 +663,9 @@ class _HistoryState extends State<_History> {
                       ).paddingHorizontal(8).paddingVertical(2);
                     },
                   ),
-                ).paddingHorizontal(8).paddingBottom(16),
-            ],
-          ),
+                ),
+              ).paddingHorizontal(8).paddingBottom(12),
+          ],
         ),
       ),
     );
@@ -370,56 +707,29 @@ class _LocalState extends State<_Local> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => const LocalComicsPage());
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      child: SectionCard(
+        icon: Icons.folder_outlined,
+        title: 'Local'.tl,
+        collapseKey: 'home_local',
+        onTap: () => context.to(() => const LocalComicsPage()),
+        actions: [
+          if (count > 0) AppBadge(count.toString()),
+          if (local.isNotEmpty) buildImportButton(),
+        ],
+        bodyPadding: EdgeInsets.zero,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (local.isNotEmpty)
               SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('Local'.tl, style: ts.s18),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(count.toString(), style: ts.s12),
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (local.isNotEmpty)
-                SizedBox(
-                  height: 136,
+                height: 136,
+                child: HorizontalCoverList(
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: local.length,
                     itemBuilder: (context, index) {
                       final heroID = Object.hash('local', local[index].id);
-                      return SimpleComicTile(
+                      return ComicCoverButton(
                         comic: local[index],
                         heroID: heroID,
                         onTap: () {
@@ -437,38 +747,44 @@ class _LocalState extends State<_Local> {
                       ).paddingHorizontal(8).paddingVertical(2);
                     },
                   ),
-                ).paddingHorizontal(8),
-              Row(
-                children: [
-                  if (LocalManager().downloadingTasks.isNotEmpty)
-                    Button.outlined(
-                      child: Row(
-                        children: [
-                          if (LocalManager().downloadingTasks.first.isPaused)
-                            const Icon(Icons.pause_circle_outline, size: 18)
-                          else
-                            const _AnimatedDownloadingIcon(),
-                          const SizedBox(width: 8),
-                          Text("@a Tasks".tlParams({
-                            'a': LocalManager().downloadingTasks.length,
-                          })),
-                        ],
+                ),
+              ).paddingHorizontal(8).paddingBottom(12),
+            if (local.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'No local comics'.tl,
+                        style: ts.s14.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                      onPressed: () {
-                        showPopUpWidget(context, const DownloadingPage());
-                      },
                     ),
-                  const Spacer(),
-                  Button.filled(
-                    onPressed: import,
-                    child: Text("Import".tl),
-                  ),
-                ],
-              ).paddingHorizontal(16).paddingVertical(8),
-            ],
-          ),
+                    const SizedBox(width: 8),
+                    buildImportButton(),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget buildImportButton() {
+    return FilledButton.tonal(
+      onPressed: import,
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text('Import'.tl),
     );
   }
 
@@ -658,155 +974,6 @@ class _ImportComicsWidgetState extends State<_ImportComicsWidget> {
   }
 }
 
-class _ComicSourceWidget extends StatefulWidget {
-  const _ComicSourceWidget();
-
-  @override
-  State<_ComicSourceWidget> createState() => _ComicSourceWidgetState();
-}
-
-class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
-  late List<String> comicSources;
-
-  void onComicSourceChange() {
-    setState(() {
-      comicSources = ComicSource.enabled().map((e) => e.name).toList();
-    });
-  }
-
-  @override
-  void initState() {
-    comicSources = ComicSource.enabled().map((e) => e.name).toList();
-    ComicSourceManager().addListener(onComicSourceChange);
-    appdata.settings.addListener(onComicSourceChange);
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    ComicSourceManager().removeListener(onComicSourceChange);
-    appdata.settings.removeListener(onComicSourceChange);
-    super.dispose();
-  }
-
-  int get _availableUpdates {
-    int c = 0;
-    ComicSourceManager().availableUpdates.forEach((key, version) {
-      var source = ComicSource.find(key);
-      if (source != null && source.isEnabled) {
-        if (ComicSourcePage.isNewer(source, version)) {
-          c++;
-        }
-      }
-    });
-    return c;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(() => const ComicSourcePage());
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('Comic Source'.tl, style: ts.s18),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child:
-                          Text(comicSources.length.toString(), style: ts.s12),
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (comicSources.isNotEmpty)
-                SizedBox(
-                  width: double.infinity,
-                  child: Wrap(
-                    runSpacing: 8,
-                    spacing: 8,
-                    children: comicSources.map((e) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color:
-                              Theme.of(context).colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(e),
-                      );
-                    }).toList(),
-                  ).paddingHorizontal(16).paddingBottom(16),
-                ),
-              if (_availableUpdates > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: context.colorScheme.outlineVariant,
-                      width: 0.6,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.update,
-                        color: context.colorScheme.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "@c updates".tlParams({
-                          'c': _availableUpdates,
-                        }),
-                        style: ts.withColor(context.colorScheme.primary),
-                      ),
-                    ],
-                  ),
-                )
-                    .toAlign(Alignment.centerLeft)
-                    .paddingHorizontal(16)
-                    .paddingBottom(8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AnimatedDownloadingIcon extends StatefulWidget {
   const _AnimatedDownloadingIcon();
 
@@ -846,7 +1013,7 @@ class __AnimatedDownloadingIconState extends State<_AnimatedDownloadingIcon>
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: Theme.of(context).colorScheme.primary,
+                color: context.colorScheme.primary,
                 width: 2,
               ),
             ),
@@ -857,7 +1024,7 @@ class __AnimatedDownloadingIconState extends State<_AnimatedDownloadingIcon>
             child: Icon(
               Icons.arrow_downward,
               size: 16,
-              color: Theme.of(context).colorScheme.primary,
+              color: context.colorScheme.primary,
             ),
           ),
         );
@@ -867,122 +1034,62 @@ class __AnimatedDownloadingIconState extends State<_AnimatedDownloadingIcon>
 }
 
 class ImageFavorites extends StatefulWidget {
-  const ImageFavorites({super.key});
+  const ImageFavorites({super.key, this.computed});
+
+  final ImageFavoritesComputed? computed;
 
   @override
   State<ImageFavorites> createState() => _ImageFavoritesState();
 }
 
 class _ImageFavoritesState extends State<ImageFavorites> {
-  ImageFavoritesComputed? imageFavoritesCompute;
-
+  ImageFavoritesComputed? get imageFavoritesCompute => widget.computed;
   int displayType = 0;
-
-  void refreshImageFavorites() async {
-    try {
-      imageFavoritesCompute =
-          await ImageFavoriteManager.computeImageFavorites();
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e, stackTrace) {
-      Log.error("Unhandled Exception", e.toString(), stackTrace);
-    }
-  }
-
-  @override
-  void initState() {
-    refreshImageFavorites();
-    ImageFavoriteManager().addListener(refreshImageFavorites);
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    ImageFavoriteManager().removeListener(refreshImageFavorites);
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     bool hasData =
         imageFavoritesCompute != null && !imageFavoritesCompute!.isEmpty;
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.to(
-              () => const ImageFavoritesPage()
-            );
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 56,
-                child: Row(
-                  children: [
-                    Center(
-                      child: Text('Image Favorites'.tl, style: ts.s18),
-                    ),
-                    if (hasData)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color:
-                              Theme.of(context).colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          imageFavoritesCompute!.count.toString(),
-                          style: ts.s12,
-                        ),
-                      ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right),
-                  ],
-                ),
-              ).paddingHorizontal(16),
-              if (hasData)
-                Row(
-                  children: [
-                    const Spacer(),
-                    buildTypeButton(0, "Tags".tl),
-                    const Spacer(),
-                    buildTypeButton(1, "Authors".tl),
-                    const Spacer(),
-                    buildTypeButton(2, "Comics".tl),
-                    const Spacer(),
-                  ],
-                ),
-              if (hasData) const SizedBox(height: 8),
-              if (hasData)
-                buildChart(switch (displayType) {
-                  0 => imageFavoritesCompute!.tags,
-                  1 => imageFavoritesCompute!.authors,
-                  2 => imageFavoritesCompute!.comics,
-                  _ => [],
-                })
-                    .paddingHorizontal(16)
-                    .paddingBottom(16),
-            ],
-          ),
+      child: SectionCard(
+        icon: Icons.image_outlined,
+        title: 'Image Favorites'.tl,
+        collapseKey: 'home_image_favorites',
+        onTap: () => context.to(() => const ImageFavoritesPage()),
+        actions: [
+          if (hasData) AppBadge(imageFavoritesCompute!.count.toString()),
+        ],
+        bodyPadding: EdgeInsets.zero,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!hasData) SectionEmptyState('No image favorites'.tl),
+            if (hasData) const SizedBox(height: 8),
+            if (hasData)
+              Row(
+                children: [
+                  const Spacer(),
+                  buildTypeButton(0, "Tags".tl),
+                  const Spacer(),
+                  buildTypeButton(1, "Authors".tl),
+                  const Spacer(),
+                  buildTypeButton(2, "Comics".tl),
+                  const Spacer(),
+                ],
+              ),
+            if (hasData) const SizedBox(height: 8),
+            if (hasData)
+              buildChart(switch (displayType) {
+                0 => imageFavoritesCompute!.tags,
+                1 => imageFavoritesCompute!.authors,
+                2 => imageFavoritesCompute!.comics,
+                _ => [],
+              }).paddingHorizontal(16).paddingBottom(8),
+          ],
         ),
       ),
     );
   }
-
   Widget buildTypeButton(int type, String text) {
     const radius = 24.0;
     return InkWell(
@@ -1003,8 +1110,9 @@ class _ImageFavoritesState extends State<ImageFavorites> {
         width: 96,
         padding: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
-          color:
-              displayType == type ? context.colorScheme.primaryContainer : null,
+          color: displayType == type
+              ? context.colorScheme.primaryContainer
+              : null,
           border: Border.all(
             color: Theme.of(context).colorScheme.outlineVariant,
             width: 0.6,
@@ -1012,12 +1120,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
           borderRadius: BorderRadius.circular(radius),
         ),
         duration: const Duration(milliseconds: 200),
-        child: Center(
-          child: Text(
-            text,
-            style: ts.s16,
-          ),
-        ),
+        child: Center(child: Text(text, style: ts.s16)),
       ),
     );
   }
@@ -1028,9 +1131,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
     }
     var maxCount = data.map((e) => e.count).reduce((a, b) => a > b ? a : b);
     return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: 164,
-      ),
+      constraints: BoxConstraints(maxHeight: 164),
       child: SingleChildScrollView(
         child: Column(
           key: ValueKey(displayType),
@@ -1041,9 +1142,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
               maxCount: maxCount,
               enableTranslation: displayType != 2,
               onTap: (text) {
-                context.to(
-                  () => ImageFavoritesPage(initialKeyword: text),
-                );
+                context.to(() => ImageFavoritesPage(initialKeyword: text));
               },
             );
           }).toList(),
@@ -1114,11 +1213,7 @@ class __ChartLineState extends State<_ChartLine>
           onTap: () {
             widget.onTap?.call(widget.text);
           },
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          )
+          child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)
               .paddingHorizontal(4)
               .toAlign(Alignment.centerLeft)
               .fixWidth(context.width > 600 ? 120 : 80)
@@ -1126,32 +1221,29 @@ class __ChartLineState extends State<_ChartLine>
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: LayoutBuilder(builder: (context, constrains) {
-            var width = constrains.maxWidth * widget.count / widget.maxCount;
-            return AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Container(
-                  width: width * _controller.value,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(2),
-                    gradient: LinearGradient(
-                      colors: context.isDarkMode
-                          ? [
-                              Colors.blue.shade800,
-                              Colors.blue.shade500,
-                            ]
-                          : [
-                              Colors.blue.shade300,
-                              Colors.blue.shade600,
-                            ],
+          child: LayoutBuilder(
+            builder: (context, constrains) {
+              var width = constrains.maxWidth * widget.count / widget.maxCount;
+              return AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  return Container(
+                    width: width * _controller.value,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(2),
+                      gradient: LinearGradient(
+                        colors: [
+                          context.colorScheme.primaryContainer,
+                          context.colorScheme.primary,
+                        ],
+                      ),
                     ),
-                  ),
-                ).toAlign(Alignment.centerLeft);
-              },
-            );
-          }),
+                  ).toAlign(Alignment.centerLeft);
+                },
+              );
+            },
+          ),
         ),
         const SizedBox(width: 8),
         Text(
