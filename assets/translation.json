@@ -594,7 +594,8 @@
     "Not logged in": "未登录",
     "Log out of Bangumi?": "退出 Bangumi 登录？",
     "Show airing schedule on home page": "在主页显示放送表",
-    "Only when a video source is installed": "仅在安装了视频源时显示"
+    "Only when a video source is installed": "仅在安装了视频源时显示",
+    "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
     "Home": "首頁",
@@ -1191,6 +1192,7 @@
     "Not logged in": "未登入",
     "Log out of Bangumi?": "登出 Bangumi？",
     "Show airing schedule on home page": "在首頁顯示放送表",
-    "Only when a video source is installed": "僅在安裝了影片源時顯示"
+    "Only when a video source is installed": "僅在安裝了影片源時顯示",
+    "Bangumi comments": "Bangumi 吐槽"
   }
 }

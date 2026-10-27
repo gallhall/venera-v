@@ -9,6 +9,8 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/translations.dart';
 
+part 'bangumi_comments_page.dart';
+
 /// Asks for a Bangumi access token and logs in with it. Returns whether
 /// it did.
 Future<bool> showBangumiLoginDialog(BuildContext context) async {
@@ -401,6 +403,14 @@ class _BangumiPanelState extends State<BangumiPanel> {
             style: ts.s14,
           ).paddingHorizontal(16).paddingBottom(8),
         const Divider(),
+        ListTile(
+          leading: const Icon(Icons.comment_outlined),
+          title: Text("Bangumi comments".tl),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => App.rootContext.to(
+            () => BangumiCommentsPage(binding: binding),
+          ),
+        ),
         if (manager.isLoggedIn) ...buildProgress() else buildLogin(),
         const Divider(),
         ListTile(

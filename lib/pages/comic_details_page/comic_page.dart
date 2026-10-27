@@ -84,6 +84,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   bool showFAB = false;
 
+  String? _failedCover;
+
   @override
   void onReadEnd() {
     history ??= HistoryManager().find(
@@ -331,12 +333,21 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 clipBehavior: Clip.antiAlias,
                 child: coverUrl.isEmpty
                     ? const SizedBox()
-                    : AnimatedImage(
-                        image: CachedImageProvider(
-                          coverUrl,
-                          sourceKey: comic.sourceKey,
-                          cid: comic.id,
-                        ),
+                    : FallbackImage(
+                        image: sourceCoverUrl.isEmpty ||
+                                (_failedCover == sourceCoverUrl &&
+                                    bangumiCoverUrl.isNotEmpty)
+                            ? null
+                            : CachedImageProvider(
+                                sourceCoverUrl,
+                                sourceKey: comic.sourceKey,
+                                cid: comic.id,
+                              ),
+                        fallback: bangumiCoverUrl.isEmpty
+                            ? null
+                            : CachedImageProvider(bangumiCoverUrl),
+                        onFallback: () =>
+                            setState(() => _failedCover = sourceCoverUrl),
                         width: double.infinity,
                         height: double.infinity,
                       ),
@@ -769,17 +780,32 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   /// The cover of the tile that opened the page, else the one of the
   /// details. Empty for sources without covers, e.g. some Kazumi rules.
-  String get coverUrl {
+  String get sourceCoverUrl {
     var cover = widget.cover;
     return cover == null || cover.isEmpty ? comic.cover : cover;
   }
 
+  String get bangumiCoverUrl =>
+      BangumiManager().bindingOf(comic.sourceKey, comic.id)?.image ?? '';
+
+  String get coverUrl {
+    return BangumiManager()
+            .bindingOf(comic.sourceKey, comic.id)
+            ?.coverFor(
+              sourceCoverUrl,
+              sourceFailed: _failedCover == sourceCoverUrl,
+            ) ??
+        sourceCoverUrl;
+  }
+
+  CachedImageProvider get coverImage => CachedImageProvider(
+    coverUrl,
+    sourceKey: coverUrl == bangumiCoverUrl ? null : comic.sourceKey,
+    cid: coverUrl == bangumiCoverUrl ? null : comic.id,
+  );
+
   void _viewCover(BuildContext context) {
-    final imageProvider = CachedImageProvider(
-      coverUrl,
-      sourceKey: comic.sourceKey,
-      cid: comic.id,
-    );
+    final imageProvider = coverImage;
 
     context.to(
       () => _CoverViewer(
@@ -792,11 +818,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   void _saveCover(BuildContext context) async {
     try {
-      final imageProvider = CachedImageProvider(
-        coverUrl,
-        sourceKey: comic.sourceKey,
-        cid: comic.id,
-      );
+      final imageProvider = coverImage;
 
       final imageStream = imageProvider.resolve(const ImageConfiguration());
       final completer = Completer<Uint8List>();

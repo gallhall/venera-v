@@ -13,6 +13,7 @@ import 'package:syntax_highlight/syntax_highlight.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
@@ -34,6 +35,7 @@ import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
 part 'image.dart';
+part 'fallback_image.dart';
 part 'appbar.dart';
 part 'button.dart';
 part 'consts.dart';

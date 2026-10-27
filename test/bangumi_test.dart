@@ -162,6 +162,73 @@ void main() {
   });
 
   group('json', () {
+    test('comments include the user, collection status, rating and time', () {
+      var comment = BangumiComment.fromJson({
+        'id': 54667778,
+        'user': {
+          'username': 'myccyycy',
+          'nickname': 'Dimpurr',
+          'avatar': {'small': 'http://lain.bgm.tv/avatar.jpg'},
+        },
+        'type': 4,
+        'rate': 6,
+        'comment': '短评',
+        'updatedAt': 1792953876,
+      })!;
+      expect(comment.id, 54667778);
+      expect(comment.user.displayName, 'Dimpurr');
+      expect(comment.user.avatar, 'https://lain.bgm.tv/avatar.jpg');
+      expect(comment.type, BangumiCollectionType.onHold);
+      expect(comment.rate, 6);
+      expect(comment.comment, '短评');
+      expect(
+        comment.time,
+        DateTime.fromMillisecondsSinceEpoch(1792953876000, isUtc: true),
+      );
+    });
+
+    test('comments tolerate missing or malformed optional fields', () {
+      var comment = BangumiComment.fromJson({
+        'id': 1,
+        'user': {
+          'username': 'user',
+          'avatar': {'medium': '//lain.bgm.tv/avatar.jpg'},
+        },
+        'type': null,
+        'rate': 'bad',
+        'comment': 42,
+        'updatedAt': 'bad',
+      })!;
+      expect(comment.user.displayName, 'user');
+      expect(comment.user.avatar, 'https://lain.bgm.tv/avatar.jpg');
+      expect(comment.type, 0);
+      expect(comment.rate, 0);
+      expect(comment.comment, '');
+      expect(comment.time, isNull);
+      expect(BangumiComment.fromJson({'id': 2})!.user.avatar, '');
+      expect(
+        BangumiComment.fromJson({'id': 2, 'updatedAt': 1e20})!.time,
+        isNull,
+      );
+      expect(BangumiComment.fromJson({'id': 'bad'}), isNull);
+      expect(BangumiComment.fromJson(null), isNull);
+    });
+
+    test('Bangumi covers replace only empty or failed source covers', () {
+      const binding = BangumiBinding(
+        subjectId: 1,
+        type: BangumiSubjectType.anime,
+        name: 'a',
+        image: 'https://lain.bgm.tv/cover.jpg',
+      );
+      expect(binding.coverFor('source.jpg'), 'source.jpg');
+      expect(binding.coverFor(''), binding.image);
+      expect(binding.coverFor('source.jpg', sourceFailed: true), binding.image);
+      const noCover = BangumiBinding(subjectId: 2, type: 1, name: 'b');
+      expect(noCover.coverFor(''), '');
+      expect(noCover.coverFor('source.jpg', sourceFailed: true), 'source.jpg');
+    });
+
     test('subjects of the v0 API', () {
       var subject = BangumiSubject.fromJson({
         'id': 411427,
@@ -231,6 +298,51 @@ void main() {
   });
 
   group('api', () {
+    test('loads public comments with paging and no token', () async {
+      var adapter = _Adapter(
+        (o) => (
+          200,
+          {
+            'data': [
+              {'id': 1, 'comment': 'a'},
+              {'id': 2, 'comment': 'b'},
+              'broken',
+            ],
+            'total': 1638,
+          },
+        ),
+      );
+      var api = _api(adapter);
+      var page = await api.comments(411427);
+      expect(page.data.map((c) => c.id), [1, 2]);
+      expect(page.total, 1638);
+      expect(page.count, 3);
+      var request = adapter.requests.single;
+      expect(request.method, 'GET');
+      expect(request.uri.scheme, 'https');
+      expect(request.uri.host, 'next.bgm.tv');
+      expect(request.uri.path, '/p1/subjects/411427/comments');
+      expect(request.uri.queryParameters, {'limit': '20', 'offset': '0'});
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(request.headers['User-Agent'], BangumiApi.userAgent);
+      expect(request.headers['cache-time'], 'no');
+      await api.comments(411427, offset: 40, limit: 10);
+      expect(adapter.requests.last.uri.queryParameters, {
+        'limit': '10',
+        'offset': '40',
+      });
+    });
+
+    test('comments handle empty pages and request errors', () async {
+      var adapter = _Adapter((o) => (200, {'data': [], 'total': 0}));
+      var page = await _api(adapter).comments(1);
+      expect(page.data, isEmpty);
+      expect(page.total, 0);
+      expect(page.count, 0);
+      var failed = _Adapter((o) => (503, {'title': 'Unavailable'}));
+      expect(() => _api(failed).comments(1), throwsA(isA<BangumiException>()));
+    });
+
     test('searches subjects of a type with the token', () async {
       var adapter = _Adapter(
         (o) => (

@@ -1,5 +1,11 @@
 part of 'components.dart';
 
+ImageProvider? _historyCoverFallback(Comic comic) {
+  if (comic is! History) return null;
+  var cover = BangumiManager().bindingOf(comic.sourceKey, comic.id)?.image;
+  return cover == null || cover.isEmpty ? null : CachedImageProvider(cover);
+}
+
 ImageProvider? _findImageProvider(Comic comic) {
   ImageProvider image;
   if (comic is LocalComic) {
@@ -9,7 +15,7 @@ ImageProvider? _findImageProvider(Comic comic) {
     // HistoryImageProvider would load the details again for nothing.
     if (comic.cover.isEmpty &&
         LocalManager().find(comic.id, comic.type) == null) {
-      return null;
+      return _historyCoverFallback(comic);
     }
     image = HistoryImageProvider(comic);
   } else if (comic.sourceKey == 'local') {
@@ -213,8 +219,9 @@ class ComicTile extends StatelessWidget {
     if (image == null) {
       return const SizedBox();
     }
-    return AnimatedImage(
+    return FallbackImage(
       image: image,
+      fallback: _historyCoverFallback(comic),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
@@ -1652,12 +1659,12 @@ class SimpleComicTile extends StatelessWidget {
 
     Widget child = image == null
         ? const SizedBox()
-        : AnimatedImage(
+        : FallbackImage(
             image: image,
+            fallback: _historyCoverFallback(comic),
             width: double.infinity,
             height: double.infinity,
             fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
           );
 
     child = Container(

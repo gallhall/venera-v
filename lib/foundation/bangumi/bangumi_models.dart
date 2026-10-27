@@ -30,6 +30,7 @@ abstract final class BangumiEpisodeStatus {
 
 String _https(Object? url) {
   if (url is! String) return '';
+  if (url.startsWith('//')) return 'https:$url';
   return url.startsWith('http://') ? url.replaceFirst('http', 'https') : url;
 }
 
@@ -222,7 +223,9 @@ class BangumiUser {
       username: username,
       nickname: _string(json['nickname']),
       avatar: _https(
-        avatar is Map ? avatar['large'] ?? avatar['medium'] : avatar,
+        avatar is Map
+            ? avatar['large'] ?? avatar['medium'] ?? avatar['small']
+            : avatar,
       ),
     );
   }
@@ -232,6 +235,63 @@ class BangumiUser {
     'nickname': nickname,
     'avatar': avatar,
   };
+}
+
+class BangumiComment {
+  final int id;
+
+  final BangumiUser user;
+
+  final int type;
+
+  final int rate;
+
+  final String comment;
+
+  final DateTime? time;
+
+  const BangumiComment({
+    required this.id,
+    required this.user,
+    this.type = 0,
+    this.rate = 0,
+    this.comment = '',
+    this.time,
+  });
+
+  static BangumiComment? fromJson(Object? json) {
+    if (json is! Map || json['id'] is! int) return null;
+    var time = json['updatedAt'];
+    return BangumiComment(
+      id: json['id'],
+      user:
+          BangumiUser.fromJson(json['user']) ?? const BangumiUser(username: ''),
+      type: _int(json['type']),
+      rate: _int(json['rate']),
+      comment: _string(json['comment']),
+      time: time is num && time > 0 && time < 8640000000000
+          ? DateTime.fromMillisecondsSinceEpoch(
+              time.toInt() * 1000,
+              isUtc: true,
+            )
+          : null,
+    );
+  }
+}
+
+class BangumiCommentPage {
+  final List<BangumiComment> data;
+
+  final int total;
+
+  /// Includes malformed entries so the next offset still follows the API.
+  final int count;
+
+  const BangumiCommentPage({
+    required this.data,
+    required this.total,
+    required this.count,
+  });
 }
 
 /// The Bangumi subject a comic or video of a source is linked to.
@@ -275,6 +335,12 @@ class BangumiBinding {
   String get displayName => nameCn.isNotEmpty ? nameCn : name;
 
   String get url => 'https://bgm.tv/subject/$subjectId';
+
+  String coverFor(String sourceCover, {bool sourceFailed = false}) {
+    return image.isNotEmpty && (sourceCover.isEmpty || sourceFailed)
+        ? image
+        : sourceCover;
+  }
 
   BangumiBinding copyWith({int? offset}) {
     return BangumiBinding(

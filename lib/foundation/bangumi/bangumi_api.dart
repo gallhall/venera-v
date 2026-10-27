@@ -68,6 +68,27 @@ class BangumiApi {
     return subject;
   }
 
+  Future<BangumiCommentPage> comments(
+    int subjectId, {
+    int offset = 0,
+    int limit = 20,
+  }) async {
+    var data = await _request(
+      'GET',
+      'https://next.bgm.tv/p1/subjects/$subjectId/comments',
+      query: {'limit': limit, 'offset': offset},
+    );
+    var items = data is Map && data['data'] is List
+        ? data['data'] as List
+        : const [];
+    var total = data is Map ? data['total'] : null;
+    return BangumiCommentPage(
+      data: _list(items, BangumiComment.fromJson),
+      total: total is num ? total.toInt() : offset + items.length,
+      count: items.length,
+    );
+  }
+
   /// The main episodes of a subject, in order.
   Future<List<BangumiEpisode>> episodes(int subjectId) async {
     const limit = 200;
