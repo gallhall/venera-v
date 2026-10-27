@@ -162,7 +162,6 @@ bool _hasSourceUpdate(ComicSource source) {
 
 class _SourceGroupHeader extends StatelessWidget {
   const _SourceGroupHeader({
-    super.key,
     required this.group,
     required this.count,
     required this.collapsed,
@@ -178,58 +177,166 @@ class _SourceGroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        elevation: 0,
-        clipBehavior: Clip.antiAlias,
-        color: context.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: context.colorScheme.outlineVariant,
-            width: 0.5,
-          ),
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      color: context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: context.colorScheme.outlineVariant,
+          width: 0.5,
         ),
-        child: ListTile(
-          onTap: onTap,
-          leading: Icon(group.icon, color: context.colorScheme.primary),
-          title: Text(group.title.tl, style: ts.s16),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('$count', style: ts.s14),
-              if (collapsed && updateCount > 0) ...[
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: 'New Version'.tl,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$updateCount',
-                      style: ts.s12.copyWith(
-                        color: context.colorScheme.onPrimaryContainer,
-                      ),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        leading: Icon(group.icon, color: context.colorScheme.primary),
+        title: Text(group.title.tl, style: ts.s16),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('$count', style: ts.s14),
+            if (collapsed && updateCount > 0) ...[
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'New Version'.tl,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$updateCount',
+                    style: ts.s12.copyWith(
+                      color: context.colorScheme.onPrimaryContainer,
                     ),
                   ),
                 ),
-              ],
-              const SizedBox(width: 8),
-              AnimatedRotation(
-                turns: collapsed ? 0 : 0.5,
-                duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.expand_more),
               ),
             ],
-          ),
+            const SizedBox(width: 8),
+            AnimatedRotation(
+              turns: collapsed ? 0 : 0.5,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: const Icon(Icons.expand_more),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _SourceGroupSection extends StatefulWidget {
+  const _SourceGroupSection({
+    super.key,
+    required this.group,
+    required this.sources,
+    required this.collapsed,
+    required this.onTap,
+    required this.edit,
+    required this.update,
+    required this.delete,
+  });
+
+  final _SourceGroup group;
+  final List<ComicSource> sources;
+  final bool collapsed;
+  final VoidCallback onTap;
+  final void Function(ComicSource source) edit;
+  final void Function(ComicSource source) update;
+  final void Function(ComicSource source) delete;
+
+  @override
+  State<_SourceGroupSection> createState() => _SourceGroupSectionState();
+}
+
+class _SourceGroupSectionState extends State<_SourceGroupSection>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+      value: widget.collapsed ? 0 : 1,
+    )..addStatusListener(_onAnimationStatus);
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SourceGroupSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.collapsed != oldWidget.collapsed) {
+      if (widget.collapsed) {
+        _controller.reverse();
+      } else {
+        _controller.forward();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: Column(
+        children: [
+          _SourceGroupHeader(
+            group: widget.group,
+            count: widget.sources.length,
+            collapsed: widget.collapsed,
+            updateCount: widget.collapsed
+                ? widget.sources.where(_hasSourceUpdate).length
+                : 0,
+            onTap: widget.onTap,
+          ),
+          SizeTransition(
+            sizeFactor: _animation,
+            axisAlignment: -1,
+            child: FadeTransition(
+              opacity: _animation,
+              child: widget.collapsed && _controller.isDismissed
+                  ? const SizedBox.shrink()
+                  : Column(
+                      children: [
+                        for (var source in widget.sources)
+                          _ComicSourceCard(
+                            key: ValueKey(source.key),
+                            source: source,
+                            edit: widget.edit,
+                            update: widget.update,
+                            delete: widget.delete,
+                          ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -334,27 +441,17 @@ class _BodyState extends State<_Body> {
           ),
         ),
         for (var group in _SourceGroup.values)
-          if (groups[group]!.isNotEmpty) ...[
-            _SourceGroupHeader(
+          if (groups[group]!.isNotEmpty)
+            _SourceGroupSection(
               key: ValueKey(group),
               group: group,
-              count: groups[group]!.length,
+              sources: groups[group]!,
               collapsed: _collapsedGroups.contains(group),
-              updateCount: _collapsedGroups.contains(group)
-                  ? groups[group]!.where(_hasSourceUpdate).length
-                  : 0,
               onTap: () => _toggleGroup(group),
+              edit: edit,
+              update: update,
+              delete: delete,
             ),
-            if (!_collapsedGroups.contains(group))
-              for (var source in groups[group]!)
-                _SliverComicSource(
-                  key: ValueKey(source.key),
-                  source: source,
-                  edit: edit,
-                  update: update,
-                  delete: delete,
-                ),
-          ],
         SliverPadding(padding: EdgeInsets.only(bottom: context.padding.bottom)),
       ],
     );
@@ -1021,8 +1118,8 @@ class _CallbackSettingState extends State<_CallbackSetting> {
   }
 }
 
-class _SliverComicSource extends StatefulWidget {
-  const _SliverComicSource({
+class _ComicSourceCard extends StatefulWidget {
+  const _ComicSourceCard({
     super.key,
     required this.source,
     required this.edit,
@@ -1037,10 +1134,10 @@ class _SliverComicSource extends StatefulWidget {
   final void Function(ComicSource source) delete;
 
   @override
-  State<_SliverComicSource> createState() => _SliverComicSourceState();
+  State<_ComicSourceCard> createState() => _ComicSourceCardState();
 }
 
-class _SliverComicSourceState extends State<_SliverComicSource> {
+class _ComicSourceCardState extends State<_ComicSourceCard> {
   ComicSource get source => widget.source;
 
   @override
@@ -1076,185 +1173,183 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
         ),
       ),
     );
-    return SliverToBoxAdapter(
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        elevation: 0,
-        clipBehavior: Clip.antiAlias,
-        color: context.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: hasUpdate
-                ? context.colorScheme.primary
-                : context.colorScheme.outlineVariant,
-            width: 0.6,
-          ),
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      color: context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: hasUpdate
+              ? context.colorScheme.primary
+              : context.colorScheme.outlineVariant,
+          width: 0.6,
         ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Opacity(
-                    opacity: enabled ? 1 : 0.5,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: context.colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        source.isVideoSource
-                            ? Icons.live_tv_outlined
-                            : Icons.menu_book_outlined,
-                        color: context.colorScheme.onSecondaryContainer,
-                      ),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Opacity(
+                  opacity: enabled ? 1 : 0.5,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: context.colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      source.isVideoSource
+                          ? Icons.live_tv_outlined
+                          : Icons.menu_book_outlined,
+                      color: context.colorScheme.onSecondaryContainer,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Opacity(
-                      opacity: enabled ? 1 : 0.5,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            source.name,
-                            style: ts.s16.copyWith(fontWeight: FontWeight.w600),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              badge(type),
-                              badge(source.version),
-                              if (!enabled) badge('Disabled'.tl),
-                              if (hasUpdate)
-                                Tooltip(
-                                  message: newVersion,
-                                  child: badge(
-                                    'New Version'.tl,
-                                    highlighted: true,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (host.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                host,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: ts.s12.copyWith(
-                                  color: context.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Opacity(
+                    opacity: enabled ? 1 : 0.5,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          source.name,
+                          style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            badge(type),
+                            badge(source.version),
+                            if (!enabled) badge('Disabled'.tl),
+                            if (hasUpdate)
+                              Tooltip(
+                                message: newVersion,
+                                child: badge(
+                                  'New Version'.tl,
+                                  highlighted: true,
                                 ),
                               ),
+                          ],
+                        ),
+                        if (host.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              host,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ts.s12.copyWith(
+                                color: context.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Tooltip(
-                        message:
-                            (enabled ? 'Disable source' : 'Enable source').tl,
-                        child: Switch(
-                          value: enabled,
-                          onChanged: (value) => source.isEnabled = value,
-                        ),
+                ),
+                const SizedBox(width: 4),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Tooltip(
+                      message:
+                          (enabled ? 'Disable source' : 'Enable source').tl,
+                      child: Switch(
+                        value: enabled,
+                        onChanged: (value) => source.isEnabled = value,
                       ),
-                      PopupMenuButton<String>(
-                        tooltip: 'More'.tl,
-                        icon: Icon(
-                          Icons.more_horiz,
-                          color: hasUpdate ? context.colorScheme.primary : null,
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'More'.tl,
+                      icon: Icon(
+                        Icons.more_horiz,
+                        color: hasUpdate ? context.colorScheme.primary : null,
+                      ),
+                      onSelected: (action) {
+                        switch (action) {
+                          case 'edit':
+                            widget.edit(source);
+                            break;
+                          case 'update':
+                            widget.update(source);
+                            break;
+                          case 'delete':
+                            widget.delete(source);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit_note),
+                              const SizedBox(width: 12),
+                              Text('Edit'.tl),
+                            ],
+                          ),
                         ),
-                        onSelected: (action) {
-                          switch (action) {
-                            case 'edit':
-                              widget.edit(source);
-                              break;
-                            case 'update':
-                              widget.update(source);
-                              break;
-                            case 'delete':
-                              widget.delete(source);
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                const Icon(Icons.edit_note),
-                                const SizedBox(width: 12),
-                                Text('Edit'.tl),
-                              ],
-                            ),
+                        PopupMenuItem(
+                          value: 'update',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.update,
+                                color: hasUpdate
+                                    ? context.colorScheme.primary
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Text('Update'.tl),
+                            ],
                           ),
-                          PopupMenuItem(
-                            value: 'update',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.update,
-                                  color: hasUpdate
-                                      ? context.colorScheme.primary
-                                      : null,
-                                ),
-                                const SizedBox(width: 12),
-                                Text('Update'.tl),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.delete_outline,
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.delete_outline,
+                                color: context.colorScheme.error,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Delete'.tl,
+                                style: TextStyle(
                                   color: context.colorScheme.error,
                                 ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Delete'.tl,
-                                  style: TextStyle(
-                                    color: context.colorScheme.error,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ),
-            if ((settings?.isNotEmpty ?? false) || source.account != null)
-              ExpansionTile(
-                maintainState: true,
-                shape: const Border(),
-                collapsedShape: const Border(),
-                leading: const Icon(Icons.tune),
-                title: Text('Settings'.tl),
-                children: [...buildSourceSettings(), ..._buildAccount()],
-              ),
-          ],
-        ),
+          ),
+          if ((settings?.isNotEmpty ?? false) || source.account != null)
+            ExpansionTile(
+              maintainState: true,
+              shape: const Border(),
+              collapsedShape: const Border(),
+              leading: const Icon(Icons.tune),
+              title: Text('Settings'.tl),
+              children: [...buildSourceSettings(), ..._buildAccount()],
+            ),
+        ],
       ),
     );
   }
