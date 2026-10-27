@@ -22,6 +22,7 @@ import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
+import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
@@ -68,7 +69,26 @@ class ComicPage extends StatefulWidget {
   final int? heroID;
 
   @override
-  State<ComicPage> createState() => _ComicPageState();
+  // Bangumi history entries open their subject page wherever a history
+  // opens ComicPage.
+  // ignore: no_logic_in_create_state
+  State<ComicPage> createState() {
+    if (ComicType.fromKey(sourceKey).isBangumi &&
+        bangumiSubjectIdFromHistory(id) != null) {
+      return _BangumiComicPageState();
+    }
+    return _ComicPageState();
+  }
+}
+
+/// Handles all existing callers that open history through ComicPage.
+class _BangumiComicPageState extends State<ComicPage> {
+  @override
+  Widget build(BuildContext context) {
+    return BangumiSubjectPage(
+      subjectId: bangumiSubjectIdFromHistory(widget.id)!,
+    );
+  }
 }
 
 class _ComicPageState extends LoadingState<ComicPage, ComicDetails>

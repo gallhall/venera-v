@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Clear all": "清空",
+    "Playback source: @source": "播放源：@source",
+    "Trending anime": "热门番剧",
     "Summary": "简介",
     "Bangumi API address": "Bangumi API 地址",
     "Bangumi next API address": "Bangumi next API 地址",
@@ -613,6 +616,9 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Clear all": "清空",
+    "Playback source: @source": "播放來源：@source",
+    "Trending anime": "熱門番劇",
     "Summary": "簡介",
     "Bangumi API address": "Bangumi API 位址",
     "Bangumi next API address": "Bangumi next API 位址",

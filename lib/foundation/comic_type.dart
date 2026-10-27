@@ -15,6 +15,7 @@ class ComicType {
   /// removed, e.g. one of downloaded comics, as favorites and history name
   /// it. [ComicType.fromKey] takes it back.
   String get sourceKey {
+    if (isBangumi) return "bangumi";
     if(this == local) {
       return "local";
     } else {
@@ -23,6 +24,7 @@ class ComicType {
   }
 
   ComicSource? get comicSource {
+    if (isBangumi) return null;
     if(this == local) {
       return null;
     } else {
@@ -32,7 +34,14 @@ class ComicType {
 
   static const local = ComicType(0);
 
+  static final bangumi = ComicType("bangumi".hashCode);
+
+  bool get isBangumi => this == bangumi;
+
+  String? get sourceName => isBangumi ? "Bangumi" : comicSource?.name;
+
   factory ComicType.fromKey(String key) {
+    if (key == "bangumi") return bangumi;
     if(key == "local") {
       return local;
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/utils/translations.dart';
 import 'bangumi_subject_page.dart';
@@ -32,6 +33,20 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
     super.dispose();
   }
 
+  List<String> get history =>
+      bangumiSearchHistory(appdata.settings['bangumiSearchHistory']);
+
+  void updateHistory({String? add, String? remove, bool clear = false}) {
+    appdata.settings['bangumiSearchHistory'] = bangumiSearchHistory(
+      history,
+      add: add,
+      remove: remove,
+      clear: clear,
+    );
+    appdata.saveData();
+    setState(() {});
+  }
+
   Future<void> search({bool next = false}) async {
     if (next && loading) return;
     if (!next) {
@@ -47,6 +62,7 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
       });
       return;
     }
+    if (!next) updateHistory(add: keyword);
     setState(() {
       loading = true;
       error = null;
@@ -79,6 +95,17 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
           child: TextField(
             controller: controller,
             onSubmitted: (_) => search(),
+            onChanged: (_) {
+              if (controller.text.trim().isEmpty) {
+                generation++;
+                keyword = '';
+                results.clear();
+                loading = false;
+                more = false;
+                error = null;
+              }
+              setState(() {});
+            },
             decoration: InputDecoration(
               labelText: 'Search Bangumi'.tl,
               suffixIcon: IconButton(
@@ -100,16 +127,42 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
         Expanded(
           child: ListView(
             children: [
-              for (var subject in results)
-                BangumiSubjectTile(
-                  subject: subject,
-                  onTap: () => context.to(
-                    () => BangumiSubjectPage(
-                      subjectId: subject.id,
-                      preview: subject,
-                    ),
+              if (controller.text.trim().isEmpty) ...[
+                ListTile(
+                  title: Text('Search History'.tl),
+                  trailing: TextButton(
+                    onPressed: history.isEmpty
+                        ? null
+                        : () => updateHistory(clear: true),
+                    child: Text('Clear all'.tl),
                   ),
                 ),
+                for (var word in history)
+                  ListTile(
+                    leading: const Icon(Icons.history),
+                    title: Text(word),
+                    onTap: () {
+                      controller.text = word;
+                      search();
+                    },
+                    trailing: IconButton(
+                      tooltip: 'Delete'.tl,
+                      icon: const Icon(Icons.close),
+                      onPressed: () => updateHistory(remove: word),
+                    ),
+                  ),
+              ],
+              if (controller.text.trim().isNotEmpty)
+                for (var subject in results)
+                  BangumiSubjectTile(
+                    subject: subject,
+                    onTap: () => context.to(
+                      () => BangumiSubjectPage(
+                        subjectId: subject.id,
+                        preview: subject,
+                      ),
+                    ),
+                  ),
               if (!loading &&
                   results.isEmpty &&
                   keyword.isNotEmpty &&

@@ -136,6 +136,7 @@ class History implements Comic {
   /// Video sources keep the playback position in [page] and the duration in
   /// [maxPage], both in seconds. So do imported local videos.
   bool get isVideo {
+    if (type.isBangumi) return true;
     if (type == ComicType.local) return _isLocalVideo ??= _findLocalVideo();
     return type.comicSource?.isVideoSource ?? false;
   }
@@ -200,9 +201,7 @@ class History implements Comic {
   String? get language => null;
 
   @override
-  String get sourceKey => type == ComicType.local
-      ? 'local'
-      : type.comicSource?.key ?? "Unknown:${type.value}";
+  String get sourceKey => type.sourceKey;
 
   @override
   double? get stars => null;
@@ -493,7 +492,7 @@ void clearUnfavoritedHistory() {
   /// Fetches the latest cover, title and subtitle from the source.
   /// Keeps the reading progress (ep, page, etc.).
   Future<bool> refreshHistoryInfo(History history) async {
-    if (history.sourceKey == 'local') {
+    if (history.sourceKey == 'local' || history.type.isBangumi) {
       // Local comics don't need refresh
       return false;
     }
@@ -574,7 +573,7 @@ void clearUnfavoritedHistory() {
 
     var historiesToRefresh = <History>[];
     for (var history in histories) {
-      if (history.sourceKey == 'local') {
+      if (history.sourceKey == 'local' || history.type.isBangumi) {
         skipped++;
         current++;
         controller.add(RefreshProgress(total, current, success, failed, skipped));

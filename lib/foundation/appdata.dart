@@ -244,6 +244,7 @@ class Settings with ChangeNotifier {
     'videoAutoSkip': false, // skip the ranges a video source marks
     'bangumiApiBase': 'https://api.bgm.tv',
     'bangumiNextApiBase': 'https://next.bgm.tv',
+    'bangumiSearchHistory': <String>[],
     'bangumiSubjectProgress': <String, dynamic>{},
     'bangumiSourceChoices': <String, dynamic>{},
     'bangumiToken': '', // access token of the Bangumi user

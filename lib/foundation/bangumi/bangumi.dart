@@ -7,6 +7,9 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
+
 import 'bangumi_api.dart';
 import 'bangumi_models.dart';
 import 'bangumi_playback.dart';
@@ -169,21 +172,23 @@ class BangumiManager with ChangeNotifier {
     notifyListeners();
   }
 
-  BangumiLocalProgress localProgress(int subjectId) =>
-      BangumiLocalProgress.fromJson(
-        (appdata.settings['bangumiSubjectProgress'] as Map?)?['$subjectId'],
-      );
-
-  void saveLocalProgress(int subjectId, BangumiLocalProgress progress) {
-    var all = Map<String, dynamic>.from(
-      appdata.settings['bangumiSubjectProgress'] as Map? ?? {},
+  BangumiLocalProgress localProgress(int subjectId) {
+    var history = HistoryManager().find(
+      bangumiHistoryId(subjectId),
+      ComicType.bangumi,
     );
-    all.remove('$subjectId');
-    all['$subjectId'] = progress.toJson();
-    while (all.length > 200) {
-      all.remove(all.keys.first);
-    }
-    appdata.settings['bangumiSubjectProgress'] = all;
+    if (history != null) return bangumiHistoryProgress(history);
+    // Read the previous version's progress until playback creates history.
+    return BangumiLocalProgress.fromJson(
+      (appdata.settings['bangumiSubjectProgress'] as Map?)?['$subjectId'],
+    );
+  }
+
+  void clearLegacyProgress(int subjectId) {
+    var old = appdata.settings['bangumiSubjectProgress'];
+    if (old is! Map || !old.containsKey('$subjectId')) return;
+    var values = Map<String, dynamic>.from(old)..remove('$subjectId');
+    appdata.settings['bangumiSubjectProgress'] = values;
     appdata.saveData();
   }
 

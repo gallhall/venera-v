@@ -34,9 +34,6 @@ class _SearchPageState extends State<SearchPage> {
 
   String searchTarget = "";
 
-  SearchPageData get currentSearchPageData =>
-      ComicSource.find(searchTarget)!.searchPageData!;
-
   bool aggregatedSearch = false;
 
   var focusNode = FocusNode();
@@ -48,6 +45,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void search([String? text]) {
+    if (searchSources.isEmpty) return;
     if (aggregatedSearch) {
       context
           .to(
@@ -103,7 +101,7 @@ class _SearchPageState extends State<SearchPage> {
       }
     }
 
-    if (!ComicSource.find(searchTarget)!.enableTagsSuggestions) {
+    if (ComicSource.find(searchTarget)?.enableTagsSuggestions != true) {
       update();
       return;
     }
@@ -173,7 +171,7 @@ class _SearchPageState extends State<SearchPage> {
 
   void findSearchSources() {
     var all = ComicSource.all()
-        .where((e) => e.searchPageData != null)
+        .where((e) => e.searchPageData != null && !e.isKazumi)
         .map((e) => e.key)
         .toList();
     var settings = appdata.settings['searchSources'] as List;
@@ -195,6 +193,7 @@ class _SearchPageState extends State<SearchPage> {
     if (old.isEqualTo(searchSources)) {
       return;
     }
+    useDefaultOptions();
     setState(() {});
   }
 
@@ -231,7 +230,7 @@ class _SearchPageState extends State<SearchPage> {
           SafeArea(bottom: false, child: ListTile(
             leading: const Icon(Icons.live_tv), title: Text('Search anime on Bangumi'.tl),
             onTap: () => context.to(() => const BangumiSearchPage()))),
-          Expanded(child: buildEmpty()),
+          const Spacer(),
         ]));
       }
       return buildEmpty();
@@ -327,7 +326,8 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void useDefaultOptions() {
-    final searchOptions = currentSearchPageData.searchOptions ?? [];
+    final searchOptions =
+        ComicSource.find(searchTarget)?.searchPageData?.searchOptions ?? [];
     options = searchOptions.map((e) => e.defaultValue).toList();
   }
 
@@ -338,7 +338,8 @@ class _SearchPageState extends State<SearchPage> {
 
     var children = <Widget>[];
 
-    final searchOptions = currentSearchPageData.searchOptions ?? [];
+    final searchOptions =
+        ComicSource.find(searchTarget)?.searchPageData?.searchOptions ?? [];
     if (searchOptions.length != options.length) {
       useDefaultOptions();
     }

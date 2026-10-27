@@ -33,7 +33,7 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
   @override
   void initState() {
     var all = ComicSource.all()
-        .where((e) => e.searchPageData != null)
+        .where((e) => e.searchPageData != null && (widget.videoOnly || !e.isKazumi))
         .map((e) => e.key)
         .toList();
     var settings = appdata.settings['searchSources'] as List;

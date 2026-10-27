@@ -95,14 +95,17 @@ class BangumiSubject {
     if (json is! Map || json['id'] is! int) return null;
     var images = json['images'];
     var image = images is Map
-        ? images['common'] ?? images['large'] ?? images['medium']
+        ? images['common'] ??
+              images['large'] ??
+              images['medium'] ??
+              images['small']
         : json['image'];
     var rating = json['rating'];
     return BangumiSubject(
       id: json['id'],
       type: _int(json['type']),
       name: _string(json['name']),
-      nameCn: _string(json['name_cn']),
+      nameCn: _string(json['name_cn'] ?? json['nameCN']),
       image: _https(image),
       score: rating is Map && rating['score'] is num
           ? (rating['score'] as num).toDouble()
@@ -442,5 +445,37 @@ abstract final class BangumiEpisodeNumber {
     var main = episodes.where((e) => e.type == 0);
     return main.where((e) => e.ep == number).firstOrNull ??
         main.where((e) => e.sort == number).firstOrNull;
+  }
+}
+
+/// Public next API pages may wrap each subject with a trending count.
+class BangumiTrendingPage {
+  final List<BangumiSubject> subjects;
+  final int count;
+  final int? total;
+
+  const BangumiTrendingPage(this.subjects, this.count, this.total);
+
+  factory BangumiTrendingPage.fromJson(Object? json) {
+    var items = json is List
+        ? json
+        : json is Map
+        ? json['data'] ?? json['items']
+        : null;
+    var subjects = <BangumiSubject>[];
+    if (items is List) {
+      for (var item in items) {
+        var subject = BangumiSubject.fromJson(
+          item is Map && item.containsKey('subject') ? item['subject'] : item,
+        );
+        if (subject != null) subjects.add(subject);
+      }
+    }
+    var total = json is Map ? json['total'] : null;
+    return BangumiTrendingPage(
+      subjects,
+      items is List ? items.length : 0,
+      total is num ? total.toInt() : null,
+    );
   }
 }

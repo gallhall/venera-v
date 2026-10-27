@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/pages/bangumi/bangumi_trending_page.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/res.dart';
@@ -27,16 +28,27 @@ class _ExplorePageState extends State<ExplorePage>
 
   late List<String> pages;
 
+  static const bangumiPage = '__bangumi_trending__';
+  final trendingKey = GlobalKey<BangumiTrendingPageState>();
+
+  List<String> withBangumi(List<String> values) => [
+    if (ComicSource.all().any((s) => s.isVideoSource)) bangumiPage,
+    ...values,
+  ];
+
   void onSettingsChanged() {
     var explorePages = List<String>.from(appdata.settings["explore_pages"]);
     var all = ComicSource.all()
         .map((e) => e.explorePages)
         .expand((e) => e.map((e) => e.title))
         .toList();
-    explorePages = explorePages.where((e) => all.contains(e)).toList();
+    explorePages = withBangumi(
+      explorePages.where((e) => all.contains(e)).toList(),
+    );
     if (!pages.isEqualTo(explorePages)) {
       setState(() {
         pages = explorePages;
+        controller.dispose();
         controller = TabController(
           length: pages.length,
           vsync: this,
@@ -46,7 +58,11 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   void onNaviItemTapped(int index) {
-    if (index == 2) {
+    if (index == 2 && pages.isNotEmpty) {
+      if (pages[controller.index] == bangumiPage) {
+        trendingKey.currentState?.toTop();
+        return;
+      }
       int page = controller.index;
       String currentPageId = pages[page];
       GlobalState.find<_SingleExplorePageState>(currentPageId).toTop();
@@ -66,7 +82,7 @@ class _ExplorePageState extends State<ExplorePage>
         .map((e) => e.explorePages)
         .expand((e) => e.map((e) => e.title))
         .toList();
-    pages = pages.where((e) => all.contains(e)).toList();
+    pages = withBangumi(pages.where((e) => all.contains(e)).toList());
     controller = TabController(
       length: pages.length,
       vsync: this,
@@ -91,6 +107,11 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   void refresh() {
+    if (pages.isEmpty) return;
+    if (pages[controller.index] == bangumiPage) {
+      trendingKey.currentState?.refresh();
+      return;
+    }
     int page = controller.index;
     String currentPageId = pages[page];
     GlobalState.find<_SingleExplorePageState>(currentPageId).refresh();
@@ -106,13 +127,16 @@ class _ExplorePageState extends State<ExplorePage>
       );
 
   Tab buildTab(String i) {
+    if (i == bangumiPage) return Tab(text: 'Trending anime'.tl, key: Key(i));
     var comicSource = ComicSource.all()
         .firstWhere((e) => e.explorePages.any((e) => e.title == i));
     return Tab(text: i.ts(comicSource.key), key: Key(i));
   }
 
   Widget buildBody(String i) => Material(
-        child: _SingleExplorePage(i, key: PageStorageKey(i)),
+        child: i == bangumiPage
+            ? BangumiTrendingPage(key: trendingKey)
+            : _SingleExplorePage(i, key: PageStorageKey(i)),
       );
 
   Widget buildEmpty() {

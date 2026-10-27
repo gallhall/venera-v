@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/network/app_dio.dart';
@@ -101,6 +103,184 @@ List<BangumiEpisode> _season(int count, {int firstSort = 1}) => [
 ];
 
 void main() {
+  group('Bangumi history and search history', () {
+    test('history IDs are namespaced and parse only positive subject IDs', () {
+      expect(bangumiHistoryId(42), 'bangumi:42');
+      expect(bangumiSubjectIdFromHistory(bangumiHistoryId(42)), 42);
+      expect(bangumiSubjectIdFromHistory(bangumiHistoryId(1)), 1);
+      for (var id in [
+        '',
+        '42',
+        'other:42',
+        'bangumi:',
+        'bangumi:0',
+        'bangumi:-1',
+        'bangumi:+1',
+        'bangumi:01',
+        'bangumi:1.5',
+        'bangumi:42:1',
+        'bangumi:42 ',
+        'bangumi:42\n',
+        'bangumi:999999999999999999999999999999',
+      ]) {
+        expect(bangumiSubjectIdFromHistory(id), isNull, reason: id);
+      }
+      expect(() => bangumiHistoryId(0), throwsArgumentError);
+      expect(() => bangumiHistoryId(-1), throwsArgumentError);
+    });
+    test(
+      'built-in type and badge survive source removal and serialization',
+      () {
+        var type = ComicType.fromKey('bangumi');
+        expect(type.isBangumi, isTrue);
+        expect(ComicType(type.value).sourceKey, 'bangumi');
+        expect(ComicType(type.value).sourceName, 'Bangumi');
+        expect(ComicType.local.isBangumi, isFalse);
+        expect(ComicType.fromKey('other-source').isBangumi, isFalse);
+        expect(ComicType.fromKey('Unknown:123').value, 123);
+      },
+    );
+    test(
+      'subject history carries video position and watched subject numbers',
+      () {
+        const subject = BangumiSubject(
+          id: 42,
+          type: 2,
+          name: 'Original',
+          nameCn: 'Chinese title',
+          image: 'cover',
+        );
+        var history = bangumiSubjectHistory(
+          subject,
+          const BangumiLocalProgress(
+            episode: 2,
+            position: 80,
+            duration: 100,
+            watched: {1, 2},
+          ),
+        );
+        expect(history.id, 'bangumi:42');
+        expect(history.title, 'Chinese title');
+        expect(history.cover, 'cover');
+        expect(history.type, ComicType.bangumi);
+        expect(history.sourceKey, 'bangumi');
+        expect(history.isVideo, isTrue);
+        expect(history.group, isNull);
+        expect(history.readEpisode, {'1', '2'});
+        expect(bangumiHistoryProgress(history).toJson(), {
+          'episode': 2,
+          'position': 80,
+          'duration': 100,
+          'watched': [1, 2],
+        });
+        expect(History.formatSeconds(history.page), '1:20');
+        expect(history.description, contains('1:20'));
+        expect(
+          bangumiSubjectHistory(
+            const BangumiSubject(id: 42, type: 2, name: 'Original'),
+            const BangumiLocalProgress(),
+          ).title,
+          'Original',
+        );
+      },
+    );
+    test(
+      'search keywords are trimmed, unique, recent first and capped at 50',
+      () {
+        expect(bangumiSearchHistory(null), isEmpty);
+        expect(bangumiSearchHistory([' a ', 'b', 'a', '', 1], add: ' b '), [
+          'b',
+          'a',
+        ]);
+        expect(bangumiSearchHistory(['a', 'b'], add: '  '), ['a', 'b']);
+        expect(bangumiSearchHistory(['a', 'b'], remove: ' a '), ['b']);
+        expect(bangumiSearchHistory(['a'], clear: true), isEmpty);
+        var list = bangumiSearchHistory(
+          List.generate(60, (i) => '$i'),
+          add: 'new',
+        );
+        expect(list.length, 50);
+        expect(list.first, 'new');
+        expect(list.last, '48');
+      },
+    );
+  });
+  test('trending parses wrapped and direct subjects, skips invalid items', () {
+    var page = BangumiTrendingPage.fromJson({
+      'data': [
+        {
+          'subject': {
+            'id': 1,
+            'name': 'a',
+            'nameCN': 'cn',
+            'rating': {'score': 8.2},
+            'images': {'small': '//example.com/1'},
+          },
+          'count': 10,
+        },
+        {'id': 2, 'name': 'b'},
+        {'subject': null},
+        'bad',
+      ],
+      'total': 30,
+    });
+    expect(page.subjects.map((s) => s.id), [1, 2]);
+    expect(page.subjects.first.displayName, 'cn');
+    expect(page.subjects.first.score, 8.2);
+    expect(page.subjects.first.image, 'https://example.com/1');
+    expect(page.count, 4);
+    expect(page.total, 30);
+    expect(
+      BangumiTrendingPage.fromJson([
+        {'id': 3},
+      ]).subjects.single.id,
+      3,
+    );
+    expect(
+      BangumiTrendingPage.fromJson({
+        'items': [
+          {'id': 4},
+        ],
+      }).subjects.single.id,
+      4,
+    );
+    expect(BangumiTrendingPage.fromJson(null).count, 0);
+  });
+  test(
+    'trending is public, uses configured next base and raw offset',
+    () async {
+      var old = appdata.settings['bangumiNextApiBase'];
+      addTearDown(() => appdata.settings['bangumiNextApiBase'] = old);
+      appdata.settings['bangumiNextApiBase'] = 'https://mirror.example/next/';
+      var adapter = _Adapter(
+        (_) => (
+          200,
+          [
+            {
+              'subject': {'id': 1},
+            },
+          ],
+        ),
+      );
+      var page = await _api(adapter).trending(offset: 40);
+      expect(page.subjects.single.id, 1);
+      var request = adapter.requests.single;
+      expect(request.method, 'GET');
+      expect(request.uri.path, '/next/p1/trending/subjects');
+      expect(request.uri.queryParameters, {
+        'type': '2',
+        'limit': '20',
+        'offset': '40',
+      });
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      var failed = _Adapter((_) => (503, {'title': 'Unavailable'}));
+      await expectLater(
+        _api(failed).trending(),
+        throwsA(isA<BangumiException>()),
+      );
+    },
+  );
+
   // Errors are translated; no translations are loaded in unit tests.
   AppTranslation.translations = {};
 

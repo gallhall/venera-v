@@ -83,6 +83,20 @@ class BangumiApi {
     return _list(data is Map ? data['data'] : null, BangumiSubject.fromJson);
   }
 
+  Future<BangumiTrendingPage> trending({int offset = 0, int limit = 20}) async {
+    return BangumiTrendingPage.fromJson(
+      await _request(
+        'GET',
+        '$nextBaseUrl/p1/trending/subjects',
+        query: {
+          'type': BangumiSubjectType.anime,
+          'limit': limit,
+          'offset': offset,
+        },
+      ),
+    );
+  }
+
   Future<BangumiSubject> subject(int id) async {
     var subject = BangumiSubject.fromJson(
       await _request('GET', '/v0/subjects/$id'),

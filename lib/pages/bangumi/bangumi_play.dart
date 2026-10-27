@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/translations.dart';
@@ -8,6 +9,7 @@ Future<VideoPlayerPage> bangumiPlayer(
   BangumiPlaybackContext context,
   Comic candidate, {
   Duration? position,
+  bool startFullscreen = false,
 }) async {
   var source = ComicSource.find(candidate.sourceKey);
   if (source?.loadComicInfo == null) {
@@ -55,6 +57,7 @@ Future<VideoPlayerPage> bangumiPlayer(
     initialEp: h.ep,
     initialGroup: h.group,
     bangumi: context,
+    startFullscreen: startFullscreen,
     initialPosition: position ?? Duration.zero,
   );
 }
@@ -68,10 +71,9 @@ Future<void> openBangumiPlayer(
 }) async {
   var page = await bangumiPlayer(playback, candidate, position: position);
   if (!context.mounted) return;
-  var route = MaterialPageRoute<void>(builder: (_) => page);
   if (replace) {
-    Navigator.of(context).pushReplacement(route);
+    App.rootContext.toReplacement(() => page);
   } else {
-    await Navigator.of(context).push(route);
+    await App.rootContext.to(() => page);
   }
 }

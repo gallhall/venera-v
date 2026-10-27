@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -76,6 +77,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   void initState() {
     super.initState();
     appdata.settings.addListener(onSettingsChanged);
+    HistoryManager().addListener(onSettingsChanged);
     subject = widget.preview;
     load();
   }
@@ -83,6 +85,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   @override
   void dispose() {
     appdata.settings.removeListener(onSettingsChanged);
+    HistoryManager().removeListener(onSettingsChanged);
     super.dispose();
   }
 

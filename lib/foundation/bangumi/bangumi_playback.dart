@@ -1,3 +1,6 @@
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
+
 import 'bangumi_models.dart';
 
 abstract final class BangumiTitleMatch {
@@ -114,3 +117,60 @@ class BangumiLocalProgress {
     'watched': (watched.toList()..sort()).take(2000).toList(),
   };
 }
+
+/// Most recent first, unique, trimmed, and bounded for settings sync.
+List<String> bangumiSearchHistory(
+  Object? value, {
+  String? add,
+  String? remove,
+  bool clear = false,
+}) {
+  if (clear) return [];
+  var items = <String>{
+    if (add != null && add.trim().isNotEmpty) add.trim(),
+    if (value is List)
+      for (var item in value)
+        if (item is String && item.trim().isNotEmpty) item.trim(),
+  };
+  if (remove != null) items.remove(remove.trim());
+  return items.take(50).toList();
+}
+
+BangumiLocalProgress bangumiHistoryProgress(History history) =>
+    BangumiLocalProgress(
+      episode: history.ep,
+      position: history.page,
+      duration: history.maxPage ?? 0,
+      watched: {
+        for (var n in history.readEpisode)
+          if (int.tryParse(n) case int number when number > 0) number,
+      },
+    );
+
+/// Keeps subject IDs distinct from source IDs in the shared id-keyed history.
+String bangumiHistoryId(int subjectId) {
+  if (subjectId < 1) throw ArgumentError.value(subjectId, 'subjectId');
+  return 'bangumi:$subjectId';
+}
+
+int? bangumiSubjectIdFromHistory(String id) {
+  var match = RegExp(r'^bangumi:([1-9][0-9]*)$').firstMatch(id);
+  if (match == null || match.end != id.length) return null;
+  return int.tryParse(match[1]!);
+}
+
+History bangumiSubjectHistory(
+  BangumiSubject subject,
+  BangumiLocalProgress progress,
+) => History.fromMap({
+  'type': ComicType.bangumi.value,
+  'id': bangumiHistoryId(subject.id),
+  'title': subject.displayName,
+  'subtitle': '',
+  'cover': subject.image,
+  'ep': progress.episode,
+  'page': progress.position,
+  'max_page': progress.duration,
+  'time': DateTime.now().millisecondsSinceEpoch,
+  'readEpisode': progress.watched.map((n) => '$n').toList(),
+});
