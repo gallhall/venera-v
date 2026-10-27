@@ -242,6 +242,7 @@ class Settings with ChangeNotifier {
     'videoPlaybackRate': 1.0, // last speed picked in the player
     'videoFit': 'contain', // contain, cover, fill
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'disabledComicSources': <String>[],
     'bangumiApiBase': 'https://api.bgm.tv',
     'bangumiNextApiBase': 'https://next.bgm.tv',
     'bangumiSearchHistory': <String>[],

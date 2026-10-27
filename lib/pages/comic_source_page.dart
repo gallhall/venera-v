@@ -147,19 +147,21 @@ class _BodyState extends State<_Body> {
   var url = "";
 
   void updateUI() {
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   @override
   void initState() {
     super.initState();
     ComicSourceManager().addListener(updateUI);
+    appdata.settings.addListener(updateUI);
   }
 
   @override
   void dispose() {
     super.dispose();
     ComicSourceManager().removeListener(updateUI);
+    appdata.settings.removeListener(updateUI);
   }
 
   @override
@@ -168,6 +170,12 @@ class _BodyState extends State<_Body> {
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
         buildCard(context),
+        SliverToBoxAdapter(
+          child: ListTile(
+            title: Text('Installed sources'.tl),
+            trailing: Text('${ComicSource.all().length}', style: ts.s14),
+          ),
+        ),
         for (var source in ComicSource.all())
           _SliverComicSource(
             key: ValueKey(source.key),
@@ -239,67 +247,96 @@ class _BodyState extends State<_Body> {
 
   Widget buildCard(BuildContext context) {
     return SliverToBoxAdapter(
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text("Add comic source".tl),
-              leading: const Icon(Icons.dashboard_customize),
-            ),
-            TextField(
-              decoration: InputDecoration(
-                hintText: "URL",
-                border: const UnderlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                suffix: IconButton(
-                  onPressed: () => handleAddSource(url),
-                  icon: const Icon(Icons.check),
-                ),
+      child: Card(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        elevation: 0,
+        color: context.colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: context.colorScheme.outlineVariant,
+            width: 0.5,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: context.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.dashboard_customize_outlined,
+                      color: context.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Add comic source'.tl, style: ts.s18)),
+                ],
               ),
-              onChanged: (value) {
-                url = value;
-              },
-              onSubmitted: handleAddSource,
-            ).paddingHorizontal(16).paddingBottom(8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  icon: Icon(Icons.article_outlined),
-                  label: Text("Comic Source list".tl),
-                  onPressed: () {
-                    showPopUpWidget(
+              const SizedBox(height: 16),
+              TextField(
+                decoration: InputDecoration(
+                  labelText: 'Source URL'.tl,
+                  hintText: 'https://...',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainerHigh,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.link),
+                  suffixIcon: IconButton(
+                    tooltip: 'Add'.tl,
+                    onPressed: () => handleAddSource(url),
+                    icon: const Icon(Icons.arrow_forward),
+                  ),
+                ),
+                onChanged: (value) => url = value,
+                onSubmitted: handleAddSource,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.article_outlined),
+                    label: Text('Comic Source list'.tl),
+                    onPressed: () => showPopUpWidget(
                       App.rootContext,
                       _ComicSourceList(handleAddSource),
-                    );
-                  },
-                ),
-                FilledButton.tonalIcon(
-                  icon: Icon(Icons.movie_filter_outlined),
-                  label: Text("Kazumi Rules".tl),
-                  onPressed: () {
-                    showPopUpWidget(App.rootContext, const KazumiRulesPage());
-                  },
-                ),
-                FilledButton.tonalIcon(
-                  icon: Icon(Icons.file_open_outlined),
-                  label: Text("Use a config file".tl),
-                  onPressed: _selectFile,
-                ),
-                FilledButton.tonalIcon(
-                  icon: Icon(Icons.help_outline),
-                  label: Text("Help".tl),
-                  onPressed: help,
-                ),
-                _CheckUpdatesButton(),
-              ],
-            ).paddingHorizontal(12).paddingVertical(8),
-            const SizedBox(height: 8),
-          ],
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.movie_filter_outlined),
+                    label: Text('Kazumi Rules'.tl),
+                    onPressed: () => showPopUpWidget(
+                      App.rootContext,
+                      const KazumiRulesPage(),
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.file_open_outlined),
+                    label: Text('Use a config file'.tl),
+                    onPressed: _selectFile,
+                  ),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.help_outline),
+                    label: Text('Help'.tl),
+                    onPressed: help,
+                  ),
+                  const _CheckUpdatesButton(),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -841,110 +878,213 @@ class _SliverComicSourceState extends State<_SliverComicSource> {
     bool hasUpdate =
         newVersion != null && ComicSourcePage.isNewer(source, newVersion);
 
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverPadding(padding: const EdgeInsets.only(top: 16)),
-        SliverToBoxAdapter(
-          child: ListTile(
-            title: Row(
-              children: [
-                Text(source.name, style: ts.s18),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    source.version,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-                if (source.isKazumi)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.colorScheme.tertiaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      "Kazumi",
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ).paddingLeft(4),
-                if (hasUpdate)
-                  Tooltip(
-                    message: newVersion,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        "New Version".tl,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ).paddingLeft(4),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: "Edit".tl,
-                  child: IconButton(
-                    onPressed: () => widget.edit(source),
-                    icon: const Icon(Icons.edit_note),
-                  ),
-                ),
-                Tooltip(
-                  message: "Update".tl,
-                  child: IconButton(
-                    onPressed: () => widget.update(source),
-                    icon: const Icon(Icons.update),
-                  ),
-                ),
-                Tooltip(
-                  message: "Delete".tl,
-                  child: IconButton(
-                    onPressed: () => widget.delete(source),
-                    icon: const Icon(Icons.delete),
-                  ),
-                ),
-              ],
-            ),
+    var enabled = source.isEnabled;
+    var settings = source.getSettingsDynamic() ?? source.settings;
+    var host = Uri.tryParse(source.url)?.host ?? '';
+    var type =
+        (source.isKazumi
+                ? 'Kazumi'
+                : source.isVideoSource
+                ? 'Video'
+                : 'Comics')
+            .tl;
+    Widget badge(String text, {bool highlighted = false}) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? context.colorScheme.primaryContainer
+            : context.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: ts.s12.copyWith(
+          color: highlighted
+              ? context.colorScheme.onPrimaryContainer
+              : context.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+    return SliverToBoxAdapter(
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        color: context.colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: hasUpdate
+                ? context.colorScheme.primary
+                : context.colorScheme.outlineVariant,
+            width: 0.6,
           ),
         ),
-        SliverToBoxAdapter(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: context.colorScheme.outlineVariant,
-                  width: 0.6,
-                ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Opacity(
+                    opacity: enabled ? 1 : 0.5,
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: context.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        source.isVideoSource
+                            ? Icons.live_tv_outlined
+                            : Icons.menu_book_outlined,
+                        color: context.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Opacity(
+                      opacity: enabled ? 1 : 0.5,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            source.name,
+                            style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              badge(type),
+                              badge(source.version),
+                              if (!enabled) badge('Disabled'.tl),
+                              if (hasUpdate)
+                                Tooltip(
+                                  message: newVersion,
+                                  child: badge(
+                                    'New Version'.tl,
+                                    highlighted: true,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (host.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                host,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ts.s12.copyWith(
+                                  color: context.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Tooltip(
+                        message:
+                            (enabled ? 'Disable source' : 'Enable source').tl,
+                        child: Switch(
+                          value: enabled,
+                          onChanged: (value) => source.isEnabled = value,
+                        ),
+                      ),
+                      PopupMenuButton<String>(
+                        tooltip: 'More'.tl,
+                        icon: Icon(
+                          Icons.more_horiz,
+                          color: hasUpdate ? context.colorScheme.primary : null,
+                        ),
+                        onSelected: (action) {
+                          switch (action) {
+                            case 'edit':
+                              widget.edit(source);
+                              break;
+                            case 'update':
+                              widget.update(source);
+                              break;
+                            case 'delete':
+                              widget.delete(source);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.edit_note),
+                                const SizedBox(width: 12),
+                                Text('Edit'.tl),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'update',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.update,
+                                  color: hasUpdate
+                                      ? context.colorScheme.primary
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Text('Update'.tl),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  color: context.colorScheme.error,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Delete'.tl,
+                                  style: TextStyle(
+                                    color: context.colorScheme.error,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ),
+            if ((settings?.isNotEmpty ?? false) || source.account != null)
+              ExpansionTile(
+                maintainState: true,
+                shape: const Border(),
+                collapsedShape: const Border(),
+                leading: const Icon(Icons.tune),
+                title: Text('Settings'.tl),
+                children: [...buildSourceSettings(), ..._buildAccount()],
+              ),
+          ],
         ),
-        SliverToBoxAdapter(
-          child: Column(children: buildSourceSettings().toList()),
-        ),
-        SliverToBoxAdapter(child: Column(children: _buildAccount().toList())),
-      ],
+      ),
     );
   }
 

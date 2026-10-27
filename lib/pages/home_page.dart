@@ -3,6 +3,7 @@ import 'package:sliver_tools/sliver_tools.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -667,20 +668,22 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
 
   void onComicSourceChange() {
     setState(() {
-      comicSources = ComicSource.all().map((e) => e.name).toList();
+      comicSources = ComicSource.enabled().map((e) => e.name).toList();
     });
   }
 
   @override
   void initState() {
-    comicSources = ComicSource.all().map((e) => e.name).toList();
+    comicSources = ComicSource.enabled().map((e) => e.name).toList();
     ComicSourceManager().addListener(onComicSourceChange);
+    appdata.settings.addListener(onComicSourceChange);
     super.initState();
   }
 
   @override
   void dispose() {
     ComicSourceManager().removeListener(onComicSourceChange);
+    appdata.settings.removeListener(onComicSourceChange);
     super.dispose();
   }
 
@@ -688,7 +691,7 @@ class _ComicSourceWidgetState extends State<_ComicSourceWidget> {
     int c = 0;
     ComicSourceManager().availableUpdates.forEach((key, version) {
       var source = ComicSource.find(key);
-      if (source != null) {
+      if (source != null && source.isEnabled) {
         if (ComicSourcePage.isNewer(source, version)) {
           c++;
         }

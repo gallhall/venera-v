@@ -253,7 +253,7 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
 
   bool get isShown =>
       appdata.settings['showBangumiCalendar'] != false &&
-      ComicSource.all().any((s) => s.isVideoSource);
+      ComicSource.enabled().any((s) => s.isVideoSource);
 
   @override
   void initState() {

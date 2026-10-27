@@ -206,7 +206,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
 
   bool isSniffing = false;
 
-  final videoSources = ComicSource.all().where((e) => e.isVideoSource).toList();
+  final videoSources = ComicSource.enabled().where((e) => e.isVideoSource).toList();
 
   String? videoSourceKey;
 

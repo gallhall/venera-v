@@ -8,6 +8,8 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'source_enablement.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/res.dart';
@@ -120,6 +122,26 @@ class ComicSourceManager with ChangeNotifier, Init {
 
 class ComicSource {
   static List<ComicSource> all() => ComicSourceManager().all();
+
+  static List<ComicSource> enabled() => enabledComicSources(
+    all(),
+    (source) => source.key,
+    appdata.settings['disabledComicSources'],
+  );
+
+  bool get isEnabled =>
+      comicSourceIsEnabled(key, appdata.settings['disabledComicSources']);
+
+  set isEnabled(bool value) {
+    if (isEnabled == value) return;
+    appdata.settings['disabledComicSources'] = withComicSourceEnabled(
+      appdata.settings['disabledComicSources'],
+      key,
+      value,
+    );
+    appdata.saveData();
+    ComicSourceManager().notifyStateChange();
+  }
 
   static ComicSource? find(String key) => ComicSourceManager().find(key);
 

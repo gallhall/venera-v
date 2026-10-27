@@ -83,6 +83,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   final matchedCandidates = <Comic>[];
   String? error, playError;
   bool loading = true, playing = false;
+  bool sourcesReady = false;
   final scrollController = ScrollController();
   final coverHero = Object();
   bool showAppbarTitle = false, showFAB = false;
@@ -121,6 +122,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   void onSettingsChanged() {
     scheduleMicrotask(() {
       if (!mounted) return;
+      if (sourcesReady) syncSources();
       if (collectionToken != manager.token) loadCollection();
       setState(() {
         var choice = sourceChoiceId;
@@ -192,28 +194,62 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       if (!mounted) return;
       setState(() => subject = value);
       loadCollection();
-      if (sources.isEmpty) {
-        var enabled = appdata.settings['searchSources'] as List? ?? [];
-        sources.addAll(
-          ComicSource.all()
-              .where(
-                (s) =>
-                    s.isVideoSource &&
-                    s.searchPageData != null &&
-                    enabled.contains(s.key),
-              )
-              .map(_SourceResult.new),
-        );
-        for (var source in sources) {
-          search(source);
-        }
-      }
+      sourcesReady = true;
+      syncSources();
       var all = await manager.api.episodes(widget.subjectId);
       if (mounted) setState(() => episodes = all);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  void syncSources() {
+    var configured = appdata.settings['searchSources'] as List? ?? [];
+    var enabled = ComicSource.enabled()
+        .where(
+          (s) =>
+              s.isVideoSource &&
+              s.searchPageData != null &&
+              configured.contains(s.key),
+        )
+        .toList();
+    if (enabled.length == sources.length &&
+        List.generate(
+          enabled.length,
+          (i) => enabled[i].key == sources[i].source.key,
+        ).every((v) => v)) {
+      return;
+    }
+    var old = {for (var row in sources) row.source.key: row};
+    var added = <_SourceResult>[];
+    setState(() {
+      for (var row in sources) {
+        if (!enabled.any((s) => s.key == row.source.key)) row.generation++;
+      }
+      sources
+        ..clear()
+        ..addAll(
+          enabled.map((source) {
+            var row = old[source.key];
+            if (row != null) return row;
+            row = _SourceResult(source);
+            added.add(row);
+            return row;
+          }),
+        );
+      updateCandidates();
+      current =
+          candidates
+              .where(
+                (c) => c.sourceKey == current?.sourceKey && c.id == current?.id,
+              )
+              .firstOrNull ??
+          candidates.firstOrNull;
+    });
+    for (var row in added) {
+      search(row);
     }
   }
 
@@ -243,6 +279,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Future<void> search(_SourceResult row, {String? keyword}) async {
+    if (!row.source.isEnabled || !sources.contains(row)) return;
     var generation = ++row.generation;
     setState(() {
       row.loading = true;
@@ -273,7 +310,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           var res = data.loadPage != null
               ? await data.loadPage!(query, 1, options)
               : await data.loadNext!(query, null, options);
-          if (!mounted || generation != row.generation) return;
+          if (!mounted ||
+              generation != row.generation ||
+              !row.source.isEnabled ||
+              !sources.contains(row)) {
+            return;
+          }
           if (res.error) {
             row.error = res.errorMessage;
             continue;
@@ -294,11 +336,21 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             break;
           }
         } catch (e) {
-          if (!mounted || generation != row.generation) return;
+          if (!mounted ||
+              generation != row.generation ||
+              !row.source.isEnabled ||
+              !sources.contains(row)) {
+            return;
+          }
           row.error = '$e';
         }
       }
-      if (!mounted || generation != row.generation) return;
+      if (!mounted ||
+          generation != row.generation ||
+          !row.source.isEnabled ||
+          !sources.contains(row)) {
+        return;
+      }
       // Re-read after searching: a user may have picked a result in the meantime.
       row.chosen = rememberedCandidate(row) ?? row.matched;
       updateCandidates();
@@ -336,6 +388,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     matchedCandidates.clear();
     var names = allNames;
     for (var row in sources) {
+      if (!row.source.isEnabled) continue;
       if (row.matched != null) matchedCandidates.add(row.matched!);
       var seen = <String>{};
       for (var comic in [
@@ -524,6 +577,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
 
   bool get canPlay =>
       current != null &&
+      ComicSource.find(current!.sourceKey)?.isEnabled == true &&
       !playing &&
       episodes.isNotEmpty &&
       candidates.any(

@@ -72,7 +72,7 @@ class _ExploreSettingsState extends State<ExploreSettings> {
             ...((){
               var map = <String, String>{};
               for (var c in ComicSource.all()) {
-                if (c.isKazumi || c.searchPageData == null) continue;
+                if (!c.isEnabled || c.isKazumi || c.searchPageData == null) continue;
                 map[c.key] = c.name;
               }
               return map;

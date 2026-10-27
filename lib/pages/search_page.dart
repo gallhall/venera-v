@@ -34,6 +34,8 @@ class _SearchPageState extends State<SearchPage> {
 
   String searchTarget = "";
 
+  String enabledSourceState = "";
+
   bool aggregatedSearch = false;
 
   var focusNode = FocusNode();
@@ -46,7 +48,7 @@ class _SearchPageState extends State<SearchPage> {
 
   void search([String? text]) {
     if (searchSources.isEmpty) {
-      if (!ComicSource.all().any((s) => s.isVideoSource)) return;
+      if (!ComicSource.enabled().any((s) => s.isVideoSource)) return;
       var keyword = text ?? controller.text;
       appdata.addSearchHistory(keyword);
       context
@@ -77,7 +79,7 @@ class _SearchPageState extends State<SearchPage> {
 
   bool canHandleUrl(String text) {
     if (!text.isURL) return false;
-    for (var source in ComicSource.all()) {
+    for (var source in ComicSource.enabled()) {
       if (source.linkHandler != null) {
         var uri = Uri.parse(text);
         if (source.linkHandler!.domains.contains(uri.host)) {
@@ -103,7 +105,7 @@ class _SearchPageState extends State<SearchPage> {
     } else {
       var text = controller.text;
 
-      for (var comicSource in ComicSource.all()) {
+      for (var comicSource in ComicSource.enabled()) {
         if (comicSource.idMatcher?.hasMatch(text) ?? false) {
           suggestions.add(Pair(
             "**${comicSource.key}**",
@@ -182,7 +184,9 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void findSearchSources() {
-    var all = ComicSource.all()
+    var enabled = ComicSource.enabled();
+    enabledSourceState = enabled.map((e) => e.key).join('\n');
+    var all = enabled
         .where((e) => e.searchPageData != null && !e.isKazumi)
         .map((e) => e.key)
         .toList();
@@ -201,10 +205,12 @@ class _SearchPageState extends State<SearchPage> {
 
   void updateSearchSourcesIfNeeded() {
     var old = searchSources;
+    var oldEnabled = enabledSourceState;
     findSearchSources();
-    if (old.isEqualTo(searchSources)) {
+    if (old.isEqualTo(searchSources) && oldEnabled == enabledSourceState) {
       return;
     }
+    suggestions.clear();
     useDefaultOptions();
     setState(() {});
   }
@@ -217,8 +223,10 @@ class _SearchPageState extends State<SearchPage> {
     var msg = "No Search Sources".tl;
     msg += '\n';
     VoidCallback onTap;
-    if (ComicSource.isEmpty) {
-      msg += "Please add some sources".tl;
+    if (ComicSource.enabled().isEmpty) {
+      msg += (ComicSource.isEmpty
+          ? "Please add some sources"
+          : "Please enable a source").tl;
       onTap = () {
         context.to(() => ComicSourcePage());
       };
@@ -237,7 +245,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     if (searchSources.isEmpty &&
-        !ComicSource.all().any((s) => s.isVideoSource)) {
+        !ComicSource.enabled().any((s) => s.isVideoSource)) {
       return buildEmpty();
     }
     return Scaffold(
@@ -255,7 +263,7 @@ class _SearchPageState extends State<SearchPage> {
       },
       focusNode: focusNode,
     );
-    if (ComicSource.all().any((s) => s.isVideoSource)) {
+    if (ComicSource.enabled().any((s) => s.isVideoSource)) {
       yield SliverToBoxAdapter(
         child: ListTile(
           leading: const Icon(Icons.live_tv),

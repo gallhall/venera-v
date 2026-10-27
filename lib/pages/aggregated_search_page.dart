@@ -24,7 +24,7 @@ class AggregatedSearchPage extends StatefulWidget {
 }
 
 class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
-  late final List<ComicSource> sources;
+  late List<ComicSource> sources;
 
   late final SearchBarController controller;
 
@@ -32,21 +32,8 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
 
   @override
   void initState() {
-    var all = ComicSource.all()
-        .where((e) => e.searchPageData != null && (widget.videoOnly || !e.isKazumi))
-        .map((e) => e.key)
-        .toList();
-    var settings = appdata.settings['searchSources'] as List;
-    var sources = <String>[];
-    for (var source in settings) {
-      if (all.contains(source)) {
-        sources.add(source);
-      }
-    }
-    this.sources = sources.map((e) => ComicSource.find(e)!).toList();
-    if (widget.videoOnly && this.sources.any((e) => e.isVideoSource)) {
-      this.sources.removeWhere((e) => !e.isVideoSource);
-    }
+    findSources();
+    appdata.settings.addListener(onSourcesChanged);
     _keyword = widget.keyword;
     controller = SearchBarController(
       currentText: widget.keyword,
@@ -57,6 +44,34 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
       },
     );
     super.initState();
+  }
+
+  void findSources() {
+    var all = ComicSource.enabled()
+        .where((e) => e.searchPageData != null && (widget.videoOnly || !e.isKazumi))
+        .map((e) => e.key)
+        .toList();
+    var settings = appdata.settings['searchSources'] as List;
+    var keys = <String>[];
+    for (var source in settings) {
+      if (all.contains(source)) {
+        keys.add(source);
+      }
+    }
+    sources = keys.map((e) => ComicSource.find(e)!).toList();
+    if (widget.videoOnly && sources.any((e) => e.isVideoSource)) {
+      sources.removeWhere((e) => !e.isVideoSource);
+    }
+  }
+
+  void onSourcesChanged() {
+    if (mounted) setState(findSources);
+  }
+
+  @override
+  void dispose() {
+    appdata.settings.removeListener(onSourcesChanged);
+    super.dispose();
   }
 
   @override
@@ -111,11 +126,13 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
   String? error;
 
   void load() async {
+    if (!widget.source.isEnabled) return;
     final data = widget.source.searchPageData!;
     var options =
         (data.searchOptions ?? []).map((e) => e.defaultValue).toList();
     if (data.loadPage != null) {
       var res = await data.loadPage!(widget.keyword, 1, options);
+      if (!mounted) return;
       if (!res.error) {
         setState(() {
           comics = res.data;
@@ -129,6 +146,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
       }
     } else if (data.loadNext != null) {
       var res = await data.loadNext!(widget.keyword, null, options);
+      if (!mounted) return;
       if (!res.error) {
         setState(() {
           comics = res.data;

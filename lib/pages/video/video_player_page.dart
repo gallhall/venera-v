@@ -951,8 +951,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     try {
       candidate ??= playback.candidates
           .where(
-            (c) => c.sourceKey == widget.sourceKey && c.id == widget.details.id,
+            (c) => c.sourceKey == widget.sourceKey &&
+                c.id == widget.details.id &&
+                ComicSource.find(c.sourceKey)?.isEnabled == true,
           )
+          .firstOrNull;
+      candidate ??= playback.candidates
+          .where((c) => ComicSource.find(c.sourceKey)?.isEnabled == true)
           .firstOrNull;
       if (candidate == null) throw Exception('Video source not found'.tl);
       var page = await bangumiPlayer(
@@ -1014,7 +1019,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       builder: (context) => SimpleDialog(
         title: Text('Switch source'.tl),
         children: [
-          for (var c in b.candidates)
+          for (var c in b.candidates.where(
+            (c) => ComicSource.find(c.sourceKey)?.isEnabled == true,
+          ))
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, c),
               child: ListTile(

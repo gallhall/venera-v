@@ -20,7 +20,9 @@ Future<ComicUpdateResult> updateComic(
       if (comicSource == null) {
         return ComicUpdateResult(false, "Comic source not found");
       }
+      if (!comicSource.isEnabled) return ComicUpdateResult(false, null);
       var newInfo = (await comicSource.loadComicInfo!(c.id)).data;
+      if (!comicSource.isEnabled) return ComicUpdateResult(false, null);
 
       var newTags = <String>[];
       for (var entry in newInfo.tags.entries) {
@@ -100,6 +102,11 @@ void updateFolderBase(
   var comicsToUpdate = <FavoriteItemWithUpdateInfo>[];
 
   for (var comic in comics) {
+    if (comic.type.comicSource?.isEnabled == false) {
+      current++;
+      stream.add(UpdateProgress(total, current, errors, updated));
+      continue;
+    }
     if (!ignoreCheckTime) {
       var lastCheckTime = comic.lastCheckTime;
       if (lastCheckTime != null &&

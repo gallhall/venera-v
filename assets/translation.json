@@ -1,5 +1,14 @@
 {
   "zh_CN": {
+    "Please enable a source": "请启用一个源",
+    "Kazumi": "Kazumi",
+    "Video": "视频",
+    "Source disabled": "源已停用",
+    "Disable source": "停用源",
+    "Enable source": "启用源",
+    "Source URL": "源地址",
+    "Installed sources": "已安装的源",
+    "@n results": "@n 个结果",
     "Switched playback source to @source": "已切换播放源：@source",
     "All results (@n)": "全部结果（@n）",
     "Search keyword: @keyword": "检索词：@keyword",
@@ -630,6 +639,15 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Please enable a source": "請啟用一個來源",
+    "Kazumi": "Kazumi",
+    "Video": "影片",
+    "Source disabled": "來源已停用",
+    "Disable source": "停用來源",
+    "Enable source": "啟用來源",
+    "Source URL": "來源網址",
+    "Installed sources": "已安裝的來源",
+    "@n results": "@n 個結果",
     "Switched playback source to @source": "已切換播放來源：@source",
     "All results (@n)": "全部結果（@n）",
     "Search keyword: @keyword": "檢索詞：@keyword",

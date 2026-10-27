@@ -22,7 +22,9 @@ Future<VideoPlayerPage> bangumiPlayer(
   var choices = [
     candidate,
     for (var c in context.matchedCandidates)
-      if (seen.add(c.sourceKey)) c,
+      if (ComicSource.find(c.sourceKey)?.isEnabled == true &&
+          seen.add(c.sourceKey))
+        c,
   ];
   return bangumiLoadEpisode(
     choices,
@@ -47,7 +49,9 @@ Future<VideoPlayerPage> _loadBangumiPlayer(
   if (source?.loadComicInfo == null) {
     throw Exception('Video source not found'.tl);
   }
-  var result = await source!.loadComicInfo!(candidate.id);
+  if (!source!.isEnabled) throw Exception('Source disabled'.tl);
+  var result = await source.loadComicInfo!(candidate.id);
+  if (!source.isEnabled) throw Exception('Source disabled'.tl);
   if (result.error) throw Exception(result.errorMessage);
   var details = result.data;
   var episodes = VideoEpisode.fromDetails(details);

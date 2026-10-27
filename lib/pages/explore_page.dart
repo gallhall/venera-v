@@ -32,13 +32,13 @@ class _ExplorePageState extends State<ExplorePage>
   final trendingKey = GlobalKey<BangumiTrendingPageState>();
 
   List<String> withBangumi(List<String> values) => [
-    if (ComicSource.all().any((s) => s.isVideoSource)) bangumiPage,
+    if (ComicSource.enabled().any((s) => s.isVideoSource)) bangumiPage,
     ...values,
   ];
 
   void onSettingsChanged() {
     var explorePages = List<String>.from(appdata.settings["explore_pages"]);
-    var all = ComicSource.all()
+    var all = ComicSource.enabled()
         .map((e) => e.explorePages)
         .expand((e) => e.map((e) => e.title))
         .toList();
@@ -78,7 +78,7 @@ class _ExplorePageState extends State<ExplorePage>
   @override
   void initState() {
     pages = List<String>.from(appdata.settings["explore_pages"]);
-    var all = ComicSource.all()
+    var all = ComicSource.enabled()
         .map((e) => e.explorePages)
         .expand((e) => e.map((e) => e.title))
         .toList();
@@ -128,7 +128,7 @@ class _ExplorePageState extends State<ExplorePage>
 
   Tab buildTab(String i) {
     if (i == bangumiPage) return Tab(text: 'Trending anime'.tl, key: Key(i));
-    var comicSource = ComicSource.all()
+    var comicSource = ComicSource.enabled()
         .firstWhere((e) => e.explorePages.any((e) => e.title == i));
     return Tab(text: i.ts(comicSource.key), key: Key(i));
   }
@@ -143,8 +143,10 @@ class _ExplorePageState extends State<ExplorePage>
     var msg = "No Explore Pages".tl;
     msg += '\n';
     VoidCallback onTap;
-    if (ComicSource.isEmpty) {
-      msg += "Please add some sources".tl;
+    if (ComicSource.enabled().isEmpty) {
+      msg += (ComicSource.isEmpty
+          ? "Please add some sources"
+          : "Please enable a source").tl;
       onTap = () {
         context.to(() => ComicSourcePage());
       };
@@ -286,7 +288,7 @@ class _SingleExplorePageState extends AutomaticGlobalState<_SingleExplorePage>
   @override
   void initState() {
     super.initState();
-    for (var source in ComicSource.all()) {
+    for (var source in ComicSource.enabled()) {
       for (var d in source.explorePages) {
         if (d.title == widget.title) {
           data = d;
