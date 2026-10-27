@@ -440,7 +440,7 @@ class _SearchPageState extends State<SearchPage> {
             maxLines: 1,
             overflow: TextOverflow.fade,
           ),
-          trailing: const Icon(Icons.arrow_right),
+          trailing: const Icon(Icons.chevron_right),
           onTap: () {
             setState(() {
               suggestions.clear();
@@ -464,7 +464,7 @@ class _SearchPageState extends State<SearchPage> {
             maxLines: 1,
             overflow: TextOverflow.fade,
           ),
-          trailing: const Icon(Icons.arrow_right),
+          trailing: const Icon(Icons.chevron_right),
           onTap: () {
             context.to(
               () => ComicPage(

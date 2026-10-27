@@ -80,7 +80,7 @@ class _FollowUpdatesWidgetState
                       child: Text('Follow Updates'.tl, style: ts.s18),
                     ),
                     const Spacer(),
-                    const Icon(Icons.arrow_right),
+                    const Icon(Icons.chevron_right),
                   ],
                 ),
               ).paddingHorizontal(16),

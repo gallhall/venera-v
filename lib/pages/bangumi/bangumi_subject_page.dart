@@ -1285,58 +1285,11 @@ class _PlaySourceCard extends StatefulWidget {
   State<_PlaySourceCard> createState() => _PlaySourceCardState();
 }
 
-class _PlaySourceCardState extends State<_PlaySourceCard>
-    with SingleTickerProviderStateMixin {
+class _PlaySourceCardState extends State<_PlaySourceCard> {
   bool expanded = false;
-  late final controller =
-      AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 200),
-      )..addStatusListener((status) {
-        if (status == AnimationStatus.dismissed) {
-          setState(() {});
-        }
-      });
-  late final animation = CurvedAnimation(
-    parent: controller,
-    curve: Curves.easeInOut,
-  );
 
   void toggle() {
     setState(() => expanded = !expanded);
-    if (expanded) {
-      controller.forward();
-    } else {
-      controller.reverse();
-    }
-  }
-
-  @override
-  void dispose() {
-    animation.dispose();
-    controller.dispose();
-    super.dispose();
-  }
-
-  Widget badge(String text, bool highlighted) {
-    var colors = context.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: highlighted
-            ? colors.primaryContainer
-            : colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: ts.s12.copyWith(
-          color: highlighted
-              ? colors.onPrimaryContainer
-              : colors.onSurfaceVariant,
-        ),
-      ),
-    );
   }
 
   @override
@@ -1344,18 +1297,9 @@ class _PlaySourceCardState extends State<_PlaySourceCard>
     var row = widget.row;
     var chosen = row.chosen;
     var colors = context.colorScheme;
-    return Card(
-      elevation: 0,
-      color: colors.surfaceContainerLow,
+    return AppCard(
+      highlighted: widget.playing,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: widget.playing ? colors.primary : colors.outlineVariant,
-          width: widget.playing ? 1.5 : 0.6,
-        ),
-      ),
       child: Column(
         children: [
           InkWell(
@@ -1378,18 +1322,7 @@ class _PlaySourceCardState extends State<_PlaySourceCard>
                       ),
                     )
                   else
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: colors.secondaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.live_tv_outlined,
-                        color: colors.onSecondaryContainer,
-                      ),
-                    ),
+                    const AppIconBox(Icons.live_tv_outlined),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1421,8 +1354,12 @@ class _PlaySourceCardState extends State<_PlaySourceCard>
                             runSpacing: 4,
                             children: [
                               if (widget.match != null)
-                                badge(widget.match!, widget.matches),
-                              if (widget.playing) badge('Playing'.tl, true),
+                                AppBadge(
+                                  widget.match!,
+                                  highlighted: widget.matches,
+                                ),
+                              if (widget.playing)
+                                AppBadge('Playing'.tl, highlighted: true),
                             ],
                           ),
                         ],
@@ -1439,27 +1376,15 @@ class _PlaySourceCardState extends State<_PlaySourceCard>
                   else
                     IconButton(
                       onPressed: toggle,
-                      icon: RotationTransition(
-                        turns: Tween<double>(
-                          begin: 0,
-                          end: 0.5,
-                        ).animate(animation),
-                        child: const Icon(Icons.expand_more),
-                      ),
+                      icon: AnimatedChevron(expanded: expanded),
                     ),
                 ],
               ),
             ),
           ),
-          SizeTransition(
-            sizeFactor: animation,
-            axisAlignment: -1,
-            child: FadeTransition(
-              opacity: animation,
-              child: !expanded && controller.isDismissed
-                  ? const SizedBox.shrink()
-                  : widget.details(),
-            ),
+          CollapsibleBody(
+            expanded: expanded,
+            builder: (context) => widget.details(),
           ),
         ],
       ),
@@ -1484,42 +1409,7 @@ class _UnmatchedSources extends StatefulWidget {
   State<_UnmatchedSources> createState() => _UnmatchedSourcesState();
 }
 
-class _UnmatchedSourcesState extends State<_UnmatchedSources>
-    with SingleTickerProviderStateMixin {
-  late final controller =
-      AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 200),
-        value: widget.expanded ? 1 : 0,
-      )..addStatusListener((status) {
-        if (status == AnimationStatus.dismissed) {
-          setState(() {});
-        }
-      });
-  late final animation = CurvedAnimation(
-    parent: controller,
-    curve: Curves.easeInOut,
-  );
-
-  @override
-  void didUpdateWidget(covariant _UnmatchedSources oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.expanded != oldWidget.expanded) {
-      if (widget.expanded) {
-        controller.forward();
-      } else {
-        controller.reverse();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    animation.dispose();
-    controller.dispose();
-    super.dispose();
-  }
-
+class _UnmatchedSourcesState extends State<_UnmatchedSources> {
   @override
   Widget build(BuildContext context) => Column(
     children: [
@@ -1528,21 +1418,12 @@ class _UnmatchedSourcesState extends State<_UnmatchedSources>
           'Unmatched sources (@n)'.tlParams({'n': widget.count}),
           style: ts.s14.copyWith(fontWeight: FontWeight.w600),
         ),
-        trailing: RotationTransition(
-          turns: Tween<double>(begin: 0, end: 0.5).animate(animation),
-          child: const Icon(Icons.expand_more),
-        ),
+        trailing: AnimatedChevron(expanded: widget.expanded),
         onTap: widget.onToggle,
       ),
-      SizeTransition(
-        sizeFactor: animation,
-        axisAlignment: -1,
-        child: FadeTransition(
-          opacity: animation,
-          child: !widget.expanded && controller.isDismissed
-              ? const SizedBox.shrink()
-              : Column(children: widget.children()),
-        ),
+      CollapsibleBody(
+        expanded: widget.expanded,
+        builder: (context) => Column(children: widget.children()),
       ),
     ],
   );

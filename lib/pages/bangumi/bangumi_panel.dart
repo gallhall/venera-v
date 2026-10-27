@@ -463,7 +463,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
     return ListTile(
       leading: const Icon(Icons.login),
       title: Text("Log in to Bangumi to sync progress".tl),
-      trailing: const Icon(Icons.arrow_right),
+      trailing: const Icon(Icons.chevron_right),
       onTap: () async {
         if (await showBangumiLoginDialog(context)) {
           setState(() {});

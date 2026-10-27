@@ -7,6 +7,7 @@ class Select extends StatelessWidget {
     required this.values,
     this.onTap,
     this.minWidth,
+    this.title,
   });
 
   final String? current;
@@ -17,6 +18,8 @@ class Select extends StatelessWidget {
 
   final double? minWidth;
 
+  final String? title;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -26,36 +29,14 @@ class Select extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () {
-          var renderBox = context.findRenderObject() as RenderBox;
-          var offset = renderBox.localToGlobal(Offset.zero);
-          var size = renderBox.size;
-          showMenu(
-            elevation: 3,
-            color: context.brightness == Brightness.light
-                ? const Color(0xFFF6F6F6)
-                : const Color(0xFF1E1E1E),
-            context: context,
-            useRootNavigator: true,
-            constraints: BoxConstraints(
-              minWidth: size.width,
-              maxWidth: size.width,
-            ),
-            position: RelativeRect.fromLTRB(
-              offset.dx,
-              offset.dy + size.height + 2,
-              offset.dx + size.height + 2,
-              offset.dy,
-            ),
-            items: values
-                .map((e) => PopupMenuItem(
-                      height: App.isMobile ? 46 : 40,
-                      value: e,
-                      child: Text(e),
-                    ))
-                .toList(),
-          ).then((value) {
-            if (value != null) {
-              onTap?.call(values.indexOf(value));
+          showOptionsSheet<int>(
+            context,
+            title: title,
+            options: {for (var i = 0; i < values.length; i++) i: values[i]},
+            selected: current == null ? null : values.indexOf(current!),
+          ).then((index) {
+            if (index != null) {
+              onTap?.call(index);
             }
           });
         },
@@ -69,7 +50,7 @@ class Select extends StatelessWidget {
               child: Text(current ?? ' ', style: ts.s14),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.arrow_drop_down, color: context.colorScheme.primary),
+            Icon(Icons.expand_more, size: 20, color: context.colorScheme.primary),
           ],
         ).padding(const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
       ),

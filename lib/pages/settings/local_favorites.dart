@@ -13,60 +13,67 @@ class _LocalFavoritesSettingsState extends State<LocalFavoritesSettings> {
     return SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Local Favorites".tl)),
-        _SwitchSetting(
-          title: "Show local favorites before network favorites".tl,
-          settingKey: "localFavoritesFirst",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Auto close favorite panel after operation".tl,
-          settingKey: "autoCloseFavoritePanel",
-        ).toSliver(),
-        SelectSetting(
-          title: "Add new favorite to".tl,
-          settingKey: "newFavoriteAddTo",
-          optionTranslation: {
-            "start": "Start".tl,
-            "end": "End".tl,
-          },
-        ).toSliver(),
-        SelectSetting(
-          title: "Move favorite after reading".tl,
-          settingKey: "moveFavoriteAfterRead",
-          optionTranslation: {
-            "none": "None".tl,
-            "end": "End".tl,
-            "start": "Start".tl,
-          },
-        ).toSliver(),
-        SelectSetting(
-          title: "Quick Favorite".tl,
-          settingKey: "quickFavorite",
-          help:
-              "Long press on the favorite button to quickly add to this folder"
-                  .tl,
-          optionTranslation: {
-            for (var e in LocalFavoritesManager().folderNames) e: e
-          },
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Delete all unavailable local favorite items".tl,
-          callback: () async {
-            var controller = showLoadingDialog(context);
-            var count = await LocalFavoritesManager().removeInvalid();
-            controller.close();
-            context.showMessage(
-                message: "Deleted @a favorite items".tlParams({'a': count}));
-          },
-          actionTitle: 'Delete'.tl,
-        ).toSliver(),
-        SelectSetting(
-          title: "Click favorite".tl,
-          settingKey: "onClickFavorite",
-          optionTranslation: {
-            "viewDetail": "View Detail".tl,
-            "read": "Read".tl,
-          },
-        ).toSliver(),
+        _SettingsGroup(
+          children: [
+            _SwitchSetting(
+              title: "Show local favorites before network favorites".tl,
+              settingKey: "localFavoritesFirst",
+            ),
+            _SwitchSetting(
+              title: "Auto close favorite panel after operation".tl,
+              settingKey: "autoCloseFavoritePanel",
+            ),
+            SelectSetting(
+              title: "Add new favorite to".tl,
+              settingKey: "newFavoriteAddTo",
+              optionTranslation: {
+                "start": "Start".tl,
+                "end": "End".tl,
+              },
+            ),
+            SelectSetting(
+              title: "Move favorite after reading".tl,
+              settingKey: "moveFavoriteAfterRead",
+              optionTranslation: {
+                "none": "None".tl,
+                "end": "End".tl,
+                "start": "Start".tl,
+              },
+            ),
+            SelectSetting(
+              title: "Quick Favorite".tl,
+              settingKey: "quickFavorite",
+              help:
+                  "Long press on the favorite button to quickly add to this folder"
+                      .tl,
+              optionTranslation: {
+                for (var e in LocalFavoritesManager().folderNames) e: e
+              },
+            ),
+            _CallbackSetting(
+              title: "Delete all unavailable local favorite items".tl,
+              callback: () async {
+                var controller = showLoadingDialog(context);
+                var count = await LocalFavoritesManager().removeInvalid();
+                controller.close();
+                context.showMessage(
+                    message: "Deleted @a favorite items".tlParams({'a': count}));
+              },
+              actionTitle: 'Delete'.tl,
+            ),
+            SelectSetting(
+              title: "Click favorite".tl,
+              settingKey: "onClickFavorite",
+              optionTranslation: {
+                "viewDetail": "View Detail".tl,
+                "read": "Read".tl,
+              },
+            ),
+          ],
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: context.padding.bottom + 16),
+        ),
       ],
     );
   }

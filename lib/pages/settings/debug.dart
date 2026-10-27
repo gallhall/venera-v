@@ -17,88 +17,93 @@ class DebugPageState extends State<DebugPage> {
     return SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Debug".tl)),
-        _CallbackSetting(
-          title: "Reload Configs".tl,
-          actionTitle: "Reload".tl,
-          callback: () {
-            ComicSourceManager().reload();
-          },
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Open Log".tl,
-          callback: () {
-            context.to(() => const LogsPage());
-          },
-          actionTitle: 'Open'.tl,
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Video Player Test".tl,
-          callback: () {
-            context.to(() => const VideoTestPage());
-          },
-          actionTitle: 'Open'.tl,
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Ignore Certificate Errors".tl,
-          settingKey: "ignoreBadCertificate",
-        ).toSliver(),
-        SliverToBoxAdapter(
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              const Text(
-                "JS Evaluator",
-                style: TextStyle(fontSize: 16),
-              ).toAlign(Alignment.centerLeft).paddingLeft(16),
-              Container(
-                width: double.infinity,
-                height: 200,
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                child: TextField(
-                  controller: controller,
-                  maxLines: null,
-                  expands: true,
-                  textAlign: TextAlign.start,
-                  textAlignVertical: TextAlignVertical.top,
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.all(8),
+        _SettingsGroup(
+          children: [
+            _CallbackSetting(
+              title: "Reload Configs".tl,
+              actionTitle: "Reload".tl,
+              callback: () {
+                ComicSourceManager().reload();
+              },
+            ),
+            _CallbackSetting(
+              title: "Open Log".tl,
+              callback: () {
+                context.to(() => const LogsPage());
+              },
+              actionTitle: 'Open'.tl,
+            ),
+            _CallbackSetting(
+              title: "Video Player Test".tl,
+              callback: () {
+                context.to(() => const VideoTestPage());
+              },
+              actionTitle: 'Open'.tl,
+            ),
+            _SwitchSetting(
+              title: "Ignore Certificate Errors".tl,
+              settingKey: "ignoreBadCertificate",
+            ),
+            Column(
+                children: [
+                  const SizedBox(height: 8),
+                  const Text(
+                    "JS Evaluator",
+                    style: TextStyle(fontSize: 16),
+                  ).toAlign(Alignment.centerLeft).paddingLeft(16),
+                  Container(
+                    width: double.infinity,
+                    height: 200,
+                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: TextField(
+                      controller: controller,
+                      maxLines: null,
+                      expands: true,
+                      textAlign: TextAlign.start,
+                      textAlignVertical: TextAlignVertical.top,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.all(8),
+                      ),
+                    ),
                   ),
-                ),
+                  TextButton(
+                    onPressed: () {
+                      try {
+                        var res = JsEngine().runCode(controller.text, "<debug>");
+                        setState(() {
+                          result = res.toString();
+                        });
+                      } catch (e) {
+                        setState(() {
+                          result = e.toString();
+                        });
+                      }
+                    },
+                    child: const Text("Run"),
+                  ).toAlign(Alignment.centerRight).paddingRight(16),
+                  const Text(
+                    "Result",
+                    style: TextStyle(fontSize: 16),
+                  ).toAlign(Alignment.centerLeft).paddingLeft(16),
+                  Container(
+                    width: double.infinity,
+                    height: 200,
+                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: context.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Text(result).paddingAll(4),
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () {
-                  try {
-                    var res = JsEngine().runCode(controller.text, "<debug>");
-                    setState(() {
-                      result = res.toString();
-                    });
-                  } catch (e) {
-                    setState(() {
-                      result = e.toString();
-                    });
-                  }
-                },
-                child: const Text("Run"),
-              ).toAlign(Alignment.centerRight).paddingRight(16),
-              const Text(
-                "Result",
-                style: TextStyle(fontSize: 16),
-              ).toAlign(Alignment.centerLeft).paddingLeft(16),
-              Container(
-                width: double.infinity,
-                height: 200,
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: context.colorScheme.outline),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: SingleChildScrollView(
-                  child: Text(result).paddingAll(4),
-                ),
-              ),
-            ],
-          ),
+          ],
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
     );

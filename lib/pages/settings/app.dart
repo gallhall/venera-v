@@ -13,321 +13,330 @@ class _AppSettingsState extends State<AppSettings> {
     return SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("App".tl)),
-        _SettingPartTitle(
+        _SettingsGroup(
           title: "Data".tl,
           icon: Icons.storage,
-        ),
-        ListTile(
-          title: Text("Storage Path for local comics".tl),
-          subtitle: Text(LocalManager().path, softWrap: false),
-          trailing: IconButton(
-            icon: const Icon(Icons.copy),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: LocalManager().path));
-              context.showMessage(message: "Path copied to clipboard".tl);
-            },
-          ),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Set New Storage Path".tl,
-          actionTitle: "Set".tl,
-          callback: () async {
-            String? result;
-            if (App.isAndroid) {
-              var picker = DirectoryPicker();
-              result = (await picker.pickDirectory())?.path;
-            } else if (App.isIOS) {
-              result = await selectDirectoryIOS();
-            } else {
-              result = await selectDirectory();
-            }
-            if (result == null) return;
-            var loadingDialog = showLoadingDialog(
-              App.rootContext,
-              barrierDismissible: false,
-              allowCancel: false,
-            );
-            var res = await LocalManager().setNewPath(result);
-            loadingDialog.close();
-            if (res != null) {
-              context.showMessage(message: res);
-            } else {
-              context.showMessage(message: "Path set successfully".tl);
-              setState(() {});
-            }
-          },
-        ).toSliver(),
-        ListTile(
-          title: Text("Cache Size".tl),
-          subtitle: Text(bytesToReadableString(CacheManager().currentSize)),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Clear Cache".tl,
-          actionTitle: "Clear".tl,
-          callback: () async {
-            var loadingDialog = showLoadingDialog(
-              App.rootContext,
-              barrierDismissible: false,
-              allowCancel: false,
-            );
-            await CacheManager().clear();
-            loadingDialog.close();
-            context.showMessage(message: "Cache cleared".tl);
-            setState(() {});
-          },
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Cache Limit".tl,
-          subtitle: "${appdata.settings['cacheSize']} MB",
-          callback: () {
-            showInputDialog(
-              context: context,
-              title: "Set Cache Limit".tl,
-              hintText: "Size in MB".tl,
-              inputValidator: RegExp(r"^\d+$"),
-              onConfirm: (value) {
-                appdata.settings['cacheSize'] = int.parse(value);
-                appdata.saveData();
-                setState(() {});
-                CacheManager().setLimitSize(appdata.settings['cacheSize']);
-                return null;
-              },
-            );
-          },
-          actionTitle: 'Set'.tl,
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Export App Data".tl,
-          callback: () async {
-            var controller = showLoadingDialog(context);
-            var file = await exportAppData(false);
-            await saveFile(filename: "data.venera", file: file);
-            controller.close();
-          },
-          actionTitle: 'Export'.tl,
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Import App Data".tl,
-          callback: () async {
-            var controller = showLoadingDialog(context);
-            var file = await selectFile(ext: ['venera', 'picadata']);
-            if (file != null) {
-              var cacheFile =
-                  File(FilePath.join(App.cachePath, "import_data_temp"));
-              await file.saveTo(cacheFile.path);
-              try {
-                if (file.name.endsWith('picadata')) {
-                  await importPicaData(cacheFile);
+          children: [
+            ListTile(
+              title: Text("Storage Path for local comics".tl),
+              subtitle: Text(LocalManager().path, softWrap: false),
+              trailing: IconButton(
+                icon: const Icon(Icons.copy),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: LocalManager().path));
+                  context.showMessage(message: "Path copied to clipboard".tl);
+                },
+              ),
+            ),
+            _CallbackSetting(
+              title: "Set New Storage Path".tl,
+              actionTitle: "Set".tl,
+              callback: () async {
+                String? result;
+                if (App.isAndroid) {
+                  var picker = DirectoryPicker();
+                  result = (await picker.pickDirectory())?.path;
+                } else if (App.isIOS) {
+                  result = await selectDirectoryIOS();
                 } else {
-                  await importAppData(cacheFile);
+                  result = await selectDirectory();
                 }
-              } catch (e, s) {
-                Log.error("Import data", e.toString(), s);
-                context.showMessage(message: "Failed to import data".tl);
-              } finally {
-                cacheFile.deleteIgnoreError();
-                App.forceRebuild();
-              }
-            }
-            controller.close();
-          },
-          actionTitle: 'Import'.tl,
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Data Sync".tl,
-          callback: () async {
-            showPopUpWidget(context, const _WebdavSetting());
-          },
-          actionTitle: 'Set'.tl,
-        ).toSliver(),
-        _SettingPartTitle(
+                if (result == null) return;
+                var loadingDialog = showLoadingDialog(
+                  App.rootContext,
+                  barrierDismissible: false,
+                  allowCancel: false,
+                );
+                var res = await LocalManager().setNewPath(result);
+                loadingDialog.close();
+                if (res != null) {
+                  context.showMessage(message: res);
+                } else {
+                  context.showMessage(message: "Path set successfully".tl);
+                  setState(() {});
+                }
+              },
+            ),
+            ListTile(
+              title: Text("Cache Size".tl),
+              subtitle: Text(bytesToReadableString(CacheManager().currentSize)),
+            ),
+            _CallbackSetting(
+              title: "Clear Cache".tl,
+              actionTitle: "Clear".tl,
+              callback: () async {
+                var loadingDialog = showLoadingDialog(
+                  App.rootContext,
+                  barrierDismissible: false,
+                  allowCancel: false,
+                );
+                await CacheManager().clear();
+                loadingDialog.close();
+                context.showMessage(message: "Cache cleared".tl);
+                setState(() {});
+              },
+            ),
+            _CallbackSetting(
+              title: "Cache Limit".tl,
+              subtitle: "${appdata.settings['cacheSize']} MB",
+              callback: () {
+                showInputDialog(
+                  context: context,
+                  title: "Set Cache Limit".tl,
+                  hintText: "Size in MB".tl,
+                  inputValidator: RegExp(r"^\d+$"),
+                  onConfirm: (value) {
+                    appdata.settings['cacheSize'] = int.parse(value);
+                    appdata.saveData();
+                    setState(() {});
+                    CacheManager().setLimitSize(appdata.settings['cacheSize']);
+                    return null;
+                  },
+                );
+              },
+              actionTitle: 'Set'.tl,
+            ),
+            _CallbackSetting(
+              title: "Export App Data".tl,
+              callback: () async {
+                var controller = showLoadingDialog(context);
+                var file = await exportAppData(false);
+                await saveFile(filename: "data.venera", file: file);
+                controller.close();
+              },
+              actionTitle: 'Export'.tl,
+            ),
+            _CallbackSetting(
+              title: "Import App Data".tl,
+              callback: () async {
+                var controller = showLoadingDialog(context);
+                var file = await selectFile(ext: ['venera', 'picadata']);
+                if (file != null) {
+                  var cacheFile =
+                      File(FilePath.join(App.cachePath, "import_data_temp"));
+                  await file.saveTo(cacheFile.path);
+                  try {
+                    if (file.name.endsWith('picadata')) {
+                      await importPicaData(cacheFile);
+                    } else {
+                      await importAppData(cacheFile);
+                    }
+                  } catch (e, s) {
+                    Log.error("Import data", e.toString(), s);
+                    context.showMessage(message: "Failed to import data".tl);
+                  } finally {
+                    cacheFile.deleteIgnoreError();
+                    App.forceRebuild();
+                  }
+                }
+                controller.close();
+              },
+              actionTitle: 'Import'.tl,
+            ),
+            _CallbackSetting(
+              title: "Data Sync".tl,
+              callback: () async {
+                showPopUpWidget(context, const _WebdavSetting());
+              },
+              actionTitle: 'Set'.tl,
+            ),
+          ],
+        ),
+        _SettingsGroup(
           title: "Bangumi",
           icon: Icons.live_tv_outlined,
-        ),
-        SelectSetting(
-          title: "Bangumi ECH mode".tl,
-          settingKey: 'bangumiEchMode',
-          optionTranslation: const {
-            'off': 'Off',
-            'doh': 'DNS over HTTPS',
-            'manual': 'Manual ECH config',
-          },
-          help: "Encrypted access to resist targeted blocking; automatically falls back on failure"
-              .tl,
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Bangumi ECH DoH URL".tl,
-          actionTitle: "Edit".tl,
-          callback: () => showInputDialog(
-            context: context,
-            title: "Bangumi ECH DoH URL".tl,
-            hintText: "https://dns.alidns.com/resolve",
-            initialValue: appdata.settings['bangumiEchDohUrl'] as String? ?? '',
-            onConfirm: (value) {
-              var uri = Uri.tryParse(value.trim());
-              if (uri == null || !uri.hasAuthority ||
-                  !['http', 'https'].contains(uri.scheme) ||
-                  uri.userInfo.isNotEmpty) {
-                return "Invalid API address".tl;
-              }
-              appdata.settings['bangumiEchDohUrl'] = value.trim();
-              appdata.saveData();
-              return null;
-            },
-          ),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Bangumi manual ECH config".tl,
-          actionTitle: "Edit".tl,
-          callback: () => showInputDialog(
-            context: context,
-            title: "Bangumi manual ECH config".tl,
-            hintText: "Base64 ECHConfigList".tl,
-            initialValue: appdata.settings['bangumiEchConfig'] as String? ?? '',
-            onConfirm: (value) {
-              appdata.settings['bangumiEchConfig'] = value.trim();
-              appdata.saveData();
-              return null;
-            },
-          ),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Bangumi image reverse proxy".tl,
-          actionTitle: "Edit".tl,
-          callback: () => showInputDialog(
-            context: context,
-            title: "Bangumi image reverse proxy".tl,
-            hintText: "Empty uses official images".tl,
-            initialValue: appdata.settings['bangumiImageBase'] as String? ?? '',
-            onConfirm: (value) {
-              var uri = Uri.tryParse(value.trim());
-              if (value.trim().isNotEmpty &&
-                  (uri == null || !uri.hasAuthority ||
+          children: [
+            SelectSetting(
+              title: "Bangumi ECH mode".tl,
+              settingKey: 'bangumiEchMode',
+              optionTranslation: const {
+                'off': 'Off',
+                'doh': 'DNS over HTTPS',
+                'manual': 'Manual ECH config',
+              },
+              help: "Encrypted access to resist targeted blocking; automatically falls back on failure"
+                  .tl,
+            ),
+            _CallbackSetting(
+              title: "Bangumi ECH DoH URL".tl,
+              actionTitle: "Edit".tl,
+              callback: () => showInputDialog(
+                context: context,
+                title: "Bangumi ECH DoH URL".tl,
+                hintText: "https://dns.alidns.com/resolve",
+                initialValue: appdata.settings['bangumiEchDohUrl'] as String? ?? '',
+                onConfirm: (value) {
+                  var uri = Uri.tryParse(value.trim());
+                  if (uri == null || !uri.hasAuthority ||
                       !['http', 'https'].contains(uri.scheme) ||
-                      uri.userInfo.isNotEmpty)) {
-                return "Invalid API address".tl;
-              }
-              appdata.settings['bangumiImageBase'] = value.trim();
-              appdata.saveData();
-              return null;
-            },
-          ),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Bangumi API address".tl,
-          actionTitle: "Edit".tl,
-          callback: () => showInputDialog(
-            context: context,
-            title: "Bangumi API address".tl,
-            initialValue: appdata.settings['bangumiApiBase'] as String? ?? '',
-            onConfirm: (value) {
-              var uri = Uri.tryParse(value.trim());
-              if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
-                return "Invalid API address".tl;
-              }
-              appdata.settings['bangumiApiBase'] = value.trim();
-              appdata.saveData();
-              BangumiManager().resetApi();
-              return null;
-            },
-          ),
-        ).toSliver(),
-        _CallbackSetting(
-          title: "Bangumi next API address".tl,
-          actionTitle: "Edit".tl,
-          callback: () => showInputDialog(
-            context: context,
-            title: "Bangumi next API address".tl,
-            initialValue: appdata.settings['bangumiNextApiBase'] as String? ?? '',
-            onConfirm: (value) {
-              var uri = Uri.tryParse(value.trim());
-              if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
-                return "Invalid API address".tl;
-              }
-              appdata.settings['bangumiNextApiBase'] = value.trim();
-              appdata.saveData();
-              BangumiManager().resetApi();
-              return null;
-            },
-          ),
-        ).toSliver(),
-        ListenableBuilder(
-          listenable: BangumiManager(),
-          builder: (context, _) {
-            var user = BangumiManager().isLoggedIn
-                ? BangumiManager().user
-                : null;
-            return ListTile(
-              title: Text("Bangumi Account".tl),
-              subtitle: Text(user?.displayName ?? "Not logged in".tl),
-              trailing: user == null
-                  ? Button.normal(
-                      onPressed: () => showBangumiLoginDialog(context),
-                      child: Text("Log in".tl),
-                    ).fixHeight(32)
-                  : Button.normal(
-                      onPressed: () => showConfirmDialog(
-                        context: context,
-                        title: "Log out".tl,
-                        content: "Log out of Bangumi?".tl,
-                        onConfirm: BangumiManager().logout,
-                      ),
-                      child: Text("Log out".tl),
-                    ).fixHeight(32),
-            );
-          },
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Sync progress automatically".tl,
-          subtitle:
-              "Mark episodes and chapters on Bangumi once they are finished".tl,
-          settingKey: "bangumiAutoSync",
-        ).toSliver(),
-        _SwitchSetting(
-          title: "Show airing schedule on home page".tl,
-          subtitle: "Only when a video source is installed".tl,
-          settingKey: "showBangumiCalendar",
-        ).toSliver(),
-        _SettingPartTitle(
+                      uri.userInfo.isNotEmpty) {
+                    return "Invalid API address".tl;
+                  }
+                  appdata.settings['bangumiEchDohUrl'] = value.trim();
+                  appdata.saveData();
+                  return null;
+                },
+              ),
+            ),
+            _CallbackSetting(
+              title: "Bangumi manual ECH config".tl,
+              actionTitle: "Edit".tl,
+              callback: () => showInputDialog(
+                context: context,
+                title: "Bangumi manual ECH config".tl,
+                hintText: "Base64 ECHConfigList".tl,
+                initialValue: appdata.settings['bangumiEchConfig'] as String? ?? '',
+                onConfirm: (value) {
+                  appdata.settings['bangumiEchConfig'] = value.trim();
+                  appdata.saveData();
+                  return null;
+                },
+              ),
+            ),
+            _CallbackSetting(
+              title: "Bangumi image reverse proxy".tl,
+              actionTitle: "Edit".tl,
+              callback: () => showInputDialog(
+                context: context,
+                title: "Bangumi image reverse proxy".tl,
+                hintText: "Empty uses official images".tl,
+                initialValue: appdata.settings['bangumiImageBase'] as String? ?? '',
+                onConfirm: (value) {
+                  var uri = Uri.tryParse(value.trim());
+                  if (value.trim().isNotEmpty &&
+                      (uri == null || !uri.hasAuthority ||
+                          !['http', 'https'].contains(uri.scheme) ||
+                          uri.userInfo.isNotEmpty)) {
+                    return "Invalid API address".tl;
+                  }
+                  appdata.settings['bangumiImageBase'] = value.trim();
+                  appdata.saveData();
+                  return null;
+                },
+              ),
+            ),
+            _CallbackSetting(
+              title: "Bangumi API address".tl,
+              actionTitle: "Edit".tl,
+              callback: () => showInputDialog(
+                context: context,
+                title: "Bangumi API address".tl,
+                initialValue: appdata.settings['bangumiApiBase'] as String? ?? '',
+                onConfirm: (value) {
+                  var uri = Uri.tryParse(value.trim());
+                  if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
+                    return "Invalid API address".tl;
+                  }
+                  appdata.settings['bangumiApiBase'] = value.trim();
+                  appdata.saveData();
+                  BangumiManager().resetApi();
+                  return null;
+                },
+              ),
+            ),
+            _CallbackSetting(
+              title: "Bangumi next API address".tl,
+              actionTitle: "Edit".tl,
+              callback: () => showInputDialog(
+                context: context,
+                title: "Bangumi next API address".tl,
+                initialValue: appdata.settings['bangumiNextApiBase'] as String? ?? '',
+                onConfirm: (value) {
+                  var uri = Uri.tryParse(value.trim());
+                  if (uri == null || !uri.hasAuthority || !['http', 'https'].contains(uri.scheme)) {
+                    return "Invalid API address".tl;
+                  }
+                  appdata.settings['bangumiNextApiBase'] = value.trim();
+                  appdata.saveData();
+                  BangumiManager().resetApi();
+                  return null;
+                },
+              ),
+            ),
+            ListenableBuilder(
+              listenable: BangumiManager(),
+              builder: (context, _) {
+                var user = BangumiManager().isLoggedIn
+                    ? BangumiManager().user
+                    : null;
+                return ListTile(
+                  title: Text("Bangumi Account".tl),
+                  subtitle: Text(user?.displayName ?? "Not logged in".tl),
+                  trailing: user == null
+                      ? Button.normal(
+                          onPressed: () => showBangumiLoginDialog(context),
+                          child: Text("Log in".tl),
+                        ).fixHeight(32)
+                      : Button.normal(
+                          onPressed: () => showConfirmDialog(
+                            context: context,
+                            title: "Log out".tl,
+                            content: "Log out of Bangumi?".tl,
+                            onConfirm: BangumiManager().logout,
+                          ),
+                          child: Text("Log out".tl),
+                        ).fixHeight(32),
+                );
+              },
+            ),
+            _SwitchSetting(
+              title: "Sync progress automatically".tl,
+              subtitle:
+                  "Mark episodes and chapters on Bangumi once they are finished".tl,
+              settingKey: "bangumiAutoSync",
+            ),
+            _SwitchSetting(
+              title: "Show airing schedule on home page".tl,
+              subtitle: "Only when a video source is installed".tl,
+              settingKey: "showBangumiCalendar",
+            ),
+          ],
+        ),
+        _SettingsGroup(
           title: "User".tl,
           icon: Icons.person_outline,
+          children: [
+            SelectSetting(
+              title: "Language".tl,
+              settingKey: "language",
+              optionTranslation: const {
+                "system": "System",
+                "zh-CN": "简体中文",
+                "zh-TW": "繁體中文",
+                "en-US": "English",
+              },
+              onChanged: () {
+                App.forceRebuild();
+              },
+            ),
+            if (!App.isLinux)
+              _SwitchSetting(
+                title: "Authorization Required".tl,
+                settingKey: "authorizationRequired",
+                onChanged: () async {
+                  var current = appdata.settings['authorizationRequired'];
+                  if (current) {
+                    final auth = LocalAuthentication();
+                    final bool canAuthenticateWithBiometrics =
+                        await auth.canCheckBiometrics;
+                    final bool canAuthenticate = canAuthenticateWithBiometrics ||
+                        await auth.isDeviceSupported();
+                    if (!canAuthenticate) {
+                      context.showMessage(message: "Biometrics not supported".tl);
+                      setState(() {
+                        appdata.settings['authorizationRequired'] = false;
+                      });
+                      appdata.saveData();
+                      return;
+                    }
+                  }
+                },
+              ),
+          ],
         ),
-        SelectSetting(
-          title: "Language".tl,
-          settingKey: "language",
-          optionTranslation: const {
-            "system": "System",
-            "zh-CN": "简体中文",
-            "zh-TW": "繁體中文",
-            "en-US": "English",
-          },
-          onChanged: () {
-            App.forceRebuild();
-          },
-        ).toSliver(),
-        if (!App.isLinux)
-          _SwitchSetting(
-            title: "Authorization Required".tl,
-            settingKey: "authorizationRequired",
-            onChanged: () async {
-              var current = appdata.settings['authorizationRequired'];
-              if (current) {
-                final auth = LocalAuthentication();
-                final bool canAuthenticateWithBiometrics =
-                    await auth.canCheckBiometrics;
-                final bool canAuthenticate = canAuthenticateWithBiometrics ||
-                    await auth.isDeviceSupported();
-                if (!canAuthenticate) {
-                  context.showMessage(message: "Biometrics not supported".tl);
-                  setState(() {
-                    appdata.settings['authorizationRequired'] = false;
-                  });
-                  appdata.saveData();
-                  return;
-                }
-              }
-            },
-          ).toSliver(),
+        SliverToBoxAdapter(
+          child: SizedBox(height: context.padding.bottom + 16),
+        ),
       ],
     );
   }

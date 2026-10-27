@@ -363,7 +363,7 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
                       onPressed: () =>
                           context.to(() => const BangumiSearchPage()),
                     ),
-                    const Icon(Icons.arrow_right),
+                    const Icon(Icons.chevron_right),
                   ],
                 ),
               ).paddingHorizontal(16),

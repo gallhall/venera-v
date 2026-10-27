@@ -185,57 +185,65 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget buildCategories() {
-    Widget buildItem(String name, int id) {
-      final bool selected = id == currentPage;
+    final tones = [
+      colors.primaryContainer,
+      colors.secondaryContainer,
+      colors.tertiaryContainer,
+    ];
+    final foregrounds = [
+      colors.onPrimaryContainer,
+      colors.onSecondaryContainer,
+      colors.onTertiaryContainer,
+    ];
 
-      Widget content = AnimatedContainer(
+    Widget buildItem(String name, int id) {
+      final selected = enableTwoViews && id == currentPage;
+      return InkWell(
         key: ValueKey(id),
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        height: 46,
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-        decoration: BoxDecoration(
-          color: selected ? colors.primaryContainer.toOpacity(0.36) : null,
-          border: Border(
-            left: BorderSide(
-              color: selected ? colors.primary : Colors.transparent,
-              width: 2,
-            ),
+        onTap: () {
+          if (enableTwoViews) {
+            setState(() => currentPage = id);
+          } else {
+            context.to(() => _SettingsDetailPage(pageIndex: id));
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          color: selected ? colors.secondaryContainer : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              AppIconBox(
+                icons[id],
+                size: 36,
+                color: tones[id % tones.length],
+                iconColor: foregrounds[id % foregrounds.length],
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(name, style: ts.s16)),
+              const Icon(Icons.chevron_right),
+            ],
           ),
         ),
-        child: Row(children: [
-          Icon(icons[id]),
-          const SizedBox(width: 16),
-          Text(
-            name,
-            style: ts.s16,
-          ),
-          const Spacer(),
-          if (selected) const Icon(Icons.arrow_right)
-        ]),
-      );
-
-      return Padding(
-        padding: enableTwoViews
-            ? const EdgeInsets.fromLTRB(8, 0, 8, 0)
-            : EdgeInsets.zero,
-        child: InkWell(
-          onTap: () {
-            if (enableTwoViews) {
-              setState(() => currentPage = id);
-            } else {
-              context.to(() => _SettingsDetailPage(pageIndex: id));
-            }
-          },
-          child: content,
-        ).paddingVertical(4),
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: categories.length,
-      itemBuilder: (context, index) => buildItem(categories[index].tl, index),
+    return ListView(
+      padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
+      children: [
+        AppCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < categories.length; index++) ...[
+                if (index > 0)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                buildItem(categories[index].tl, index),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 

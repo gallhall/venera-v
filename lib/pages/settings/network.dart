@@ -13,21 +13,28 @@ class _NetworkSettingsState extends State<NetworkSettings> {
     return SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Network".tl)),
-        _PopupWindowSetting(
-          title: "Proxy".tl,
-          builder: () => const _ProxySettingView(),
-        ).toSliver(),
-        _PopupWindowSetting(
-          title: "DNS Overrides".tl,
-          builder: () => const _DNSOverrides(),
-        ).toSliver(),
-        _SliderSetting(
-          title: "Download Threads".tl,
-          settingsIndex: 'downloadThreads',
-          interval: 1,
-          min: 1,
-          max: 16,
-        ).toSliver(),
+        _SettingsGroup(
+          children: [
+            _PopupWindowSetting(
+              title: "Proxy".tl,
+              builder: () => const _ProxySettingView(),
+            ),
+            _PopupWindowSetting(
+              title: "DNS Overrides".tl,
+              builder: () => const _DNSOverrides(),
+            ),
+            _SliderSetting(
+              title: "Download Threads".tl,
+              settingsIndex: 'downloadThreads',
+              interval: 1,
+              min: 1,
+              max: 16,
+            ),
+          ],
+        ),
+        SliverToBoxAdapter(
+          child: SizedBox(height: context.padding.bottom + 16),
+        ),
       ],
     );
   }
