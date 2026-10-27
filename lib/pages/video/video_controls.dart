@@ -672,8 +672,9 @@ class _VideoControlsState extends State<VideoControls> {
   List<Widget> buildActions(
     BuildContext context,
     List<PlayerControlAction> actions,
-    double room,
-  ) {
+    double room, {
+    double iconSize = 22,
+  }) {
     const buttonWidth = 40.0;
     var fit = math.max(0, (room / buttonWidth).floor());
     var shown = actions.length <= fit
@@ -683,12 +684,20 @@ class _VideoControlsState extends State<VideoControls> {
     return [
       for (var a in shown)
         Builder(
-          builder: (context) =>
-              button(a.icon, () => a.onPressed(context), tooltip: a.label),
+          builder: (context) => button(
+            a.icon,
+            () => a.onPressed(context),
+            tooltip: a.label,
+            size: iconSize,
+          ),
         ),
       if (more.isNotEmpty)
         PopupMenuButton<int>(
-          icon: const Icon(Icons.more_vert, color: Colors.white),
+          icon: Icon(
+            Icons.more_vert_rounded,
+            size: iconSize,
+            color: Colors.white,
+          ),
           tooltip: "More".tl,
           onSelected: (i) => more[i].onPressed(context),
           itemBuilder: (context) => [
@@ -708,9 +717,14 @@ class _VideoControlsState extends State<VideoControls> {
     ];
   }
 
-  Widget button(IconData icon, VoidCallback onPressed, {String? tooltip}) {
+  Widget button(
+    IconData icon,
+    VoidCallback onPressed, {
+    String? tooltip,
+    double size = 24,
+  }) {
     return IconButton(
-      icon: Icon(icon),
+      icon: Icon(icon, size: size),
       color: Colors.white,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
@@ -736,7 +750,8 @@ class _VideoControlsState extends State<VideoControls> {
                   constraints.maxWidth - 96 - (c.onBack != null ? 40 : 0);
               return Row(
                 children: [
-                  if (c.onBack != null) button(Icons.arrow_back, c.onBack!),
+                  if (c.onBack != null)
+                    button(Icons.arrow_back_rounded, c.onBack!, size: 22),
                   const SizedBox(width: 8),
                   Expanded(
                     child: IgnorePointer(
@@ -769,14 +784,19 @@ class _VideoControlsState extends State<VideoControls> {
           IconButton(
             iconSize: 32,
             color: Colors.white,
-            icon: const Icon(Icons.skip_previous),
+            icon: const Icon(Icons.skip_previous_rounded),
             onPressed: c.onPrevious,
           ),
         const SizedBox(width: 24),
         IconButton(
-          iconSize: 48,
+          iconSize: 40,
+          style: IconButton.styleFrom(
+            fixedSize: const Size(64, 64),
+            backgroundColor: Colors.black.withValues(alpha: 0.35),
+            shape: const CircleBorder(),
+          ),
           color: Colors.white,
-          icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
           onPressed: player.playOrPause,
         ),
         const SizedBox(width: 24),
@@ -784,7 +804,7 @@ class _VideoControlsState extends State<VideoControls> {
           IconButton(
             iconSize: 32,
             color: Colors.white,
-            icon: const Icon(Icons.skip_next),
+            icon: const Icon(Icons.skip_next_rounded),
             onPressed: c.onNext,
           ),
       ],
@@ -821,7 +841,9 @@ class _VideoControlsState extends State<VideoControls> {
                   ),
                   if (c.onToggleFullscreen != null)
                     button(
-                      c.isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                      c.isFullscreen
+                          ? Icons.fullscreen_exit_rounded
+                          : Icons.fullscreen_rounded,
                       c.onToggleFullscreen!,
                     ),
                 ],
@@ -851,12 +873,15 @@ class _VideoControlsState extends State<VideoControls> {
                   builder: (context, constraints) => Row(
                     children: [
                       if (c.onPrevious != null)
-                        button(Icons.skip_previous, c.onPrevious!),
+                        button(Icons.skip_previous_rounded, c.onPrevious!),
                       button(
-                        playing ? Icons.pause : Icons.play_arrow,
+                        playing
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
                         player.playOrPause,
                       ),
-                      if (c.onNext != null) button(Icons.skip_next, c.onNext!),
+                      if (c.onNext != null)
+                        button(Icons.skip_next_rounded, c.onNext!),
                       button(volumeIcon, toggleMute),
                       SizedBox(width: 88, child: buildVolumeSlider()),
                       const SizedBox(width: 8),
@@ -873,12 +898,13 @@ class _VideoControlsState extends State<VideoControls> {
                         context,
                         c.actions,
                         constraints.maxWidth - 400,
+                        iconSize: 24,
                       ),
                       if (c.onToggleFullscreen != null)
                         button(
                           c.isFullscreen
-                              ? Icons.fullscreen_exit
-                              : Icons.fullscreen,
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
                           c.onToggleFullscreen!,
                         ),
                     ],
@@ -896,8 +922,10 @@ class _VideoControlsState extends State<VideoControls> {
       sliderPosition ?? swipeSeekTarget ?? seekingTo ?? player.currentPosition;
 
   IconData get volumeIcon {
-    if (volume == 0) return Icons.volume_off;
-    return volume < 0.5 ? Icons.volume_down : Icons.volume_up;
+    if (volume == 0) {
+      return Icons.volume_off_rounded;
+    }
+    return volume < 0.5 ? Icons.volume_down_rounded : Icons.volume_up_rounded;
   }
 
   Widget buildVolumeSlider() {
@@ -905,7 +933,7 @@ class _VideoControlsState extends State<VideoControls> {
       data: SliderTheme.of(context).copyWith(
         trackHeight: 2,
         activeTrackColor: Colors.white,
-        inactiveTrackColor: Colors.white24,
+        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
         thumbColor: Colors.white,
         overlayColor: Colors.white24,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
@@ -921,10 +949,11 @@ class _VideoControlsState extends State<VideoControls> {
     var color = Theme.of(context).colorScheme.primary;
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
-        trackHeight: 3,
+        trackHeight: 4,
+        trackShape: const _PlayerSeekTrackShape(),
         activeTrackColor: color,
-        inactiveTrackColor: Colors.white24,
-        secondaryActiveTrackColor: Colors.white54,
+        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
+        secondaryActiveTrackColor: Colors.white.withValues(alpha: 0.5),
         thumbColor: color,
         overlayColor: color.withAlpha(60),
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
@@ -965,7 +994,11 @@ class _VideoControlsState extends State<VideoControls> {
           children: [
             Text('${_speedUpFactor.toStringAsFixed(1)}x', style: _bubbleText),
             const SizedBox(width: 4),
-            const Icon(Icons.fast_forward, color: Colors.white, size: 20),
+            const Icon(
+              Icons.fast_forward_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
           ],
         ),
       );
@@ -983,7 +1016,7 @@ class _VideoControlsState extends State<VideoControls> {
             Text(
               '${History.formatSeconds(target.inSeconds)} / '
               '${History.formatSeconds(duration.inSeconds)}',
-              style: _bubbleText.copyWith(fontSize: 18),
+              style: _bubbleText,
             ),
             Text('${diff >= 0 ? '+' : '-'}${diff.abs()}s', style: _bubbleText),
           ],
@@ -999,7 +1032,9 @@ class _VideoControlsState extends State<VideoControls> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                seekSide < 0 ? Icons.fast_rewind : Icons.fast_forward,
+                seekSide < 0
+                    ? Icons.fast_rewind_rounded
+                    : Icons.fast_forward_rounded,
                 color: Colors.white,
                 size: 20,
               ),
@@ -1037,11 +1072,11 @@ class _VideoControlsState extends State<VideoControls> {
     var value = isBrightness ? brightness : volume;
     IconData icon;
     if (isBrightness) {
-      icon = Icons.brightness_6;
+      icon = Icons.brightness_6_rounded;
     } else if (value == 0) {
-      icon = Icons.volume_off;
+      icon = Icons.volume_off_rounded;
     } else {
-      icon = value < 0.5 ? Icons.volume_down : Icons.volume_up;
+      icon = value < 0.5 ? Icons.volume_down_rounded : Icons.volume_up_rounded;
     }
     return _Bubble(
       child: SizedBox(
@@ -1098,6 +1133,40 @@ class _Shade extends StatelessWidget {
   }
 }
 
+/// Keep both the active and buffered tracks at the same four-pixel height.
+class _PlayerSeekTrackShape extends RoundedRectSliderTrackShape {
+  const _PlayerSeekTrackShape();
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 0,
+  }) {
+    super.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      textDirection: textDirection,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isDiscrete: isDiscrete,
+      isEnabled: isEnabled,
+      additionalActiveTrackHeight: 0,
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.child});
 
@@ -1106,10 +1175,10 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: child,
     );

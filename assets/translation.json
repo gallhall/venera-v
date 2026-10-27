@@ -1,5 +1,6 @@
 {
   "zh_CN": {
+    "Playback source": "播放源",
     "No history yet": "暂无阅读记录",
     "Nothing to follow yet": "暂无追更",
     "No image favorites": "暂无图片收藏",
@@ -661,6 +662,7 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Playback source": "播放來源",
     "No history yet": "暫無閱讀記錄",
     "Nothing to follow yet": "暫無追更",
     "No image favorites": "暫無圖片收藏",

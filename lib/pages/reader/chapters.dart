@@ -206,35 +206,39 @@ class _ChapterListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(
-              color:
-                  isActive ? context.colorScheme.primary : Colors.transparent,
-              width: 4,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      child: Material(
+        color: isActive
+            ? context.colorScheme.primaryContainer
+            : context.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: isActive
+                        ? ts.withColor(context.colorScheme.primary).bold.s16
+                        : ts.s16,
+                  ),
+                ),
+                if (isDownloaded)
+                  Icon(
+                    Icons.download_done_rounded,
+                    color: context.colorScheme.secondary,
+                  ),
+              ],
             ),
           ),
-        ),
-        child: Row(
-          children: [
-            Text(
-              title,
-              style: isActive
-                  ? ts.withColor(context.colorScheme.primary).bold.s16
-                  : ts.s16,
-            ),
-            const Spacer(),
-            if (isDownloaded)
-              Icon(
-                Icons.download_done_rounded,
-                color: context.colorScheme.secondary,
-              ),
-          ],
         ),
       ),
     );

@@ -231,18 +231,7 @@ Future<T?> showOptionsSheet<T>(
                 child: Text(title, style: ts.s18),
               ),
             Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: [
-                  for (final option in options.entries)
-                    OptionRow(
-                      text: option.value,
-                      selected: option.key == selected,
-                      onTap: () => Navigator.of(context).pop(option.key),
-                    ),
-                ],
-              ),
+              child: _PickerOptions<T>(options: options, selected: selected),
             ),
           ],
         ),
@@ -277,6 +266,102 @@ Future<T?> showOptionsSheet<T>(
       ),
     ),
   );
+}
+
+/// Player options use a side panel even on narrow landscape screens.
+Future<T?> showSidePicker<T>(
+  BuildContext context, {
+  required String title,
+  required Map<T, String> options,
+  T? selected,
+}) {
+  final media = MediaQuery.of(context);
+  if (media.size.width < 600 && media.orientation == Orientation.portrait) {
+    return showOptionsSheet<T>(
+      context,
+      title: title,
+      options: options,
+      selected: selected,
+    );
+  }
+  return showDialog<T>(
+    context: context,
+    useSafeArea: false,
+    builder: (context) => Dialog(
+      alignment: Alignment.centerRight,
+      insetPadding: EdgeInsets.zero,
+      constraints: const BoxConstraints(maxWidth: 360),
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 360,
+        height: double.infinity,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(title, style: ts.s18),
+              ),
+              Expanded(
+                child: _PickerOptions<T>(options: options, selected: selected),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _PickerOptions<T> extends StatefulWidget {
+  const _PickerOptions({required this.options, this.selected});
+
+  final Map<T, String> options;
+  final T? selected;
+
+  @override
+  State<_PickerOptions<T>> createState() => _PickerOptionsState<T>();
+}
+
+class _PickerOptionsState<T> extends State<_PickerOptions<T>> {
+  final selectedKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final selectedContext = selectedKey.currentContext;
+      if (mounted && selectedContext != null) {
+        Scrollable.ensureVisible(selectedContext, alignment: 0.5);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Build all rows so ensureVisible can locate even a late episode before
+    // the route's entrance animation finishes. Labels may wrap at any scale.
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final option in widget.options.entries)
+            OptionRow(
+              key: option.key == widget.selected ? selectedKey : null,
+              text: option.value,
+              selected: option.key == widget.selected,
+              onTap: () => Navigator.of(context).pop(option.key),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class OptionRow extends StatelessWidget {
@@ -1324,6 +1409,151 @@ class ComicCoverButton extends StatelessWidget {
               height: 132,
               fit: BoxFit.cover,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class EpisodeGridItem {
+  const EpisodeGridItem({
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+    this.watched = false,
+    this.downloaded = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+  final bool watched;
+  final bool downloaded;
+}
+
+/// Equal-width episode tiles: narrow ones for numbers, wider ones for titles.
+/// Long lists show a few rows and "Show all", always including the selected
+/// episode.
+class EpisodeGrid extends StatefulWidget {
+  const EpisodeGrid({super.key, required this.items, this.maxRows = 4});
+
+  final List<EpisodeGridItem> items;
+  final int maxRows;
+
+  @override
+  State<EpisodeGrid> createState() => _EpisodeGridState();
+}
+
+class _EpisodeGridState extends State<EpisodeGrid> {
+  bool showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final numeric = items.every((e) => e.label.length <= 4);
+    final minWidth = numeric ? 64.0 : 160.0;
+    const spacing = 8.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = math.max(
+          1,
+          ((constraints.maxWidth + spacing) / (minWidth + spacing)).floor(),
+        );
+        final width =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        var count = items.length;
+        if (!showAll) {
+          var limit = columns * widget.maxRows;
+          final selected = items.indexWhere((e) => e.selected);
+          if (selected >= limit) {
+            limit = (selected ~/ columns + 1) * columns;
+          }
+          count = math.min(count, limit);
+        }
+        return Column(
+          children: [
+            Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (var i = 0; i < count; i++)
+                  SizedBox(width: width, child: _EpisodeTile(items[i])),
+              ],
+            ),
+            if (count < items.length)
+              TextButton(
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => setState(() => showAll = true),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text("${"Show all".tl} (${items.length})"),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.expand_more, size: 18),
+                  ],
+                ),
+              ).paddingTop(8),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EpisodeTile extends StatelessWidget {
+  const _EpisodeTile(this.item);
+
+  final EpisodeGridItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return Material(
+      color: item.selected
+          ? colors.secondaryContainer
+          : colors.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: item.selected ? null : item.onTap,
+        child: SizedBox(
+          height: 44,
+          child: Stack(
+            children: [
+              Center(
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.s14.copyWith(
+                    fontWeight: item.selected ? FontWeight.w600 : null,
+                    color: item.selected
+                        ? colors.onSecondaryContainer
+                        : item.watched
+                        ? colors.outline
+                        : colors.onSurface,
+                  ),
+                ).paddingHorizontal(8),
+              ),
+              if (item.downloaded)
+                Positioned(
+                  right: 6,
+                  top: 4,
+                  child: Icon(
+                    Icons.download_done_rounded,
+                    size: 12,
+                    color: colors.primary,
+                  ),
+                ),
+            ],
           ),
         ),
       ),

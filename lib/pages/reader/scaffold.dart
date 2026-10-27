@@ -167,23 +167,13 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   Widget buildTop() {
-    final epName =
-      context.reader.widget.chapters?.titles.elementAtOrNull(
-        context.reader.chapter - 1,
-      );
+    final epName = context.reader.widget.chapters?.titles.elementAtOrNull(
+      context.reader.chapter - 1,
+    );
 
-    return BlurEffect(
+    return _ReaderBarSurface(
       child: Container(
         padding: EdgeInsets.only(top: context.padding.top),
-        decoration: BoxDecoration(
-          color: context.colorScheme.surface.toOpacity(0.92),
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.grey.toOpacity(0.5),
-              width: 0.5,
-            ),
-          ),
-        ),
         child: Padding(
           padding: EdgeInsets.only(
             left: context.padding.left,
@@ -192,46 +182,52 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           child: Row(
             children: [
               const SizedBox(width: 8),
-              const BackButton(),
+              IconButton(
+                tooltip: "Back".tl,
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => Navigator.maybePop(context),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: epName == null ? Text(
-                  context.reader.widget.name,
-                  style: ts.s18,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ) : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      context.reader.widget.name,
-                      style: ts.s16,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      epName,
-                      style: ts.s12,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+                child: epName == null
+                    ? Text(
+                        context.reader.widget.name,
+                        style: ts.s18,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            context.reader.widget.name,
+                            style: ts.s16,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            epName,
+                            style: ts.s12,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
               ),
               const SizedBox(width: 8),
               if (shouldShowChapterComments())
                 Tooltip(
                   message: "Chapter Comments".tl,
                   child: IconButton(
-                    icon: const Icon(Icons.comment),
+                    icon: const Icon(Icons.comment_rounded),
                     onPressed: openChapterComments,
                   ),
                 ),
               Tooltip(
                 message: "Settings".tl,
                 child: IconButton(
-                  icon: const Icon(Icons.settings),
+                  icon: const Icon(Icons.settings_rounded),
                   onPressed: openSetting,
                 ),
               ),
@@ -400,7 +396,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       Tooltip(
         message: "Collect the image".tl,
         child: IconButton(
-          icon: Icon(isLiked() ? Icons.favorite : Icons.favorite_border),
+          color: isLiked()
+              ? context.colorScheme.primary
+              : context.colorScheme.onSurfaceVariant,
+          icon: Icon(
+            isLiked() ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
           onPressed: addImageFavorite,
         ),
       ),
@@ -408,7 +409,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         Tooltip(
           message: "${"Full Screen".tl}(F12)",
           child: IconButton(
-            icon: const Icon(Icons.fullscreen),
+            icon: const Icon(Icons.fullscreen_rounded),
             onPressed: () {
               context.reader.fullscreen();
             },
@@ -418,13 +419,16 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         Tooltip(
           message: "Screen Rotation".tl,
           child: IconButton(
+            color: rotation != null
+                ? context.colorScheme.primary
+                : context.colorScheme.onSurfaceVariant,
             icon: () {
               if (rotation == null) {
-                return const Icon(Icons.screen_rotation);
+                return const Icon(Icons.screen_rotation_rounded);
               } else if (rotation == false) {
-                return const Icon(Icons.screen_lock_portrait);
+                return const Icon(Icons.screen_lock_portrait_rounded);
               } else {
-                return const Icon(Icons.screen_lock_landscape);
+                return const Icon(Icons.screen_lock_landscape_rounded);
               }
             }.call(),
             onPressed: () {
@@ -456,9 +460,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       Tooltip(
         message: "Auto Page Turning".tl,
         child: IconButton(
+          color: context.reader.autoPageTurningTimer != null
+              ? context.colorScheme.primary
+              : context.colorScheme.onSurfaceVariant,
           icon: context.reader.autoPageTurningTimer != null
-              ? const Icon(Icons.timer)
-              : const Icon(Icons.timer_sharp),
+              ? const Icon(Icons.timer_rounded)
+              : const Icon(Icons.timer_outlined),
           onPressed: () {
             context.reader.autoPageTurning(
               context.reader.cid,
@@ -472,20 +479,23 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         Tooltip(
           message: "Chapters".tl,
           child: IconButton(
-            icon: const Icon(Icons.library_books),
+            icon: const Icon(Icons.library_books_rounded),
             onPressed: openChapterDrawer,
           ),
         ),
       Tooltip(
         message: "Save Image".tl,
         child: IconButton(
-          icon: const Icon(Icons.download),
+          icon: const Icon(Icons.download_rounded),
           onPressed: saveCurrentImage,
         ),
       ),
       Tooltip(
         message: "Share".tl,
-        child: IconButton(icon: const Icon(Icons.share), onPressed: share),
+        child: IconButton(
+          icon: const Icon(Icons.share_rounded),
+          onPressed: share,
+        ),
       ),
     ];
 
@@ -505,7 +515,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                     : context.reader.chapter < context.reader.maxChapter
                     ? context.reader.toNextChapter()
                     : context.reader.toPage(context.reader.maxPage),
-                icon: const Icon(Icons.first_page),
+                icon: const Icon(Icons.first_page_rounded),
               ),
               Expanded(child: buildSlider()),
               IconButton.filledTonal(
@@ -516,7 +526,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                     : context.reader.chapter > 1
                     ? context.reader.toPrevChapter()
                     : context.reader.toPage(1),
-                icon: const Icon(Icons.last_page),
+                icon: const Icon(Icons.last_page_rounded),
               ),
               const SizedBox(width: 8),
             ],
@@ -531,19 +541,20 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                       height: 24,
                       padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        color: context.colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Center(child: Text(text)),
+                      child: Center(child: Text(text, style: ts.s12)),
                     ).paddingLeft(16),
                   const Spacer(),
                   for (var button in buttons)
                     if (!small)
                       button.paddingHorizontal(4)
-                    else
-                      ...[button, const Spacer()],
-                  if (!small)
-                    const SizedBox(width: 4),
+                    else ...[
+                      button,
+                      const Spacer(),
+                    ],
+                  if (!small) const SizedBox(width: 4),
                 ],
               );
             },
@@ -552,19 +563,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       ),
     );
 
-    return BlurEffect(
+    return _ReaderBarSurface(
+      roundTop: !App.isDesktop,
       child: Container(
-        decoration: BoxDecoration(
-          color: context.colorScheme.surface.toOpacity(0.92),
-          border: isOpen
-              ? Border(
-                  top: BorderSide(
-                    color: Colors.grey.toOpacity(0.5),
-                    width: 0.5,
-                  ),
-                )
-              : null,
-        ),
         padding: EdgeInsets.only(bottom: context.padding.bottom),
         child: Padding(
           padding: EdgeInsets.only(
@@ -586,9 +587,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       focusNode: sliderFocus,
       value: displayPage.toDouble(),
       min: 1,
-      max: context.reader.maxPage
-          .clamp(displayPage, 1 << 16)
-          .toDouble(),
+      max: context.reader.maxPage.clamp(displayPage, 1 << 16).toDouble(),
       reversed: isReversed,
       divisions: (context.reader.maxPage - 1).clamp(2, 1 << 16),
       onChanged: (i) {
@@ -614,21 +613,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return Positioned(
       bottom: 13,
       left: 25,
-      child: Stack(
-        children: [
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 14,
-              foreground: Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 1.4
-                ..color = context.colorScheme.onInverseSurface,
-            ),
-          ),
-          Text(text),
-        ],
-      ),
+      child: _ReaderInfoPill(child: Text(text, style: ts.s14)),
     );
   }
 
@@ -637,12 +622,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       return Positioned(
         bottom: 13,
         right: 25,
-        child: Row(
-          children: [
-            _ClockWidget(),
-            const SizedBox(width: 10),
-            _BatteryWidget(),
-          ],
+        child: _ReaderInfoPill(
+          child: Row(
+            children: [
+              _ClockWidget(),
+              const SizedBox(width: 10),
+              _BatteryWidget(),
+            ],
+          ),
         ),
       );
     } else {
@@ -783,7 +770,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
   Widget buildEpChangeButton() {
     final extraWidth = context.padding.left + context.padding.right;
-    if (context.reader.widget.chapters == null) return const SizedBox();
+    if (context.reader.widget.chapters == null) {
+      return const SizedBox();
+    }
     switch (showFloatingButtonValue) {
       case 0:
         return Container(
@@ -791,15 +780,17 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           height: 58,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
+            color: context.colorScheme.surfaceContainerHigh.withValues(
+              alpha: 0.9,
+            ),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Icon(
             lastValue == 1
-                ? Icons.arrow_forward_ios
-                : Icons.arrow_back_ios_outlined,
+                ? Icons.arrow_forward_ios_rounded
+                : Icons.arrow_back_ios_rounded,
             size: 24,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
+            color: context.colorScheme.primary,
           ),
         );
       case -1:
@@ -808,9 +799,11 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           width: 58 + extraWidth,
           height: 58,
           child: Material(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
-            elevation: 2,
+            color: context.colorScheme.surfaceContainerHigh.withValues(
+              alpha: 0.9,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            elevation: 0,
             child: InkWell(
               onTap: () {
                 if (showFloatingButtonValue == 1) {
@@ -820,15 +813,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 }
                 setFloatingButton(0);
               },
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               child: Center(
                 child: Icon(
-                  _getArrowIcon(
-                    isReversed,
-                    showFloatingButtonValue,
-                  ),
+                  _getArrowIcon(isReversed, showFloatingButtonValue),
                   size: 24,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  color: context.colorScheme.primary,
                 ),
               ),
             ),
@@ -840,9 +830,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
   IconData _getArrowIcon(bool reversed, int value) {
     if (reversed) {
-      return value == 1 ? Icons.arrow_back_ios_outlined : Icons.arrow_forward_ios;
+      return value == 1 ? Icons.arrow_back_ios_rounded : Icons.arrow_forward_ios_rounded;
     } else {
-      return value == 1 ? Icons.arrow_forward_ios : Icons.arrow_back_ios_outlined;
+      return value == 1 ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_rounded;
     }
   }
 
@@ -1003,62 +993,33 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
     Color batteryColor = context.colorScheme.onSurface;
 
     if (state == BatteryState.charging) {
-      batteryIcon = Icons.battery_charging_full;
+      batteryIcon = Icons.battery_charging_full_rounded;
     } else if (batteryLevel >= 96) {
-      batteryIcon = Icons.battery_full_sharp;
+      batteryIcon = Icons.battery_full_rounded;
     } else if (batteryLevel >= 84) {
-      batteryIcon = Icons.battery_6_bar_sharp;
+      batteryIcon = Icons.battery_6_bar_rounded;
     } else if (batteryLevel >= 72) {
-      batteryIcon = Icons.battery_5_bar_sharp;
+      batteryIcon = Icons.battery_5_bar_rounded;
     } else if (batteryLevel >= 60) {
-      batteryIcon = Icons.battery_4_bar_sharp;
+      batteryIcon = Icons.battery_4_bar_rounded;
     } else if (batteryLevel >= 48) {
-      batteryIcon = Icons.battery_3_bar_sharp;
+      batteryIcon = Icons.battery_3_bar_rounded;
     } else if (batteryLevel >= 36) {
-      batteryIcon = Icons.battery_2_bar_sharp;
+      batteryIcon = Icons.battery_2_bar_rounded;
     } else if (batteryLevel >= 24) {
-      batteryIcon = Icons.battery_1_bar_sharp;
+      batteryIcon = Icons.battery_1_bar_rounded;
     } else if (batteryLevel >= 12) {
-      batteryIcon = Icons.battery_0_bar_sharp;
+      batteryIcon = Icons.battery_0_bar_rounded;
     } else {
-      batteryIcon = Icons.battery_alert_sharp;
-      batteryColor = Colors.red;
+      batteryIcon = Icons.battery_alert_rounded;
+      batteryColor = context.colorScheme.error;
     }
 
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          batteryIcon,
-          size: 16,
-          color: batteryColor,
-          // Stroke
-          shadows: List.generate(9, (index) {
-            if (index == 4) {
-              return null;
-            }
-            double offsetX = (index % 3 - 1) * 0.8;
-            double offsetY = ((index / 3).floor() - 1) * 0.8;
-            return Shadow(
-              color: context.colorScheme.onInverseSurface,
-              offset: Offset(offsetX, offsetY),
-            );
-          }).whereType<Shadow>().toList(),
-        ),
-        Stack(
-          children: [
-            Text(
-              '$batteryLevel%',
-              style: TextStyle(
-                fontSize: 14,
-                foreground: Paint()
-                  ..style = PaintingStyle.stroke
-                  ..strokeWidth = 1.4
-                  ..color = context.colorScheme.onInverseSurface,
-              ),
-            ),
-            Text('$batteryLevel%'),
-          ],
-        ),
+        Icon(batteryIcon, size: 16, color: batteryColor),
+        Text('$batteryLevel%', style: ts.s14),
       ],
     );
   }
@@ -1100,21 +1061,7 @@ class _ClockWidgetState extends State<_ClockWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Text(
-          _currentTime,
-          style: TextStyle(
-            fontSize: 14,
-            foreground: Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.4
-              ..color = context.colorScheme.onInverseSurface,
-          ),
-        ),
-        Text(_currentTime),
-      ],
-    );
+    return Text(_currentTime, style: ts.s14);
   }
 }
 
@@ -1149,7 +1096,10 @@ class _SelectImageOverlayContentState
         widget.onTap(details.globalPosition);
       },
       child: Container(
-        color: Colors.black.withAlpha(50),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Align(
           alignment: Alignment(0, -0.8),
           child: Container(
@@ -1157,7 +1107,7 @@ class _SelectImageOverlayContentState
             height: 42,
             decoration: BoxDecoration(
               color: context.colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: context.colorScheme.outlineVariant),
             ),
             child: Row(
@@ -1180,3 +1130,60 @@ class _SelectImageOverlayContentState
     );
   }
 }
+
+class _ReaderBarSurface extends StatelessWidget {
+  const _ReaderBarSurface({required this.child, this.roundTop = false});
+
+  final Widget child;
+  final bool roundTop;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return Theme(
+      data: Theme.of(context).copyWith(
+        iconTheme: IconThemeData(size: 24, color: colors.onSurfaceVariant),
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            iconSize: 24,
+            foregroundColor: colors.onSurfaceVariant,
+          ),
+        ),
+      ),
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: colors.surfaceContainer,
+          borderRadius: roundTop
+              ? const BorderRadius.vertical(top: Radius.circular(24))
+              : BorderRadius.zero,
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _ReaderInfoPill extends StatelessWidget {
+  const _ReaderInfoPill({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: DefaultTextStyle.merge(
+        style: ts.s14.copyWith(color: context.colorScheme.onSurface),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Keep CustomSlider's input handling and reversed-page behavior while
+/// drawing the reader's Material track and thumb in the same padded area.
