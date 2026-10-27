@@ -165,14 +165,28 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         'sans-serif'
       ];
     }
+    var scheme = SeedColorScheme.fromSeeds(
+      primaryKey: primary,
+      secondaryKey: secondary,
+      tertiaryKey: tertiary,
+      brightness: brightness,
+      tones: FlexTones.vividBackground(brightness),
+    );
+    final pureBlack = brightness == Brightness.dark &&
+        appdata.settings['pureBlackDarkMode'] == true;
+    if (pureBlack) {
+      scheme = scheme.copyWith(
+        surface: Colors.black,
+        surfaceContainerLowest: Colors.black,
+        surfaceContainerLow: const Color(0xFF0E0E0E),
+        surfaceContainer: const Color(0xFF141414),
+        surfaceContainerHigh: const Color(0xFF1C1C1C),
+        surfaceContainerHighest: const Color(0xFF242424),
+      );
+    }
     return ThemeData(
-      colorScheme: SeedColorScheme.fromSeeds(
-        primaryKey: primary,
-        secondaryKey: secondary,
-        tertiaryKey: tertiary,
-        brightness: brightness,
-        tones: FlexTones.vividBackground(brightness),
-      ),
+      colorScheme: scheme,
+      scaffoldBackgroundColor: pureBlack ? Colors.black : null,
       fontFamily: font,
       fontFamilyFallback: fallback,
     );

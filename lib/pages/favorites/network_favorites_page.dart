@@ -425,7 +425,7 @@ class _FolderTile extends StatelessWidget {
                   onPressed: () => onDeleteFolder(context),
                 )
               else
-                const Icon(Icons.arrow_right),
+                const Icon(Icons.chevron_right),
             ],
           ),
         ),

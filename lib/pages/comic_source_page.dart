@@ -177,18 +177,7 @@ class _SourceGroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      color: context.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: context.colorScheme.outlineVariant,
-          width: 0.5,
-        ),
-      ),
+    return AppCard(
       child: ListTile(
         onTap: onTap,
         leading: Icon(group.icon, color: context.colorScheme.primary),
@@ -201,31 +190,11 @@ class _SourceGroupHeader extends StatelessWidget {
               const SizedBox(width: 8),
               Tooltip(
                 message: 'New Version'.tl,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$updateCount',
-                    style: ts.s12.copyWith(
-                      color: context.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
+                child: AppBadge('$updateCount', highlighted: true),
               ),
             ],
             const SizedBox(width: 8),
-            AnimatedRotation(
-              turns: collapsed ? 0 : 0.5,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: const Icon(Icons.expand_more),
-            ),
+            AnimatedChevron(expanded: !collapsed),
           ],
         ),
       ),
@@ -257,50 +226,7 @@ class _SourceGroupSection extends StatefulWidget {
   State<_SourceGroupSection> createState() => _SourceGroupSectionState();
 }
 
-class _SourceGroupSectionState extends State<_SourceGroupSection>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final CurvedAnimation _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-      value: widget.collapsed ? 0 : 1,
-    )..addStatusListener(_onAnimationStatus);
-    _animation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (status == AnimationStatus.dismissed) {
-      setState(() {});
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _SourceGroupSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.collapsed != oldWidget.collapsed) {
-      if (widget.collapsed) {
-        _controller.reverse();
-      } else {
-        _controller.forward();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _animation.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
+class _SourceGroupSectionState extends State<_SourceGroupSection> {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
@@ -315,25 +241,19 @@ class _SourceGroupSectionState extends State<_SourceGroupSection>
                 : 0,
             onTap: widget.onTap,
           ),
-          SizeTransition(
-            sizeFactor: _animation,
-            axisAlignment: -1,
-            child: FadeTransition(
-              opacity: _animation,
-              child: widget.collapsed && _controller.isDismissed
-                  ? const SizedBox.shrink()
-                  : Column(
-                      children: [
-                        for (var source in widget.sources)
-                          _ComicSourceCard(
-                            key: ValueKey(source.key),
-                            source: source,
-                            edit: widget.edit,
-                            update: widget.update,
-                            delete: widget.delete,
-                          ),
-                      ],
-                    ),
+          CollapsibleBody(
+            expanded: !widget.collapsed,
+            builder: (context) => Column(
+              children: [
+                for (var source in widget.sources)
+                  _ComicSourceCard(
+                    key: ValueKey(source.key),
+                    source: source,
+                    edit: widget.edit,
+                    update: widget.update,
+                    delete: widget.delete,
+                  ),
+              ],
             ),
           ),
         ],
@@ -1156,37 +1076,8 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
                 ? 'Video'
                 : 'Comics')
             .tl;
-    Widget badge(String text, {bool highlighted = false}) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: highlighted
-            ? context.colorScheme.primaryContainer
-            : context.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: ts.s12.copyWith(
-          color: highlighted
-              ? context.colorScheme.onPrimaryContainer
-              : context.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      color: context.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: hasUpdate
-              ? context.colorScheme.primary
-              : context.colorScheme.outlineVariant,
-          width: 0.6,
-        ),
-      ),
+    return AppCard(
+      highlighted: hasUpdate,
       child: Column(
         children: [
           Padding(
@@ -1196,19 +1087,10 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
               children: [
                 Opacity(
                   opacity: enabled ? 1 : 0.5,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: context.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      source.isVideoSource
-                          ? Icons.live_tv_outlined
-                          : Icons.menu_book_outlined,
-                      color: context.colorScheme.onSecondaryContainer,
-                    ),
+                  child: AppIconBox(
+                    source.isVideoSource
+                        ? Icons.live_tv_outlined
+                        : Icons.menu_book_outlined,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1229,13 +1111,13 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
                           spacing: 6,
                           runSpacing: 6,
                           children: [
-                            badge(type),
-                            badge(source.version),
-                            if (!enabled) badge('Disabled'.tl),
+                            AppBadge(type),
+                            AppBadge(source.version),
+                            if (!enabled) AppBadge('Disabled'.tl),
                             if (hasUpdate)
                               Tooltip(
                                 message: newVersion,
-                                child: badge(
+                                child: AppBadge(
                                   'New Version'.tl,
                                   highlighted: true,
                                 ),
@@ -1368,38 +1250,22 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
       String type = item.value['type'];
       try {
         if (type == "select") {
-          var current = source.data['settings'][key];
-          if (current == null) {
-            var d = item.value['default'];
-            for (var option in item.value['options']) {
-              if (option['value'] == d) {
-                current = option['text'] ?? option['value'];
-                break;
-              }
-            }
-          } else {
-            current =
-                item.value['options'].firstWhere(
-                  (e) => e['value'] == current,
-                )['text'] ??
-                current;
-          }
-          yield ListTile(
+          var current = source.data['settings'][key] ?? item.value['default'];
+          var options = item.value['options'] as List;
+          yield InlineSelectTile<int>(
             title: Text((item.value['title'] as String).ts(source.key)),
-            trailing: Select(
-              current: (current as String).ts(source.key),
-              values: (item.value['options'] as List)
-                  .map<String>(
-                    (e) => ((e['text'] ?? e['value']) as String).ts(source.key),
-                  )
-                  .toList(),
-              onTap: (i) {
-                source.data['settings'][key] =
-                    item.value['options'][i]['value'];
-                source.saveData();
-                setState(() {});
-              },
-            ),
+            sheetTitle: (item.value['title'] as String).ts(source.key),
+            selected: options.indexWhere((e) => e['value'] == current),
+            options: {
+              for (var i = 0; i < options.length; i++)
+                i: ((options[i]['text'] ?? options[i]['value']) as String)
+                    .ts(source.key),
+            },
+            onChanged: (i) {
+              source.data['settings'][key] = options[i]['value'];
+              source.saveData();
+              setState(() {});
+            },
           );
         } else if (type == "switch") {
           var current = source.data['settings'][key] ?? item.value['default'];
@@ -1461,7 +1327,7 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
     if (!logged) {
       yield ListTile(
         title: Text("Log in".tl),
-        trailing: const Icon(Icons.arrow_right),
+        trailing: const Icon(Icons.chevron_right),
         onTap: () async {
           await context.to(
             () => _LoginPage(config: source.account!, source: source),

@@ -161,89 +161,54 @@ class BangumiCandidateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var colors = context.colorScheme;
-    return Card(
-      elevation: 0,
-      color: colors.surfaceContainerLow,
+    return AppCard(
+      highlighted: playing,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: playing ? colors.primary : colors.outlineVariant,
-          width: playing ? 1.5 : 0.6,
-        ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              if (candidate.cover.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: AnimatedImage(
-                    image: CachedImageProvider(
-                      candidate.cover,
-                      sourceKey: candidate.sourceKey,
-                      cid: candidate.id,
-                    ),
-                    width: 40,
-                    height: 56,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            if (candidate.cover.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: AnimatedImage(
+                  image: CachedImageProvider(
+                    candidate.cover,
+                    sourceKey: candidate.sourceKey,
+                    cid: candidate.id,
                   ),
-                )
-              else
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.live_tv_outlined,
-                    color: colors.onSecondaryContainer,
-                  ),
+                  width: 40,
+                  height: 56,
                 ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ComicSource.find(candidate.sourceKey)?.name ??
-                          candidate.sourceKey,
-                      style: ts.s16.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      candidate.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: ts.s12.copyWith(color: colors.onSurfaceVariant),
-                    ),
-                  ],
-                ),
+              )
+            else
+              const AppIconBox(Icons.live_tv_outlined),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ComicSource.find(candidate.sourceKey)?.name ??
+                        candidate.sourceKey,
+                    style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    candidate.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s12.copyWith(color: colors.onSurfaceVariant),
+                  ),
+                ],
               ),
-              if (playing) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.primaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Playing'.tl,
-                    style: ts.s12.copyWith(color: colors.onPrimaryContainer),
-                  ),
-                ),
-              ],
+            ),
+            if (playing) ...[
+              const SizedBox(width: 8),
+              AppBadge('Playing'.tl, highlighted: true),
             ],
-          ),
+          ],
         ),
       ),
     );
