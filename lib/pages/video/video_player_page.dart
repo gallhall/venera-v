@@ -137,11 +137,13 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
-  late final ComicSource? source = ComicSource.find(widget.sourceKey);
+  late String sourceKey = widget.sourceKey;
+  late ComicDetails details = widget.details;
+  late List<VideoEpisode> episodes = VideoEpisode.fromDetails(details);
+  late BangumiPlaybackContext? bangumi = widget.bangumi;
+  late Duration? initialPosition = widget.initialPosition;
 
-  late final List<VideoEpisode> episodes = VideoEpisode.fromDetails(
-    widget.details,
-  );
+  ComicSource? get source => ComicSource.find(sourceKey);
 
   /// media_kit, on iOS only for streams the system player cannot play.
   PlayerService? player;
@@ -197,15 +199,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   VideoEpisode get episode => episodes[current];
 
-  int get bangumiIndex => widget.bangumi!.episodes.indexWhere(
-    (e) => e.number == widget.bangumi!.number,
+  int get bangumiIndex => bangumi!.episodes.indexWhere(
+    (e) => e.number == bangumi!.number,
   );
 
   bool get hasPrevious =>
-      widget.bangumi != null ? bangumiIndex > 0 : current > 0;
+      bangumi != null ? bangumiIndex > 0 : current > 0;
 
-  bool get hasNext => widget.bangumi != null
-      ? bangumiIndex < widget.bangumi!.episodes.length - 1
+  bool get hasNext => bangumi != null
+      ? bangumiIndex < bangumi!.episodes.length - 1
       : current < episodes.length - 1;
 
   /// Android phones show the player from the top edge without an app bar;
@@ -215,17 +217,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Whether the page has no app bar, set on each build.
   bool showPlayerBack = false;
 
-  late final History history = widget.bangumi != null
+  late final History history = bangumi != null
       ? bangumiSubjectHistory(
-          widget.bangumi!.subject,
-          BangumiManager().localProgress(widget.bangumi!.subject.id),
+          bangumi!.subject,
+          BangumiManager().localProgress(bangumi!.subject.id),
         )
       : widget.history ??
             HistoryManager().find(
-              widget.details.id,
-              ComicType.fromKey(widget.sourceKey),
+              details.id,
+              ComicType.fromKey(sourceKey),
             ) ??
-            History.fromModel(model: widget.details, ep: 0, page: 0);
+            History.fromModel(model: details, ep: 0, page: 0);
 
   /// Saves the progress while playing.
   Timer? historyTimer;
@@ -440,7 +442,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         source?.loadVideoPlayInfo != null) {
       var token = loadToken;
       var name = info.sources[sourceIndex].name;
-      var res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
+      var res = await source!.loadVideoPlayInfo!(details.id, episode.id);
       if (!mounted || token != loadToken || recovery != r) return;
       if (!res.error) {
         var sources = res.data.sources;
@@ -477,12 +479,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void dispose() {
     historyTimer?.cancel();
     unlockTimer?.cancel();
-    if (isFullscreen && !transferringFullscreen) applyFullscreen(false);
+    if (isFullscreen) applyFullscreen(false);
     for (var s in subscriptions) {
       s.cancel();
     }
     // Saved synchronously, so the details page sees it when it comes back.
-    if (!replacingBangumi) saveHistory(sync: true);
+    saveHistory(sync: true);
     player?.dispose();
     native?.dispose();
     controls.dispose();
@@ -502,7 +504,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           (position ?? (playedToEnd ? duration : p.currentPosition)).inSeconds
       ..maxPage = duration.inSeconds
       ..time = DateTime.now();
-    var b = widget.bangumi;
+    var b = bangumi;
     if (b != null) {
       history
         ..ep = b.number
@@ -513,9 +515,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       history.readEpisode.add(episodes.historyKey(current));
     }
     if (sync || b != null) {
-      // Bangumi progress is immediately available to a replacement player.
-      // Only from dispose, while other pages listening to the history
-      // cannot rebuild.
+      // Defer notifications from dispose, while listeners cannot rebuild.
       HistoryManager().addHistory(history, notifyLater: sync);
     } else {
       HistoryManager().addHistoryAsync(history);
@@ -531,10 +531,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (markedWatched || !started || duration <= Duration.zero) return;
     if (position < duration * 0.85) return;
     markedWatched = true;
-    if (widget.bangumi != null) saveHistory(position: position);
+    if (bangumi != null) saveHistory(position: position);
     BangumiManager().onFinished(
-      sourceKey: widget.sourceKey,
-      id: widget.details.id,
+      sourceKey: sourceKey,
+      id: details.id,
       // A video without episodes is the first one.
       title: episode.id == null ? '' : episode.title,
       position: episodes.toHistory(current).ep,
@@ -544,7 +544,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Where to start episode [index]: the saved position if it is the
   /// episode in the history and it was not finished.
   Duration? resumePosition(int index) {
-    if (widget.bangumi != null) return widget.initialPosition;
+    if (bangumi != null) return initialPosition;
     var h = episodes.toHistory(index);
     if (h.ep != history.ep || h.group != history.group) return null;
     var position = Duration(seconds: history.page);
@@ -556,8 +556,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   LocalComic? get localVideo => LocalManager().find(
-    widget.details.id,
-    ComicType.fromKey(widget.sourceKey),
+    details.id,
+    ComicType.fromKey(sourceKey),
   );
 
   bool isDownloaded(int index, LocalComic? local) {
@@ -599,7 +599,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     } else if (source?.loadVideoPlayInfo == null) {
       res = Res.error("Video source not found".tl);
     } else {
-      res = await source!.loadVideoPlayInfo!(widget.details.id, episode.id);
+      res = await source!.loadVideoPlayInfo!(details.id, episode.id);
     }
     if (!mounted || token != loadToken) return;
     if (res.error) {
@@ -659,7 +659,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     } else {
       next = ensureMediaKit();
       // Stop the system player before media_kit plays.
-      if (n != null && identical(active, n)) await n.close();
+      if (n != null && (active == null || identical(active, n))) {
+        await n.close();
+      }
     }
     if (next == null) {
       setState(() {
@@ -928,43 +930,60 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return e.group == null ? e.title : '${e.group} · ${e.title}';
   }
 
-  String get playingSource => source?.name ?? widget.sourceKey;
+  String get playingSource => source?.name ?? sourceKey;
 
-  String get playerTitle => widget.bangumi != null
-      ? '${widget.bangumi!.subject.displayName} \u00b7 ${episode.title} \u00b7 $playingSource'
+  String get playerTitle => bangumi != null
+      ? '${bangumi!.subject.displayName} \u00b7 ${episode.title} \u00b7 $playingSource'
       : episode.id == null
-      ? widget.details.title
-      : '${widget.details.title} · ${episode.title}';
+      ? details.title
+      : '${details.title} · ${episode.title}';
 
   bool changingBangumi = false;
-  bool transferringFullscreen = false;
-  bool replacingBangumi = false;
 
   Future<void> changeBangumi(
     BangumiPlaybackContext playback, {
     Comic? candidate,
     Duration? position,
   }) async {
-    if (changingBangumi) return;
+    if (changingBangumi) {
+      return;
+    }
     changingBangumi = true;
     saveHistory();
+    var oldActive = active;
+    var wasPlaying = oldActive?.isPlaying == true;
+    var wasStarted = started;
+    var oldError = error;
+    started = false;
+    // Ignore late events from the old stream until the target is installed.
+    active = null;
+    setState(() {
+      isLoading = true;
+      error = null;
+      loadToken++;
+      openToken++;
+    });
     try {
+      await oldActive?.pause();
+      if (!mounted) {
+        return;
+      }
       candidate ??= playback.candidates
           .where(
-            (c) => c.sourceKey == widget.sourceKey &&
-                c.id == widget.details.id &&
+            (c) => c.sourceKey == sourceKey &&
+                c.id == details.id &&
                 ComicSource.find(c.sourceKey)?.isEnabled == true,
           )
           .firstOrNull;
       candidate ??= playback.candidates
           .where((c) => ComicSource.find(c.sourceKey)?.isEnabled == true)
           .firstOrNull;
-      if (candidate == null) throw Exception('Video source not found'.tl);
-      var page = await bangumiPlayer(
+      if (candidate == null) {
+        throw Exception('Video source not found'.tl);
+      }
+      var target = await loadBangumiTarget(
         playback,
         candidate,
-        position: position,
-        startFullscreen: isFullscreen,
         onSourceChanged: (c) {
           if (mounted) {
             context.showMessage(
@@ -975,17 +994,39 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           }
         },
       );
-      if (!mounted) return;
-      await active?.pause();
-      if (!mounted) return;
-      replacingBangumi = true;
-      transferringFullscreen = isFullscreen;
-      App.rootContext.toReplacement(() => page);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        sourceKey = target.sourceKey;
+        details = target.details;
+        episodes = VideoEpisode.fromDetails(details);
+        bangumi = playback;
+        initialPosition = position ?? Duration.zero;
+        nativeFailedSources.clear();
+        failedSources.clear();
+        retriedSources.clear();
+        playInfo = null;
+        current = episodes.fromHistory(target.ep, target.group) ?? 0;
+      });
+      loadEpisode(current);
     } catch (e) {
-      replacingBangumi = false;
-      transferringFullscreen = false;
       if (mounted) {
+        // The old stream plays on; the failure is only shown as a message.
+        setState(() {
+          active = oldActive;
+          started = wasStarted;
+          isLoading = false;
+          error = oldError;
+        });
+        if (wasPlaying) {
+          await oldActive?.play();
+        }
+        if (!mounted) {
+          return;
+        }
         context.showMessage(message: '$e');
+        changingBangumi = false;
         await pickBangumiSource(
           position: position ?? Duration.zero,
           playback: playback,
@@ -997,7 +1038,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Future<void> moveEpisode(int direction) async {
-    var b = widget.bangumi;
+    var b = bangumi;
     if (b == null) return loadEpisode(current + direction);
     var target = b.episodes.elementAtOrNull(bangumiIndex + direction);
     if (target != null) await changeBangumi(b.at(target.number));
@@ -1007,41 +1048,41 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     Duration? position,
     BangumiPlaybackContext? playback,
   }) async {
-    var b = playback ?? widget.bangumi;
+    var b = playback ?? bangumi;
     if (b == null) return;
     var savedPosition =
         position ??
         active?.currentPosition ??
-        widget.initialPosition ??
+        initialPosition ??
         Duration.zero;
-    var candidate = await showDialog<Comic>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text('Switch source'.tl),
-        children: [
-          for (var c in b.candidates.where(
-            (c) => ComicSource.find(c.sourceKey)?.isEnabled == true,
-          ))
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, c),
-              child: ListTile(
-                selected:
-                    c.sourceKey == widget.sourceKey &&
-                    c.id == widget.details.id,
-                trailing:
-                    c.sourceKey == widget.sourceKey && c.id == widget.details.id
-                    ? const Icon(Icons.check)
-                    : null,
-                title: Text(
-                  '${ComicSource.find(c.sourceKey)?.name ?? c.sourceKey} \u00b7 ${c.title}',
-                ),
+    Comic? candidate;
+    await showSideBar(
+      App.rootContext,
+      Scaffold(
+        appBar: Appbar(title: Text('Switch source'.tl)),
+        body: Builder(builder: (sheetContext) => ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            for (var c in b.candidates.where(
+              (c) => ComicSource.find(c.sourceKey)?.isEnabled == true,
+            ))
+              BangumiCandidateCard(
+                candidate: c,
+                playing: c.sourceKey == sourceKey && c.id == details.id,
+                onTap: () {
+                  if (c.sourceKey != sourceKey || c.id != details.id) {
+                    candidate = c;
+                  }
+                  Navigator.pop(sheetContext);
+                },
               ),
-            ),
-        ],
+          ],
+        )),
       ),
     );
-    if (!mounted || candidate == null) return;
-    changingBangumi = false;
+    if (!mounted || candidate == null) {
+      return;
+    }
     await changeBangumi(b, candidate: candidate, position: savedPosition);
   }
 
@@ -1067,13 +1108,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             : context.showMessage(message: "Already the last episode".tl);
       },
       actions: [
-        if (widget.bangumi != null)
+        if (bangumi != null)
           PlayerControlAction(
             Icons.swap_horiz,
             'Switch source'.tl,
             (_) => pickBangumiSource(),
           ),
-        if (widget.bangumi == null && episodes.length > 1)
+        if (bangumi == null && episodes.length > 1)
           PlayerControlAction(Icons.format_list_numbered, "Episodes".tl, (
             context,
           ) async {
@@ -1131,7 +1172,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Widget build(BuildContext context) {
     if (engineError != null && native == null) {
       return Scaffold(
-        appBar: Appbar(title: Text(widget.details.title)),
+        appBar: Appbar(title: Text(details.title)),
         body: Center(
           child: Text(
             "${"Failed to load the video engine".tl}\n\n$engineError",
@@ -1164,7 +1205,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         showPlayerBack = !isWide && isEdgeToEdge;
         if (isWide) {
           return Scaffold(
-            appBar: Appbar(title: Text(widget.details.title)),
+            appBar: Appbar(title: Text(details.title)),
             body: Row(
               children: [
                 Expanded(child: buildPlayer()),
@@ -1183,7 +1224,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           // The desktop window frame draws its title bar over the page, so
           // keep the app bar instead of a black area up to the top.
           return Scaffold(
-            appBar: Appbar(title: Text(widget.details.title)),
+            appBar: Appbar(title: Text(details.title)),
             body: Column(
               children: [
                 AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
@@ -1428,7 +1469,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     return [
       ListTile(
-        title: Text(widget.details.title, style: ts.s18),
+        title: Text(details.title, style: ts.s18),
         subtitle: episode.id == null ? null : Text(episodeLabel(episode)),
       ),
       if (info != null && info.sources.length > 1) ...[
@@ -1446,7 +1487,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           ],
         ).paddingHorizontal(16),
       ],
-      if (widget.bangumi != null) ...[
+      if (bangumi != null) ...[
         ListTile(
           title: Text(
             'Playback source: @source'.tlParams({'source': playingSource}),
@@ -1458,16 +1499,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         Wrap(
           spacing: 8,
           children: [
-            for (var e in widget.bangumi!.episodes)
+            for (var e in bangumi!.episodes)
               ChoiceChip(
                 label: Text('${e.number}'),
-                selected: e.number == widget.bangumi!.number,
-                onSelected: (_) => changeBangumi(widget.bangumi!.at(e.number)),
+                selected: e.number == bangumi!.number,
+                onSelected: (_) => changeBangumi(bangumi!.at(e.number)),
               ),
           ],
         ).paddingHorizontal(16),
       ],
-      if (widget.bangumi == null && episodes.length > 1) ...[
+      if (bangumi == null && episodes.length > 1) ...[
         buildTitle("Episodes".tl),
         for (var group in groups) ...[
           if (group != null)

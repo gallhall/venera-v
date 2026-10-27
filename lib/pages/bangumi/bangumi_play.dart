@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:venera/components/components.dart';
+import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -18,6 +20,35 @@ Future<VideoPlayerPage> bangumiPlayer(
   bool startFullscreen = false,
   void Function(Comic)? onSourceChanged,
 }) {
+  return loadBangumiTarget(
+    context,
+    candidate,
+    onSourceChanged: onSourceChanged,
+  ).then(
+    (target) => VideoPlayerPage(
+      sourceKey: target.sourceKey,
+      details: target.details,
+      initialEp: target.ep,
+      initialGroup: target.group,
+      bangumi: context,
+      startFullscreen: startFullscreen,
+      initialPosition: position ?? Duration.zero,
+    ),
+  );
+}
+
+typedef BangumiPlayTarget = ({
+  String sourceKey,
+  ComicDetails details,
+  int ep,
+  int? group,
+});
+
+Future<BangumiPlayTarget> loadBangumiTarget(
+  BangumiPlaybackContext context,
+  Comic candidate, {
+  void Function(Comic)? onSourceChanged,
+}) {
   var seen = <String>{candidate.sourceKey};
   var choices = [
     candidate,
@@ -28,23 +59,16 @@ Future<VideoPlayerPage> bangumiPlayer(
   ];
   return bangumiLoadEpisode(
     choices,
-    (c) => _loadBangumiPlayer(
-      context,
-      c,
-      position: position,
-      startFullscreen: startFullscreen,
-    ),
+    (c) => _loadBangumiTarget(context, c),
     missingEpisode: (e) => e is BangumiEpisodeUnavailable,
     onSwitch: onSourceChanged,
   );
 }
 
-Future<VideoPlayerPage> _loadBangumiPlayer(
+Future<BangumiPlayTarget> _loadBangumiTarget(
   BangumiPlaybackContext context,
-  Comic candidate, {
-  Duration? position,
-  bool startFullscreen = false,
-}) async {
+  Comic candidate,
+) async {
   var source = ComicSource.find(candidate.sourceKey);
   if (source?.loadComicInfo == null) {
     throw Exception('Video source not found'.tl);
@@ -85,14 +109,11 @@ Future<VideoPlayerPage> _loadBangumiPlayer(
   );
   manager.chooseSource(context.subject.id, candidate.sourceKey, candidate.id);
   var h = episodes.toHistory(index);
-  return VideoPlayerPage(
+  return (
     sourceKey: candidate.sourceKey,
     details: details,
-    initialEp: h.ep,
-    initialGroup: h.group,
-    bangumi: context,
-    startFullscreen: startFullscreen,
-    initialPosition: position ?? Duration.zero,
+    ep: h.ep,
+    group: h.group,
   );
 }
 
@@ -122,5 +143,109 @@ Future<void> openBangumiPlayer(
     App.rootContext.toReplacement(() => page);
   } else {
     await App.rootContext.to(() => page);
+  }
+}
+
+class BangumiCandidateCard extends StatelessWidget {
+  const BangumiCandidateCard({
+    super.key,
+    required this.candidate,
+    required this.playing,
+    required this.onTap,
+  });
+
+  final Comic candidate;
+  final bool playing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    var colors = context.colorScheme;
+    return Card(
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: playing ? colors.primary : colors.outlineVariant,
+          width: playing ? 1.5 : 0.6,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              if (candidate.cover.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: AnimatedImage(
+                    image: CachedImageProvider(
+                      candidate.cover,
+                      sourceKey: candidate.sourceKey,
+                      cid: candidate.id,
+                    ),
+                    width: 40,
+                    height: 56,
+                  ),
+                )
+              else
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.live_tv_outlined,
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ComicSource.find(candidate.sourceKey)?.name ??
+                          candidate.sourceKey,
+                      style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      candidate.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts.s12.copyWith(color: colors.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (playing) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Playing'.tl,
+                    style: ts.s12.copyWith(color: colors.onPrimaryContainer),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

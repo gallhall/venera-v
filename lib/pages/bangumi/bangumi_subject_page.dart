@@ -69,7 +69,7 @@ class _SourceResult {
   String? error;
   String keyword = '';
   final resultKeywords = <String, String>{};
-  bool loading = true, expanded = false;
+  bool loading = true;
   int generation = 0;
 }
 
@@ -84,6 +84,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   String? error, playError;
   bool loading = true, playing = false;
   bool sourcesReady = false;
+  bool unmatchedExpanded = false;
   final scrollController = ScrollController();
   final coverHero = Object();
   bool showAppbarTitle = false, showFAB = false;
@@ -306,6 +307,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       for (var query in keywords) {
         if (query.isEmpty) continue;
         row.keyword = query;
+        sourceUpdates.value++;
         try {
           var res = data.loadPage != null
               ? await data.loadPage!(query, 1, options)
@@ -318,6 +320,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           }
           if (res.error) {
             row.error = res.errorMessage;
+            sourceUpdates.value++;
             continue;
           }
           row.error = null;
@@ -343,6 +346,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             return;
           }
           row.error = '$e';
+          sourceUpdates.value++;
         }
       }
       if (!mounted ||
@@ -471,21 +475,6 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     ),
     onTap: onTap,
   );
-
-  Future<void> choose(_SourceResult row) async {
-    var comic = await showDialog<Comic>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text(row.source.name),
-        children: [
-          for (var c in row.results)
-            resultTile(c, () => Navigator.pop(context, c)),
-        ],
-      ),
-    );
-    if (!mounted || comic == null) return;
-    select(comic);
-  }
 
   Future<void> searchAlias(_SourceResult row) async {
     var keyword = await showDialog<String>(
@@ -662,47 +651,23 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Future<void> pickSource() async {
-    var result = await showDialog<(_SourceResult, bool)>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Text('Playback sources'.tl),
-        children: [
-          ValueListenableBuilder<int>(
+    await showSideBar(
+      App.rootContext,
+      Scaffold(
+        appBar: Appbar(title: Text('Playback sources'.tl)),
+        body: Builder(
+          builder: (sheetContext) => ValueListenableBuilder<int>(
             valueListenable: sourceUpdates,
-            builder: (context, _, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (sources.isEmpty)
-                  ListTile(
-                    title: Text(
-                      (loading ? 'Loading' : 'Please add some sources').tl,
-                    ),
-                  ),
-                for (var row in sources)
-                  sourceTile(
-                    row,
-                    onSelect: row.chosen == null
-                        ? null
-                        : () => Navigator.pop(dialogContext, (row, false)),
-                    onChoose: () => Navigator.pop(dialogContext, (row, true)),
-                  ),
-              ],
+            builder: (context, _, _) => ListView(
+              children: sourceList((comic) {
+                select(comic);
+                Navigator.pop(sheetContext);
+              }),
             ),
           ),
-        ],
+        ),
       ),
     );
-    if (!mounted || result == null) return;
-    var (row, another) = result;
-    if (another) {
-      if (row.results.isEmpty) {
-        await search(row);
-      } else {
-        await choose(row);
-      }
-    } else if (row.chosen != null) {
-      select(row.chosen!);
-    }
   }
 
   @override
@@ -1209,113 +1174,378 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
-  Widget sourceTile(
-    _SourceResult row, {
-    VoidCallback? onSelect,
-    VoidCallback? onChoose,
-  }) {
-    return ListTile(
-      selected: current?.sourceKey == row.source.key,
-      leading: row.chosen?.cover.isNotEmpty == true
-          ? SizedBox(
-              width: 40,
-              height: 56,
-              child: AnimatedImage(
-                image: CachedImageProvider(row.chosen!.cover),
-                width: 40,
-                height: 56,
+  Widget sourceCard(_SourceResult row, void Function(Comic) onPick) {
+    var chosen = row.chosen;
+    return _PlaySourceCard(
+      key: ValueKey(row.source.key),
+      row: row,
+      playing:
+          current?.sourceKey == row.source.key && current?.id == chosen?.id,
+      match: chosen == null ? null : matchLabel(chosen),
+      matches:
+          chosen != null &&
+          BangumiTitleMatch.match(allNames, chosen.title).matches,
+      onSelect: chosen == null ? null : () => onPick(chosen),
+      details: () => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (row.keyword.isNotEmpty)
+            Text(
+              'Search keyword: @keyword'.tlParams({'keyword': row.keyword}),
+              style: ts.s12.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
               ),
-            )
-          : const Icon(Icons.live_tv_outlined),
-      title: Text(row.source.name),
-      subtitle: Text(
-        row.error ??
-            row.chosen?.title ??
-            (row.loading ? 'Loading'.tl : 'No matching result'.tl),
+            ).paddingHorizontal(16),
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: () => search(row),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text('Retry'.tl),
+              ),
+              TextButton.icon(
+                onPressed: () => searchAlias(row),
+                icon: const Icon(Icons.translate, size: 18),
+                label: Text('Search with alias'.tl),
+              ),
+              TextButton.icon(
+                onPressed: () => searchCustom(row),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: Text('Custom search keyword'.tl),
+              ),
+            ],
+          ).paddingHorizontal(8),
+          Text(
+            'All results (@n)'.tlParams({'n': row.results.length}),
+            style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
+          ).paddingHorizontal(16),
+          if (row.results.isEmpty)
+            ListTile(title: Text((row.loading ? 'Loading' : 'No results').tl)),
+          for (var comic in row.results) resultTile(comic, () => onPick(comic)),
+        ],
       ),
-      onTap: onSelect,
-      trailing: row.loading
-          ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            )
-          : IconButton(
-              icon: Icon(
-                row.results.isEmpty ? Icons.refresh : Icons.swap_horiz,
-              ),
-              tooltip:
-                  (row.results.isEmpty ? 'Retry' : 'Choose source result').tl,
-              onPressed: onChoose,
-            ),
     );
   }
 
-  Widget sourceGroup(_SourceResult row) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        sourceTile(
-          row,
-          onSelect: row.chosen == null ? null : () => select(row.chosen!),
-          onChoose: () => row.results.isEmpty ? search(row) : choose(row),
+  List<Widget> sourceList(void Function(Comic) onPick) {
+    var unmatched = sources.where((row) => row.chosen == null && !row.loading);
+    return [
+      ListTile(
+        title: Text('Playback sources'.tl),
+        trailing: Text(
+          '${sources.where((row) => row.chosen != null).length}/${sources.length}',
+          style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
         ),
-        if (row.keyword.isNotEmpty && row.keyword != subject?.displayName)
-          Text(
-            'Search keyword: @keyword'.tlParams({'keyword': row.keyword}),
-            style: ts.s12,
-          ).paddingHorizontal(16),
-        Wrap(
-          spacing: 8,
-          children: [
-            TextButton.icon(
-              onPressed: () => searchAlias(row),
-              icon: const Icon(Icons.translate, size: 18),
-              label: Text('Search with alias'.tl),
-            ),
-            TextButton.icon(
-              onPressed: () => searchCustom(row),
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: Text('Custom search keyword'.tl),
-            ),
-            TextButton.icon(
-              onPressed: () => setState(() => row.expanded = !row.expanded),
-              icon: Icon(
-                row.expanded ? Icons.expand_less : Icons.expand_more,
-                size: 18,
-              ),
-              label: Text(
-                'All results (@n)'.tlParams({'n': row.results.length}),
-              ),
-            ),
-          ],
-        ).paddingHorizontal(8),
-        if (row.expanded) ...[
-          if (row.results.isEmpty)
-            ListTile(title: Text((row.loading ? 'Loading' : 'No results').tl)),
-          for (var comic in row.results) resultTile(comic, () => select(comic)),
-        ],
-      ],
-    );
+      ),
+      if (sources.isEmpty)
+        ListTile(
+          title: Text((loading ? 'Loading' : 'Please add some sources').tl),
+        ),
+      for (var row in sources.where((row) => row.chosen != null))
+        sourceCard(row, onPick),
+      for (var row in sources.where((row) => row.chosen == null && row.loading))
+        sourceCard(row, onPick),
+      if (unmatched.isNotEmpty)
+        _UnmatchedSources(
+          expanded: unmatchedExpanded,
+          count: unmatched.length,
+          onToggle: () {
+            setState(() => unmatchedExpanded = !unmatchedExpanded);
+            sourceUpdates.value++;
+          },
+          children: () => [for (var row in unmatched) sourceCard(row, onPick)],
+        ),
+    ];
   }
 
   Widget buildSources() {
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(child: ListTile(title: Text('Playback sources'.tl))),
-        if (sources.isEmpty && !loading)
-          SliverToBoxAdapter(
-            child: ListTile(title: Text('Please add some sources'.tl)),
-          ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => sourceGroup(sources[index]),
-            childCount: sources.length,
-          ),
+    return SliverToBoxAdapter(child: Column(children: sourceList(select)));
+  }
+}
+
+class _PlaySourceCard extends StatefulWidget {
+  const _PlaySourceCard({
+    super.key,
+    required this.row,
+    required this.playing,
+    required this.match,
+    required this.matches,
+    required this.onSelect,
+    required this.details,
+  });
+
+  final _SourceResult row;
+  final bool playing, matches;
+  final String? match;
+  final VoidCallback? onSelect;
+  final Widget Function() details;
+
+  @override
+  State<_PlaySourceCard> createState() => _PlaySourceCardState();
+}
+
+class _PlaySourceCardState extends State<_PlaySourceCard>
+    with SingleTickerProviderStateMixin {
+  bool expanded = false;
+  late final controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 200),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.dismissed) {
+          setState(() {});
+        }
+      });
+  late final animation = CurvedAnimation(
+    parent: controller,
+    curve: Curves.easeInOut,
+  );
+
+  void toggle() {
+    setState(() => expanded = !expanded);
+    if (expanded) {
+      controller.forward();
+    } else {
+      controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    animation.dispose();
+    controller.dispose();
+    super.dispose();
+  }
+
+  Widget badge(String text, bool highlighted) {
+    var colors = context.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? colors.primaryContainer
+            : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: ts.s12.copyWith(
+          color: highlighted
+              ? colors.onPrimaryContainer
+              : colors.onSurfaceVariant,
         ),
-      ],
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    var row = widget.row;
+    var chosen = row.chosen;
+    var colors = context.colorScheme;
+    return Card(
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: widget.playing ? colors.primary : colors.outlineVariant,
+          width: widget.playing ? 1.5 : 0.6,
+        ),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: widget.onSelect ?? toggle,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  if (chosen != null && chosen.cover.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: AnimatedImage(
+                        image: CachedImageProvider(
+                          chosen.cover,
+                          sourceKey: chosen.sourceKey,
+                          cid: chosen.id,
+                        ),
+                        width: 40,
+                        height: 56,
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: colors.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.live_tv_outlined,
+                        color: colors.onSecondaryContainer,
+                      ),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          row.source.name,
+                          style: ts.s16.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          chosen?.title ??
+                              row.error ??
+                              (row.loading
+                                  ? 'Loading'.tl
+                                  : 'No matching result'.tl),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: ts.s12.copyWith(
+                            color: chosen == null && row.error != null
+                                ? colors.error
+                                : colors.onSurfaceVariant,
+                          ),
+                        ),
+                        if (widget.match != null || widget.playing) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              if (widget.match != null)
+                                badge(widget.match!, widget.matches),
+                              if (widget.playing) badge('Playing'.tl, true),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (row.loading)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    IconButton(
+                      onPressed: toggle,
+                      icon: RotationTransition(
+                        turns: Tween<double>(
+                          begin: 0,
+                          end: 0.5,
+                        ).animate(animation),
+                        child: const Icon(Icons.expand_more),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          SizeTransition(
+            sizeFactor: animation,
+            axisAlignment: -1,
+            child: FadeTransition(
+              opacity: animation,
+              child: !expanded && controller.isDismissed
+                  ? const SizedBox.shrink()
+                  : widget.details(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnmatchedSources extends StatefulWidget {
+  const _UnmatchedSources({
+    required this.expanded,
+    required this.count,
+    required this.onToggle,
+    required this.children,
+  });
+
+  final bool expanded;
+  final int count;
+  final VoidCallback onToggle;
+  final List<Widget> Function() children;
+
+  @override
+  State<_UnmatchedSources> createState() => _UnmatchedSourcesState();
+}
+
+class _UnmatchedSourcesState extends State<_UnmatchedSources>
+    with SingleTickerProviderStateMixin {
+  late final controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 200),
+        value: widget.expanded ? 1 : 0,
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.dismissed) {
+          setState(() {});
+        }
+      });
+  late final animation = CurvedAnimation(
+    parent: controller,
+    curve: Curves.easeInOut,
+  );
+
+  @override
+  void didUpdateWidget(covariant _UnmatchedSources oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded != oldWidget.expanded) {
+      if (widget.expanded) {
+        controller.forward();
+      } else {
+        controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    animation.dispose();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      ListTile(
+        title: Text(
+          'Unmatched sources (@n)'.tlParams({'n': widget.count}),
+          style: ts.s14.copyWith(fontWeight: FontWeight.w600),
+        ),
+        trailing: RotationTransition(
+          turns: Tween<double>(begin: 0, end: 0.5).animate(animation),
+          child: const Icon(Icons.expand_more),
+        ),
+        onTap: widget.onToggle,
+      ),
+      SizeTransition(
+        sizeFactor: animation,
+        axisAlignment: -1,
+        child: FadeTransition(
+          opacity: animation,
+          child: !widget.expanded && controller.isDismissed
+              ? const SizedBox.shrink()
+              : Column(children: widget.children()),
+        ),
+      ),
+    ],
+  );
 }
 
 class _SubjectActionButton extends StatelessWidget {
