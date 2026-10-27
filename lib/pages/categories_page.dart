@@ -29,7 +29,7 @@ class _CategoriesPageState extends State<CategoriesPage>
     var categories = List.from(
       appdata.settings["categories"],
     ).whereType<String>().toList();
-    var allCategories = ComicSource.all()
+    var allCategories = ComicSource.enabled()
         .map((e) => e.categoryData?.key)
         .where((element) => element != null)
         .map((e) => e!)
@@ -41,6 +41,7 @@ class _CategoriesPageState extends State<CategoriesPage>
       setState(() {
         this.categories = categories;
       });
+      controller.dispose();
       controller = TabController(length: categories.length, vsync: this);
     }
   }
@@ -51,7 +52,7 @@ class _CategoriesPageState extends State<CategoriesPage>
     var categories = List.from(
       appdata.settings["categories"],
     ).whereType<String>().toList();
-    var allCategories = ComicSource.all()
+    var allCategories = ComicSource.enabled()
         .map((e) => e.categoryData?.key)
         .where((element) => element != null)
         .map((e) => e!)
@@ -60,7 +61,7 @@ class _CategoriesPageState extends State<CategoriesPage>
         .where((element) => allCategories.contains(element))
         .toList();
     appdata.settings.addListener(onSettingsChanged);
-    controller = TabController(length: categories.length, vsync: this);
+    controller = TabController(length: this.categories.length, vsync: this);
   }
 
   void addPage() {
@@ -78,8 +79,10 @@ class _CategoriesPageState extends State<CategoriesPage>
     var msg = "No Category Pages".tl;
     msg += '\n';
     VoidCallback onTap;
-    if (ComicSource.isEmpty) {
-      msg += "Please add some sources".tl;
+    if (ComicSource.enabled().isEmpty) {
+      msg += (ComicSource.isEmpty
+          ? "Please add some sources"
+          : "Please enable a source").tl;
       onTap = () {
         context.to(() => ComicSourcePage());
       };
@@ -148,7 +151,7 @@ class _CategoryPage extends StatelessWidget {
   CategoryData get data => getCategoryDataWithKey(category);
 
   String findComicSourceKey() {
-    for (var source in ComicSource.all()) {
+    for (var source in ComicSource.enabled()) {
       if (source.categoryData?.key == category) {
         return source.key;
       }

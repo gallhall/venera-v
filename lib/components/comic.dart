@@ -1,5 +1,11 @@
 part of 'components.dart';
 
+ImageProvider? _historyCoverFallback(Comic comic) {
+  if (comic is! History) return null;
+  var cover = BangumiManager().bindingOf(comic.sourceKey, comic.id)?.image;
+  return cover == null || cover.isEmpty ? null : CachedImageProvider(cover);
+}
+
 ImageProvider? _findImageProvider(Comic comic) {
   ImageProvider image;
   if (comic is LocalComic) {
@@ -9,7 +15,7 @@ ImageProvider? _findImageProvider(Comic comic) {
     // HistoryImageProvider would load the details again for nothing.
     if (comic.cover.isEmpty &&
         LocalManager().find(comic.id, comic.type) == null) {
-      return null;
+      return _historyCoverFallback(comic);
     }
     image = HistoryImageProvider(comic);
   } else if (comic.sourceKey == 'local') {
@@ -122,18 +128,20 @@ class ComicTile extends StatelessWidget {
             App.rootContext.showMessage(message: 'Title copied'.tl);
           },
         ),
-        MenuEntry(
-          icon: Icons.stars_outlined,
-          text: 'Add to favorites'.tl,
-          onClick: () {
-            addFavorite([comic]);
-          },
-        ),
-        MenuEntry(
-          icon: Icons.block,
-          text: 'Block'.tl,
-          onClick: () => block(context),
-        ),
+        if (!ComicType.fromKey(comic.sourceKey).isBangumi)
+          MenuEntry(
+            icon: Icons.stars_outlined,
+            text: 'Add to favorites'.tl,
+            onClick: () {
+              addFavorite([comic]);
+            },
+          ),
+        if (!ComicType.fromKey(comic.sourceKey).isBangumi)
+          MenuEntry(
+            icon: Icons.block,
+            text: 'Block'.tl,
+            onClick: () => block(context),
+          ),
         ...?menuOptions,
       ],
     );
@@ -154,7 +162,7 @@ class ComicTile extends StatelessWidget {
     var history = appdata.settings['showHistoryStatusOnTile']
         ? HistoryManager().find(comic.id, ComicType(comic.sourceKey.hashCode))
         : null;
-    if (history?.page == 0) {
+    if (history?.page == 0 && history?.isVideo != true) {
       history!.page = 1;
     }
 
@@ -213,8 +221,9 @@ class ComicTile extends StatelessWidget {
     if (image == null) {
       return const SizedBox();
     }
-    return AnimatedImage(
+    return FallbackImage(
       image: image,
+      fallback: _historyCoverFallback(comic),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
@@ -270,7 +279,9 @@ class ComicTile extends StatelessWidget {
                       : "[${comic.maxPage}P]${comic.title.replaceAll("\n", "")}",
                   subtitle: comic.subtitle ?? '',
                   description: comic.description,
-                  badge: badge ?? comic.language,
+                  badge: ComicType.fromKey(comic.sourceKey).isBangumi
+                      ? ComicType.bangumi.sourceName
+                      : badge ?? comic.language,
                   tags: comic.tags,
                   maxLines: 2,
                   enableTranslate:
@@ -882,7 +893,9 @@ class _SliverGridComics extends StatelessWidget {
             : selection![comics[index]] ?? false;
         var comic = ComicTile(
           comic: comics[index],
-          badge: badge,
+          badge: ComicType.fromKey(comics[index].sourceKey).isBangumi
+              ? ComicType.bangumi.sourceName
+              : badge,
           menuOptions: menuBuilder?.call(comics[index]),
           onTap: onTap != null
               ? () => onTap!(comics[index], heroIDs[index])
@@ -1652,12 +1665,12 @@ class SimpleComicTile extends StatelessWidget {
 
     Widget child = image == null
         ? const SizedBox()
-        : AnimatedImage(
+        : FallbackImage(
             image: image,
+            fallback: _historyCoverFallback(comic),
             width: double.infinity,
             height: double.infinity,
             fit: BoxFit.cover,
-            filterQuality: FilterQuality.medium,
           );
 
     child = Container(

@@ -421,6 +421,22 @@ abstract mixin class _ComicPageActions {
     );
   }
 
+  /// Links the comic or video to a Bangumi subject, or shows the subject.
+  void openBangumi() async {
+    await showPopUpWidget(
+      App.rootContext,
+      BangumiPanel(
+        sourceKey: comic.sourceKey,
+        id: comic.id,
+        title: comic.title,
+        isVideo: comicSource.isVideoSource,
+        chapters: comic.chapters,
+        history: history,
+      ),
+    );
+    update();
+  }
+
   void starRating() {
     if (!comicSource.isLogged) {
       return;

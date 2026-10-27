@@ -1,6 +1,7 @@
 import "package:flutter/material.dart";
 import "package:venera/components/components.dart";
 import "package:venera/foundation/app.dart";
+import "package:venera/foundation/res.dart";
 import "package:venera/foundation/comic_source/comic_source.dart";
 import "package:venera/utils/translations.dart";
 
@@ -40,6 +41,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
           throw "The comic source ${source.name} does not support category comics";
         }
         data = source.categoryComicsData!;
+        sourceKey = source.key;
         if (data.options != null) {
           options = data.options!.where((element) {
             if (element.notShowWhen.contains(widget.category)) {
@@ -57,7 +59,6 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
           loadOptions();
         }
         resetOptionsValue();
-        sourceKey = source.key;
         return;
       }
     }
@@ -80,6 +81,13 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
   }
 
   void loadOptions() async {
+    if (ComicSource.find(sourceKey)?.isEnabled != true) {
+      setState(() {
+        options ??= [];
+        error = 'Source disabled'.tl;
+      });
+      return;
+    }
     final res = await optionsLoader!(widget.category, widget.param);
     if (res.error) {
       setState(() {
@@ -128,8 +136,9 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
         key: Key(widget.category + optionsValue.toString()),
         errorLeading: buildOptions().paddingTop(topPadding),
         leadingSliver: buildOptions().paddingTop(topPadding).toSliver(),
-        loadPage: (i) =>
-            data.load(widget.category, widget.param, optionsValue, i),
+        loadPage: (i) => ComicSource.find(sourceKey)?.isEnabled == true
+            ? data.load(widget.category, widget.param, optionsValue, i)
+            : Future.value(Res<List<Comic>>.error('Source disabled'.tl)),
       );
     }
 

@@ -16,6 +16,7 @@ import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'bangumi/bangumi_search_page.dart';
 import 'comic_details_page/comic_page.dart';
 import 'comic_source_page.dart';
 
@@ -33,8 +34,7 @@ class _SearchPageState extends State<SearchPage> {
 
   String searchTarget = "";
 
-  SearchPageData get currentSearchPageData =>
-      ComicSource.find(searchTarget)!.searchPageData!;
+  String enabledSourceState = "";
 
   bool aggregatedSearch = false;
 
@@ -47,6 +47,15 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void search([String? text]) {
+    if (searchSources.isEmpty) {
+      if (!ComicSource.enabled().any((s) => s.isVideoSource)) return;
+      var keyword = text ?? controller.text;
+      appdata.addSearchHistory(keyword);
+      context
+          .to(() => BangumiSearchPage(keyword: keyword))
+          .then((_) => update());
+      return;
+    }
     if (aggregatedSearch) {
       context
           .to(
@@ -70,7 +79,7 @@ class _SearchPageState extends State<SearchPage> {
 
   bool canHandleUrl(String text) {
     if (!text.isURL) return false;
-    for (var source in ComicSource.all()) {
+    for (var source in ComicSource.enabled()) {
       if (source.linkHandler != null) {
         var uri = Uri.parse(text);
         if (source.linkHandler!.domains.contains(uri.host)) {
@@ -86,13 +95,17 @@ class _SearchPageState extends State<SearchPage> {
     var suggestions = this.suggestions;
 
     suggestions.clear();
+    if (searchSources.isEmpty) {
+      update();
+      return;
+    }
 
     if (canHandleUrl(controller.text)) {
       suggestions.add(Pair("**URL**", TranslationType.other));
     } else {
       var text = controller.text;
 
-      for (var comicSource in ComicSource.all()) {
+      for (var comicSource in ComicSource.enabled()) {
         if (comicSource.idMatcher?.hasMatch(text) ?? false) {
           suggestions.add(Pair(
             "**${comicSource.key}**",
@@ -102,7 +115,7 @@ class _SearchPageState extends State<SearchPage> {
       }
     }
 
-    if (!ComicSource.find(searchTarget)!.enableTagsSuggestions) {
+    if (ComicSource.find(searchTarget)?.enableTagsSuggestions != true) {
       update();
       return;
     }
@@ -171,8 +184,10 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void findSearchSources() {
-    var all = ComicSource.all()
-        .where((e) => e.searchPageData != null)
+    var enabled = ComicSource.enabled();
+    enabledSourceState = enabled.map((e) => e.key).join('\n');
+    var all = enabled
+        .where((e) => e.searchPageData != null && !e.isKazumi)
         .map((e) => e.key)
         .toList();
     var settings = appdata.settings['searchSources'] as List;
@@ -190,10 +205,13 @@ class _SearchPageState extends State<SearchPage> {
 
   void updateSearchSourcesIfNeeded() {
     var old = searchSources;
+    var oldEnabled = enabledSourceState;
     findSearchSources();
-    if (old.isEqualTo(searchSources)) {
+    if (old.isEqualTo(searchSources) && oldEnabled == enabledSourceState) {
       return;
     }
+    suggestions.clear();
+    useDefaultOptions();
     setState(() {});
   }
 
@@ -205,8 +223,10 @@ class _SearchPageState extends State<SearchPage> {
     var msg = "No Search Sources".tl;
     msg += '\n';
     VoidCallback onTap;
-    if (ComicSource.isEmpty) {
-      msg += "Please add some sources".tl;
+    if (ComicSource.enabled().isEmpty) {
+      msg += (ComicSource.isEmpty
+          ? "Please add some sources"
+          : "Please enable a source").tl;
       onTap = () {
         context.to(() => ComicSourcePage());
       };
@@ -224,7 +244,8 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (searchSources.isEmpty) {
+    if (searchSources.isEmpty &&
+        !ComicSource.enabled().any((s) => s.isVideoSource)) {
       return buildEmpty();
     }
     return Scaffold(
@@ -242,14 +263,26 @@ class _SearchPageState extends State<SearchPage> {
       },
       focusNode: focusNode,
     );
-    if (suggestions.isNotEmpty) {
+    if (ComicSource.enabled().any((s) => s.isVideoSource)) {
+      yield SliverToBoxAdapter(
+        child: ListTile(
+          leading: const Icon(Icons.live_tv),
+          title: Text('Search anime on Bangumi'.tl),
+          onTap: () =>
+              context.to(() => BangumiSearchPage(keyword: controller.text)),
+        ),
+      );
+    }
+    if (searchSources.isNotEmpty && suggestions.isNotEmpty) {
       yield buildSuggestions(context);
     } else {
-      yield buildSearchTarget();
-      yield SliverAnimatedPaintExtent(
-        duration: const Duration(milliseconds: 200),
-        child: buildSearchOptions(),
-      );
+      if (searchSources.isNotEmpty) {
+        yield buildSearchTarget();
+        yield SliverAnimatedPaintExtent(
+          duration: const Duration(milliseconds: 200),
+          child: buildSearchOptions(),
+        );
+      }
       yield _SearchHistory(search);
     }
   }
@@ -308,7 +341,8 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void useDefaultOptions() {
-    final searchOptions = currentSearchPageData.searchOptions ?? [];
+    final searchOptions =
+        ComicSource.find(searchTarget)?.searchPageData?.searchOptions ?? [];
     options = searchOptions.map((e) => e.defaultValue).toList();
   }
 
@@ -319,7 +353,8 @@ class _SearchPageState extends State<SearchPage> {
 
     var children = <Widget>[];
 
-    final searchOptions = currentSearchPageData.searchOptions ?? [];
+    final searchOptions =
+        ComicSource.find(searchTarget)?.searchPageData?.searchOptions ?? [];
     if (searchOptions.length != options.length) {
       useDefaultOptions();
     }

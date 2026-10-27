@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_qjs/flutter_qjs.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
@@ -10,6 +11,7 @@ import 'package:venera/utils/image.dart';
 import 'package:venera/utils/ugoira.dart';
 
 import 'app_dio.dart';
+import 'bangumi_network.dart';
 
 abstract class ImageDownloader {
   static Stream<ImageDownloadProgress> loadThumbnail(
@@ -48,7 +50,7 @@ abstract class ImageDownloader {
       }
     }
 
-    var dio = AppDio(BaseOptions(
+    var dio = BangumiNetwork.dio(BaseOptions(
       headers: Map<String, dynamic>.from(configs['headers']),
       method: configs['method'] ?? 'GET',
       responseType: ResponseType.stream,
@@ -58,36 +60,47 @@ abstract class ImageDownloader {
     if (requestUrl.startsWith('//')) {
       requestUrl = 'https:$requestUrl';
     }
-    var req = await dio.request<ResponseBody>(requestUrl,
-        data: configs['data']);
-    var stream = req.data?.stream ?? (throw "Error: Empty response body.");
-    int? expectedBytes = req.data!.contentLength;
-    if (expectedBytes == -1) {
-      expectedBytes = null;
+    final originalRequestUrl = requestUrl;
+    final imageBase = appdata.settings['bangumiImageBase'] as String? ?? '';
+    requestUrl = rewriteBangumiImageUrl(requestUrl, imageBase);
+    if (imageBase.trim().isNotEmpty &&
+        Uri.tryParse(originalRequestUrl)?.host.toLowerCase() == 'lain.bgm.tv') {
+      dio.httpClientAdapter = RHttpAdapter();
     }
-    var buffer = <int>[];
-    await for (var data in stream) {
-      buffer.addAll(data);
-      if (expectedBytes != null) {
-        yield ImageDownloadProgress(
-          currentBytes: buffer.length,
-          totalBytes: expectedBytes,
-        );
+    try {
+      var req = await dio.request<ResponseBody>(requestUrl,
+          data: configs['data']);
+      var stream = req.data?.stream ?? (throw "Error: Empty response body.");
+      int? expectedBytes = req.data!.contentLength;
+      if (expectedBytes == -1) {
+        expectedBytes = null;
       }
-    }
+      var buffer = <int>[];
+      await for (var data in stream) {
+        buffer.addAll(data);
+        if (expectedBytes != null) {
+          yield ImageDownloadProgress(
+            currentBytes: buffer.length,
+            totalBytes: expectedBytes,
+          );
+        }
+      }
 
-    if (configs['onResponse'] is JSInvokable) {
-      final uint8List = Uint8List.fromList(buffer);
-      buffer = (configs['onResponse'] as JSInvokable)([uint8List]);
-      (configs['onResponse'] as JSInvokable).free();
-    }
+      if (configs['onResponse'] is JSInvokable) {
+        final uint8List = Uint8List.fromList(buffer);
+        buffer = (configs['onResponse'] as JSInvokable)([uint8List]);
+        (configs['onResponse'] as JSInvokable).free();
+      }
 
-    await CacheManager().writeCache(cacheKey, buffer);
-    yield ImageDownloadProgress(
-      currentBytes: buffer.length,
-      totalBytes: buffer.length,
-      imageBytes: Uint8List.fromList(buffer),
-    );
+      await CacheManager().writeCache(cacheKey, buffer);
+      yield ImageDownloadProgress(
+        currentBytes: buffer.length,
+        totalBytes: buffer.length,
+        imageBytes: Uint8List.fromList(buffer),
+      );
+    } finally {
+      dio.close();
+    }
   }
 
   static final _loadingImages = <String, _StreamWrapper<ImageDownloadProgress>>{};

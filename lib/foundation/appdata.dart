@@ -242,6 +242,24 @@ class Settings with ChangeNotifier {
     'videoPlaybackRate': 1.0, // last speed picked in the player
     'videoFit': 'contain', // contain, cover, fill
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'disabledComicSources': <String>[],
+    'bangumiEchMode': 'doh',
+    'bangumiEchDohUrl': 'https://dns.alidns.com/resolve',
+    'bangumiEchConfig': '',
+    'bangumiImageBase': '',
+    'bangumiApiBase': 'https://api.bgm.tv',
+    'bangumiNextApiBase': 'https://next.bgm.tv',
+    'bangumiSearchHistory': <String>[],
+    'bangumiSubjectProgress': <String, dynamic>{},
+    'bangumiSourceChoices': <String, dynamic>{},
+    'bangumiSourceKeywords': <String, dynamic>{},
+    'bangumiCustomAliases': <String, dynamic>{},
+    'bangumiManualSourceChoices': <String, dynamic>{},
+    'bangumiToken': '', // access token of the Bangumi user
+    'bangumiUser': null, // the token's user, [BangumiUser.toJson]
+    'bangumiAutoSync': true, // mark finished episodes and chapters
+    'bangumiBindings': <String, dynamic>{}, // "<id>@<source key>": subject
+    'showBangumiCalendar': true, // today's anime on the home page
   };
 
   operator [](String key) {

@@ -1,3 +1,4 @@
+import 'package:venera/foundation/res.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
@@ -159,6 +160,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
       loadPage: source!.searchPageData!.loadPage == null
           ? null
           : (i) {
+              if (!source.isEnabled) {
+                return Future.value(Res<List<Comic>>.error('Source disabled'.tl));
+              }
               return source.searchPageData!.loadPage!(
                 text,
                 i,
@@ -168,6 +172,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
       loadNext: source.searchPageData!.loadNext == null
           ? null
           : (i) {
+              if (!source.isEnabled) {
+                return Future.value(Res<List<Comic>>.error('Source disabled'.tl));
+              }
               return source.searchPageData!.loadNext!(
                 text,
                 i,
@@ -445,7 +452,7 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    var sources = ComicSource.all();
+    var sources = ComicSource.enabled();
     var enabled = appdata.settings['searchSources'] as List;
     sources.removeWhere((e) {
       return !enabled.contains(e.key);

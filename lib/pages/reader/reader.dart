@@ -19,6 +19,7 @@ import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -361,6 +362,14 @@ class _ReaderState extends State<Reader>
       } else {
         history!.readEpisode.add(chapter.toString());
         history!.ep = chapter;
+      }
+      if (images != null && page >= maxPage) {
+        BangumiManager().onFinished(
+          sourceKey: type.sourceKey,
+          id: cid,
+          title: widget.chapters?.titles.elementAtOrNull(chapter - 1) ?? '',
+          position: history!.ep,
+        );
       }
       history!.time = DateTime.now();
       _updateHistoryTimer?.cancel();

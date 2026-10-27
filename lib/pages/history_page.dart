@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/utils/translations.dart';
@@ -289,17 +288,18 @@ class _HistoryPageState extends State<HistoryPage> {
                     }
                   : null,
               badgeBuilder: (c) {
-                return ComicSource.find(c.sourceKey)?.name;
+                return ComicType.fromKey(c.sourceKey).sourceName;
               },
               menuBuilder: (c) {
                 return [
-                  MenuEntry(
-                    icon: Icons.refresh,
-                    text: 'Refresh Info'.tl,
-                    onClick: () {
-                      _refreshHistory(c as History);
-                    },
-                  ),
+                  if (!ComicType.fromKey(c.sourceKey).isBangumi)
+                    MenuEntry(
+                      icon: Icons.refresh,
+                      text: 'Refresh Info'.tl,
+                      onClick: () {
+                        _refreshHistory(c as History);
+                      },
+                    ),
                   MenuEntry(
                     icon: Icons.remove,
                     text: 'Remove'.tl,

@@ -1,6 +1,7 @@
 import "package:flutter/material.dart";
 import "package:venera/components/components.dart";
 import "package:venera/foundation/app.dart";
+import "package:venera/foundation/res.dart";
 import "package:venera/foundation/comic_source/comic_source.dart";
 import "package:venera/utils/translations.dart";
 
@@ -15,6 +16,7 @@ class RankingPage extends StatefulWidget {
 
 class _RankingPageState extends State<RankingPage> {
   late final CategoryComicsData data;
+  late final String sourceKey;
   late final Map<String, String> options;
   late String optionValue;
 
@@ -22,6 +24,7 @@ class _RankingPageState extends State<RankingPage> {
     for (final source in ComicSource.all()) {
       if (source.categoryData?.key == widget.categoryKey) {
         data = source.categoryComicsData!;
+        sourceKey = source.key;
         options = data.rankingData!.options;
         optionValue = options.keys.first;
         return;
@@ -51,10 +54,14 @@ class _RankingPageState extends State<RankingPage> {
             buildOptions().sliverPadding(EdgeInsets.only(top: topPadding)),
         loadPage: data.rankingData!.load == null
             ? null
-            : (i) => data.rankingData!.load!(optionValue, i),
+            : (i) => ComicSource.find(sourceKey)?.isEnabled == true
+                ? data.rankingData!.load!(optionValue, i)
+                : Future.value(Res<List<Comic>>.error('Source disabled'.tl)),
         loadNext: data.rankingData!.loadWithNext == null
             ? null
-            : (i) => data.rankingData!.loadWithNext!(optionValue, i),
+            : (i) => ComicSource.find(sourceKey)?.isEnabled == true
+                ? data.rankingData!.loadWithNext!(optionValue, i)
+                : Future.value(Res<List<Comic>>.error('Source disabled'.tl)),
       ),
     );
   }

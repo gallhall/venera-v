@@ -10,6 +10,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
@@ -20,6 +21,8 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
+import 'package:venera/pages/bangumi/bangumi_panel.dart';
+import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
@@ -66,7 +69,26 @@ class ComicPage extends StatefulWidget {
   final int? heroID;
 
   @override
-  State<ComicPage> createState() => _ComicPageState();
+  // Bangumi history entries open their subject page wherever a history
+  // opens ComicPage.
+  // ignore: no_logic_in_create_state
+  State<ComicPage> createState() {
+    if (ComicType.fromKey(sourceKey).isBangumi &&
+        bangumiSubjectIdFromHistory(id) != null) {
+      return _BangumiComicPageState();
+    }
+    return _ComicPageState();
+  }
+}
+
+/// Handles all existing callers that open history through ComicPage.
+class _BangumiComicPageState extends State<ComicPage> {
+  @override
+  Widget build(BuildContext context) {
+    return BangumiSubjectPage(
+      subjectId: bangumiSubjectIdFromHistory(widget.id)!,
+    );
+  }
 }
 
 class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
@@ -81,6 +103,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   bool isDownloaded = false;
 
   bool showFAB = false;
+
+  String? _failedCover;
 
   @override
   void onReadEnd() {
@@ -329,12 +353,21 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 clipBehavior: Clip.antiAlias,
                 child: coverUrl.isEmpty
                     ? const SizedBox()
-                    : AnimatedImage(
-                        image: CachedImageProvider(
-                          coverUrl,
-                          sourceKey: comic.sourceKey,
-                          cid: comic.id,
-                        ),
+                    : FallbackImage(
+                        image: sourceCoverUrl.isEmpty ||
+                                (_failedCover == sourceCoverUrl &&
+                                    bangumiCoverUrl.isNotEmpty)
+                            ? null
+                            : CachedImageProvider(
+                                sourceCoverUrl,
+                                sourceKey: comic.sourceKey,
+                                cid: comic.id,
+                              ),
+                        fallback: bangumiCoverUrl.isEmpty
+                            ? null
+                            : CachedImageProvider(bangumiCoverUrl),
+                        onFallback: () =>
+                            setState(() => _failedCover = sourceCoverUrl),
                         width: double.infinity,
                         height: double.infinity,
                       ),
@@ -418,6 +451,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 onPressed: openFavPanel,
                 onLongPressed: quickFavorite,
                 iconColor: context.useTextColor(Colors.purple),
+              ),
+              _ActionButton(
+                icon: const Icon(Icons.live_tv_outlined),
+                activeIcon: const Icon(Icons.connected_tv),
+                isActive:
+                    BangumiManager().bindingOf(comic.sourceKey, comic.id) !=
+                    null,
+                text: 'Bangumi',
+                onPressed: openBangumi,
+                iconColor: context.useTextColor(Colors.pink),
               ),
               if (comicSource.commentsLoader != null)
                 _ActionButton(
@@ -757,17 +800,32 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   /// The cover of the tile that opened the page, else the one of the
   /// details. Empty for sources without covers, e.g. some Kazumi rules.
-  String get coverUrl {
+  String get sourceCoverUrl {
     var cover = widget.cover;
     return cover == null || cover.isEmpty ? comic.cover : cover;
   }
 
+  String get bangumiCoverUrl =>
+      BangumiManager().bindingOf(comic.sourceKey, comic.id)?.image ?? '';
+
+  String get coverUrl {
+    return BangumiManager()
+            .bindingOf(comic.sourceKey, comic.id)
+            ?.coverFor(
+              sourceCoverUrl,
+              sourceFailed: _failedCover == sourceCoverUrl,
+            ) ??
+        sourceCoverUrl;
+  }
+
+  CachedImageProvider get coverImage => CachedImageProvider(
+    coverUrl,
+    sourceKey: coverUrl == bangumiCoverUrl ? null : comic.sourceKey,
+    cid: coverUrl == bangumiCoverUrl ? null : comic.id,
+  );
+
   void _viewCover(BuildContext context) {
-    final imageProvider = CachedImageProvider(
-      coverUrl,
-      sourceKey: comic.sourceKey,
-      cid: comic.id,
-    );
+    final imageProvider = coverImage;
 
     context.to(
       () => _CoverViewer(
@@ -780,11 +838,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
   void _saveCover(BuildContext context) async {
     try {
-      final imageProvider = CachedImageProvider(
-        coverUrl,
-        sourceKey: comic.sourceKey,
-        cid: comic.id,
-      );
+      final imageProvider = coverImage;
 
       final imageStream = imageProvider.resolve(const ImageConfiguration());
       final completer = Completer<Uint8List>();
