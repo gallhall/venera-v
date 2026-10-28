@@ -432,6 +432,30 @@ class BangumiAdapter implements HttpClientAdapter {
         redirects + 1,
       );
     }
+    if (options.responseType == ResponseType.stream &&
+        !options.validateStatus(response.statusCode)) {
+      // Dio leaves rejected streamed bodies unread. Drain to release both the
+      // host permit and client lease, retaining only a bounded error body.
+      const maxErrorBytes = 1024 * 1024;
+      final bytes = BytesBuilder();
+      await for (final chunk in response.stream) {
+        final remaining = maxErrorBytes - bytes.length;
+        if (remaining > 0) {
+          bytes.add(
+            chunk.length > remaining ? chunk.sublist(0, remaining) : chunk,
+          );
+        }
+      }
+      return ResponseBody.fromBytes(
+        bytes.takeBytes(),
+        response.statusCode,
+        statusMessage: response.statusMessage,
+        headers: response.headers,
+        isRedirect: response.isRedirect,
+      )
+        ..redirects = response.redirects
+        ..extra.addAll(response.extra);
+    }
     return response;
   }
 
