@@ -145,20 +145,24 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     List<Widget> selectActions = [
-      IconButton(
-          icon: const Icon(Icons.select_all),
-          tooltip: "Select All".tl,
-          onPressed: selectAll
-      ),
-      IconButton(
-          icon: const Icon(Icons.deselect),
-          tooltip: "Deselect".tl,
-          onPressed: deSelect
-      ),
-      IconButton(
-          icon: const Icon(Icons.flip),
-          tooltip: "Invert Selection".tl,
-          onPressed: invertSelection
+      MenuButton(
+        entries: [
+          MenuEntry(
+            icon: Icons.select_all,
+            text: "Select All".tl,
+            onClick: selectAll,
+          ),
+          MenuEntry(
+            icon: Icons.deselect,
+            text: "Deselect".tl,
+            onClick: deSelect,
+          ),
+          MenuEntry(
+            icon: Icons.flip,
+            text: "Invert Selection".tl,
+            onClick: invertSelection,
+          ),
+        ],
       ),
       IconButton(
         icon: const Icon(Icons.delete),
@@ -245,72 +249,111 @@ class _HistoryPageState extends State<HistoryPage> {
       child: Scaffold(
         body: SmoothCustomScrollView(
           slivers: [
-            SliverAppbar(
-              leading: Tooltip(
-                message: multiSelectMode ? "Cancel".tl : "Back".tl,
-                child: IconButton(
-                  onPressed: () {
-                    if (multiSelectMode) {
-                      setState(() {
-                        multiSelectMode = false;
-                        selectedComics.clear();
-                      });
-                    } else {
-                      context.pop();
-                    }
-                  },
-                  icon: multiSelectMode
-                      ? const Icon(Icons.close)
-                      : const Icon(Icons.arrow_back),
+            Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: context.colorScheme.copyWith(
+                  surface: multiSelectMode
+                      ? context.colorScheme.surfaceContainer
+                      : context.colorScheme.surface,
+                ),
+                iconButtonTheme: IconButtonThemeData(
+                  style: IconButton.styleFrom(shape: const StadiumBorder()),
                 ),
               ),
-              title: multiSelectMode
-                  ? Text(selectedComics.length.toString())
-                  : Text('History'.tl),
-              actions: multiSelectMode ? selectActions : normalActions,
-            ),
-            SliverGridComics(
-              comics: comics,
-              selections: selectedComics,
-              onLongPressed: null,
-              onTap: multiSelectMode
-                  ? (c, heroID) {
-                      setState(() {
-                        if (selectedComics.containsKey(c as History)) {
-                          selectedComics.remove(c);
-                        } else {
-                          selectedComics[c] = true;
-                        }
-                        if (selectedComics.isEmpty) {
+              child: SliverAppbar(
+                leading: Tooltip(
+                  message: multiSelectMode ? "Cancel".tl : "Back".tl,
+                  child: IconButton(
+                    onPressed: () {
+                      if (multiSelectMode) {
+                        setState(() {
                           multiSelectMode = false;
-                        }
-                      });
-                    }
-                  : null,
-              badgeBuilder: (c) {
-                return ComicType.fromKey(c.sourceKey).sourceName;
-              },
-              menuBuilder: (c) {
-                return [
-                  if (!ComicType.fromKey(c.sourceKey).isBangumi)
+                          selectedComics.clear();
+                        });
+                      } else {
+                        context.pop();
+                      }
+                    },
+                    icon: multiSelectMode
+                        ? const Icon(Icons.close)
+                        : const Icon(Icons.arrow_back),
+                  ),
+                ),
+                title: multiSelectMode
+                    ? Text(
+                        "Selected @c comics".tlParams({
+                          "c": selectedComics.length,
+                        }),
+                      )
+                    : Text('History'.tl),
+                actions: multiSelectMode ? selectActions : normalActions,
+              ),
+            ),
+            if (comics.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AppIconBox(Icons.history, size: 56),
+                        const SizedBox(height: 16),
+                        Text(
+                          "No history yet".tl,
+                          style: ts.s16.copyWith(
+                            color: context.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverGridComics(
+                comics: comics,
+                selections: selectedComics,
+                onLongPressed: null,
+                onTap: multiSelectMode
+                    ? (c, heroID) {
+                        setState(() {
+                          if (selectedComics.containsKey(c as History)) {
+                            selectedComics.remove(c);
+                          } else {
+                            selectedComics[c] = true;
+                          }
+                          if (selectedComics.isEmpty) {
+                            multiSelectMode = false;
+                          }
+                        });
+                      }
+                    : null,
+                badgeBuilder: (c) {
+                  return ComicType.fromKey(c.sourceKey).sourceName;
+                },
+                menuBuilder: (c) {
+                  return [
+                    if (!ComicType.fromKey(c.sourceKey).isBangumi)
+                      MenuEntry(
+                        icon: Icons.refresh,
+                        text: 'Refresh Info'.tl,
+                        onClick: () {
+                          _refreshHistory(c as History);
+                        },
+                      ),
                     MenuEntry(
-                      icon: Icons.refresh,
-                      text: 'Refresh Info'.tl,
+                      icon: Icons.remove,
+                      text: 'Remove'.tl,
+                      color: context.colorScheme.error,
                       onClick: () {
-                        _refreshHistory(c as History);
+                        _removeHistory(c as History);
                       },
                     ),
-                  MenuEntry(
-                    icon: Icons.remove,
-                    text: 'Remove'.tl,
-                    color: context.colorScheme.error,
-                    onClick: () {
-                      _removeHistory(c as History);
-                    },
-                  ),
-                ];
-              },
-            ),
+                  ];
+                },
+              ),
           ],
         ),
       ),

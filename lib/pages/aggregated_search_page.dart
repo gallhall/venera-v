@@ -1,10 +1,10 @@
 import "package:flutter/material.dart";
-import 'package:shimmer_animation/shimmer_animation.dart';
 import "package:venera/components/components.dart";
 import "package:venera/foundation/app.dart";
 import "package:venera/foundation/appdata.dart";
 import "package:venera/foundation/comic_source/comic_source.dart";
 import "package:venera/pages/search_result_page.dart";
+import "package:venera/pages/comic_details_page/comic_page.dart";
 import "package:venera/utils/translations.dart";
 
 class AggregatedSearchPage extends StatefulWidget {
@@ -65,7 +65,9 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
   }
 
   void onSourcesChanged() {
-    if (mounted) setState(findSources);
+    if (mounted) {
+      setState(findSources);
+    }
   }
 
   @override
@@ -76,23 +78,27 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(slivers: [
-      SliverSearchBar(controller: controller),
-      SliverList(
-        key: ValueKey(_keyword),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final source = sources[index];
-            return _SliverSearchResult(
-              key: ValueKey(source.key),
-              source: source,
-              keyword: _keyword,
-            );
-          },
-          childCount: sources.length,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: SmoothCustomScrollView(
+          slivers: [
+            SliverSearchBar(controller: controller),
+            SliverList(
+              key: ValueKey(_keyword),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final source = sources[index];
+                return _SliverSearchResult(
+                  key: ValueKey(source.key),
+                  source: source,
+                  keyword: _keyword,
+                );
+              }, childCount: sources.length),
+            ),
+          ],
         ),
       ),
-    ]);
+    );
   }
 }
 
@@ -126,13 +132,18 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
   String? error;
 
   void load() async {
-    if (!widget.source.isEnabled) return;
+    if (!widget.source.isEnabled) {
+      return;
+    }
     final data = widget.source.searchPageData!;
-    var options =
-        (data.searchOptions ?? []).map((e) => e.defaultValue).toList();
+    var options = (data.searchOptions ?? [])
+        .map((e) => e.defaultValue)
+        .toList();
     if (data.loadPage != null) {
       var res = await data.loadPage!(widget.keyword, 1, options);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       if (!res.error) {
         setState(() {
           comics = res.data;
@@ -146,7 +157,9 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
       }
     } else if (data.loadNext != null) {
       var res = await data.loadNext!(widget.keyword, null, options);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       if (!res.error) {
         setState(() {
           comics = res.data;
@@ -173,16 +186,26 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
       width: _comicWidth,
       margin: const EdgeInsets.only(left: _kLeftPadding),
       decoration: BoxDecoration(
-        color: context.colorScheme.surfaceContainerLow,
+        color: context.colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
       ),
     );
   }
 
   Widget buildComic(Comic c) {
-    return SimpleComicTile(comic: c, withTitle: true)
-        .paddingLeft(_kLeftPadding)
-        .paddingBottom(2);
+    return CoverButton(
+      label: c.title,
+      onTap: () => context.to(
+        () => ComicPage(
+          id: c.id,
+          sourceKey: c.sourceKey,
+          cover: c.cover,
+          coverProvider: comicCoverProvider(c),
+          title: c.title,
+        ),
+      ),
+      child: SimpleComicTile(comic: c, withTitle: true),
+    ).paddingLeft(_kLeftPadding).paddingBottom(2);
   }
 
   @override
@@ -191,81 +214,91 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
       error = "Cloudflare verification required".tl;
     }
     super.build(context);
-    return InkWell(
-      onTap: () {
-        context.to(
-          () => SearchResultPage(
-            text: widget.keyword,
-            sourceKey: widget.source.key,
-          ),
-        );
-      },
-      child: Column(
-        children: [
-          ListTile(
-            mouseCursor: SystemMouseCursors.click,
-            title: Text(widget.source.name),
-          ),
-          if (isLoading)
-            SizedBox(
+    void showMore() {
+      context.to(
+        () => SearchResultPage(
+          text: widget.keyword,
+          sourceKey: widget.source.key,
+        ),
+      );
+    }
+
+    return SectionCard(
+      icon: Icons.manage_search,
+      title: widget.source.name,
+      onTap: showMore,
+      actions: [
+        if (isLoading)
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else if (comics != null)
+          AppBadge(comics!.length.toString()),
+        IconButton(
+          tooltip: "More".tl,
+          icon: const Icon(Icons.chevron_right),
+          onPressed: showMore,
+        ),
+      ],
+      bodyPadding: const EdgeInsets.symmetric(vertical: 12),
+      body: isLoading
+          ? SizedBox(
               height: _kComicHeight,
-              width: double.infinity,
-              child: Shimmer(
-                child: LayoutBuilder(builder: (context, constrains) {
-                  var itemWidth = _comicWidth + _kLeftPadding;
-                  var items = (constrains.maxWidth / itemWidth).ceil();
-                  return Stack(
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        child: Row(
-                          children: List.generate(
-                            items,
-                            (index) => buildPlaceHolder(),
-                          ),
-                        ),
-                      )
-                    ],
-                  );
-                }),
+              child: HorizontalCoverList(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: List.generate(10, (_) => buildPlaceHolder()),
+                ),
               ),
             )
-          else if (error != null || comics == null || comics!.isEmpty)
-            SizedBox(
-              height: _kComicHeight,
-              child: Column(
+          : error != null
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.error_outline),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          error ?? "No search results found".tl,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    ],
+                  Icon(
+                    Icons.error_outline,
+                    color: context.colorScheme.error,
+                    size: 20,
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      error!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts.s14.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        error = null;
+                        isLoading = true;
+                      });
+                      load();
+                    },
+                    child: Text("Retry".tl),
+                  ),
                 ],
-              ).paddingHorizontal(16),
+              ),
             )
-          else
-            SizedBox(
+          : comics == null || comics!.isEmpty
+          ? SectionEmptyState("No search results found".tl)
+          : SizedBox(
               height: _kComicHeight,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (var c in comics!) buildComic(c),
-                ],
+              child: HorizontalCoverList(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(right: 16),
+                  children: [for (var c in comics!) buildComic(c)],
+                ),
               ),
             ),
-        ],
-      ).paddingBottom(16),
     );
   }
 

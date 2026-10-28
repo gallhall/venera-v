@@ -48,7 +48,9 @@ class _SearchPageState extends State<SearchPage> {
 
   void search([String? text]) {
     if (searchSources.isEmpty) {
-      if (!ComicSource.enabled().any((s) => s.isVideoSource)) return;
+      if (!ComicSource.enabled().any((s) => s.isVideoSource)) {
+        return;
+      }
       var keyword = text ?? controller.text;
       appdata.addSearchHistory(keyword);
       context
@@ -78,7 +80,9 @@ class _SearchPageState extends State<SearchPage> {
   var suggestions = <Pair<String, TranslationType>>[];
 
   bool canHandleUrl(String text) {
-    if (!text.isURL) return false;
+    if (!text.isURL) {
+      return false;
+    }
     for (var source in ComicSource.enabled()) {
       if (source.linkHandler != null) {
         var uri = Uri.parse(text);
@@ -224,9 +228,11 @@ class _SearchPageState extends State<SearchPage> {
     msg += '\n';
     VoidCallback onTap;
     if (ComicSource.enabled().isEmpty) {
-      msg += (ComicSource.isEmpty
-          ? "Please add some sources"
-          : "Please enable a source").tl;
+      msg +=
+          (ComicSource.isEmpty
+                  ? "Please add some sources"
+                  : "Please enable a source")
+              .tl;
       onTap = () {
         context.to(() => ComicSourcePage());
       };
@@ -234,11 +240,33 @@ class _SearchPageState extends State<SearchPage> {
       msg += "Please check your settings".tl;
       onTap = manageSearchSources;
     }
-    return NetworkError(
-      message: msg,
-      retry: onTap,
-      withAppbar: true,
-      buttonText: "Manage".tl,
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          SliverAppbar(title: Text("Search".tl)),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const AppIconBox(Icons.search_off, size: 56),
+                    const SizedBox(height: 16),
+                    Text(msg, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    FilledButton.tonal(
+                      onPressed: onTap,
+                      child: Text("Manage".tl),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -249,8 +277,18 @@ class _SearchPageState extends State<SearchPage> {
       return buildEmpty();
     }
     return Scaffold(
-      body: SmoothCustomScrollView(
-        slivers: buildSlivers().toList(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: SmoothCustomScrollView(
+            slivers: [
+              ...buildSlivers(),
+              SliverPadding(
+                padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -265,11 +303,15 @@ class _SearchPageState extends State<SearchPage> {
     );
     if (ComicSource.enabled().any((s) => s.isVideoSource)) {
       yield SliverToBoxAdapter(
-        child: ListTile(
-          leading: const Icon(Icons.live_tv),
-          title: Text('Search anime on Bangumi'.tl),
-          onTap: () =>
-              context.to(() => BangumiSearchPage(keyword: controller.text)),
+        child: AppCard(
+          child: ListTile(
+            dense: true,
+            leading: const AppIconBox(Icons.live_tv_outlined, size: 32),
+            trailing: const Icon(Icons.chevron_right),
+            title: Text('Search anime on Bangumi'.tl),
+            onTap: () =>
+                context.to(() => BangumiSearchPage(keyword: controller.text)),
+          ),
         ),
       );
     }
@@ -290,49 +332,60 @@ class _SearchPageState extends State<SearchPage> {
   Widget buildSearchTarget() {
     var sources = searchSources.map((e) => ComicSource.find(e)!).toList();
     return SliverToBoxAdapter(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: SectionCard(
+        dense: true,
+        icon: Icons.manage_search,
+        title: "Search in".tl,
+        actions: [
+          IconButton(
+            tooltip: "Settings".tl,
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: manageSearchSources,
+          ),
+        ],
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.search),
-              title: Text("Search in".tl),
-              trailing: IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: manageSearchSources,
-              ),
-            ),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: sources.map((e) {
-                return OptionChip(
-                  text: e.name,
-                  isSelected: searchTarget == e.key || aggregatedSearch,
-                  onTap: () {
-                    if (aggregatedSearch) return;
-                    setState(() {
-                      searchTarget = e.key;
-                      useDefaultOptions();
-                    });
-                  },
-                );
-              }).toList(),
+              spacing: 6,
+              runSpacing: 6,
+              children: sources
+                  .map(
+                    (e) => ChoiceChip(
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      label: Text(e.name),
+                      selected: searchTarget == e.key || aggregatedSearch,
+                      showCheckmark: false,
+                      shape: const StadiumBorder(),
+                      side: BorderSide.none,
+                      backgroundColor: context.colorScheme.surfaceContainerHigh,
+                      selectedColor: context.colorScheme.secondaryContainer,
+                      labelStyle: TextStyle(
+                        color: searchTarget == e.key || aggregatedSearch
+                            ? context.colorScheme.onSecondaryContainer
+                            : context.colorScheme.onSurfaceVariant,
+                      ),
+                      onSelected: (_) {
+                        if (aggregatedSearch) {
+                          return;
+                        }
+                        setState(() {
+                          searchTarget = e.key;
+                          useDefaultOptions();
+                        });
+                      },
+                    ),
+                  )
+                  .toList(),
             ),
-            ListTile(
+            SwitchListTile(
               contentPadding: EdgeInsets.zero,
+              dense: true,
+              visualDensity: VisualDensity.compact,
               title: Text("Aggregated Search".tl),
-              leading: Checkbox(
-                value: aggregatedSearch,
-                onChanged: (value) {
-                  setState(() {
-                    aggregatedSearch = value ?? false;
-                  });
-                },
-              ),
+              value: aggregatedSearch,
+              onChanged: (value) => setState(() => aggregatedSearch = value),
             ),
           ],
         ),
@@ -363,22 +416,25 @@ class _SearchPageState extends State<SearchPage> {
     }
     for (int i = 0; i < searchOptions.length; i++) {
       final option = searchOptions[i];
-      children.add(SearchOptionWidget(
-        option: option,
-        value: options[i],
-        onChanged: (value) {
-          options[i] = value;
-          update();
-        },
-        sourceKey: searchTarget,
-      ));
+      children.add(
+        SearchOptionWidget(
+          option: option,
+          value: options[i],
+          onChanged: (value) {
+            options[i] = value;
+            update();
+          },
+          sourceKey: searchTarget,
+        ),
+      );
     }
 
     return SliverToBoxAdapter(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
+      child: SectionCard(
+        dense: true,
+        icon: Icons.tune,
+        title: "Search options".tl,
+        body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: children,
         ),
@@ -405,13 +461,20 @@ class _SearchPageState extends State<SearchPage> {
     void onSelected(String text, TranslationType? type) {
       var words = controller.text.split(" ");
       if (words.length >= 2 &&
-          check("${words[words.length - 2]} ${words[words.length - 1]}", text,
-              text.translateTagsToCN)) {
+          check(
+            "${words[words.length - 2]} ${words[words.length - 1]}",
+            text,
+            text.translateTagsToCN,
+          )) {
         controller.text = controller.text.replaceLast(
-            "${words[words.length - 2]} ${words[words.length - 1]}", "");
+          "${words[words.length - 2]} ${words[words.length - 1]}",
+          "",
+        );
       } else {
-        controller.text =
-            controller.text.replaceLast(words[words.length - 1], "");
+        controller.text = controller.text.replaceLast(
+          words[words.length - 1],
+          "",
+        );
       }
       final source = ComicSource.find(searchTarget);
       String insert;
@@ -419,7 +482,9 @@ class _SearchPageState extends State<SearchPage> {
         insert = source!.onTagSuggestionSelected!(type?.name ?? '', text);
       } else {
         var t = text;
-        if (t.contains(' ')) t = "'$t'";
+        if (t.contains(' ')) {
+          t = "'$t'";
+        }
         insert = type != null ? "${type.name}:$t" : t;
       }
       controller.text += "$insert ";
@@ -428,7 +493,6 @@ class _SearchPageState extends State<SearchPage> {
       focusNode.requestFocus();
     }
 
-    bool showMethod = MediaQuery.of(context).size.width < 600;
     bool showTranslation = App.locale.languageCode == "zh";
     Widget buildItem(Pair<String, TranslationType> value) {
       if (value.left == "**URL**") {
@@ -466,75 +530,59 @@ class _SearchPageState extends State<SearchPage> {
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            context.to(
-              () => ComicPage(
-                sourceKey: key,
-                id: controller.text,
-              ),
-            );
+            context.to(() => ComicPage(sourceKey: key, id: controller.text));
           },
         );
       }
 
       var subTitle = TagsTranslation.translationTagWithNamespace(
-          value.left, value.right.name);
+        value.left,
+        value.right.name,
+      );
       return ListTile(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Expanded(
-              child: Text(value.left),
-            ),
-            if (!showMethod)
-              const SizedBox(
-                width: 12,
-              ),
-            if (!showMethod && showTranslation)
-              Text(
-                subTitle,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              )
-          ],
+        title: Text(value.left),
+        subtitle: Text(
+          showTranslation
+              ? '${value.right.name}: $subTitle'
+              : value.right.name,
+          style: TextStyle(color: context.colorScheme.onSurfaceVariant),
         ),
-        subtitle: (showMethod && showTranslation) ? Text(subTitle) : null,
-        trailing: Text(
-          value.right.name,
-          style: const TextStyle(fontSize: 13),
+        trailing: IconButton(
+          tooltip: "Fill".tl,
+          icon: const Icon(Icons.north_west),
+          onPressed: () => onSelected(value.left, value.right),
         ),
         onTap: () => onSelected(value.left, value.right),
       );
     }
 
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(
-          child: ListTile(
-            leading: const Icon(Icons.hub_outlined),
-            title: Text("Suggestions".tl),
-            trailing: Tooltip(
-              message: "Clear".tl,
-              child: IconButton(
-                icon: const Icon(Icons.clear_all),
-                onPressed: () {
-                  suggestions.clear();
-                  update();
-                },
+    return AppCard.sliver(
+      padding: EdgeInsets.zero,
+      child: SliverMainAxisGroup(
+        slivers: [
+          SliverToBoxAdapter(
+            child: ListTile(
+              leading: const Icon(Icons.hub_outlined),
+              title: Text("Suggestions".tl),
+              trailing: Tooltip(
+                message: "Clear".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.clear_all),
+                  onPressed: () {
+                    suggestions.clear();
+                    update();
+                  },
+                ),
               ),
             ),
           ),
-        ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
               return buildItem(suggestions[index]);
-            },
-            childCount: suggestions.length,
+            }, childCount: suggestions.length),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -558,22 +606,45 @@ class SearchOptionWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (option.type == 'dropdown') {
+      return InlineSelectTile<String>(
+        title: Text(option.label.ts(sourceKey)),
+        sheetTitle: option.label.ts(sourceKey),
+        options: option.options.map(
+          (key, label) => MapEntry(key, label.ts(sourceKey)),
+        ),
+        selected: value,
+        onChanged: onChanged,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(option.label.ts(sourceKey)),
-        ),
+        Text(
+          option.label.ts(sourceKey),
+          style: ts.s14.copyWith(color: context.colorScheme.onSurfaceVariant),
+        ).paddingTop(8).paddingBottom(6),
         if (option.type == 'select')
           Wrap(
-            runSpacing: 8,
-            spacing: 8,
+            runSpacing: 6,
+            spacing: 6,
             children: option.options.entries.map((e) {
-              return OptionChip(
-                text: e.value.ts(sourceKey),
-                isSelected: value == e.key,
-                onTap: () {
+              return ChoiceChip(
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                label: Text(e.value.ts(sourceKey)),
+                selected: value == e.key,
+                showCheckmark: false,
+                shape: const StadiumBorder(),
+                side: BorderSide.none,
+                backgroundColor: context.colorScheme.surfaceContainerHigh,
+                selectedColor: context.colorScheme.secondaryContainer,
+                labelStyle: TextStyle(
+                  color: value == e.key
+                      ? context.colorScheme.onSecondaryContainer
+                      : context.colorScheme.onSurfaceVariant,
+                ),
+                onSelected: (_) {
                   onChanged(e.key);
                 },
               );
@@ -581,13 +652,25 @@ class SearchOptionWidget extends StatelessWidget {
           ),
         if (option.type == 'multi-select')
           Wrap(
-            runSpacing: 8,
-            spacing: 8,
+            runSpacing: 6,
+            spacing: 6,
             children: option.options.entries.map((e) {
-              return OptionChip(
-                text: e.value.ts(sourceKey),
-                isSelected: (jsonDecode(value) as List).contains(e.key),
-                onTap: () {
+              return FilterChip(
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                label: Text(e.value.ts(sourceKey)),
+                selected: (jsonDecode(value) as List).contains(e.key),
+                shape: const StadiumBorder(),
+                side: BorderSide.none,
+                backgroundColor: context.colorScheme.surfaceContainerHigh,
+                selectedColor: context.colorScheme.secondaryContainer,
+                checkmarkColor: context.colorScheme.onSecondaryContainer,
+                labelStyle: TextStyle(
+                  color: (jsonDecode(value) as List).contains(e.key)
+                      ? context.colorScheme.onSecondaryContainer
+                      : context.colorScheme.onSurfaceVariant,
+                ),
+                onSelected: (_) {
                   var list = jsonDecode(value) as List;
                   if (list.contains(e.key)) {
                     list.remove(e.key);
@@ -599,15 +682,6 @@ class SearchOptionWidget extends StatelessWidget {
               );
             }).toList(),
           ),
-        if (option.type == 'dropdown')
-          Select(
-            current: option.options[value],
-            values: option.options.values.toList(),
-            onTap: (index) {
-              onChanged(option.options.keys.elementAt(index));
-            },
-            minWidth: 96,
-          )
       ],
     );
   }
@@ -625,117 +699,112 @@ class _SearchHistory extends StatefulWidget {
 class _SearchHistoryState extends State<_SearchHistory> {
   @override
   Widget build(BuildContext context) {
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          if (index == 0) {
-            return const SizedBox(
-              height: 16,
-            );
-          }
-          if (index == 1) {
-            return ListTile(
-              leading: const Icon(Icons.history),
-              contentPadding: EdgeInsets.zero,
-              title: Text("Search History".tl),
-              trailing: Flyout(
-                flyoutBuilder: (context) {
-                  return FlyoutContent(
-                    title: "Clear Search History".tl,
-                    actions: [
-                      FilledButton(
-                        child: Text("Clear".tl),
-                        onPressed: () {
-                          appdata.clearSearchHistory();
-                          context.pop();
-                          setState(() {});
-                        },
-                      )
-                    ],
-                  );
-                },
-                child: Builder(
-                  builder: (context) {
-                    return Tooltip(
-                      message: "Clear".tl,
-                      child: IconButton(
-                        icon: const Icon(Icons.clear_all),
-                        onPressed: () {
-                          context
-                              .findAncestorStateOfType<FlyoutState>()!
-                              .show();
-                        },
-                      ),
-                    );
-                  },
+    return SliverToBoxAdapter(
+      child: SectionCard(
+        dense: true,
+        icon: Icons.history,
+        title: "Search History".tl,
+        actions: [
+          Flyout(
+            flyoutBuilder: (context) {
+              return FlyoutContent(
+                title: "Clear Search History".tl,
+                actions: [
+                  FilledButton(
+                    child: Text("Clear".tl),
+                    onPressed: () {
+                      appdata.clearSearchHistory();
+                      context.pop();
+                      setState(() {});
+                    },
+                  ),
+                ],
+              );
+            },
+            child: Builder(
+              builder: (context) {
+                return Tooltip(
+                  message: "Clear".tl,
+                  child: IconButton(
+                    icon: const Icon(Icons.clear_all),
+                    onPressed: () {
+                      context.findAncestorStateOfType<FlyoutState>()!.show();
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        body: appdata.searchHistory.isEmpty
+            ? SectionEmptyState("No search history".tl)
+            : Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: List.generate(
+                  appdata.searchHistory.length,
+                  buildItem,
                 ),
               ),
-            );
-          }
-          return buildItem(index - 2);
-        },
-        childCount: 2 + appdata.searchHistory.length,
       ),
-    ).sliverPaddingHorizontal(16);
+    );
   }
 
   Widget buildItem(int index) {
     void showMenu(Offset offset) {
-      showMenuX(
-        context,
-        offset,
-        [
-          MenuEntry(
-            icon: Icons.copy,
-            text: 'Copy'.tl,
-            onClick: () {
-              Clipboard.setData(
-                  ClipboardData(text: appdata.searchHistory[index]));
-            },
-          ),
-          MenuEntry(
-            icon: Icons.delete,
-            text: 'Delete'.tl,
-            onClick: () {
-              appdata.removeSearchHistory(appdata.searchHistory[index]);
-              appdata.saveData();
-              setState(() {});
-            },
-          ),
-        ],
-      );
+      showMenuX(context, offset, [
+        MenuEntry(
+          icon: Icons.copy,
+          text: 'Copy'.tl,
+          onClick: () {
+            Clipboard.setData(
+              ClipboardData(text: appdata.searchHistory[index]),
+            );
+          },
+        ),
+        MenuEntry(
+          icon: Icons.delete,
+          text: 'Delete'.tl,
+          onClick: () {
+            appdata.removeSearchHistory(appdata.searchHistory[index]);
+            appdata.saveData();
+            setState(() {});
+          },
+        ),
+      ]);
     }
 
-    return Builder(builder: (context) {
-      return InkWell(
-        onTap: () {
-          widget.search(appdata.searchHistory[index]);
-        },
-        onLongPress: () {
-          var renderBox = context.findRenderObject() as RenderBox;
-          var offset = renderBox.localToGlobal(Offset.zero);
-          showMenu(Offset(
-            offset.dx + renderBox.size.width / 2 - 121,
-            offset.dy + renderBox.size.height - 8,
-          ));
-        },
-        onSecondaryTapUp: (details) {
-          showMenu(details.globalPosition);
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            // color: context.colorScheme.surfaceContainer,
-            border: Border(
-              left: BorderSide(
-                color: context.colorScheme.outlineVariant,
-                width: 2,
-              ),
+    return Builder(
+      builder: (context) {
+        return Material(
+          color: context.colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            mouseCursor: SystemMouseCursors.click,
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              widget.search(appdata.searchHistory[index]);
+            },
+            onLongPress: () {
+              var renderBox = context.findRenderObject() as RenderBox;
+              var offset = renderBox.localToGlobal(Offset.zero);
+              showMenu(
+                Offset(
+                  offset.dx + renderBox.size.width / 2 - 121,
+                  offset.dy + renderBox.size.height - 8,
+                ),
+              );
+            },
+            onSecondaryTapUp: (details) {
+              showMenu(details.globalPosition);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(appdata.searchHistory[index], style: ts.s14),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(appdata.searchHistory[index], style: ts.s14),
-        ),
-      ).paddingBottom(8).paddingHorizontal(4);
-    });
+        );
+      },
+    );
   }
 }
