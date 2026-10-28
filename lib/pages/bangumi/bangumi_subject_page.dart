@@ -54,9 +54,15 @@ class BangumiSubjectTile extends StatelessWidget {
 }
 
 class BangumiSubjectPage extends StatefulWidget {
-  const BangumiSubjectPage({super.key, required this.subjectId, this.preview});
+  const BangumiSubjectPage({
+    super.key,
+    required this.subjectId,
+    this.preview,
+    this.autoContinue = false,
+  });
   final int subjectId;
   final BangumiSubject? preview;
+  final bool autoContinue;
   @override
   State<BangumiSubjectPage> createState() => _BangumiSubjectPageState();
 }
@@ -84,6 +90,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   String? error, playError;
   bool loading = true, playing = false;
   bool sourcesReady = false;
+  late bool _autoContinuePending = widget.autoContinue;
   bool unmatchedExpanded = false;
   final scrollController = ScrollController();
   final coverHero = Object();
@@ -225,11 +232,18 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       sourcesReady = true;
       syncSources();
       var all = await manager.api.episodes(widget.subjectId);
-      if (mounted) setState(() => episodes = all);
+      if (mounted) {
+        setState(() => episodes = all);
+        _tryAutoContinue();
+      }
     } catch (e) {
+      _autoContinuePending = false;
       if (mounted) setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted) {
+        setState(() => loading = false);
+        _tryAutoContinue();
+      }
     }
   }
 
@@ -410,6 +424,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           row.loading = false;
           updateCandidates();
         });
+        _tryAutoContinue();
       }
     }
   }
@@ -446,13 +461,15 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     }
     updateCandidates();
     var binding = manager.bindingOf(comic.sourceKey, comic.id);
-    manager.bind(
-      comic.sourceKey,
-      comic.id,
-      binding?.subjectId == widget.subjectId
-          ? binding!
-          : BangumiBinding.fromSubject(subject!),
-    );
+    if (remember || binding == null) {
+      manager.bind(
+        comic.sourceKey,
+        comic.id,
+        binding?.subjectId == widget.subjectId
+            ? binding!
+            : BangumiBinding.fromSubject(subject!),
+      );
+    }
     if (remember) {
       manager.chooseSource(widget.subjectId, comic.sourceKey, comic.id);
     }
@@ -602,6 +619,22 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       candidates.any(
         (c) => c.sourceKey == current!.sourceKey && c.id == current!.id,
       );
+
+  void _tryAutoContinue() {
+    if (!_autoContinuePending) {
+      return;
+    }
+    if (canPlay) {
+      _autoContinuePending = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          continueWatching();
+        }
+      });
+    } else if (!loading && sourcesReady && sources.every((row) => !row.loading)) {
+      _autoContinuePending = false;
+    }
+  }
 
   void playFirst() {
     var episode = episodes.firstOrNull;

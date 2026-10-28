@@ -376,6 +376,42 @@ void main() {
     );
 
     test(
+      'numbering labels do not turn trailing title numbers into seasons',
+      () {
+        for (var title in [
+          'Kaiju No. 8',
+          'Kaiju no 8',
+          'Series Nr. 2',
+          'Series # 2',
+          'Lupin III: Part 6',
+          'Series Pt 2',
+          'Series PT. 2',
+          'Series Vol 3',
+          'Vol. 3',
+          'Series Volume 3',
+          'Series Ep 2',
+          'Series Ep. 2',
+          'Series Episode 2 [Dub]',
+        ]) {
+          expect(BangumiTitleMatch.season(title), 1, reason: title);
+        }
+        expect(BangumiTitleMatch.normalize('Kaiju No. 8'), 'kaijuno8');
+        expect(BangumiTitleMatch.normalize('Vol. 3'), 'vol3');
+        expect(
+          BangumiTitleMatch.match(
+            ['怪獣8号', '怪兽8号', 'Kaiju No. 8'],
+            '怪兽8号',
+          ).kind,
+          BangumiMatchKind.exact,
+        );
+        for (var title in ['Series 2', 'Series II [Dub]', 'Counterpart 2']) {
+          expect(BangumiTitleMatch.season(title), 2, reason: title);
+        }
+        expect(BangumiTitleMatch.normalize('Series II [Dub]'), 'seriess2dub');
+      },
+    );
+
+    test(
       'rank exact then contains with fewer extras then fuzzy at inclusive 80%',
       () {
         expect(BangumiTitleMatch.levenshteinRate('abcde', 'abcdx'), 80);

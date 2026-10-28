@@ -96,6 +96,7 @@ class _BangumiComicPageState extends State<ComicPage> {
   Widget build(BuildContext context) {
     return BangumiSubjectPage(
       subjectId: bangumiSubjectIdFromHistory(widget.id)!,
+      autoContinue: widget.autoContinue,
     );
   }
 }

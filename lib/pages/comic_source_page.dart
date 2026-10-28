@@ -33,45 +33,52 @@ class ComicSourcePage extends StatelessWidget {
       }
     }
     ComicSourceManager().remove(source.key);
-    bool cancel = false;
-    LoadingDialogController? controller;
-    if (showLoading) {
-      controller = showLoadingDialog(
-        App.rootContext,
-        onCancel: () => cancel = true,
-        barrierDismissible: false,
-      );
-    }
     try {
-      var res = await AppDio().get<String>(
-        source.url,
-        options: Options(
-          responseType: ResponseType.plain,
-          headers: {"cache-time": "no"},
-        ),
-      );
-      if (cancel) return;
-      controller?.close();
-      if (source.isKazumi) {
-        await KazumiSource.saveUpdate(source, res.data!);
-      } else {
-        await ComicSourceParser().parse(res.data!, source.filePath);
-        await io.File(source.filePath).writeAsString(res.data!);
-      }
-      if (ComicSourceManager().availableUpdates.containsKey(source.key)) {
-        ComicSourceManager().availableUpdates.remove(source.key);
-      }
-    } catch (e) {
-      if (cancel) return;
+      bool cancel = false;
+      LoadingDialogController? controller;
       if (showLoading) {
-        App.rootContext.showMessage(message: e.toString());
-      } else {
-        rethrow;
+        controller = showLoadingDialog(
+          App.rootContext,
+          onCancel: () => cancel = true,
+          barrierDismissible: false,
+        );
       }
-    }
-    await ComicSourceManager().reload();
-    if (showLoading) {
-      App.forceRebuild();
+      try {
+        var res = await AppDio().get<String>(
+          source.url,
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: {"cache-time": "no"},
+          ),
+        );
+        if (cancel) {
+          return;
+        }
+        controller?.close();
+        if (source.isKazumi) {
+          await KazumiSource.saveUpdate(source, res.data!);
+        } else {
+          await ComicSourceParser().parse(res.data!, source.filePath);
+          await io.File(source.filePath).writeAsString(res.data!);
+        }
+        if (ComicSourceManager().availableUpdates.containsKey(source.key)) {
+          ComicSourceManager().availableUpdates.remove(source.key);
+        }
+      } catch (e) {
+        if (cancel) {
+          return;
+        }
+        if (showLoading) {
+          App.rootContext.showMessage(message: e.toString());
+        } else {
+          rethrow;
+        }
+      }
+    } finally {
+      await ComicSourceManager().reload();
+      if (showLoading) {
+        App.forceRebuild();
+      }
     }
   }
 

@@ -80,7 +80,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
         isFilter = timeFilterSelect.contains(ele.time);
       }
       if (numFilterSelect != numFilterList[0]) {
-        isFilter = ele.images.length > numFilterSelect;
+        isFilter = isFilter && ele.images.length > numFilterSelect;
       }
       return isFilter;
     }).toList();
@@ -135,13 +135,29 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
     return IconButton.filledTonal(
       tooltip: 'Delete'.tl,
       icon: const Icon(Icons.delete_outline),
-      onPressed: () {
-        ImageFavoriteManager().deleteImageFavorite(selectedImageFavorites.keys);
-        setState(() {
-          multiSelectMode = false;
-          selectedImageFavorites.clear();
-        });
-      },
+      onPressed: selectedImageFavorites.isEmpty
+          ? null
+          : () {
+              showConfirmDialog(
+                context: context,
+                title: "Delete".tl,
+                content: "Delete @a images?".tlParams({
+                  'a': selectedImageFavorites.length,
+                }),
+                btnColor: context.colorScheme.error,
+                onConfirm: () {
+                  ImageFavoriteManager().deleteImageFavorite(
+                    selectedImageFavorites.keys,
+                  );
+                  if (mounted) {
+                    setState(() {
+                      multiSelectMode = false;
+                      selectedImageFavorites.clear();
+                    });
+                  }
+                },
+              );
+            },
     );
   }
 
@@ -584,6 +600,11 @@ class _ImageFavoritesDialogState extends State<_ImageFavoritesDialog> {
       actions: [
         FilledButton(
           onPressed: () {
+            if (timeRangeType == TimeRangeType.custom &&
+                (start == null || end == null)) {
+              context.showMessage(message: "Select a start and end date".tl);
+              return;
+            }
             appdata.implicitData["image_favorites_sort"] = sortType.value;
             TimeRange timeRange;
             if (timeRangeType == TimeRangeType.custom) {

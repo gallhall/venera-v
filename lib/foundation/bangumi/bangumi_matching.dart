@@ -131,7 +131,8 @@ abstract final class BangumiTitleMatch {
   );
 
   static final _suffixSeason = RegExp(
-    r'(?<=[\s\u3040-\u30ff\u3400-\u9fff])(\d{1,2})(?=\s*(?:$|[\[\(\u3010\uff08]))',
+    r'(?<=[\s\u3040-\u30ff\u3400-\u9fff])(?<!\b(?:no\.?|nr\.|part|pt\.?|vol\.?|volume|ep\.?|episode)\s*|#\s*)(\d{1,2})(?=\s*(?:$|[\[\(\u3010\uff08]))',
+    caseSensitive: false,
   );
 
   static int season(String title) {

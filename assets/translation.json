@@ -1,5 +1,7 @@
 {
   "zh_CN": {
+    "Select a start and end date": "请选择开始和结束日期",
+    "Delete @a images?": "删除 @a 张图片？",
     "Send": "发送",
     "Installed": "已安装",
     "Last checked: @time": "上次检查：@time",
@@ -669,6 +671,8 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Select a start and end date": "請選擇開始和結束日期",
+    "Delete @a images?": "刪除 @a 張圖片？",
     "Send": "傳送",
     "Installed": "已安裝",
     "Last checked: @time": "上次檢查：@time",
