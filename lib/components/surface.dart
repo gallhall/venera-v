@@ -78,29 +78,37 @@ class AppCard extends StatelessWidget {
 }
 
 class AppBadge extends StatelessWidget {
-  const AppBadge(this.text, {super.key, this.highlighted = false});
+  const AppBadge(
+    this.text, {
+    super.key,
+    this.highlighted = false,
+    this.backgroundColor,
+    this.foregroundColor,
+  });
 
   final String text;
   final bool highlighted;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
+    final background = highlighted
+        ? colors.primaryContainer
+        : colors.surfaceContainerHigh;
+    final foreground = highlighted
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: highlighted
-            ? colors.primaryContainer
-            : colors.surfaceContainerHigh,
+        color: backgroundColor ?? background,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
-        style: ts.s12.copyWith(
-          color: highlighted
-              ? colors.onPrimaryContainer
-              : colors.onSurfaceVariant,
-        ),
+        style: ts.s12.copyWith(color: foregroundColor ?? foreground),
       ),
     );
   }

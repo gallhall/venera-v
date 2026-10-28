@@ -73,7 +73,9 @@ class NaviPaneState extends State<NaviPane>
   int get currentPage => _currentPage;
 
   set currentPage(int value) {
-    if (value == _currentPage) return;
+    if (value == _currentPage) {
+      return;
+    }
     _currentPage = value;
     widget.onPageChanged?.call(value);
   }
@@ -92,7 +94,7 @@ class NaviPaneState extends State<NaviPane>
     _naviItemTapListeners.remove(listener);
   }
 
-  static const _kBottomBarHeight = 58.0;
+  static const _kBottomBarHeight = 64.0;
 
   static const _kFoldedSideBarWidth = 72.0;
 
@@ -273,6 +275,7 @@ class NaviPaneState extends State<NaviPane>
 
   Widget buildTop() {
     return Material(
+      color: context.colorScheme.surface,
       child: Container(
         padding: const EdgeInsets.only(left: 16, right: 16),
         height: _kTopBarHeight,
@@ -281,7 +284,7 @@ class NaviPaneState extends State<NaviPane>
           children: [
             Text(
               widget.paneItems[currentPage].label,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: ts.s20.copyWith(fontWeight: FontWeight.w600),
             ),
             const Spacer(),
             for (var action in widget.paneActions)
@@ -300,18 +303,11 @@ class NaviPaneState extends State<NaviPane>
 
   Widget buildBottom() {
     return Material(
+      color: context.colorScheme.surfaceContainer,
       textStyle: Theme.of(context).textTheme.labelSmall,
       elevation: 0,
-      child: Container(
+      child: SizedBox(
         height: _kBottomBarHeight,
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-              width: 1,
-            ),
-          ),
-        ),
         child: Row(
           children: List<Widget>.generate(widget.paneItems.length, (index) {
             return Expanded(
@@ -332,22 +328,15 @@ class NaviPaneState extends State<NaviPane>
 
   Widget buildLeft() {
     final value = controller.value;
-    const paddingHorizontal = 12.0;
+    const paddingHorizontal = 8.0;
     return Material(
+      color: context.colorScheme.surfaceContainerLow,
       child: Container(
         width:
             _kFoldedSideBarWidth +
             (_kSideBarWidth - _kFoldedSideBarWidth) * ((value - 2).clamp(0, 1)),
         height: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: paddingHorizontal),
-        decoration: BoxDecoration(
-          border: Border(
-            right: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant,
-              width: 1.0,
-            ),
-          ),
-        ),
         child: Column(
           children: [
             const SizedBox(height: 16),
@@ -400,24 +389,42 @@ class _SideNaviWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final icon = Icon(enabled ? entry.activeIcon : entry.icon);
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        height: 38,
+    final colors = context.colorScheme;
+    final foreground = enabled
+        ? colors.onSecondaryContainer
+        : colors.onSurfaceVariant;
+    final icon = Icon(enabled ? entry.activeIcon : entry.icon, color: foreground);
+    final label = Text(
+      entry.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: (showTitle ? ts.s14 : ts.s12).copyWith(
+        color: foreground,
+        fontWeight: enabled ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
         decoration: BoxDecoration(
-          color: enabled ? colorScheme.primaryContainer : null,
-          borderRadius: BorderRadius.circular(12),
+          color: enabled ? colors.secondaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(28),
         ),
-        child: showTitle
-            ? Row(
-                children: [icon, const SizedBox(width: 12), Text(entry.label)],
-              )
-            : Align(alignment: Alignment.centerLeft, child: icon),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(28),
+          onTap: onTap,
+          child: SizedBox(
+            height: showTitle ? 48 : 64,
+            child: showTitle
+                ? Row(
+                    children: [icon, const SizedBox(width: 12), Expanded(child: label)],
+                  ).paddingHorizontal(16)
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [icon, const SizedBox(height: 4), label],
+                  ),
+          ),
+        ),
       ),
     ).paddingVertical(4);
   }
@@ -436,21 +443,16 @@ class _PaneActionWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = Icon(entry.icon);
-    return InkWell(
-      onTap: entry.onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        height: 38,
-        child: showTitle
-            ? Row(
-                children: [icon, const SizedBox(width: 12), Text(entry.label)],
-              )
-            : Align(alignment: Alignment.centerLeft, child: icon),
+    return _SideNaviWidget(
+      enabled: false,
+      entry: PaneItemEntry(
+        label: entry.label,
+        icon: entry.icon,
+        activeIcon: entry.icon,
       ),
-    ).paddingVertical(4);
+      onTap: entry.onTap,
+      showTitle: showTitle,
+    );
   }
 }
 
@@ -529,31 +531,56 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
   Widget buildContent() {
     final value = controller.value;
     final colorScheme = Theme.of(context).colorScheme;
-    final icon = Icon(
-      widget.enabled ? widget.entry.activeIcon : widget.entry.icon,
-    );
-    return Center(
-      child: Container(
-        width: 64,
-        height: 28,
-        decoration: BoxDecoration(
-          borderRadius: const BorderRadius.all(Radius.circular(32)),
-          color: isHovering ? colorScheme.surfaceContainer : Colors.transparent,
-        ),
-        child: Center(
-          child: Container(
-            width: 32 + value * 32,
-            height: 28,
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.all(Radius.circular(32)),
-              color: value != 0
-                  ? colorScheme.secondaryContainer
-                  : Colors.transparent,
+    final foreground = widget.enabled
+        ? colorScheme.onSecondaryContainer
+        : colorScheme.onSurfaceVariant;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 64,
+          height: 32,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: isHovering
+                ? colorScheme.onSurface.withValues(alpha: 0.08)
+                : Colors.transparent,
+          ),
+          child: Center(
+            child: Container(
+              width: 32 + value * 32,
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: Color.lerp(
+                  colorScheme.secondaryContainer,
+                  Color.alphaBlend(
+                    colorScheme.onSecondaryContainer.withValues(alpha: 0.08),
+                    colorScheme.secondaryContainer,
+                  ),
+                  isHovering ? 1 : 0,
+                )!.withValues(alpha: value),
+              ),
+              child: Icon(
+                widget.enabled ? widget.entry.activeIcon : widget.entry.icon,
+                color: foreground,
+              ),
             ),
-            child: Center(child: icon),
           ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          widget.entry.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: ts.s12.copyWith(
+            color: widget.enabled
+                ? colorScheme.onSurface
+                : colorScheme.onSurfaceVariant,
+            fontWeight: widget.enabled ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -693,7 +720,10 @@ class _NaviMainViewState extends State<_NaviMainView> {
           ),
         ),
         if (shouldShowAppBar)
-          state.buildBottom().paddingBottom(context.padding.bottom),
+          ColoredBox(
+            color: context.colorScheme.surfaceContainer,
+            child: state.buildBottom().paddingBottom(context.padding.bottom),
+          ),
       ],
     );
   }
