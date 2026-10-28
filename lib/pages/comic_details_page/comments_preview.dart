@@ -118,23 +118,24 @@ class _CommentWidget extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: context.colorScheme.surfaceContainerHigh,
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: comment.avatar == null
-                      ? null
-                      : Image(
-                          image: CachedImageProvider(comment.avatar!),
-                          width: 36,
-                          height: 36,
-                          fit: BoxFit.cover,
-                        ),
-                ).paddingRight(8),
+                if (comment.avatar != null)
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      color: context.colorScheme.surfaceContainerHigh,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: comment.avatar == null
+                        ? null
+                        : Image(
+                            image: CachedImageProvider(comment.avatar!),
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                          ),
+                  ).paddingRight(8),
                 Expanded(
                   child: Text(
                     comment.userName,

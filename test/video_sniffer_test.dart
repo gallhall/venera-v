@@ -92,6 +92,63 @@ void main() {
     );
   });
 
+  group('streamCandidate', () {
+    test('prefers a reported stream over the stream in its query', () {
+      const url = 'https://jx.example.com/hls/index.m3u8'
+          '?url=https://cdn.example.com/a.m3u8';
+      expect(
+        VideoSniffer.streamCandidate(url, embedded: true),
+        (url: url, deferred: false),
+      );
+    });
+
+    test('prefers confirmed streams without an extension', () {
+      const url = 'https://jx.example.com/play'
+          '?url=https://cdn.example.com/a.m3u8';
+      for (var kind in ['m3u8', 'media', 'embedded']) {
+        expect(
+          VideoSniffer.streamCandidate(url, kind: kind, embedded: true),
+          (url: url, deferred: false),
+          reason: kind,
+        );
+      }
+    });
+
+    test('defers query streams only in embedded mode', () {
+      const url = 'https://jx.example.com/player.html'
+          '?url=https://cdn.example.com/a.m3u8';
+      expect(VideoSniffer.streamCandidate(url), isNull);
+      expect(
+        VideoSniffer.streamCandidate(url, embedded: true),
+        (url: 'https://cdn.example.com/a.m3u8', deferred: true),
+      );
+      expect(
+        VideoSniffer.streamCandidate(
+          url,
+          embedded: true,
+          exclude: RegExp(r'cdn\.example\.com'),
+        ),
+        isNull,
+      );
+    });
+
+    test('keeps custom match and exclude rules for reported streams', () {
+      const url = 'https://jx.example.com/api/play?id=1';
+      expect(
+        VideoSniffer.streamCandidate(url, match: RegExp(r'/api/play')),
+        (url: url, deferred: false),
+      );
+      expect(
+        VideoSniffer.streamCandidate(url, kind: 'media', match: RegExp('hls')),
+        isNull,
+      );
+      expect(
+        VideoSniffer.streamCandidate(url, kind: 'media', exclude: RegExp('api')),
+        isNull,
+      );
+    });
+  });
+
   test('referrer policies, legacy values and lists', () {
     expect(VideoSniffer.referrerPolicy('never'), 'no-referrer');
     expect(VideoSniffer.referrerPolicy(' No-Referrer '), 'no-referrer');

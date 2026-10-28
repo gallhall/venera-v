@@ -47,6 +47,7 @@ typedef BangumiPlayTarget = ({
 Future<BangumiPlayTarget> loadBangumiTarget(
   BangumiPlaybackContext context,
   Comic candidate, {
+  ComicDetails? details,
   void Function(Comic)? onSourceChanged,
 }) {
   var seen = <String>{candidate.sourceKey};
@@ -59,7 +60,11 @@ Future<BangumiPlayTarget> loadBangumiTarget(
   ];
   return bangumiLoadEpisode(
     choices,
-    (c) => _loadBangumiTarget(context, c),
+    (c) => _loadBangumiTarget(
+      context,
+      c,
+      details: identical(c, candidate) ? details : null,
+    ),
     missingEpisode: (e) => e is BangumiEpisodeUnavailable,
     onSwitch: onSourceChanged,
   );
@@ -67,17 +72,26 @@ Future<BangumiPlayTarget> loadBangumiTarget(
 
 Future<BangumiPlayTarget> _loadBangumiTarget(
   BangumiPlaybackContext context,
-  Comic candidate,
-) async {
+  Comic candidate, {
+  ComicDetails? details,
+}) async {
   var source = ComicSource.find(candidate.sourceKey);
   if (source?.loadComicInfo == null) {
     throw Exception('Video source not found'.tl);
   }
-  if (!source!.isEnabled) throw Exception('Source disabled'.tl);
-  var result = await source.loadComicInfo!(candidate.id);
-  if (!source.isEnabled) throw Exception('Source disabled'.tl);
-  if (result.error) throw Exception(result.errorMessage);
-  var details = result.data;
+  if (!source!.isEnabled) {
+    throw Exception('Source disabled'.tl);
+  }
+  if (details == null) {
+    var result = await source.loadComicInfo!(candidate.id);
+    if (!source.isEnabled) {
+      throw Exception('Source disabled'.tl);
+    }
+    if (result.error) {
+      throw Exception(result.errorMessage);
+    }
+    details = result.data;
+  }
   var episodes = VideoEpisode.fromDetails(details);
   var binding = BangumiManager().bindingOf(candidate.sourceKey, candidate.id);
   var target = BangumiEpisodeNumber.match(context.episodes, context.number);

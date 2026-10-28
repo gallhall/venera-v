@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
@@ -605,8 +607,8 @@ class _BangumiPanelState extends State<BangumiPanel> {
     );
     if (total > 0) {
       final position = done > total ? total : done;
-      final first = position > 6 ? position - 5 : 1;
-      final last = first + 11 < total ? first + 11 : total;
+      final first = math.max(1, math.min(position - 5, total - 11));
+      final last = math.min(first + 11, total);
       yield ExcludeFocus(
         excluding: isLoading,
         child: IgnorePointer(

@@ -1002,6 +1002,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       var target = await loadBangumiTarget(
         playback,
         candidate,
+        details: candidate.sourceKey == sourceKey && candidate.id == details.id
+            ? details
+            : null,
         onSourceChanged: (c) {
           if (mounted) {
             context.showMessage(
