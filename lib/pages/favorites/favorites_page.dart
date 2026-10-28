@@ -231,8 +231,6 @@ class _FavoriteFolderTitle extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(Icons.expand_more, size: 20),
               ],
             ),
           ),
