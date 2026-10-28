@@ -88,6 +88,32 @@ class VideoSniffer {
     return null;
   }
 
+  /// Prefers the reported stream; an embedded query stream is only a
+  /// deferred fallback when the reported url is not itself a stream.
+  static ({String url, bool deferred})? streamCandidate(
+    String url, {
+    RegExp? match,
+    RegExp? exclude,
+    String kind = 'request',
+    bool embedded = false,
+  }) {
+    if (isStream(
+      url,
+      match: match,
+      exclude: exclude,
+      confirmed: kind == 'm3u8' || kind == 'media' || kind == 'embedded',
+    )) {
+      return (url: url, deferred: false);
+    }
+    if (embedded && kind != 'embedded') {
+      var inner = embeddedStream(url, exclude: exclude);
+      if (inner != null) {
+        return (url: inner, deferred: true);
+      }
+    }
+    return null;
+  }
+
   static VideoStreamType typeOf(String url) {
     var path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
     if (path.endsWith('.m3u8')) return VideoStreamType.hls;
@@ -304,23 +330,22 @@ class VideoSniffer {
     ]) async {
       if (completer.isCompleted) return;
       if (seen.length < 200) seen.add("$kind $streamUrl");
-      var inner = embedded && kind != 'embedded'
-          ? embeddedStream(streamUrl, exclude: exclude)
-          : null;
-      if (inner != null) {
-        // The player page loads the stream with its own url as referer.
-        embeddedTimer ??= Timer(
-          embeddedDelay,
-          () => found(inner, null, streamUrl, 'embedded'),
-        );
-        return;
-      }
-      if (!isStream(
+      var candidate = streamCandidate(
         streamUrl,
         match: match,
         exclude: exclude,
-        confirmed: kind == 'm3u8' || kind == 'media' || kind == 'embedded',
-      )) {
+        kind: kind,
+        embedded: embedded,
+      );
+      if (candidate == null) {
+        return;
+      }
+      if (candidate.deferred) {
+        // The player page loads the stream with its own url as referer.
+        embeddedTimer ??= Timer(
+          embeddedDelay,
+          () => found(candidate.url, null, streamUrl, 'embedded'),
+        );
         return;
       }
       // On Android, natively intercepted requests have the Referer the page

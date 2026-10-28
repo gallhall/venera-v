@@ -346,23 +346,24 @@ class _ChapterCommentTileState extends State<_ChapterCommentTile> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: context.colorScheme.surfaceContainerHigh,
-            ),
-            child: widget.comment.avatar == null
-                ? null
-                : AnimatedImage(
-                    image: CachedImageProvider(
-                      widget.comment.avatar!,
-                      sourceKey: widget.source.key,
+          if (widget.showAvatar)
+            Container(
+              width: 36,
+              height: 36,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: context.colorScheme.surfaceContainerHigh,
+              ),
+              child: widget.comment.avatar == null
+                  ? null
+                  : AnimatedImage(
+                      image: CachedImageProvider(
+                        widget.comment.avatar!,
+                        sourceKey: widget.source.key,
+                      ),
                     ),
-                  ),
-          ).paddingRight(8),
+            ).paddingRight(8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

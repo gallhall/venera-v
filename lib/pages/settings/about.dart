@@ -63,9 +63,11 @@ class _AboutSettingsState extends State<AboutSettings> {
                       isCheckingUpdate = true;
                     });
                     checkUpdateUi().then((value) {
-                      setState(() {
-                        isCheckingUpdate = false;
-                      });
+                      if (mounted) {
+                        setState(() {
+                          isCheckingUpdate = false;
+                        });
+                      }
                     });
                   },
                 ).fixHeight(32),

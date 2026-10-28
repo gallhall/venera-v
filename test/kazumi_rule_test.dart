@@ -149,7 +149,7 @@ void main() {
       expect(request.method, 'GET');
       expect(
         request.url,
-        'https://www.example.com/search?wd=${Uri.encodeQueryComponent('葬送 Frieren&1')}',
+        'https://www.example.com/search?wd=${Uri.encodeComponent('葬送 Frieren&1')}',
       );
 
       var post = KazumiEngine(
@@ -159,9 +159,16 @@ void main() {
         }),
       ).searchRequest('a b');
       expect(post.method, 'POST');
-      expect(post.url, 'https://www.example.com/search.php?searchword=a+b');
+      expect(post.url, 'https://www.example.com/search.php?searchword=a%20b');
       expect(post.bodyType, 'form');
       expect(post.body, {'searchword': 'a b'});
+
+      var path = KazumiEngine(
+        _rule({
+          'searchURL': 'https://www.example.com/vodsearch/@keyword-------.html',
+        }),
+      ).searchRequest('a b');
+      expect(path.url, 'https://www.example.com/vodsearch/a%20b-------.html');
 
       expect(
         () => KazumiEngine(_rule({'searchURL': '/search?wd=@keyword'}))
@@ -237,6 +244,25 @@ void main() {
   });
 
   group('API rules', () {
+    test('search templates keep URL encoding and raw query values', () {
+      var request = KazumiEngine(
+        _rule({
+          'searchMode': 'api',
+          'searchApiConfig': {
+            'request': {
+              'url': 'https://api.example.com/search/@keyword?wd=@keyword',
+              'query': {'keyword': '@keyword'},
+            },
+          },
+        }),
+      ).searchRequest('a b&c');
+      expect(
+        request.url,
+        'https://api.example.com/search/a%20b%26c?wd=a%20b%26c',
+      );
+      expect(request.query, {'keyword': 'a b&c'});
+    });
+
     test('delimited play lines', () {
       var rule = _rule({
         'baseURL': 'https://ani.example.com',
@@ -496,6 +522,49 @@ void main() {
     expect(same('https://example.com.evil.net/a.jpg'), isFalse);
     expect(same('/a.jpg'), isFalse);
     expect(KazumiEngine.isSameSite('https://a.com/x', ''), isFalse);
+    expect(
+      KazumiEngine.isSameSite(
+        'https://img.foo.com.cn/a.jpg',
+        'https://www.foo.com.cn/',
+      ),
+      isTrue,
+    );
+    expect(
+      KazumiEngine.isSameSite(
+        'https://img.bar.com.cn/a.jpg',
+        'https://www.foo.com.cn/',
+      ),
+      isFalse,
+    );
+    expect(
+      KazumiEngine.isSameSite(
+        'https://cdn.bbc.co.uk/a.jpg',
+        'https://www.bbc.co.uk/',
+      ),
+      isTrue,
+    );
+    expect(
+      KazumiEngine.isSameSite('https://1.2.3.4/a.jpg', 'https://5.6.3.4/'),
+      isFalse,
+    );
+    expect(
+      KazumiEngine.isSameSite('https://1.2.3.4/a.jpg', 'https://1.2.3.4/'),
+      isTrue,
+    );
+    expect(
+      KazumiEngine.isSameSite(
+        'https://[2001:db8::1]/a.jpg',
+        'https://[2001:db8::2]/',
+      ),
+      isFalse,
+    );
+    expect(
+      KazumiEngine.isSameSite(
+        'https://[2001:db8::1]/a.jpg',
+        'https://[2001:db8::1]/',
+      ),
+      isTrue,
+    );
   });
 
   group('captcha pages', () {

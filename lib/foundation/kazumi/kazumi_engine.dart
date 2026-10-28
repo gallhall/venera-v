@@ -90,7 +90,7 @@ class KazumiEngine {
     }
     var url = rule.searchUrl.replaceAll(
       '@keyword',
-      Uri.encodeQueryComponent(keyword),
+      Uri.encodeComponent(keyword),
     );
     var uri = _checkUrl(url);
     if (!rule.usePost) return KazumiRequest(url);
@@ -547,14 +547,30 @@ class KazumiEngine {
   }
 
   /// Whether [url] is on the site of [baseUrl]: the same host, or hosts
-  /// with the same last two labels, e.g. `img.site.com` and `www.site.com`.
+  /// sharing a domain, accounting for common country-code suffixes.
   static bool isSameSite(String url, String baseUrl) {
     var a = Uri.tryParse(url)?.host ?? '';
     var b = Uri.tryParse(baseUrl)?.host ?? '';
-    if (a.isEmpty || b.isEmpty) return false;
+    if (a.isEmpty || b.isEmpty) {
+      return false;
+    }
+    bool isIp(String host) =>
+        host.contains(':') || RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host);
+    if (isIp(a) || isIp(b)) {
+      return a == b;
+    }
     String site(String host) {
       var labels = host.split('.');
-      if (labels.length <= 2) return host;
+      if (labels.length <= 2) {
+        return host;
+      }
+      const genericLabels = {
+        'com', 'net', 'org', 'gov', 'edu', 'co', 'ac', 'ne', 'or', 'go', 'mil',
+      };
+      if (labels.last.length == 2 &&
+          genericLabels.contains(labels[labels.length - 2])) {
+        return labels.sublist(labels.length - 3).join('.');
+      }
       return labels.sublist(labels.length - 2).join('.');
     }
 
