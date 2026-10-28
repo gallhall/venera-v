@@ -20,17 +20,22 @@ List<BangumiSubject> _sorted(List<BangumiSubject> day, Set<int> watching) {
   ];
 }
 
-class _SubjectCover extends StatelessWidget {
-  const _SubjectCover({required this.subject, required this.watching});
+/// Shared cover presentation for full-page Bangumi grids.
+class BangumiGridCover extends StatelessWidget {
+  const BangumiGridCover({
+    super.key,
+    required this.subject,
+    this.watching = false,
+  });
 
   final BangumiSubject subject;
-
   final bool watching;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
+    return CoverButton(
+      borderRadius: BorderRadius.circular(12),
+      label: subject.displayName,
       onTap: () => context.to(
         () => BangumiSubjectPage(subjectId: subject.id, preview: subject),
       ),
@@ -38,74 +43,47 @@ class _SubjectCover extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ColoredBox(
                 color: context.colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  if (subject.image.isNotEmpty)
-                    Positioned.fill(
-                      child: AnimatedImage(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (subject.image.isNotEmpty)
+                      AnimatedImage(
                         image: CachedImageProvider(subject.image),
                         width: double.infinity,
                         height: double.infinity,
+                        fit: BoxFit.cover,
                       ),
-                    ),
-                  if (watching)
-                    Positioned(
-                      left: 4,
-                      top: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.colorScheme.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          "Currently watching".tl,
-                          style: ts.s12.copyWith(
-                            color: context.colorScheme.onPrimary,
-                          ),
+                    if (watching)
+                      Positioned(
+                        left: 4,
+                        top: 4,
+                        child: AppBadge(
+                          'Currently watching'.tl,
+                          highlighted: true,
                         ),
                       ),
-                    ),
-                  if (subject.score > 0)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          subject.score.toStringAsFixed(1),
-                          style: ts.s12.copyWith(color: Colors.white),
-                        ),
+                    if (subject.score > 0)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: AppBadge(subject.score.toStringAsFixed(1)),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             subject.displayName,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
-          ).fixHeight(32),
+          ).fixHeight(36),
         ],
       ),
     );
@@ -150,15 +128,21 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
     setState(() => error = null);
     try {
       var calendar = await BangumiManager().calendar(refresh: refresh);
-      if (mounted) setState(() => this.calendar = calendar);
+      if (mounted) {
+        setState(() => this.calendar = calendar);
+      }
     } catch (e, s) {
       Log.error('Bangumi', 'Failed to load the calendar: $e', s);
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = e.toString());
+      }
       return;
     }
     try {
       var watching = await BangumiManager().watching(refresh: refresh);
-      if (mounted) setState(() => this.watching = watching);
+      if (mounted) {
+        setState(() => this.watching = watching);
+      }
     } catch (e) {
       Log.warning('Bangumi', 'Failed to load the anime being watched: $e');
     }
@@ -183,7 +167,23 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
             controller: controller,
             tabs: [
               for (var i = 0; i < 7; i++)
-                Tab(text: _weekdays[i].tl, key: Key(_weekdays[i])),
+                Tab(
+                  key: Key(_weekdays[i]),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (i == DateTime.now().weekday - 1) ...[
+                        Icon(
+                          Icons.today,
+                          size: 16,
+                          color: context.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(_weekdays[i].tl),
+                    ],
+                  ),
+                ),
             ],
           ),
           Expanded(
@@ -213,14 +213,16 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
           ),
         ],
       ),
-      body: body,
+      body: AppContentWidth(child: body),
     );
   }
 
   Widget buildDay(List<BangumiSubject> day) {
-    if (day.isEmpty) return Center(child: Text("Nothing airing".tl));
+    if (day.isEmpty) {
+      return SectionEmptyState("Nothing airing".tl);
+    }
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(8, 8, 8, context.padding.bottom + 8),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, context.padding.bottom + 8),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 140,
         childAspectRatio: 0.56,
@@ -228,7 +230,7 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
         mainAxisSpacing: 8,
       ),
       itemCount: day.length,
-      itemBuilder: (context, index) => _SubjectCover(
+      itemBuilder: (context, index) => BangumiGridCover(
         subject: day[index],
         watching: watching.contains(day[index].id),
       ),

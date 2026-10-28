@@ -43,14 +43,18 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
 
   Future<void> login() async {
     var token = controller.text.trim();
-    if (token.isEmpty) return;
+    if (token.isEmpty) {
+      return;
+    }
     setState(() {
       isLoading = true;
       error = null;
     });
     try {
       var user = await BangumiManager().login(token);
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       context.showMessage(
         message: "Logged in as @u".tlParams({"u": user.displayName}),
       );
@@ -67,7 +71,7 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return ContentDialog(
+    return AppSurfaceDialog(
       title: "Bangumi",
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -87,7 +91,20 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
             autofocus: true,
             decoration: InputDecoration(
               labelText: "Access Token".tl,
-              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: context.colorScheme.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(28),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(28),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(28),
+                borderSide: BorderSide(color: context.colorScheme.primary),
+              ),
               errorText: error,
               errorMaxLines: 3,
             ),
@@ -202,21 +219,29 @@ class _BangumiPanelState extends State<BangumiPanel> {
       await action();
     } catch (e, s) {
       Log.error('Bangumi', e.toString(), s);
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() => error = e.toString());
+      }
     } finally {
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
   Future<void> search() {
     var keyword = searchController.text.trim();
-    if (keyword.isEmpty) return Future.value();
+    if (keyword.isEmpty) {
+      return Future.value();
+    }
     return run(() async {
       var id = int.tryParse(keyword);
       var results = id != null
           ? [await manager.api.subject(id)]
           : await manager.api.search(keyword, subjectType);
-      if (mounted) setState(() => this.results = results);
+      if (mounted) {
+        setState(() => this.results = results);
+      }
     });
   }
 
@@ -224,19 +249,25 @@ class _BangumiPanelState extends State<BangumiPanel> {
     var binding = this.binding!;
     return run(() async {
       var subject = await manager.api.subject(binding.subjectId);
-      if (mounted) setState(() => this.subject = subject);
+      if (mounted) {
+        setState(() => this.subject = subject);
+      }
       await loadCollection();
     });
   }
 
   Future<void> loadCollection() async {
     var user = manager.user;
-    if (!manager.isLoggedIn || user == null) return;
+    if (!manager.isLoggedIn || user == null) {
+      return;
+    }
     var collection = await manager.api.collection(
       user.username,
       binding!.subjectId,
     );
-    if (mounted) setState(() => this.collection = collection);
+    if (mounted) {
+      setState(() => this.collection = collection);
+    }
   }
 
   void bind(BangumiSubject subject) {
@@ -259,7 +290,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
       collection = null;
       isSearching = true;
     });
-    if (results == null) search();
+    if (results == null) {
+      search();
+    }
   }
 
   void setOffset(int offset) {
@@ -276,7 +309,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
   }
 
   Future<void> setProgress(int number) {
-    if (number < 0) return Future.value();
+    if (number < 0) {
+      return Future.value();
+    }
     return run(() async {
       await manager.progress.setProgress(binding!, number);
       await loadCollection();
@@ -286,9 +321,13 @@ class _BangumiPanelState extends State<BangumiPanel> {
   /// Number on Bangumi of the episode or chapter in the history.
   int? get localProgress {
     var history = widget.history;
-    if (history == null || history.ep < 1) return null;
+    if (history == null || history.ep < 1) {
+      return null;
+    }
     var chapters = widget.chapters;
-    if (chapters == null || chapters.length == 0) return 1;
+    if (chapters == null || chapters.length == 0) {
+      return 1;
+    }
     String? title;
     try {
       title = history.group == null
@@ -300,7 +339,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
     } catch (_) {
       // The group is no longer there.
     }
-    if (title == null) return null;
+    if (title == null) {
+      return null;
+    }
     var number = BangumiEpisodeNumber.of(title, history.ep);
     return number == null ? null : number + binding!.offset;
   }
@@ -317,12 +358,17 @@ class _BangumiPanelState extends State<BangumiPanel> {
             onPressed: () => launchUrlString(binding!.url),
           ),
       ],
-      body: isSearching ? buildSearch() : buildLinked(),
+      body: AppContentWidth(
+        maxWidth: 800,
+        child: isSearching ? buildSearch() : buildLinked(),
+      ),
     );
   }
 
   Widget buildError() {
-    if (error == null) return const SizedBox();
+    if (error == null) {
+      return const SizedBox();
+    }
     return Text(
       error!,
       style: TextStyle(color: context.colorScheme.error),
@@ -338,7 +384,20 @@ class _BangumiPanelState extends State<BangumiPanel> {
           decoration: InputDecoration(
             labelText: "Search Bangumi".tl,
             hintText: "Name or subject ID".tl,
-            border: const OutlineInputBorder(),
+            filled: true,
+            fillColor: context.colorScheme.surfaceContainerHigh,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide(color: context.colorScheme.primary),
+            ),
             suffixIcon: IconButton(
               icon: const Icon(Icons.search),
               onPressed: isLoading ? null : search,
@@ -360,7 +419,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
           child: results == null
               ? const SizedBox()
               : results.isEmpty
-              ? Center(child: Text("No results".tl))
+              ? SectionEmptyState("No results".tl)
               : ListView.builder(
                   padding: EdgeInsets.only(
                     top: 8,
@@ -446,7 +505,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
             title: Text("Link another subject".tl),
             onTap: () {
               setState(() => isSearching = true);
-              if (results == null) search();
+              if (results == null) {
+                search();
+              }
             },
           ),
           ListTile(
@@ -460,16 +521,25 @@ class _BangumiPanelState extends State<BangumiPanel> {
   }
 
   Widget buildLogin() {
-    return ListTile(
-      leading: const Icon(Icons.login),
-      title: Text("Log in to Bangumi to sync progress".tl),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () async {
-        if (await showBangumiLoginDialog(context)) {
-          setState(() {});
-          run(loadCollection);
-        }
-      },
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Log in to Bangumi to sync progress'.tl, style: ts.s14),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.login, size: 18),
+            label: Text('Log in'.tl),
+            onPressed: () async {
+              if (await showBangumiLoginDialog(context)) {
+                setState(() {});
+                run(loadCollection);
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -485,6 +555,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
       children: [
         for (var type in BangumiCollectionType.values)
           ChoiceChip(
+            side: BorderSide.none,
+            backgroundColor: context.colorScheme.surfaceContainerHigh,
+            selectedColor: context.colorScheme.secondaryContainer,
             label: Text(_statusName(type, isBook)),
             selected: collection?.type == type,
             onSelected: isLoading || collection?.type == type
@@ -493,41 +566,65 @@ class _BangumiPanelState extends State<BangumiPanel> {
           ),
       ],
     ).paddingHorizontal(16).paddingVertical(8);
-    yield ListTile(
-      leading: const Icon(Icons.checklist),
-      title: Text(
-        (isBook ? "Read @n chapters" : "Watched @n episodes").tlParams({
-          "n": total > 0 ? "$done / $total" : "$done",
-        }),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.remove),
-            onPressed: isLoading || done <= 0
-                ? null
-                : () => setProgress(done - 1),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: isLoading ? null : () => setProgress(done + 1),
-          ),
-        ],
-      ),
-      onTap: isLoading
-          ? null
-          : () => showInputDialog(
-              context: context,
-              title: (isBook ? "Chapters read" : "Episodes watched").tl,
-              initialValue: "$done",
-              inputValidator: RegExp(r"^\d+$"),
-              onConfirm: (value) {
-                setProgress(int.parse(value));
-                return null;
-              },
+    yield AppCard(
+      child: ListTile(
+        leading: const Icon(Icons.checklist),
+        title: Text(
+          (isBook ? "Read @n chapters" : "Watched @n episodes").tlParams({
+            "n": total > 0 ? "$done / $total" : "$done",
+          }),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.remove),
+              onPressed: isLoading || done <= 0
+                  ? null
+                  : () => setProgress(done - 1),
             ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: isLoading ? null : () => setProgress(done + 1),
+            ),
+          ],
+        ),
+        onTap: isLoading
+            ? null
+            : () => showInputDialog(
+                context: context,
+                title: (isBook ? "Chapters read" : "Episodes watched").tl,
+                initialValue: "$done",
+                inputValidator: RegExp(r"^\d+$"),
+                onConfirm: (value) {
+                  setProgress(int.parse(value));
+                  return null;
+                },
+              ),
+      ),
     );
+    if (total > 0) {
+      final position = done > total ? total : done;
+      final first = position > 6 ? position - 5 : 1;
+      final last = first + 11 < total ? first + 11 : total;
+      yield ExcludeFocus(
+        excluding: isLoading,
+        child: IgnorePointer(
+          ignoring: isLoading,
+          child: EpisodeGrid(
+            items: [
+              for (var i = first; i <= last; i++)
+                EpisodeGridItem(
+                  label: '$i',
+                  selected: i == done,
+                  watched: i <= done,
+                  onTap: () => setProgress(i),
+                ),
+            ],
+          ),
+        ),
+      ).paddingHorizontal(16).paddingVertical(8);
+    }
     var local = localProgress;
     if (local != null && local != done) {
       yield ListTile(
@@ -592,25 +689,26 @@ class _SubjectTile extends StatelessWidget {
                 : "@n episodes")
             .tlParams({"n": subject.eps}),
     ].join(" · ");
-    return InkWell(
+    return AppCard(
+      highlighted: selected,
       onTap: onTap,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 64,
-            height: 88,
+            width: 56,
+            height: 78,
             decoration: BoxDecoration(
               color: context.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(10),
             ),
             clipBehavior: Clip.antiAlias,
             child: subject.image.isEmpty
                 ? const SizedBox()
                 : AnimatedImage(
                     image: CachedImageProvider(subject.image),
-                    width: 64,
-                    height: 88,
+                    width: 56,
+                    height: 78,
                   ),
           ),
           const SizedBox(width: 12),
@@ -618,7 +716,10 @@ class _SubjectTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(subject.displayName, style: ts.s16),
+                Text(
+                  subject.displayName,
+                  style: ts.s14.copyWith(fontWeight: FontWeight.w600),
+                ),
                 if (subject.nameCn.isNotEmpty && subject.name != subject.nameCn)
                   Text(
                     subject.name,
@@ -626,17 +727,26 @@ class _SubjectTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                if (details.isNotEmpty) Text(details, style: ts.s12),
+                if (details.isNotEmpty)
+                  Text(
+                    details,
+                    style: ts.s12.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                  ).paddingTop(4),
                 if (subject.score > 0)
                   Row(
                     children: [
                       Icon(
                         Icons.star,
                         size: 16,
-                        color: context.useTextColor(Colors.amber),
+                        color: context.colorScheme.primary,
                       ),
                       const SizedBox(width: 4),
-                      Text(subject.score.toStringAsFixed(1), style: ts.s14),
+                      AppBadge(
+                        subject.score.toStringAsFixed(1),
+                        highlighted: true,
+                      ),
                       if (subject.rank > 0)
                         Text("  #${subject.rank}", style: ts.s12),
                     ],

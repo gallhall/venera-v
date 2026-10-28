@@ -49,8 +49,9 @@ class _ImageFavoritesPhotoViewState extends State<ImageFavoritesPhotoView> {
     if (tempList.isNotEmpty) {
       ImageFavoriteManager().deleteImageFavorite(tempList);
       showToast(
-          message: "Delete @a images".tlParams({'a': tempList.length}),
-          context: context);
+        message: "Delete @a images".tlParams({'a': tempList.length}),
+        context: context,
+      );
     }
   }
 
@@ -92,162 +93,164 @@ class _ImageFavoritesPhotoViewState extends State<ImageFavoritesPhotoView> {
                 return;
               }
               controller.nextPage(
-                  duration: Duration(milliseconds: 180), curve: Curves.ease);
+                duration: Duration(milliseconds: 180),
+                curve: Curves.ease,
+              );
             } else {
               if (controller.page! <= 0) {
                 return;
               }
               controller.previousPage(
-                  duration: Duration(milliseconds: 180), curve: Curves.ease);
+                duration: Duration(milliseconds: 180),
+                curve: Curves.ease,
+              );
             }
           }
         },
-        child: Stack(children: [
-          Positioned.fill(
-            child: PhotoViewGallery.builder(
-              backgroundDecoration: BoxDecoration(
-                color: context.colorScheme.surface,
-              ),
-              builder: _buildItem,
-              itemCount: images.length,
-              loadingBuilder: (context, event) => Center(
-                child: SizedBox(
-                  width: 20.0,
-                  height: 20.0,
-                  child: CircularProgressIndicator(
-                    backgroundColor: context.colorScheme.surfaceContainerHigh,
-                    value: event == null || event.expectedTotalBytes == null
-                        ? null
-                        : event.cumulativeBytesLoaded /
-                            event.expectedTotalBytes!,
-                  ),
-                ),
-              ),
-              pageController: controller,
-              onPageChanged: (index) {
-                setState(() {
-                  currentPage = index;
-                });
-              },
-            ),
-          ),
-          buildPageInfo(),
-          AnimatedPositioned(
-            top: isAppBarShow ? 0 : -(context.padding.top + 52),
-            left: 0,
-            right: 0,
-            duration: Duration(milliseconds: 180),
-            child: buildAppBar(),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget buildPageInfo() {
-    var text = "${currentPage + 1}/${images.length}";
-    return Positioned(
-      height: 40,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: Center(
         child: Stack(
           children: [
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 14,
-                foreground: Paint()
-                  ..style = PaintingStyle.stroke
-                  ..strokeWidth = 1.4
-                  ..color = context.colorScheme.onInverseSurface,
+            Positioned.fill(
+              child: PhotoViewGallery.builder(
+                backgroundDecoration: BoxDecoration(
+                  color: context.colorScheme.surface,
+                ),
+                builder: _buildItem,
+                itemCount: images.length,
+                loadingBuilder: (context, event) => Center(
+                  child: SizedBox(
+                    width: 20.0,
+                    height: 20.0,
+                    child: CircularProgressIndicator(
+                      backgroundColor: context.colorScheme.surfaceContainerHigh,
+                      value: event == null || event.expectedTotalBytes == null
+                          ? null
+                          : event.cumulativeBytesLoaded /
+                                event.expectedTotalBytes!,
+                    ),
+                  ),
+                ),
+                pageController: controller,
+                onPageChanged: (index) {
+                  setState(() {
+                    currentPage = index;
+                  });
+                },
               ),
             ),
-            Text(text),
+            buildPageInfo(),
+            AnimatedPositioned(
+              top: isAppBarShow ? 0 : -(context.padding.top + 52),
+              left: 0,
+              right: 0,
+              duration: Duration(milliseconds: 180),
+              child: buildAppBar(),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget buildAppBar() {
-    return Material(
-      color: context.colorScheme.surface.toOpacity(0.72),
-      child: BlurEffect(
+  Widget buildPageInfo() {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: context.padding.bottom + 8,
+      child: Center(
         child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: context.colorScheme.outlineVariant,
-                width: 0.5,
-              ),
+            color: Colors.black.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Text(
+            '${currentPage + 1}/${images.length}',
+            style: ts.s14.copyWith(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildAppBar() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8, context.padding.top, 8, 0),
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(28),
+        clipBehavior: Clip.antiAlias,
+        child: IconButtonTheme(
+          data: IconButtonThemeData(
+            style: IconButton.styleFrom(
+              foregroundColor: Colors.white,
+              shape: const CircleBorder(),
             ),
           ),
-          height: 52,
-          child: Row(
-            children: [
-              const SizedBox(width: 8),
-              IconButton(
-                icon: Icon(Icons.close),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.comic.title,
-                  style: TextStyle(fontSize: 18),
+          child: SizedBox(
+            height: 52,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Close'.tl,
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-              ),
-              IconButton(
-                icon: Icon(Icons.more_vert),
-                onPressed: showMenu,
-              ),
-              const SizedBox(width: 8),
-            ],
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    widget.comic.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s14.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'More'.tl,
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: showMenu,
+                ),
+              ],
+            ),
           ),
-        ).paddingTop(context.padding.top),
+        ),
       ),
     );
   }
 
   void showMenu() {
-    showMenuX(
-      context,
-      Offset(context.width, context.padding.top),
-      [
-        MenuEntry(
-          icon: Icons.image_outlined,
-          text: "Save Image".tl,
-          onClick: () async {
-            var temp = images[currentPage];
-            var imageProvider = ImageFavoritesProvider(temp);
-            var data = await imageProvider.load(null, null);
-            var fileType = detectFileType(data);
-            var fileName = "${currentPage + 1}.${fileType.ext}";
-            await saveFile(filename: fileName, data: data);
-          },
-        ),
-        MenuEntry(
-          icon: Icons.menu_book_outlined,
-          text: "Read".tl,
-          onClick: () async {
-            var comic = widget.comic;
-            var ep = images[currentPage].ep;
-            var page = images[currentPage].page;
-            App.rootContext.to(
-              () => ReaderWithLoading(
-                id: comic.id,
-                sourceKey: comic.sourceKey,
-                initialEp: ep,
-                initialPage: page,
-              )
-            );
-          },
-        ),
-      ],
-    );
+    showMenuX(context, Offset(context.width, context.padding.top), [
+      MenuEntry(
+        icon: Icons.image_outlined,
+        text: "Save Image".tl,
+        onClick: () async {
+          var temp = images[currentPage];
+          var imageProvider = ImageFavoritesProvider(temp);
+          var data = await imageProvider.load(null, null);
+          var fileType = detectFileType(data);
+          var fileName = "${currentPage + 1}.${fileType.ext}";
+          await saveFile(filename: fileName, data: data);
+        },
+      ),
+      MenuEntry(
+        icon: Icons.menu_book_outlined,
+        text: "Read".tl,
+        onClick: () async {
+          var comic = widget.comic;
+          var ep = images[currentPage].ep;
+          var page = images[currentPage].page;
+          App.rootContext.to(
+            () => ReaderWithLoading(
+              id: comic.id,
+              sourceKey: comic.sourceKey,
+              initialEp: ep,
+              initialPage: page,
+            ),
+          );
+        },
+      ),
+    ]);
   }
 }

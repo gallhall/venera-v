@@ -557,6 +557,7 @@ class SliverSearchBar extends StatefulWidget {
     this.onChanged,
     this.action,
     this.focusNode,
+    this.title,
   });
 
   final SearchBarController controller;
@@ -566,6 +567,10 @@ class SliverSearchBar extends StatefulWidget {
   final Widget? action;
 
   final FocusNode? focusNode;
+
+  /// Shown in an app bar row with the back button above the field, which
+  /// then has no back button of its own.
+  final String? title;
 
   @override
   State<SliverSearchBar> createState() => _SliverSearchBarState();
@@ -606,6 +611,7 @@ class _SliverSearchBarState extends State<SliverSearchBar>
         onChanged: widget.onChanged,
         action: widget.action,
         focusNode: widget.focusNode,
+        title: widget.title,
       ),
     );
   }
@@ -622,6 +628,8 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
 
   final Widget? action;
 
+  final String? title;
+
   final FocusNode? focusNode;
 
   const _SliverSearchBarDelegate({
@@ -631,9 +639,13 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     this.onChanged,
     this.action,
     this.focusNode,
+    this.title,
   });
 
   static const _kAppBarHeight = 72.0;
+
+  /// The title row of a normal app bar, then the field.
+  static const _kTitledHeight = _kAppBarHeight + 52.0;
 
   @override
   Widget build(
@@ -648,14 +660,16 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
       focusNode: focusNode,
       onChanged: onChanged,
       action: action,
+      title: title,
     );
   }
 
   @override
-  double get maxExtent => _kAppBarHeight + topPadding;
+  double get maxExtent =>
+      (title == null ? _kAppBarHeight : _kTitledHeight) + topPadding;
 
   @override
-  double get minExtent => _kAppBarHeight + topPadding;
+  double get minExtent => maxExtent;
 
   @override
   bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
@@ -665,7 +679,8 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
         topPadding != oldDelegate.topPadding ||
         onChanged != oldDelegate.onChanged ||
         action != oldDelegate.action ||
-        focusNode != oldDelegate.focusNode;
+        focusNode != oldDelegate.focusNode ||
+        title != oldDelegate.title;
   }
 }
 
@@ -723,6 +738,7 @@ class _RoundedSearchBar extends StatelessWidget {
     this.focusNode,
     this.onChanged,
     this.action,
+    this.title,
   });
 
   final TextEditingController editingController;
@@ -730,15 +746,17 @@ class _RoundedSearchBar extends StatelessWidget {
   final double topPadding;
   final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
+  final String? title;
+
   final Widget? action;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    return ColoredBox(
-      color: colors.surface,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(8, topPadding + 8, 16, 8),
+    final field = Padding(
+        padding: title == null
+            ? EdgeInsets.fromLTRB(8, topPadding + 8, 16, 8)
+            : EdgeInsets.fromLTRB(16, topPadding + 52, 16, 8),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1200),
@@ -746,8 +764,10 @@ class _RoundedSearchBar extends StatelessWidget {
               height: 56,
               child: Row(
                 children: [
-                  const BackButton(),
-                  const SizedBox(width: 8),
+                  if (title == null) ...[
+                    const BackButton(),
+                    const SizedBox(width: 8),
+                  ],
                   Expanded(
                     child: TextField(
                       focusNode: focusNode,
@@ -761,7 +781,11 @@ class _RoundedSearchBar extends StatelessWidget {
                           horizontal: 20,
                           vertical: 16,
                         ),
-                        prefixIcon: const Icon(Icons.search),
+                        prefixIcon: Icon(
+                          Icons.search_rounded,
+                          size: 22,
+                          color: colors.onSurfaceVariant,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(28),
                           borderSide: BorderSide.none,
@@ -799,7 +823,46 @@ class _RoundedSearchBar extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      );
+    return ColoredBox(
+      color: colors.surface,
+      child: title == null
+          ? field
+          : Stack(
+              children: [
+                // Laid out like the other pages' app bars.
+                Positioned(
+                  top: topPadding,
+                  left: 0,
+                  right: 0,
+                  height: 52,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: "Back".tl,
+                        child: IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => Navigator.maybePop(context),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          title!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: DefaultTextStyle.of(
+                            context,
+                          ).style.copyWith(fontSize: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                field,
+              ],
+            ),
     );
   }
 }

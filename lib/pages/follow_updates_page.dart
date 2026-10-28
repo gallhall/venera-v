@@ -166,49 +166,50 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SmoothCustomScrollView(
-        slivers: [
-          SliverAppbar(title: Text('Follow Updates'.tl)),
-          if (folder == null)
-            buildNotConfigured(context)
-          else
-            buildConfigured(context),
-          SliverPadding(padding: const EdgeInsets.only(top: 8)),
-          buildUpdatedComics(),
-          buildAllComics(),
-        ],
+      body: AppContentWidth(
+        child: SmoothCustomScrollView(
+          slivers: [
+            SliverAppbar(title: Text('Follow Updates'.tl)),
+            if (folder == null)
+              buildNotConfigured(context)
+            else
+              buildConfigured(context),
+            if (folder != null) ...[
+              const SliverPadding(padding: EdgeInsets.only(top: 8)),
+              buildUpdatedComics(),
+              buildAllComics(),
+            ],
+          ],
+        ),
       ),
     );
   }
 
   Widget buildNotConfigured(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text("Not Configured".tl),
-            ),
+            const AppIconBox(Icons.update, size: 56),
+            const SizedBox(height: 12),
             Text(
-              "Choose a folder to follow updates.".tl,
-              style: ts.s16,
-            ).paddingHorizontal(16),
-            const SizedBox(height: 8),
+              'Not Configured'.tl,
+              style: ts.s14.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Choose a folder to follow updates.'.tl,
+              style: ts.s14.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
             FilledButton.tonal(
               onPressed: showSelector,
-              child: Text("Choose Folder".tl),
-            ).paddingHorizontal(16).toAlign(Alignment.centerRight),
-            const SizedBox(height: 16),
+              child: Text('Choose Folder'.tl),
+            ),
           ],
         ),
       ),
@@ -216,47 +217,53 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
   }
 
   Widget buildConfigured(BuildContext context) {
+    DateTime? lastChecked;
+    for (final comic in allComics) {
+      final time = comic.lastCheckTime;
+      if (time != null && (lastChecked == null || time.isAfter(lastChecked))) {
+        lastChecked = time;
+      }
+    }
     return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
+      child: SectionCard(
+        dense: true,
+        icon: Icons.folder_outlined,
+        title: folder!,
+        body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(
-              leading: Icon(Icons.stars_outlined),
-              title: Text(folder!),
+            Text('Automatic update checking enabled.'.tl, style: ts.s14),
+            Text(
+              'Last checked: @time'.tlParams({
+                'time': lastChecked == null
+                    ? 'None'.tl
+                    : lastChecked.toLocal().toString().split('.').first,
+              }),
+              style: ts.s12.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
             ),
             Text(
-              "Automatic update checking enabled.".tl,
-              style: ts.s14,
-            ).paddingHorizontal(16),
-            Text(
-              "The app will check for updates at most once a day.".tl,
-              style: ts.s14,
-            ).paddingHorizontal(16),
+              'The app will check for updates at most once a day.'.tl,
+              style: ts.s12.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 TextButton(
                   onPressed: showSelector,
-                  child: Text("Change Folder".tl),
+                  child: Text('Change Folder'.tl),
                 ),
                 FilledButton.tonal(
                   onPressed: checkNow,
-                  child: Text("Check Now".tl),
+                  child: Text('Check Now'.tl),
                 ),
-                const SizedBox(width: 16),
               ],
             ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -270,21 +277,13 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  width: 0.6,
-                ),
-              ),
-            ),
             child: Row(
               children: [
                 Icon(Icons.update),
                 const SizedBox(width: 8),
                 Text(
                   "Updates".tl,
-                  style: ts.s18,
+                  style: ts.s14.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
                 if (updatedComics.isNotEmpty)
@@ -315,39 +314,14 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         if (updatedComics.isNotEmpty)
           SliverToBoxAdapter(
             child: Text(
-                    "The comic will be marked as no updates as soon as you read it."
-                        .tl)
-                .paddingHorizontal(16)
-                .paddingVertical(4),
+              "The comic will be marked as no updates as soon as you read it."
+                  .tl,
+            ).paddingHorizontal(16).paddingVertical(4),
           ),
         if (updatedComics.isNotEmpty)
           SliverGridComics(comics: updatedComics)
         else
-          SliverToBoxAdapter(
-            child: Row(
-              children: [
-                Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "No updates found".tl,
-                        style: ts.s16,
-                      ),
-                    ],
-                  ),
-                )
-              ],
-            ),
-          ),
+          SliverToBoxAdapter(child: SectionEmptyState('No updates found'.tl)),
       ],
     );
   }
@@ -359,27 +333,24 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  width: 0.6,
-                ),
-              ),
-            ),
             child: Row(
               children: [
                 Icon(Icons.list),
                 const SizedBox(width: 8),
                 Text(
                   "All Comics".tl,
-                  style: ts.s18,
+                  style: ts.s14.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
         ),
-        SliverGridComics(comics: allComics),
+        if (allComics.isEmpty)
+          SliverToBoxAdapter(
+            child: SectionEmptyState('Nothing to follow yet'.tl),
+          )
+        else
+          SliverGridComics(comics: allComics),
       ],
     );
   }
@@ -394,47 +365,49 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
     showDialog(
       context: App.rootContext,
       builder: (context) {
-        return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
-            title: "Choose Folder".tl,
-            content: Column(
-              children: [
-                ListTile(
-                  title: Text("Folder".tl),
-                  trailing: Select(
-                    minWidth: 120,
-                    current: selectedFolder,
-                    values: folders,
-                    onTap: (i) {
-                      setState(() {
-                        selectedFolder = folders[i];
-                      });
-                    },
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AppSurfaceDialog(
+              title: "Choose Folder".tl,
+              content: Column(
+                children: [
+                  ListTile(
+                    title: Text("Folder".tl),
+                    trailing: Select(
+                      minWidth: 120,
+                      current: selectedFolder,
+                      values: folders,
+                      onTap: (i) {
+                        setState(() {
+                          selectedFolder = folders[i];
+                        });
+                      },
+                    ),
                   ),
+                ],
+              ),
+              actions: [
+                if (appdata.settings["followUpdatesFolder"] != null)
+                  TextButton(
+                    onPressed: () {
+                      disable();
+                      context.pop();
+                    },
+                    child: Text("Disable".tl),
+                  ),
+                FilledButton(
+                  onPressed: selectedFolder == null
+                      ? null
+                      : () {
+                          context.pop();
+                          setFolder(selectedFolder!);
+                        },
+                  child: Text("Confirm".tl),
                 ),
               ],
-            ),
-            actions: [
-              if (appdata.settings["followUpdatesFolder"] != null)
-                TextButton(
-                  onPressed: () {
-                    disable();
-                    context.pop();
-                  },
-                  child: Text("Disable".tl),
-                ),
-              FilledButton(
-                onPressed: selectedFolder == null
-                    ? null
-                    : () {
-                        context.pop();
-                        setFolder(selectedFolder!);
-                      },
-                child: Text("Confirm".tl),
-              ),
-            ],
-          );
-        });
+            );
+          },
+        );
       },
     );
   }
