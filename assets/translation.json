@@ -1,5 +1,9 @@
 {
   "zh_CN": {
+    "Search options": "搜索选项",
+    "Fill": "填入",
+    "No search history": "暂无搜索历史",
+    "No downloads": "暂无下载任务",
     "Playback source": "播放源",
     "No history yet": "暂无阅读记录",
     "Nothing to follow yet": "暂无追更",
@@ -662,6 +666,10 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Search options": "搜尋選項",
+    "Fill": "填入",
+    "No search history": "暫無搜尋歷史",
+    "No downloads": "暫無下載任務",
     "Playback source": "播放來源",
     "No history yet": "暫無閱讀記錄",
     "Nothing to follow yet": "暫無追更",

@@ -952,6 +952,7 @@ void _setDetailSectionCollapsed(String key, bool collapsed) {
 class _SectionCardHeader extends StatelessWidget {
   const _SectionCardHeader({
     required this.icon,
+    this.dense = false,
     required this.title,
     required this.actions,
     required this.leadingActions,
@@ -966,6 +967,8 @@ class _SectionCardHeader extends StatelessWidget {
   final List<Widget> leadingActions;
   final bool expanded;
   final VoidCallback? onToggle;
+  final bool dense;
+
   final VoidCallback? onTap;
 
   @override
@@ -974,12 +977,14 @@ class _SectionCardHeader extends StatelessWidget {
     return InkWell(
       onTap: onTap ?? onToggle,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        padding: dense
+            ? const EdgeInsets.fromLTRB(12, 6, 4, 6)
+            : const EdgeInsets.fromLTRB(16, 12, 8, 12),
         child: Row(
           children: [
             AppIconBox(
               icon,
-              size: 40,
+              size: dense ? 32 : 40,
               color: colors.primaryContainer,
               iconColor: colors.onPrimaryContainer,
             ),
@@ -1014,6 +1019,7 @@ class _SectionCardHeader extends StatelessWidget {
 class SectionCard extends StatefulWidget {
   const SectionCard({
     super.key,
+    this.dense = false,
     required this.icon,
     required this.title,
     this.actions = const [],
@@ -1032,6 +1038,9 @@ class SectionCard extends StatefulWidget {
   final Widget? footer;
   final Widget body;
   final EdgeInsets bodyPadding;
+
+  /// Smaller header without a divider, for dense pages like search.
+  final bool dense;
   final String? collapseKey;
   final VoidCallback? onTap;
 
@@ -1068,6 +1077,7 @@ class _SectionCardState extends State<SectionCard> {
         children: [
           _SectionCardHeader(
             icon: widget.icon,
+            dense: widget.dense,
             title: widget.title,
             actions: widget.actions,
             leadingActions: widget.leadingActions,
@@ -1081,8 +1091,14 @@ class _SectionCardState extends State<SectionCard> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Divider(height: 1, indent: 16, endIndent: 16),
-                Padding(padding: widget.bodyPadding, child: widget.body),
+                if (!widget.dense)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                Padding(
+                  padding: widget.dense
+                      ? const EdgeInsets.fromLTRB(12, 0, 12, 12)
+                      : widget.bodyPadding,
+                  child: widget.body,
+                ),
                 if (widget.footer != null) widget.footer!,
               ],
             ),

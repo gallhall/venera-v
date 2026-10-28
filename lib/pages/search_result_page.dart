@@ -70,7 +70,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
       suggestionsController.entry = OverlayEntry(
         builder: (context) {
           return Positioned(
-            top: context.padding.top + 56,
+            top: context.padding.top + 72,
             left: 0,
             right: 0,
             bottom: 0,
@@ -187,7 +187,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   Widget buildAction() {
     return Tooltip(
       message: "Settings".tl,
-      child: IconButton(
+      child: IconButton.filledTonal(
         icon: const Icon(Icons.tune),
         onPressed: () async {
           if (suggestionOverlay != null) {
@@ -313,42 +313,34 @@ class _SuggestionsState extends State<_Suggestions> {
 
   @override
   Widget build(BuildContext context) {
-    return buildSuggestions(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: AppCard(child: buildSuggestions(context)),
+      ),
+    );
   }
 
   Widget buildSuggestions(BuildContext context) {
-    bool showMethod = MediaQuery.of(context).size.width < 600;
     bool showTranslation = App.locale.languageCode == "zh";
 
     Widget buildItem(Pair<String, TranslationType> value) {
       var subTitle = TagsTranslation.translationTagWithNamespace(
-          value.left, value.right.name);
+        value.left,
+        value.right.name,
+      );
       return ListTile(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Expanded(
-              child: Text(
-                value.left,
-                maxLines: 2,
-              ),
-            ),
-            if (!showMethod)
-              const SizedBox(
-                width: 12,
-              ),
-            if (!showMethod && showTranslation)
-              Text(
-                subTitle,
-                style: TextStyle(
-                    fontSize: 14, color: Theme.of(context).colorScheme.outline),
-              )
-          ],
+        title: Text(value.left, maxLines: 2),
+        subtitle: Text(
+          showTranslation
+              ? '${value.right.name}: $subTitle'
+              : value.right.name,
+          style: TextStyle(color: context.colorScheme.onSurfaceVariant),
         ),
-        subtitle: (showMethod && showTranslation) ? Text(subTitle) : null,
-        trailing: Text(
-          value.right.name,
-          style: const TextStyle(fontSize: 13),
+        trailing: IconButton(
+          tooltip: "Fill".tl,
+          icon: const Icon(Icons.north_west),
+          onPressed: () => onSelected(value.left, value.right),
         ),
         onTap: () => onSelected(value.left, value.right),
       );
@@ -377,7 +369,7 @@ class _SuggestionsState extends State<_Suggestions> {
             itemBuilder: (context, index) =>
                 buildItem(widget.controller.suggestions[index]),
           ),
-        )
+        ),
       ],
     );
   }
@@ -401,13 +393,20 @@ class _SuggestionsState extends State<_Suggestions> {
     var controller = widget.controller.controller;
     var words = controller.text.split(" ");
     if (words.length >= 2 &&
-        check("${words[words.length - 2]} ${words[words.length - 1]}", text,
-            text.translateTagsToCN)) {
+        check(
+          "${words[words.length - 2]} ${words[words.length - 1]}",
+          text,
+          text.translateTagsToCN,
+        )) {
       controller.text = controller.text.replaceLast(
-          "${words[words.length - 2]} ${words[words.length - 1]}", "");
+        "${words[words.length - 2]} ${words[words.length - 1]}",
+        "",
+      );
     } else {
-      controller.text =
-          controller.text.replaceLast(words[words.length - 1], "");
+      controller.text = controller.text.replaceLast(
+        words[words.length - 1],
+        "",
+      );
     }
     final source = ComicSource.find(widget.controller.sourceKey);
     String insert;
@@ -415,7 +414,9 @@ class _SuggestionsState extends State<_Suggestions> {
       insert = source!.onTagSuggestionSelected!(type?.name ?? '', text);
     } else {
       var t = text;
-      if (t.contains(' ')) t = "'$t'";
+      if (t.contains(' ')) {
+        t = "'$t'";
+      }
       insert = type != null ? "${type.name}:$t" : t;
     }
     controller.text += "$insert ";
@@ -457,46 +458,88 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
     sources.removeWhere((e) {
       return !enabled.contains(e.key);
     });
-    return ContentDialog(
-      title: "Settings".tl,
-      content: Column(
-        children: [
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: Text("Search in".tl),
+    return Dialog(
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 600,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 24, right: 8),
+                child: Row(
+                  children: [
+                    Expanded(child: Text("Settings".tl, style: ts.s18)),
+                    IconButton(
+                      tooltip: "Close".tl,
+                      onPressed: () => context.pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              SectionCard(
+                icon: Icons.manage_search,
+                title: "Search in".tl,
+                body: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: sources.map((e) {
+                    return ChoiceChip(
+                      label: Text(e.name.tl),
+                      selected: searchTarget == e.key,
+                      showCheckmark: false,
+                      shape: const StadiumBorder(),
+                      side: BorderSide.none,
+                      backgroundColor: context.colorScheme.surfaceContainerHigh,
+                      selectedColor: context.colorScheme.secondaryContainer,
+                      labelStyle: TextStyle(
+                        color: searchTarget == e.key
+                            ? context.colorScheme.onSecondaryContainer
+                            : context.colorScheme.onSurfaceVariant,
+                      ),
+                      onSelected: (_) {
+                        setState(() {
+                          searchTarget = e.key;
+                          options.clear();
+                          final searchOptions =
+                              ComicSource.find(
+                                searchTarget,
+                              )!.searchPageData!.searchOptions ??
+                              <SearchOptions>[];
+                          options = searchOptions
+                              .map((e) => e.defaultValue)
+                              .toList();
+                          onChanged();
+                        });
+                      },
+                    );
+                  }).toList(),
+                ).fixWidth(double.infinity).paddingHorizontal(16),
+              ),
+              buildSearchOptions(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () => context.pop(),
+                    child: Text("Confirm".tl),
+                  ),
+                ),
+              ),
+            ],
           ),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: sources.map((e) {
-              return OptionChip(
-                text: e.name.tl,
-                isSelected: searchTarget == e.key,
-                onTap: () {
-                  setState(() {
-                    searchTarget = e.key;
-                    options.clear();
-                    final searchOptions = ComicSource.find(searchTarget)!
-                            .searchPageData!
-                            .searchOptions ??
-                        <SearchOptions>[];
-                    options = searchOptions.map((e) => e.defaultValue).toList();
-                    onChanged();
-                  });
-                },
-              );
-            }).toList(),
-          ).fixWidth(double.infinity).paddingHorizontal(16),
-          buildSearchOptions(),
-          const SizedBox(height: 24),
-          FilledButton(
-            child: Text("Confirm".tl),
-            onPressed: () {
-              context.pop();
-            },
-          ),
-        ],
-      ).fixWidth(double.infinity),
+        ),
+      ),
     );
   }
 
@@ -505,7 +548,7 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
 
     final searchOptions =
         ComicSource.find(searchTarget)!.searchPageData!.searchOptions ??
-            <SearchOptions>[];
+        <SearchOptions>[];
     if (searchOptions.length != options.length) {
       options = searchOptions.map((e) => e.defaultValue).toList();
     }
@@ -514,22 +557,24 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
     }
     for (int i = 0; i < searchOptions.length; i++) {
       final option = searchOptions[i];
-      children.add(SearchOptionWidget(
-        option: option,
-        value: options[i],
-        onChanged: (value) {
-          setState(() {
-            options[i] = value;
-          });
-        },
-        sourceKey: searchTarget,
-      ));
+      children.add(
+        SearchOptionWidget(
+          option: option,
+          value: options[i],
+          onChanged: (value) {
+            setState(() {
+              options[i] = value;
+            });
+          },
+          sourceKey: searchTarget,
+        ),
+      );
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
+    return SectionCard(
+      icon: Icons.tune,
+      title: "Search options".tl,
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: children,

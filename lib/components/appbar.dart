@@ -633,63 +633,21 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     this.focusNode,
   });
 
-  static const _kAppBarHeight = 52.0;
+  static const _kAppBarHeight = 72.0;
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      height: _kAppBarHeight + topPadding,
-      width: double.infinity,
-      padding: EdgeInsets.only(top: topPadding),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          const BackButton(),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: TextField(
-                focusNode: focusNode,
-                controller: editingController,
-                decoration: InputDecoration(
-                  hintText: "Search".tl,
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (text) {
-                  controller.onSearch?.call(text);
-                },
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-          ListenableBuilder(
-            listenable: editingController,
-            builder: (context, child) {
-              return editingController.text.isEmpty
-                  ? const SizedBox()
-                  : IconButton(
-                      iconSize: 20,
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        editingController.clear();
-                        onChanged?.call("");
-                      },
-                    );
-            },
-          ),
-          if (action != null) action!,
-          const SizedBox(width: 8),
-        ],
-      ),
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return _RoundedSearchBar(
+      editingController: editingController,
+      controller: controller,
+      topPadding: topPadding,
+      focusNode: focusNode,
+      onChanged: onChanged,
+      action: action,
     );
   }
 
@@ -704,7 +662,10 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     return oldDelegate is! _SliverSearchBarDelegate ||
         editingController != oldDelegate.editingController ||
         controller != oldDelegate.controller ||
-        topPadding != oldDelegate.topPadding;
+        topPadding != oldDelegate.topPadding ||
+        onChanged != oldDelegate.onChanged ||
+        action != oldDelegate.action ||
+        focusNode != oldDelegate.focusNode;
   }
 }
 
@@ -745,53 +706,99 @@ class _SearchBarState extends State<AppSearchBar> with _SearchBarMixin {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
-    return Container(
-      height: _kAppBarHeight + topPadding,
-      width: double.infinity,
-      padding: EdgeInsets.only(top: topPadding),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          const BackButton(),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: TextField(
-                controller: _editingController,
-                decoration: InputDecoration(
-                  hintText: "Search".tl,
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (text) {
-                  _controller.onSearch?.call(text);
-                },
+    return _RoundedSearchBar(
+      editingController: _editingController,
+      controller: _controller,
+      topPadding: topPadding,
+      action: widget.action,
+    );
+  }
+}
+
+class _RoundedSearchBar extends StatelessWidget {
+  const _RoundedSearchBar({
+    required this.editingController,
+    required this.controller,
+    required this.topPadding,
+    this.focusNode,
+    this.onChanged,
+    this.action,
+  });
+
+  final TextEditingController editingController;
+  final SearchBarController controller;
+  final double topPadding;
+  final FocusNode? focusNode;
+  final ValueChanged<String>? onChanged;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return ColoredBox(
+      color: colors.surface,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(8, topPadding + 8, 16, 8),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            child: SizedBox(
+              height: 56,
+              child: Row(
+                children: [
+                  const BackButton(),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      focusNode: focusNode,
+                      controller: editingController,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: "Search".tl,
+                        filled: true,
+                        fillColor: colors.surfaceContainerHigh,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 16,
+                        ),
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide(color: colors.primary),
+                        ),
+                        suffixIcon: ListenableBuilder(
+                          listenable: editingController,
+                          builder: (context, child) =>
+                              editingController.text.isEmpty
+                              ? const SizedBox.shrink()
+                              : IconButton(
+                                  tooltip: "Clear".tl,
+                                  icon: const Icon(Icons.clear, size: 20),
+                                  onPressed: () {
+                                    editingController.clear();
+                                    onChanged?.call("");
+                                  },
+                                ),
+                        ),
+                      ),
+                      onSubmitted: (text) => controller.onSearch?.call(text),
+                      onChanged: onChanged,
+                    ),
+                  ),
+                  if (action != null) action!,
+                ],
               ),
             ),
           ),
-          ListenableBuilder(
-            listenable: _editingController,
-            builder: (context, child) {
-              return _editingController.text.isEmpty
-                  ? const SizedBox()
-                  : IconButton(
-                      iconSize: 20,
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _editingController.clear();
-                      },
-                    );
-            },
-          ),
-          if (widget.action != null) widget.action!,
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
     );
   }
