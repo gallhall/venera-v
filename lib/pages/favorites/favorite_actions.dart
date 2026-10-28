@@ -10,7 +10,7 @@ Future<String?> newFolder() async {
         String? error;
 
         return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
+          return _FavoriteDialog(
             title: "New Folder".tl,
             content: Column(
               children: [
@@ -87,20 +87,18 @@ void addFavorite(List<Comic> comics) {
       String? selectedFolder = appdata.settings['quickFavorite'];
 
       return StatefulBuilder(builder: (context, setState) {
-        return ContentDialog(
+        return _FavoriteDialog(
           title: "Select a folder".tl,
-          content: ListTile(
-            title: Text("Folder".tl),
-            trailing: Select(
-              current: selectedFolder,
-              values: folders,
-              minWidth: 112,
-              onTap: (v) {
-                setState(() {
-                  selectedFolder = folders[v];
-                });
-              },
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final folder in folders)
+                OptionRow(
+                  text: folder,
+                  selected: folder == selectedFolder,
+                  onTap: () => setState(() => selectedFolder = folder),
+                ),
+            ],
           ),
           actions: [
             // Without leaving for the favorites page, and selected once
@@ -110,10 +108,14 @@ void addFavorite(List<Comic> comics) {
               label: Text("New Folder".tl),
               onPressed: () async {
                 var name = await newFolder();
-                if (!context.mounted) return;
+                if (!context.mounted) {
+                  return;
+                }
                 setState(() {
                   folders = LocalFavoritesManager().folderNames;
-                  if (name != null) selectedFolder = name;
+                  if (name != null) {
+                    selectedFolder = name;
+                  }
                 });
               },
             ).paddingRight(4),
@@ -211,7 +213,7 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
         valueListenable: finished,
         builder: (context, value, child) {
           var isFinished = value == comics.length;
-          return ContentDialog(
+          return _FavoriteDialog(
             title: isFinished ? "Finished".tl : "Updating".tl,
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -273,10 +275,10 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
 Future<void> sortFolders() async {
   var folders = LocalFavoritesManager().folderNames;
 
-  await showPopUpWidget(
+  await _showFavoritePanel(
     App.rootContext,
     StatefulBuilder(builder: (context, setState) {
-      return PopUpWidgetScaffold(
+      return _FavoritePanel(
         title: "Sort".tl,
         tailing: [
           Tooltip(
@@ -451,7 +453,7 @@ Future<void> importNetworkFolder(
         builder: (context, setState) {
           updateDialog = () => setState(() {});
           closeDialog = () => Navigator.pop(context);
-          return ContentDialog(
+          return _FavoriteDialog(
             title: isFinished
                 ? "Finished".tl
                 : isErrored()
@@ -522,4 +524,157 @@ Future<void> importNetworkFolder(
   } catch (e, stackTrace) {
     Log.error("Unhandled Exception", e.toString(), stackTrace);
   }
+}
+
+/// Keep complex favorites forms bounded on desktop and on a tonal surface.
+class _FavoriteDialog extends StatelessWidget {
+  const _FavoriteDialog({
+    this.title,
+    required this.content,
+    this.actions = const [],
+  });
+
+  final String? title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 12, 16),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(title!, style: ts.s18)),
+                      IconButton(
+                        tooltip: "Close".tl,
+                        onPressed: () => context.pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+              content,
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 4,
+                  runSpacing: 8,
+                  children: actions,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showFavoritePanel(BuildContext context, Widget child) async {
+  final height = MediaQuery.sizeOf(context).height * 0.85;
+  if (MediaQuery.sizeOf(context).width < 600) {
+    await showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (context) => SizedBox(height: height, child: child),
+    );
+  } else {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: context.colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(width: 520, height: height, child: child),
+      ),
+    );
+  }
+}
+
+class _FavoritePanel extends StatelessWidget {
+  const _FavoritePanel({required this.title, required this.body, this.tailing});
+
+  final String title;
+  final Widget body;
+  final List<Widget>? tailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: context.colorScheme.surfaceContainerLow,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: "Close".tl,
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(title, style: ts.s18)),
+                  ...?tailing,
+                ],
+              ),
+            ),
+            Expanded(child: body),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showFavoriteConfirmDialog({
+  required BuildContext context,
+  required String title,
+  required String content,
+  required VoidCallback onConfirm,
+  Color? btnColor,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => _FavoriteDialog(
+      title: title,
+      content: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        child: Text(content),
+      ),
+      actions: [
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: btnColor),
+          onPressed: () {
+            context.pop();
+            onConfirm();
+          },
+          child: Text("Confirm".tl),
+        ),
+      ],
+    ),
+  );
 }

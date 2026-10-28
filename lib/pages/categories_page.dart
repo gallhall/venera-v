@@ -161,90 +161,73 @@ class _CategoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var children = <Widget>[];
+    final children = <Widget>[];
     if (data.enableRankingPage || data.buttons.isNotEmpty) {
-      children.add(buildTitle(data.title));
       children.add(
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
-          child: Wrap(
+        SectionCard(
+          icon: Icons.leaderboard_outlined,
+          title: data.title.tl,
+          body: Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               if (data.enableRankingPage)
                 buildTag("Ranking".tl, () {
                   context.to(() => RankingPage(categoryKey: data.key));
-                }),
-              for (var buttonData in data.buttons)
-                buildTag(buttonData.label.tl, buttonData.onTap),
+                }, highlighted: true),
+              for (var button in data.buttons)
+                buildTag(button.label.tl, button.onTap),
             ],
           ),
         ),
       );
     }
-
     for (var part in data.categories) {
+      Widget buildPart(VoidCallback? refresh) {
+        return SectionCard(
+          icon: Icons.label_outline,
+          title: part.title.tl,
+          actions: [
+            if (refresh != null)
+              IconButton(
+                tooltip: "Refresh".tl,
+                onPressed: refresh,
+                icon: const Icon(Icons.refresh),
+              ),
+          ],
+          body: buildTags(part.categories),
+        );
+      }
+
       if (part.enableRandom) {
         children.add(
           StatefulBuilder(
-            builder: (context, updater) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  buildTitleWithRefresh(part.title, () => updater(() {})),
-                  buildTags(part.categories),
-                ],
-              );
-            },
+            builder: (context, updater) => buildPart(() => updater(() {})),
           ),
         );
       } else {
-        children.add(buildTitle(part.title));
-        children.add(buildTags(part.categories));
+        children.add(buildPart(null));
       }
     }
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: children,
-      ),
-    );
-  }
-
-  Widget buildTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
-      child: Text(
-        title.tl,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-      ),
-    );
-  }
-
-  Widget buildTitleWithRefresh(String title, void Function() onRefresh) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
-      child: Row(
-        children: [
-          Text(
-            title.tl,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(top: 8, bottom: context.padding.bottom + 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
           ),
-          const Spacer(),
-          IconButton(onPressed: onRefresh, icon: const Icon(Icons.refresh)),
-        ],
+        ),
       ),
     );
   }
 
   Widget buildTags(List<CategoryItem> categories) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
-      child: Wrap(
-        children: List<Widget>.generate(
-          categories.length,
-          (index) => buildCategory(categories[index]),
-        ),
-      ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: categories.map(buildCategory).toList(),
     );
   }
 
@@ -255,25 +238,38 @@ class _CategoryPage extends StatelessWidget {
     });
   }
 
-  Widget buildTag(String label, VoidCallback onClick) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      child: Builder(
-        builder: (context) {
-          return Material(
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
-            color: context.colorScheme.primaryContainer.toOpacity(0.72),
-            child: InkWell(
-              borderRadius: const BorderRadius.all(Radius.circular(8)),
-              onTap: onClick,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Text(label),
+  Widget buildTag(
+    String label,
+    VoidCallback onClick, {
+    bool highlighted = false,
+  }) {
+    return Builder(
+      builder: (context) {
+        final colors = context.colorScheme;
+        final radius = BorderRadius.circular(10);
+        return Material(
+          borderRadius: radius,
+          color: highlighted
+              ? colors.secondaryContainer
+              : colors.surfaceContainerHigh,
+          child: InkWell(
+            borderRadius: radius,
+            mouseCursor: SystemMouseCursors.click,
+            onTap: onClick,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Text(
+                label,
+                style: ts.s14.copyWith(
+                  color: highlighted
+                      ? colors.onSecondaryContainer
+                      : colors.onSurface,
+                ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 

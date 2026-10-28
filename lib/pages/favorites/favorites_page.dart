@@ -95,7 +95,12 @@ class _FavoritesPageState extends State<FavoritesPage> {
             left: context.width <= _kTwoPanelChangeWidth ? 0 : _kLeftBarWidth,
             right: 0,
             bottom: 0,
-            child: buildBody(),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: buildBody(),
+              ),
+            ),
           ),
         ],
       ),
@@ -107,11 +112,14 @@ class _FavoritesPageState extends State<FavoritesPage> {
       barrierDismissible: true,
       fullscreenDialog: true,
       opaque: false,
-      barrierColor: Colors.black.toOpacity(0.36),
+      barrierColor: context.colorScheme.scrim.toOpacity(0.36),
       pageBuilder: (context, animation, secondary) {
         return Align(
           alignment: Alignment.centerLeft,
           child: Material(
+            color: context.colorScheme.surfaceContainerLow,
+            borderRadius: const BorderRadius.horizontal(right: Radius.circular(28)),
+            clipBehavior: Clip.antiAlias,
             child: SizedBox(
               width: min(300, context.width - 16),
               child: _LeftBar(
@@ -144,21 +152,28 @@ class _FavoritesPageState extends State<FavoritesPage> {
       return CustomScrollView(
         slivers: [
           SliverAppbar(
-            leading: Tooltip(
-              message: "Folders".tl,
-              child: context.width <= _kTwoPanelChangeWidth
-                  ? IconButton(
-                      icon: const Icon(Icons.menu),
-                      color: context.colorScheme.primary,
+            leading: const SizedBox.shrink(),
+            title: _FavoriteFolderTitle("Favorites".tl, onTap: showFolderSelector),
+          ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const AppIconBox(Icons.folder_open, size: 56),
+                    const SizedBox(height: 16),
+                    Text("Unselected".tl, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    FilledButton.tonal(
                       onPressed: showFolderSelector,
-                    )
-                  : null,
-            ),
-            title: GestureDetector(
-              onTap: context.width < _kTwoPanelChangeWidth
-                  ? showFolderSelector
-                  : null,
-              child: Text("Unselected".tl),
+                      child: Text("Folders".tl),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -184,4 +199,63 @@ abstract interface class FolderList {
   void update();
 
   void updateFolders();
+}
+
+class _FavoriteFolderTitle extends StatelessWidget {
+  const _FavoriteFolderTitle(this.title, {required this.onTap});
+
+  final String title;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (context.width > _kTwoPanelChangeWidth) {
+      return Text(title);
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Tooltip(
+        message: "Folders".tl,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(28),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteMenuButton extends StatelessWidget {
+  const _FavoriteMenuButton({required this.entries});
+
+  final List<MenuEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'more'.tl,
+      icon: const Icon(Icons.more_horiz),
+      onPressed: () {
+        final box = context.findRenderObject() as RenderBox;
+        showMenuX(context, box.localToGlobal(Offset.zero), entries);
+      },
+    );
+  }
 }

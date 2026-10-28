@@ -155,11 +155,23 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     int group,
     BuildContext context,
   ) {
-    return OptionChip(
-      text: text.ts(sourceKey),
-      isSelected: value == optionsValue[group],
-      onTap: () {
-        if (value == optionsValue[group]) return;
+    return ChoiceChip(
+      label: Text(text.ts(sourceKey)),
+      selected: value == optionsValue[group],
+      showCheckmark: false,
+      shape: const StadiumBorder(),
+      side: BorderSide.none,
+      backgroundColor: context.colorScheme.surfaceContainerHigh,
+      selectedColor: context.colorScheme.secondaryContainer,
+      labelStyle: TextStyle(
+        color: value == optionsValue[group]
+            ? context.colorScheme.onSecondaryContainer
+            : context.colorScheme.onSurface,
+      ),
+      onSelected: (_) {
+        if (value == optionsValue[group]) {
+          return;
+        }
         setState(() {
           optionsValue[group] = value;
         });
@@ -186,36 +198,27 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
           ),
         ));
       }
-      if (optionList.options.length <= 8) {
-        children.add(
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (var option in optionList.options.entries)
-                buildOptionItem(
-                  option.value.tl,
-                  option.key,
-                  group,
-                  context,
-                ),
-            ],
+      children.add(
+        HorizontalCoverList(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var option in optionList.options.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: buildOptionItem(
+                      option.value.tl,
+                      option.key,
+                      group,
+                      context,
+                    ),
+                  ),
+              ],
+            ),
           ),
-        );
-      } else {
-        var g = group;
-        children.add(Select(
-          current: optionList.options[optionsValue[g]],
-          values: optionList.options.values.toList(),
-          onTap: (i) {
-            var key = optionList.options.keys.elementAt(i);
-            if (key == optionsValue[g]) return;
-            setState(() {
-              optionsValue[g] = key;
-            });
-          },
-        ));
-      }
+        ),
+      );
       if (options!.last != optionList) {
         children.add(const SizedBox(height: 8));
       }
@@ -224,7 +227,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [...children, const Divider()],
-    ).paddingLeft(8).paddingRight(8);
+      children: [...children, const SizedBox(height: 12)],
+    ).paddingHorizontal(16);
   }
 }

@@ -294,11 +294,9 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                     )
                   : const SizedBox(),
             ),
-            title: GestureDetector(
-              onTap: context.width < _kTwoPanelChangeWidth
-                  ? favPage.showFolderSelector
-                  : null,
-              child: Text(title),
+            title: _FavoriteFolderTitle(
+              title,
+              onTap: favPage.showFolderSelector,
             ),
             actions: [
               if (networkSource != null && !isAllFolder)
@@ -387,7 +385,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                 ),
               ),
               if (!isAllFolder)
-                MenuButton(
+                _FavoriteMenuButton(
                   entries: [
                     MenuEntry(
                       icon: Icons.edit_outlined,
@@ -466,7 +464,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       text: "Delete Folder".tl,
                       color: context.colorScheme.error,
                       onClick: () {
-                        showConfirmDialog(
+                        _showFavoriteConfirmDialog(
                           context: App.rootContext,
                           title: "Delete".tl,
                           content: "Delete folder '@f' ?".tlParams({
@@ -486,113 +484,125 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
             ],
           )
         else if (multiSelectMode)
-          SliverAppbar(
-            style: context.width < changePoint
-                ? AppbarStyle.shadow
-                : AppbarStyle.blur,
-            leading: Tooltip(
-              message: "Cancel".tl,
-              child: IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () {
-                  setState(() {
-                    multiSelectMode = false;
-                    selectedComics.clear();
-                  });
-                },
+          Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: context.colorScheme.copyWith(
+                surface: context.colorScheme.surfaceContainer,
               ),
             ),
-            title: Text(
-                "Selected @c comics".tlParams({"c": selectedComics.length})),
-            actions: [
-              MenuButton(entries: [
-                if (!isAllFolder)
-                  MenuEntry(
-                      icon: Icons.drive_file_move,
-                      text: "Move to folder".tl,
-                      onClick: () => favoriteOption('move')),
-                if (!isAllFolder)
-                  MenuEntry(
-                      icon: Icons.copy,
-                      text: "Copy to folder".tl,
-                      onClick: () => favoriteOption('add')),
-                MenuEntry(
-                    icon: Icons.select_all,
-                    text: "Select All".tl,
-                    onClick: selectAll),
-                MenuEntry(
-                    icon: Icons.deselect,
-                    text: "Deselect".tl,
-                    onClick: _cancel),
-                MenuEntry(
-                    icon: Icons.flip,
-                    text: "Invert Selection".tl,
-                    onClick: invertSelection),
-                if (!isAllFolder)
-                  MenuEntry(
-                      icon: Icons.delete_outline,
-                      text: "Delete Comic".tl,
-                      color: context.colorScheme.error,
-                      onClick: () {
-                        showConfirmDialog(
-                          context: context,
-                          title: "Delete".tl,
-                          content: "Delete @c comics?"
-                              .tlParams({"c": selectedComics.length}),
-                          btnColor: context.colorScheme.error,
-                          onConfirm: () {
-                            _deleteComicWithId();
-                          },
-                        );
-                      }),
-                MenuEntry(
-                  icon: Icons.download,
-                  text: "Download".tl,
-                  onClick: downloadSelected,
+            child: SliverAppbar(
+              style: AppbarStyle.shadow,
+              leading: Tooltip(
+                message: "Cancel".tl,
+                child: IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    setState(() {
+                      multiSelectMode = false;
+                      selectedComics.clear();
+                    });
+                  },
                 ),
-                if (selectedComics.length == 1)
-                  MenuEntry(
-                    icon: Icons.copy,
-                    text: "Copy Title".tl,
-                    onClick: () {
-                      Clipboard.setData(
-                        ClipboardData(
-                          text: selectedComics.keys.first.title,
-                        ),
-                      );
-                      context.showMessage(
-                        message: "Copied".tl,
-                      );
-                    },
+              ),
+              title: Text(
+                "Selected @c comics".tlParams({"c": selectedComics.length}),
+              ),
+              actions: [
+                if (!isAllFolder)
+                  IconButton(
+                    tooltip: "Move to folder".tl,
+                    icon: const Icon(Icons.drive_file_move_outlined),
+                    onPressed: () => favoriteOption('move'),
                   ),
-                if (selectedComics.length == 1)
-                  MenuEntry(
-                    icon: Icons.chrome_reader_mode_outlined,
-                    text: "Read".tl,
-                    onClick: () {
-                      final c = selectedComics.keys.first as FavoriteItem;
-                      App.rootContext.to(() => ReaderWithLoading(
-                            id: c.id,
-                            sourceKey: c.sourceKey,
-                          )
-                      );
-                    },
+                if (!isAllFolder)
+                  IconButton(
+                    tooltip: "Copy to folder".tl,
+                    icon: const Icon(Icons.copy_outlined),
+                    onPressed: () => favoriteOption('add'),
                   ),
-                if (selectedComics.length == 1)
-                  MenuEntry(
-                    icon: Icons.arrow_forward_ios,
-                    text: "Jump to Detail".tl,
-                    onClick: () {
-                      final c = selectedComics.keys.first as FavoriteItem;
-                      App.mainNavigatorKey?.currentContext?.to(() => ComicPage(
-                            id: c.id,
-                            sourceKey: c.sourceKey,
-                          )
-                      );
-                    },
-                  ),
-              ]),
-            ],
+                _FavoriteMenuButton(
+                  entries: [
+                    MenuEntry(
+                      icon: Icons.select_all,
+                      text: "Select All".tl,
+                      onClick: selectAll,
+                    ),
+                    MenuEntry(
+                      icon: Icons.deselect,
+                      text: "Deselect".tl,
+                      onClick: _cancel,
+                    ),
+                    MenuEntry(
+                      icon: Icons.flip,
+                      text: "Invert Selection".tl,
+                      onClick: invertSelection,
+                    ),
+                    if (!isAllFolder)
+                      MenuEntry(
+                        icon: Icons.delete_outline,
+                        text: "Delete Comic".tl,
+                        color: context.colorScheme.error,
+                        onClick: () {
+                          _showFavoriteConfirmDialog(
+                            context: context,
+                            title: "Delete".tl,
+                            content: "Delete @c comics?".tlParams({
+                              "c": selectedComics.length,
+                            }),
+                            btnColor: context.colorScheme.error,
+                            onConfirm: () {
+                              _deleteComicWithId();
+                            },
+                          );
+                        },
+                      ),
+                    MenuEntry(
+                      icon: Icons.download,
+                      text: "Download".tl,
+                      onClick: downloadSelected,
+                    ),
+                    if (selectedComics.length == 1)
+                      MenuEntry(
+                        icon: Icons.copy,
+                        text: "Copy Title".tl,
+                        onClick: () {
+                          Clipboard.setData(
+                            ClipboardData(
+                              text: selectedComics.keys.first.title,
+                            ),
+                          );
+                          context.showMessage(message: "Copied".tl);
+                        },
+                      ),
+                    if (selectedComics.length == 1)
+                      MenuEntry(
+                        icon: Icons.chrome_reader_mode_outlined,
+                        text: "Read".tl,
+                        onClick: () {
+                          final c = selectedComics.keys.first as FavoriteItem;
+                          App.rootContext.to(
+                            () => ReaderWithLoading(
+                              id: c.id,
+                              sourceKey: c.sourceKey,
+                            ),
+                          );
+                        },
+                      ),
+                    if (selectedComics.length == 1)
+                      MenuEntry(
+                        icon: Icons.arrow_forward_ios,
+                        text: "Jump to Detail".tl,
+                        onClick: () {
+                          final c = selectedComics.keys.first as FavoriteItem;
+                          App.mainNavigatorKey?.currentContext?.to(
+                            () => ComicPage(id: c.id, sourceKey: c.sourceKey),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
           )
         else if (searchMode)
           SliverAppbar(
@@ -616,7 +626,24 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               autofocus: true,
               decoration: InputDecoration(
                 hintText: "Search".tl,
-                border: UnderlineInputBorder(),
+                filled: true,
+                fillColor: context.colorScheme.surfaceContainerHigh,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                  borderSide: BorderSide(color: context.colorScheme.primary),
+                ),
               ),
               onChanged: (v) {
                 keyword = v;
@@ -794,11 +821,11 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
         .where((folder) => folder != favPage.folder)
         .toList();
 
-    showPopUpWidget(
+    _showFavoritePanel(
       App.rootContext,
       StatefulBuilder(
         builder: (context, setState) {
-          return PopUpWidgetScaffold(
+          return _FavoritePanel(
             title: favPage.folder ?? "Unselected".tl,
             body: Padding(
               padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
@@ -1167,45 +1194,21 @@ const readFilterList = ['All', 'UnCompleted', 'Completed'];
 
 class _LocalFavoritesFilterDialogState
     extends State<_LocalFavoritesFilterDialog> {
-  List<String> optionTypes = ['Filter'];
   late var readFilter = widget.initReadFilterSelect;
   @override
   Widget build(BuildContext context) {
-    Widget tabBar = Material(
-      borderRadius: BorderRadius.circular(8),
-      child: AppTabBar(
-        key: PageStorageKey(optionTypes),
-        tabs: optionTypes.map((e) => Tab(text: e.tl, key: Key(e))).toList(),
-      ),
-    ).paddingTop(context.padding.top);
-    return ContentDialog(
-      content: DefaultTabController(
-        length: 2,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            tabBar,
-            TabViewBody(children: [
-              Column(
-                children: [
-                  ListTile(
-                    title: Text("Filter reading status".tl),
-                    trailing: Select(
-                      current: readFilter.tl,
-                      values: readFilterList.map((e) => e.tl).toList(),
-                      minWidth: 64,
-                      onTap: (index) {
-                        setState(() {
-                          readFilter = readFilterList[index];
-                        });
-                      },
-                    ),
-                  )
-                ],
-              )
-            ]),
-          ],
-        ),
+    return _FavoriteDialog(
+      title: "Filter reading status".tl,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final value in readFilterList)
+            OptionRow(
+              text: value.tl,
+              selected: readFilter == value,
+              onTap: () => setState(() => readFilter = value),
+            ),
+        ],
       ),
       actions: [
         FilledButton(
