@@ -59,13 +59,12 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
       width: double.infinity,
       height: double.infinity,
       decoration: BoxDecoration(
-        border: Border(
-          right: BorderSide(
-            color: context.colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-        ),
+        color: context.colorScheme.surfaceContainerLow,
+        borderRadius: widget.withAppbar
+            ? const BorderRadius.horizontal(right: Radius.circular(28))
+            : null,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           if (widget.withAppbar)
@@ -117,17 +116,24 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
 
   Widget buildLocalTitle() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
       child: Row(
         children: [
           Icon(
-            Icons.local_activity,
-            color: context.colorScheme.secondary,
+            Icons.folder_outlined,
+            size: 20,
+            color: context.colorScheme.primary,
           ),
           const SizedBox(width: 12),
-          Text("Local".tl),
+          Text(
+            "Local".tl,
+            style: ts.s14.copyWith(
+              fontWeight: FontWeight.w600,
+              color: context.colorScheme.primary,
+            ),
+          ),
           const Spacer(),
-          MenuButton(
+          _FavoriteMenuButton(
             entries: [
               MenuEntry(
                 icon: Icons.add,
@@ -154,32 +160,32 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
             ],
           ),
         ],
-      ).paddingHorizontal(16),
+      ),
     );
   }
 
   Widget buildNetworkTitle() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
       margin: const EdgeInsets.only(top: 8),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: context.colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-        ),
-      ),
       child: Row(
         children: [
           Icon(
-            Icons.cloud,
-            color: context.colorScheme.secondary,
+            Icons.cloud_outlined,
+            size: 20,
+            color: context.colorScheme.primary,
           ),
           const SizedBox(width: 12),
-          Text("Network".tl),
+          Text(
+            "Network".tl,
+            style: ts.s14.copyWith(
+              fontWeight: FontWeight.w600,
+              color: context.colorScheme.primary,
+            ),
+          ),
           const Spacer(),
           IconButton(
+            tooltip: "Manage".tl,
             icon: const Icon(Icons.settings),
             onPressed: () {
               showPopUpWidget(
@@ -189,7 +195,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
             },
           ),
         ],
-      ).paddingHorizontal(16),
+      ),
     );
   }
 
@@ -204,7 +210,11 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
     var folderName = name == _localAllFolderLabel
         ? "All".tl
         : getFavoriteDataOrNull(name)?.title ?? name;
-    return InkWell(
+    return buildFolderRow(
+      title: folderName,
+      selected: isSelected,
+      icon: isSelected ? Icons.folder : Icons.folder_outlined,
+      count: count,
       onTap: () {
         if (isSelected) {
           return;
@@ -212,42 +222,6 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
         favPage.setFolder(false, name);
         widget.onSelected?.call();
       },
-      child: Container(
-        height: 42,
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? context.colorScheme.primaryContainer.toOpacity(0.36)
-              : null,
-          border: Border(
-            left: BorderSide(
-              color:
-                  isSelected ? context.colorScheme.primary : Colors.transparent,
-              width: 2,
-            ),
-          ),
-        ),
-        padding: const EdgeInsets.only(left: 16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(folderName),
-            ),
-            Container(
-              margin: EdgeInsets.only(right: 8),
-              padding: EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(count.toString()),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -256,45 +230,88 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
     if (data == null) {
       return const SizedBox();
     }
-    bool isSelected = key == favPage.folder && favPage.isNetwork;
-    return InkWell(
+    final selected = key == favPage.folder && favPage.isNetwork;
+    return buildFolderRow(
+      title: data.title,
+      selected: selected,
+      icon: Icons.cloud_outlined,
       onTap: () {
-        if (isSelected) {
+        if (selected) {
           return;
         }
         favPage.setFolder(true, key);
         widget.onSelected?.call();
       },
-      child: Container(
-        height: 42,
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? context.colorScheme.primaryContainer.toOpacity(0.36)
-              : null,
-          border: Border(
-            left: BorderSide(
-              color:
-                  isSelected ? context.colorScheme.primary : Colors.transparent,
-              width: 2,
+    );
+  }
+
+  Widget buildFolderRow({
+    required String title,
+    required bool selected,
+    required IconData icon,
+    required VoidCallback onTap,
+    int? count,
+  }) {
+    final colors = context.colorScheme;
+    final foreground = selected
+        ? colors.onSecondaryContainer
+        : colors.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: selected
+            ? colors.secondaryContainer
+            : colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(28),
+          mouseCursor: SystemMouseCursors.click,
+          child: SizedBox(
+            height: 48,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(icon, size: 20, color: foreground),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts.s14.copyWith(
+                        color: foreground,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ),
+                  if (count != null) ...[
+                    const SizedBox(width: 8),
+                    Text('$count', style: ts.s14.copyWith(color: foreground)),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
-        padding: const EdgeInsets.only(left: 16),
-        child: Text(data.title),
       ),
     );
   }
 
   @override
   void update() {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {});
   }
 
   @override
   void updateFolders() {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       folders = LocalFavoritesManager().folderNames;
       findNetworkFolders();

@@ -18,7 +18,7 @@ Future<bool> _deleteComic(
     builder: (context) {
       bool loading = false;
       return StatefulBuilder(builder: (context, setState) {
-        return ContentDialog(
+        return _FavoriteDialog(
           title: "Remove".tl,
           content: Text("Remove comic from favorite?".tl).paddingHorizontal(16),
           actions: [
@@ -107,10 +107,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
                 )
               : null,
         ),
-        title: GestureDetector(
-          onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
-          child: Text(widget.data.title),
-        ),
+        title: _FavoriteFolderTitle(widget.data.title, onTap: showFolders),
         actions: [
           Tooltip(
             message: "Refresh".tl,
@@ -123,7 +120,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
               },
             ),
           ),
-          MenuButton(entries: [
+          _FavoriteMenuButton(entries: [
             MenuEntry(
               icon: Icons.sync,
               text: "Convert to local".tl,
@@ -147,10 +144,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
                 )
               : null,
         ),
-        title: GestureDetector(
-          onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
-          child: Text(widget.data.title),
-        ),
+        title: _FavoriteFolderTitle(widget.data.title, onTap: showFolders),
       ),
       loadPage: widget.data.loadComic == null
           ? null
@@ -238,10 +232,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
               )
             : null,
       ),
-      title: GestureDetector(
-        onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
-        child: Text(widget.data.title),
-      ),
+      title: _FavoriteFolderTitle(widget.data.title, onTap: showFolders),
     );
 
     var appBar = Appbar(
@@ -255,10 +246,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
               )
             : null,
       ),
-      title: GestureDetector(
-        onTap: context.width < _kTwoPanelChangeWidth ? showFolders : null,
-        child: Text(widget.data.title),
-      ),
+      title: _FavoriteFolderTitle(widget.data.title, onTap: showFolders),
     );
 
     if (_loading) {
@@ -439,7 +427,7 @@ class _FolderTile extends StatelessWidget {
       builder: (context) {
         bool loading = false;
         return StatefulBuilder(builder: (context, setState) {
-          return ContentDialog(
+          return _FavoriteDialog(
             title: "Delete".tl,
             content: Text("Delete folder?".tl).paddingHorizontal(16),
             actions: [
@@ -489,7 +477,7 @@ class _CreateFolderDialogState extends State<_CreateFolderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return ContentDialog(
+    return _FavoriteDialog(
       title: "Create a folder".tl,
       content: Column(
         children: [
@@ -554,7 +542,7 @@ class _FavoriteFolder extends StatelessWidget {
       leadingSliver: SliverAppbar(
         title: Text(title),
         actions: [
-          MenuButton(entries: [
+          _FavoriteMenuButton(entries: [
             MenuEntry(
               icon: Icons.sync,
               text: "Convert to local".tl,

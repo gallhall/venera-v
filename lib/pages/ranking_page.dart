@@ -67,11 +67,23 @@ class _RankingPageState extends State<RankingPage> {
   }
 
   Widget buildOptionItem(String text, String value, BuildContext context) {
-    return OptionChip(
-      text: text,
-      isSelected: value == optionValue,
-      onTap: () {
-        if (value == optionValue) return;
+    return ChoiceChip(
+      label: Text(text),
+      selected: value == optionValue,
+      showCheckmark: false,
+      shape: const StadiumBorder(),
+      side: BorderSide.none,
+      backgroundColor: context.colorScheme.surfaceContainerHigh,
+      selectedColor: context.colorScheme.secondaryContainer,
+      labelStyle: TextStyle(
+        color: value == optionValue
+            ? context.colorScheme.onSecondaryContainer
+            : context.colorScheme.onSurface,
+      ),
+      onSelected: (_) {
+        if (value == optionValue) {
+          return;
+        }
         setState(() {
           optionValue = value;
         });
@@ -80,21 +92,22 @@ class _RankingPageState extends State<RankingPage> {
   }
 
   Widget buildOptions() {
-    List<Widget> children = [];
-    children.add(Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (var option in options.entries)
-          buildOptionItem(option.value.tl, option.key, context)
-      ],
-    ));
     return SliverToBoxAdapter(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [...children, const Divider()],
-      ).paddingLeft(8).paddingRight(8),
+      child: HorizontalCoverList(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(
+            children: [
+              for (var option in options.entries)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: buildOptionItem(option.value.tl, option.key, context),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

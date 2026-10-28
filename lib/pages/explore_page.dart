@@ -118,13 +118,14 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   Widget buildFAB() => Material(
-        color: Colors.transparent,
-        child: FloatingActionButton(
-          key: const Key("FAB"),
-          onPressed: refresh,
-          child: const Icon(Icons.refresh),
-        ),
-      );
+    color: Colors.transparent,
+    child: FloatingActionButton.small(
+      key: const Key("FAB"),
+      onPressed: refresh,
+      tooltip: "Refresh".tl,
+      child: const Icon(Icons.refresh),
+    ),
+  );
 
   Tab buildTab(String i) {
     if (i == bangumiPage) return Tab(text: 'Trending anime'.tl, key: Key(i));
@@ -134,10 +135,15 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   Widget buildBody(String i) => Material(
-        child: i == bangumiPage
-            ? BangumiTrendingPage(key: trendingKey)
-            : _SingleExplorePage(i, key: PageStorageKey(i)),
-      );
+    child: i == bangumiPage
+        ? BangumiTrendingPage(key: trendingKey)
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1200),
+              child: _SingleExplorePage(i, key: PageStorageKey(i)),
+            ),
+          ),
+  );
 
   Widget buildEmpty() {
     var msg = "No Explore Pages".tl;
@@ -154,11 +160,20 @@ class _ExplorePageState extends State<ExplorePage>
       msg += "Please check your settings".tl;
       onTap = addPage;
     }
-    return NetworkError(
-      message: msg,
-      retry: onTap,
-      withAppbar: false,
-      buttonText: "Manage".tl,
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AppIconBox(Icons.explore_outlined, size: 56),
+            const SizedBox(height: 16),
+            Text(msg, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton.tonal(onPressed: onTap, child: Text("Manage".tl)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -406,11 +421,9 @@ class _MixedExplorePageState
           yield SliverGridComics(
             comics: (cache),
           );
-          yield const SliverToBoxAdapter(child: Divider());
           cache.clear();
         }
         yield* _buildExplorePagePart(part, widget.sourceKey);
-        yield const SliverToBoxAdapter(child: Divider());
       } else {
         cache.addAll(part as List<Comic>);
       }
@@ -452,28 +465,29 @@ Iterable<Widget> _buildExplorePagePart(
     ExplorePagePart part, String sourceKey) sync* {
   Widget buildTitle(ExplorePagePart part) {
     return SliverToBoxAdapter(
-      child: SizedBox(
-        height: 60,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 5, 10),
-          child: Row(
-            children: [
-              Text(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const AppIconBox(Icons.explore_outlined, size: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
                 part.title,
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+                style: ts.s16.copyWith(fontWeight: FontWeight.w600),
               ),
-              const Spacer(),
-              if (part.viewMore != null)
-                TextButton(
-                  onPressed: () {
-                    var context = App.mainNavigatorKey!.currentContext!;
-                    part.viewMore!.jump(context);
-                  },
-                  child: Text("View more".tl),
-                )
-            ],
-          ),
+            ),
+            if (part.viewMore != null)
+              TextButton.icon(
+                onPressed: () {
+                  var context = App.mainNavigatorKey!.currentContext!;
+                  part.viewMore!.jump(context);
+                },
+                label: Text("View more".tl),
+                icon: const Icon(Icons.chevron_right, size: 20),
+                iconAlignment: IconAlignment.end,
+              ),
+          ],
         ),
       ),
     );
