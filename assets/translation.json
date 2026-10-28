@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Send": "发送",
+    "Installed": "已安装",
+    "Last checked: @time": "上次检查：@time",
     "Search options": "搜索选项",
     "Fill": "填入",
     "No search history": "暂无搜索历史",
@@ -666,6 +669,9 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Send": "傳送",
+    "Installed": "已安裝",
+    "Last checked: @time": "上次檢查：@time",
     "Search options": "搜尋選項",
     "Fill": "填入",
     "No search history": "暫無搜尋歷史",

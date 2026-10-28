@@ -296,6 +296,7 @@ class _SearchPageState extends State<SearchPage> {
   Iterable<Widget> buildSlivers() sync* {
     yield SliverSearchBar(
       controller: controller,
+      title: "Search".tl,
       onChanged: (s) {
         findSuggestions();
       },
@@ -306,7 +307,12 @@ class _SearchPageState extends State<SearchPage> {
         child: AppCard(
           child: ListTile(
             dense: true,
-            leading: const AppIconBox(Icons.live_tv_outlined, size: 32),
+            minLeadingWidth: 0,
+            leading: Icon(
+              Icons.live_tv_outlined,
+              size: 22,
+              color: context.colorScheme.primary,
+            ),
             trailing: const Icon(Icons.chevron_right),
             title: Text('Search anime on Bangumi'.tl),
             onTap: () =>

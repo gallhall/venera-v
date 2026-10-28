@@ -1345,16 +1345,20 @@ class CoverButton extends StatelessWidget {
     required this.onTap,
     required this.child,
     required this.label,
+    this.onLongPress,
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
   });
 
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final Widget child;
   final String label;
+  final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: borderRadius,
       child: Stack(
         fit: StackFit.passthrough,
         children: [
@@ -1366,6 +1370,7 @@ class CoverButton extends StatelessWidget {
               type: MaterialType.transparency,
               child: InkWell(
                 onTap: onTap,
+                onLongPress: onLongPress,
                 mouseCursor: SystemMouseCursors.click,
                 child: Semantics(label: label, child: const SizedBox.expand()),
               ),
@@ -1575,6 +1580,86 @@ class _EpisodeTile extends StatelessWidget {
                     Icons.download_done_rounded,
                     size: 12,
                     color: colors.primary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Centers secondary page content without changing its scroll viewport height.
+class AppContentWidth extends StatelessWidget {
+  const AppContentWidth({super.key, required this.child, this.maxWidth = 1200});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: SizedBox(width: double.infinity, child: child),
+      ),
+    );
+  }
+}
+
+/// A compact, scrollable dialog for secondary page forms.
+class AppSurfaceDialog extends StatelessWidget {
+  const AppSurfaceDialog({
+    super.key,
+    this.title,
+    required this.content,
+    this.actions = const [],
+  });
+
+  final String? title;
+  final Widget content;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(title!, style: ts.s18)),
+                      IconButton(
+                        tooltip: 'Close'.tl,
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+              content,
+              if (actions.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: actions,
                   ),
                 ),
             ],

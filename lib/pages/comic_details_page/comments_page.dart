@@ -2,8 +2,10 @@ part of 'comic_page.dart';
 
 bool _shouldBlockComment(Comment comment) {
   var blockedWords = appdata.settings["blockedCommentWords"] as List;
-  if (blockedWords.isEmpty) return false;
-  
+  if (blockedWords.isEmpty) {
+    return false;
+  }
+
   var content = comment.content.toLowerCase();
   for (var word in blockedWords) {
     if (content.contains(word.toString().toLowerCase())) {
@@ -42,14 +44,20 @@ class _CommentsPageState extends State<CommentsPage> {
 
   void firstLoad() async {
     var res = await widget.source.commentsLoader!(
-        widget.data.comicId, widget.data.subId, 1, widget.replyComment?.id);
+      widget.data.comicId,
+      widget.data.subId,
+      1,
+      widget.replyComment?.id,
+    );
     if (res.error) {
       setState(() {
         _error = res.errorMessage;
         _loading = false;
       });
     } else if (mounted) {
-      var filteredComments = res.data.where((c) => !_shouldBlockComment(c)).toList();
+      var filteredComments = res.data
+          .where((c) => !_shouldBlockComment(c))
+          .toList();
       setState(() {
         _comments = filteredComments;
         _loading = false;
@@ -68,7 +76,9 @@ class _CommentsPageState extends State<CommentsPage> {
     if (res.error) {
       context.showMessage(message: res.errorMessage ?? "Unknown Error");
     } else {
-      var filteredComments = res.data.where((c) => !_shouldBlockComment(c)).toList();
+      var filteredComments = res.data
+          .where((c) => !_shouldBlockComment(c))
+          .toList();
       setState(() {
         _comments!.addAll(filteredComments);
         _page++;
@@ -83,20 +93,15 @@ class _CommentsPageState extends State<CommentsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: Appbar(
-        title: Text("Comments".tl),
-        style: AppbarStyle.shadow,
-      ),
-      body: buildBody(context),
+      appBar: Appbar(title: Text("Comments".tl)),
+      body: AppContentWidth(maxWidth: 800, child: buildBody(context)),
     );
   }
 
   Widget buildBody(BuildContext context) {
     if (_loading) {
       firstLoad();
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
       return NetworkError(
         message: _error!,
@@ -129,12 +134,19 @@ class _CommentsPageState extends State<CommentsPage> {
                       if (widget.replyComment != null) {
                         return Column(
                           children: [
-                            _CommentTile(
-                              comment: widget.replyComment!,
-                              source: widget.source,
-                              comic: widget.data,
-                              showAvatar: showAvatar,
-                              showActions: false,
+                            Container(
+                              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                              decoration: BoxDecoration(
+                                color: context.colorScheme.surfaceContainer,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: _CommentTile(
+                                comment: widget.replyComment!,
+                                source: widget.source,
+                                comic: widget.data,
+                                showAvatar: showAvatar,
+                                showActions: false,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Container(
@@ -150,13 +162,17 @@ class _CommentsPageState extends State<CommentsPage> {
                               ),
                               child: Text(
                                 "Replies".tl,
-                                style: ts.s18,
+                                style: ts.s14.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
                         );
                       } else {
-                        return const SizedBox();
+                        return _comments!.isEmpty
+                            ? SectionEmptyState('No comments yet'.tl)
+                            : const SizedBox();
                       }
                     }
                     index--;
@@ -181,7 +197,7 @@ class _CommentsPageState extends State<CommentsPage> {
               },
             ),
           ),
-          buildBottom(context)
+          buildBottom(context),
         ],
       );
     }
@@ -189,50 +205,54 @@ class _CommentsPageState extends State<CommentsPage> {
 
   Widget buildBottom(BuildContext context) {
     if (widget.source.sendCommentFunc == null) {
-      return const SizedBox(
-        height: 0,
-      );
+      return const SizedBox(height: 0);
     }
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: context.colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-        ),
-      ),
+      decoration: BoxDecoration(color: context.colorScheme.surfaceContainer),
       child: Material(
         color: context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(28),
         child: Row(
           children: [
             Expanded(
               child: TextField(
                 controller: controller,
                 decoration: InputDecoration(
-                    border: InputBorder.none,
-                    isCollapsed: true,
-                    hintText: "Comment".tl),
+                  border: InputBorder.none,
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainerHigh,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(28),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(28),
+                    borderSide: BorderSide(color: context.colorScheme.primary),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  hintText: "Comment".tl,
+                ),
                 minLines: 1,
                 maxLines: 5,
               ),
             ),
+            const SizedBox(width: 8),
             if (sending)
               const Padding(
                 padding: EdgeInsets.all(8),
                 child: SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
             else
-              IconButton(
+              IconButton.filled(
+                tooltip: "Send".tl,
                 onPressed: () async {
                   if (controller.text.isEmpty) {
                     return;
@@ -241,10 +261,11 @@ class _CommentsPageState extends State<CommentsPage> {
                     sending = true;
                   });
                   var b = await widget.source.sendCommentFunc!(
-                      widget.data.comicId,
-                      widget.data.subId,
-                      controller.text,
-                      widget.replyComment?.id);
+                    widget.data.comicId,
+                    widget.data.subId,
+                    controller.text,
+                    widget.replyComment?.id,
+                  );
                   if (!b.error) {
                     controller.text = "";
                     setState(() {
@@ -261,13 +282,10 @@ class _CommentsPageState extends State<CommentsPage> {
                     });
                   }
                 },
-                icon: Icon(
-                  Icons.send,
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
-              )
+                icon: const Icon(Icons.send),
+              ),
           ],
-        ).paddingLeft(16).paddingRight(4),
+        ).paddingRight(4),
       ),
     );
   }
@@ -312,39 +330,44 @@ class _CommentTileState extends State<_CommentTile> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.showAvatar)
-            Container(
-              width: 36,
-              height: 36,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: Theme.of(context).colorScheme.secondaryContainer),
-              child: widget.comment.avatar == null
-                  ? null
-                  : AnimatedImage(
-                      image: CachedImageProvider(
-                        widget.comment.avatar!,
-                        sourceKey: widget.source.key,
-                      ),
+          Container(
+            width: 36,
+            height: 36,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              color: context.colorScheme.surfaceContainerHigh,
+            ),
+            child: widget.comment.avatar == null
+                ? null
+                : AnimatedImage(
+                    image: CachedImageProvider(
+                      widget.comment.avatar!,
+                      sourceKey: widget.source.key,
                     ),
-            ).paddingRight(8),
+                  ),
+          ).paddingRight(8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   widget.comment.userName,
-                  style: ts.bold,
+                  style: ts.s14.copyWith(fontWeight: FontWeight.w600),
                 ),
                 if (widget.comment.time != null)
-                  Text(widget.comment.time!, style: ts.s12),
+                  Text(
+                    widget.comment.time!,
+                    style: ts.s12.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 _CommentContent(text: widget.comment.content),
                 buildActions(),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
@@ -357,10 +380,11 @@ class _CommentTileState extends State<_CommentTile> {
     if (widget.comment.score == null && widget.comment.replyCount == null) {
       return const SizedBox();
     }
-    return SizedBox(
-      height: 36,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        runSpacing: 4,
         children: [
           if (widget.comment.score != null &&
               widget.source.voteCommentFunc != null)
@@ -375,38 +399,34 @@ class _CommentTileState extends State<_CommentTile> {
   }
 
   Widget buildReply() {
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 0.6,
-        ),
-        borderRadius: BorderRadius.circular(16),
+    return TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: context.colorScheme.surfaceContainerHigh,
+        foregroundColor: context.colorScheme.onSurfaceVariant,
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          showSideBar(
-            context,
-            CommentsPage(
-              data: widget.comic,
-              source: widget.source,
-              replyComment: widget.comment,
-            ),
-            showBarrier: false,
-          );
-        },
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.insert_comment_outlined, size: 16),
-            const SizedBox(width: 8),
-            Text(widget.comment.replyCount.toString()),
-          ],
-        ).padding(const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
+      onPressed: () {
+        showSideBar(
+          context,
+          CommentsPage(
+            data: widget.comic,
+            source: widget.source,
+            replyComment: widget.comment,
+          ),
+          showBarrier: false,
+        );
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.insert_comment_outlined, size: 16),
+          const SizedBox(width: 8),
+          Text(widget.comment.replyCount.toString()),
+        ],
       ),
-    );
+    ).paddingLeft(8);
   }
 
   bool isLiking = false;
@@ -416,61 +436,57 @@ class _CommentTileState extends State<_CommentTile> {
   var likes = 0;
 
   Widget buildLike() {
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 0.6,
-        ),
-        borderRadius: BorderRadius.circular(16),
+    return TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: context.colorScheme.surfaceContainerHigh,
+        foregroundColor: isLiked
+            ? context.colorScheme.primary
+            : context.colorScheme.onSurfaceVariant,
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () async {
-          if (isLiking) return;
-          setState(() {
-            isLiking = true;
-          });
-          var res = await widget.source.likeCommentFunc!(
-            widget.comic.comicId,
-            widget.comic.subId,
-            widget.comment.id!,
-            !isLiked,
-          );
-          if (res.success) {
-            isLiked = !isLiked;
-            likes += isLiked ? 1 : -1;
-          } else {
-            context.showMessage(message: res.errorMessage ?? "Error");
-          }
-          setState(() {
-            isLiking = false;
-          });
-        },
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isLiking)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(),
-              )
-            else if (isLiked)
-              Icon(
-                Icons.favorite,
-                size: 16,
-                color: context.useTextColor(Colors.red),
-              )
-            else
-              const Icon(Icons.favorite_border, size: 16),
-            const SizedBox(width: 8),
-            Text(likes.toString()),
-          ],
-        ).padding(const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
+      onPressed: () async {
+        if (isLiking) {
+          return;
+        }
+        setState(() {
+          isLiking = true;
+        });
+        var res = await widget.source.likeCommentFunc!(
+          widget.comic.comicId,
+          widget.comic.subId,
+          widget.comment.id!,
+          !isLiked,
+        );
+        if (res.success) {
+          isLiked = !isLiked;
+          likes += isLiked ? 1 : -1;
+        } else {
+          context.showMessage(message: res.errorMessage ?? "Error");
+        }
+        setState(() {
+          isLiking = false;
+        });
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isLiking)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(),
+            )
+          else if (isLiked)
+            Icon(Icons.favorite, size: 16, color: context.colorScheme.primary)
+          else
+            const Icon(Icons.favorite_border, size: 16),
+          const SizedBox(width: 8),
+          Text(likes.toString()),
+        ],
       ),
-    );
+    ).paddingLeft(8);
   }
 
   int? voteStatus;
@@ -480,7 +496,9 @@ class _CommentTileState extends State<_CommentTile> {
   bool isVotingDown = false;
 
   void vote(bool isUp) async {
-    if (isVotingUp || isVotingDown) return;
+    if (isVotingUp || isVotingDown) {
+      return;
+    }
     setState(() {
       if (isUp) {
         isVotingUp = true;
@@ -520,21 +538,18 @@ class _CommentTileState extends State<_CommentTile> {
   Widget buildVote() {
     var upColor = context.colorScheme.outline;
     if (voteStatus == 1) {
-      upColor = context.useTextColor(Colors.red);
+      upColor = context.colorScheme.primary;
     }
     var downColor = context.colorScheme.outline;
     if (voteStatus == -1) {
-      downColor = context.useTextColor(Colors.blue);
+      downColor = context.colorScheme.primary;
     }
 
     return Container(
       margin: const EdgeInsets.only(left: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          width: 0.6,
-        ),
+        color: context.colorScheme.surfaceContainerHigh,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -570,9 +585,12 @@ class _CommentContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!text.contains('<') && !text.contains('http')) {
-      return SelectableText(text);
+      return SelectableText(text, style: ts.s14);
     } else {
-      return RichCommentContent(text: text);
+      return DefaultTextStyle.merge(
+        style: ts.s14,
+        child: RichCommentContent(text: text),
+      );
     }
   }
 }

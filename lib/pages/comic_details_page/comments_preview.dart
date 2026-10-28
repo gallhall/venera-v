@@ -1,10 +1,7 @@
 part of 'comic_page.dart';
 
 class _CommentsPart extends StatefulWidget {
-  const _CommentsPart({
-    required this.comments,
-    required this.showMore,
-  });
+  const _CommentsPart({required this.comments, required this.showMore});
 
   final List<Comment> comments;
 
@@ -82,13 +79,15 @@ class _CommentsPartState extends State<_CommentsPart> {
               child: MediaQuery.removePadding(
                 removeTop: true,
                 context: context,
-                child: ListView.builder(
-                  controller: scrollController,
-                  scrollDirection: Axis.horizontal,
-                  itemCount: comments.length,
-                  itemBuilder: (context, index) {
-                    return _CommentWidget(comment: comments[index]);
-                  },
+                child: HorizontalCoverList(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: comments.length,
+                    itemBuilder: (context, index) {
+                      return _CommentWidget(comment: comments[index]);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -108,30 +107,42 @@ class _CommentWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 340,
-      child: AppCard(
+      child: Container(
         margin: const EdgeInsets.fromLTRB(16, 8, 0, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Column(
           children: [
             Row(
               children: [
-                if (comment.avatar != null)
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      color: context.colorScheme.surfaceContainer,
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image(
-                      image: CachedImageProvider(comment.avatar!),
-                      width: 36,
-                      height: 36,
-                      fit: BoxFit.cover,
-                    ),
-                  ).paddingRight(8),
-                Text(comment.userName, style: ts.bold),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    color: context.colorScheme.surfaceContainerHigh,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: comment.avatar == null
+                      ? null
+                      : Image(
+                          image: CachedImageProvider(comment.avatar!),
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                        ),
+                ).paddingRight(8),
+                Expanded(
+                  child: Text(
+                    comment.userName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s14.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 4),
@@ -143,7 +154,12 @@ class _CommentWidget extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             if (comment.time != null)
-              Text(comment.time!, style: ts.s12).toAlign(Alignment.centerLeft),
+              Text(
+                comment.time!,
+                style: ts.s12.copyWith(
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
+              ).toAlign(Alignment.centerLeft),
           ],
         ),
       ),
