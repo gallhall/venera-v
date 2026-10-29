@@ -442,7 +442,9 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         if (isCanceled) {
           return;
         }
-        loadingController.setProgress(progress.current / progress.total);
+        loadingController.setProgress(
+          progress.total == 0 ? 1 : progress.current / progress.total,
+        );
       }
 
       loadingController.close();
@@ -479,7 +481,9 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
       if (isCanceled) {
         return;
       }
-      loadingController.setProgress(progress.current / progress.total);
+      loadingController.setProgress(
+        progress.total == 0 ? 1 : progress.current / progress.total,
+      );
       updated = progress.updated;
     }
 

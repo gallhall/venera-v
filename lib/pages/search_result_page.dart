@@ -122,7 +122,8 @@ class _SearchResultPageState extends State<SearchResultPage> {
       currentText: text,
       onSearch: search,
     );
-    options = widget.options ?? const [];
+    // Growable: the settings dialog clears it when the source changes.
+    options = List.of(widget.options ?? const []);
     validateOptions();
     appdata.addSearchHistory(text);
     suggestionsController = _SuggestionsController(controller, sourceKey);

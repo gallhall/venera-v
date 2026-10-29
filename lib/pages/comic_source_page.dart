@@ -8,11 +8,14 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/kazumi/kazumi_source.dart';
+import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/kazumi_rules_page.dart';
+import 'package:venera/pages/animeko_subs_page.dart';
 import 'package:venera/pages/webview.dart';
+import 'package:venera/pages/source_repo_page.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -24,7 +27,11 @@ class ComicSourcePage extends StatelessWidget {
     ComicSource source, [
     bool showLoading = true,
   ]) async {
-    if (!source.url.isURL) {
+    var updateUrl = source.isAnimeko
+        ? (source.animekoSource!.subscription.isEmpty
+            ? AnimekoSource.subscriptionUrl : source.animekoSource!.subscription)
+        : source.url;
+    if (!updateUrl.isURL) {
       if (showLoading) {
         App.rootContext.showMessage(message: "Invalid url config");
         return;
@@ -45,7 +52,7 @@ class ComicSourcePage extends StatelessWidget {
       }
       try {
         var res = await AppDio().get<String>(
-          source.url,
+          updateUrl,
           options: Options(
             responseType: ResponseType.plain,
             headers: {"cache-time": "no"},
@@ -55,7 +62,15 @@ class ComicSourcePage extends StatelessWidget {
           return;
         }
         controller?.close();
-        if (source.isKazumi) {
+        if (source.isAnimeko) {
+          var entry = AnimekoSourceConfig.parse(res.data!).where(
+            (e) => e.key == source.key && e.isSupported,
+          ).firstOrNull;
+          if (entry == null) {
+            throw 'Source is missing or unsupported in the subscription'.tl;
+          }
+          await AnimekoSource.saveUpdate(source, entry);
+        } else if (source.isKazumi) {
           await KazumiSource.saveUpdate(source, res.data!);
         } else {
           await ComicSourceParser().parse(res.data!, source.filePath);
@@ -84,6 +99,9 @@ class ComicSourcePage extends StatelessWidget {
 
   /// Whether [version] is newer than the version of [source].
   static bool isNewer(ComicSource source, String version) {
+    if (source.isAnimeko) {
+      return version != source.version;
+    }
     return source.isKazumi
         ? KazumiRule.isNewer(version, source.version)
         : compareSemVer(version, source.version);
@@ -102,7 +120,7 @@ class ComicSourcePage extends StatelessWidget {
       return 0;
     }
     var versions = <String, String>{};
-    if (ComicSource.all().any((s) => !s.isKazumi)) {
+    if (ComicSource.all().any((s) => !s.isSubscriptionSource)) {
       var dio = AppDio();
       var res = await dio.get<String>(appdata.settings['comicSourceListUrl']);
       if (res.statusCode != 200) {
@@ -118,6 +136,22 @@ class ComicSourcePage extends StatelessWidget {
         versions.addAll(await KazumiSource.repoVersions());
       } catch (e) {
         Log.error("Kazumi", "Failed to check rule updates: $e");
+      }
+    }
+    var subscriptions = <String, List<AnimekoSourceConfig>>{};
+    for (var source in ComicSource.all().where((s) => s.isAnimeko)) {
+      var url = source.animekoSource!.subscription;
+      if (url.isEmpty) {
+        url = AnimekoSource.subscriptionUrl;
+      }
+      try {
+        var entries = subscriptions[url] ??= await AnimekoSource.loadSubscription(url);
+        var entry = entries.where((e) => e.key == source.key && e.isSupported).firstOrNull;
+        if (entry != null) {
+          versions[source.key] = entry.version;
+        }
+      } catch (e) {
+        Log.error('Animeko', 'Failed to check subscription updates: $e');
       }
     }
     var shouldUpdate = <String>[];
@@ -146,7 +180,8 @@ class ComicSourcePage extends StatelessWidget {
 enum _SourceGroup {
   comics('comics', 'Comics', Icons.menu_book_outlined),
   video('video', 'Video', Icons.live_tv_outlined),
-  kazumi('kazumi', 'Kazumi Rules', Icons.movie_filter_outlined);
+  kazumi('kazumi', 'Kazumi Rules', Icons.movie_filter_outlined),
+  animeko('animeko', 'Animeko Sources', Icons.subscriptions_outlined);
 
   const _SourceGroup(this.id, this.title, this.icon);
 
@@ -155,6 +190,9 @@ enum _SourceGroup {
   final IconData icon;
 
   static _SourceGroup of(ComicSource source) {
+    if (source.isAnimeko) {
+      return animeko;
+    }
     if (source.isKazumi) {
       return kazumi;
     }
@@ -506,7 +544,7 @@ class _BodyState extends State<_Body> {
                     label: Text('Comic Source list'.tl),
                     onPressed: () => showPopUpWidget(
                       App.rootContext,
-                      _ComicSourceList(handleAddSource),
+                      const _ComicSourceList(),
                     ),
                   ),
                   FilledButton.tonalIcon(
@@ -515,6 +553,14 @@ class _BodyState extends State<_Body> {
                     onPressed: () => showPopUpWidget(
                       App.rootContext,
                       const KazumiRulesPage(),
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.subscriptions_outlined),
+                    label: Text('Animeko Sources'.tl),
+                    onPressed: () => showPopUpWidget(
+                      App.rootContext,
+                      const AnimekoSubsPage(),
                     ),
                   ),
                   FilledButton.tonalIcon(
@@ -538,7 +584,7 @@ class _BodyState extends State<_Body> {
   }
 
   void _selectFile() async {
-    // .json files are Kazumi rules.
+    // JSON imports include Kazumi rules and Animeko subscriptions.
     final file = await selectFile(ext: ["js", "json"]);
     if (file == null) return;
     try {
@@ -581,7 +627,7 @@ class _BodyState extends State<_Body> {
       );
       if (cancel) return;
       controller.close();
-      await addSource(res.data!, fileName);
+      await addSource(res.data!, fileName, url);
     } catch (e, s) {
       if (cancel) return;
       context.showMessage(message: e.toString());
@@ -589,7 +635,34 @@ class _BodyState extends State<_Body> {
     }
   }
 
-  Future<void> addSource(String js, String fileName) async {
+  Future<void> addSource(String js, String fileName, [String subscription = '']) async {
+    if (AnimekoSource.isSubscription(js)) {
+      var entries = AnimekoSourceConfig.parse(js, subscription)
+          .where((e) => e.isSupported && ComicSource.find(e.key) == null).toList();
+      if (entries.isEmpty) {
+        App.rootContext.showMessage(message: 'No new supported Animeko sources'.tl);
+        return;
+      }
+      var confirmed = false;
+      await showConfirmDialog(
+        context: App.rootContext,
+        title: 'Animeko Sources'.tl,
+        content: 'Install @n Animeko sources?'.tlParams({'n': entries.length}),
+        onConfirm: () => confirmed = true,
+      );
+      if (!confirmed) {
+        return;
+      }
+      for (var entry in entries) {
+        try {
+          ComicSourcePage.onSourceAdded(await AnimekoSource.install(entry, subscription));
+        } catch (e, s) {
+          Log.error('Animeko', 'Failed to import ${entry.name}: $e\n$s');
+          App.rootContext.showMessage(message: e.toString());
+        }
+      }
+      return;
+    }
     var comicSource = KazumiSource.isRule(js)
         ? await KazumiSource.install(js)
         : await ComicSourceParser().createAndParse(js, fileName);
@@ -598,51 +671,18 @@ class _BodyState extends State<_Body> {
 }
 
 class _ComicSourceList extends StatefulWidget {
-  const _ComicSourceList(this.onAdd);
-
-  final Future<void> Function(String) onAdd;
+  const _ComicSourceList();
 
   @override
   State<_ComicSourceList> createState() => _ComicSourceListState();
 }
 
 class _ComicSourceListState extends State<_ComicSourceList> {
-  List? json;
-  bool changed = false;
-  var controller = TextEditingController();
-
-  void load() async {
-    if (json != null) {
-      setState(() {
-        json = null;
-      });
-    }
-    if (controller.text.isEmpty) {
-      setState(() {
-        json = [];
-      });
-      return;
-    }
-    var dio = AppDio();
-    try {
-      var res = await dio.get<String>(controller.text);
-      if (res.statusCode != 200) {
-        throw "error";
-      }
-      if (mounted) {
-        setState(() {
-          json = jsonDecode(res.data!);
-        });
-      }
-    } catch (e) {
-      context.showMessage(message: "Network error".tl);
-      if (mounted) {
-        setState(() {
-          json = [];
-        });
-      }
-    }
-  }
+  List<Map<String, dynamic>>? items;
+  String? error;
+  int generation = 0;
+  String loadedUrl = '';
+  final controller = TextEditingController();
 
   @override
   void initState() {
@@ -653,131 +693,122 @@ class _ComicSourceListState extends State<_ComicSourceList> {
 
   @override
   void dispose() {
+    saveUrl();
+    controller.dispose();
     super.dispose();
-    if (changed) {
-      appdata.settings['comicSourceListUrl'] = controller.text;
-      appdata.saveData();
+  }
+
+  void saveUrl() {
+    appdata.settings['comicSourceListUrl'] = controller.text.trim();
+    appdata.saveData();
+  }
+
+  Future<void> load() async {
+    var current = ++generation;
+    var url = controller.text.trim();
+    if (url.isEmpty) {
+      url = defaultSourceListUrl;
+      controller.text = url;
     }
+    saveUrl();
+    setState(() {
+      items = null;
+      error = null;
+    });
+    try {
+      var res = await AppDio().get<String>(url);
+      if (res.statusCode != 200) {
+        throw 'HTTP error @status'.tlParams({'status': res.statusCode ?? 0});
+      }
+      var list = (jsonDecode(res.data!) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (mounted && current == generation) {
+        setState(() {
+          loadedUrl = url;
+          items = list;
+        });
+      }
+    } catch (e, s) {
+      Log.error('Comic sources', 'Failed to load repository: $e\n$s');
+      if (mounted && current == generation) {
+        setState(() {
+          items = [];
+          error = e.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> install(Map<String, dynamic> item, String repoUrl) async {
+    var installed = ComicSource.find(item['key'] as String);
+    if (installed != null) {
+      await ComicSourcePage.update(installed, false);
+      App.forceRebuild();
+      return;
+    }
+    var url = item['url']?.toString();
+    if (url == null || !url.isURL) {
+      url = Uri.parse(repoUrl).resolve(item['fileName'] as String).toString();
+    }
+    var res = await AppDio().get<String>(
+      url,
+      options: Options(
+        responseType: ResponseType.plain,
+        headers: {'cache-time': 'no'},
+      ),
+    );
+    var fileName = Uri.parse(url).pathSegments.last;
+    var source = KazumiSource.isRule(res.data!)
+        ? await KazumiSource.install(res.data!)
+        : await ComicSourceParser().createAndParse(res.data!, fileName);
+    ComicSourcePage.onSourceAdded(source);
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopUpWidgetScaffold(title: "Comic Source".tl, body: buildBody());
-  }
-
-  Widget buildBody() {
-    var currentKey = ComicSource.all().map((e) => e.key).toList();
-
-    return ListView.builder(
-      itemCount: (json?.length ?? 1) + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                width: 0.6,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  leading: Icon(Icons.source_outlined),
-                  title: Text("Repo URL".tl),
-                ),
-                TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    hintText: "URL",
-                    border: const UnderlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  onChanged: (value) {
-                    changed = true;
-                  },
-                ).paddingHorizontal(16).paddingBottom(8),
-                Text(
-                  "The URL should point to a 'index.json' file".tl,
-                ).paddingLeft(16),
-                Text(
-                  "Do not report any issues related to sources to App repo.".tl,
-                ).paddingLeft(16),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        launchUrlString(
-                          "https://github.com/gallhall/venera-v/blob/master/doc/comic_source.md",
-                        );
-                      },
-                      child: Text("Help".tl),
-                    ),
-                    FilledButton.tonal(
-                      onPressed: load,
-                      child: Text("Refresh".tl),
-                    ),
-                    const SizedBox(width: 16),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-            ),
-          );
-        }
-
-        if (index == 1 && json == null) {
-          return Center(
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-            ).fixWidth(24).fixHeight(24),
-          );
-        }
-
-        index--;
-
-        var key = json![index]["key"];
-        var action = currentKey.contains(key)
-            ? const Icon(Icons.check, size: 20).paddingRight(8)
-            : Button.filled(
-                child: Text("Add".tl),
-                onPressed: () async {
-                  var fileName = json![index]["fileName"];
-                  var url = json![index]["url"];
-                  if (url == null || !(url.toString()).isURL) {
-                    var listUrl =
-                        appdata.settings['comicSourceListUrl'] as String;
-                    if (listUrl
-                        .replaceFirst("https://", "")
-                        .replaceFirst("http://", "")
-                        .contains("/")) {
-                      url =
-                          listUrl.substring(0, listUrl.lastIndexOf("/") + 1) +
-                          fileName;
-                    } else {
-                      url = '$listUrl/$fileName';
-                    }
-                  }
-                  await widget.onAdd(url);
-                  setState(() {});
-                },
-              ).fixHeight(32);
-
-        var description = json![index]["version"];
-        if (json![index]["description"] != null) {
-          description = "$description\n${json![index]["description"]}";
-        }
-
-        return ListTile(
-          title: Text(json![index]["name"]),
-          subtitle: Text(description),
-          trailing: action,
+    var repoUrl = loadedUrl;
+    return SourceRepoPage(
+      title: 'Comic Source list'.tl,
+      icon: Icons.source_outlined,
+      urlLabel: 'Repo URL'.tl,
+      controller: controller,
+      defaultUrl: defaultSourceListUrl,
+      helpUrl: 'https://github.com/gallhall/venera-v/blob/master/'
+          'doc/comic_source.md',
+      explanation: [
+        "The URL should point to a 'index.json' file".tl,
+        'Do not report any issues related to sources to App repo.'.tl,
+      ].join('\n'),
+      error: error,
+      load: load,
+      entries: items?.map((item) {
+        var key = item['key'] as String;
+        var version = item['version']?.toString() ?? '';
+        var description = item['description']?.toString() ?? '';
+        // index.json has no type field; video sources say so in their
+        // description ("视频源, 需要 venera-v ...").
+        var isVideo = item['mediaType'] == 'video' ||
+            item['type'] == 'video' ||
+            (ComicSource.find(key)?.isVideoSource ?? false) ||
+            description.contains('视频源') ||
+            description.toLowerCase().contains('video source');
+        return SourceRepoEntry(
+          key: key,
+          name: item['name'] as String,
+          icon: isVideo ? Icons.live_tv_outlined : Icons.menu_book_outlined,
+          badges: [(isVideo ? 'Video' : 'Comic').tl, version],
+          description: item['description']?.toString(),
+          status: () {
+            var installed = ComicSource.find(key);
+            return SourceRepoStatus(
+              isInstalled: installed != null,
+              hasUpdate: installed != null &&
+                  ComicSourcePage.isNewer(installed, version),
+            );
+          },
+          perform: () => install(item, repoUrl),
         );
-      },
+      }).toList(),
     );
   }
 }
@@ -1077,7 +1108,9 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
     var settings = source.getSettingsDynamic() ?? source.settings;
     var host = Uri.tryParse(source.url)?.host ?? '';
     var type =
-        (source.isKazumi
+        (source.isAnimeko
+                ? 'Animeko'
+                : source.isKazumi
                 ? 'Kazumi'
                 : source.isVideoSource
                 ? 'Video'

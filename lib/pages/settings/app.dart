@@ -293,6 +293,38 @@ class _AppSettingsState extends State<AppSettings> {
           ],
         ),
         _SettingsGroup(
+          title: 'BT playback'.tl,
+          icon: Icons.video_settings,
+          children: [
+            SelectSetting(
+              title: 'BT max cache size'.tl,
+              settingKey: 'btMaxCacheGB',
+              optionTranslation: const {
+                '1': '1 GB', '2': '2 GB', '4': '4 GB',
+                '8': '8 GB', '16': '16 GB', '32': '32 GB',
+              },
+            ),
+            for (var entry in {
+              'btDownloadLimitKB': 'BT download limit',
+              'btUploadLimitKB': 'BT upload limit',
+            }.entries)
+              SelectSetting(
+                title: entry.value.tl,
+                settingKey: entry.key,
+                optionTranslation: const {
+                  '0': 'Unlimited', '128': '128 KB/s',
+                  '512': '512 KB/s', '1024': '1 MB/s',
+                  '2048': '2 MB/s', '5120': '5 MB/s',
+                  '10240': '10 MB/s',
+                },
+              ),
+            _SwitchSetting(
+              title: 'Keep downloaded torrents'.tl,
+              settingKey: 'btKeepFiles',
+            ),
+          ],
+        ),
+        _SettingsGroup(
           title: "User".tl,
           icon: Icons.person_outline,
           children: [

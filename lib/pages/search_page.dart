@@ -191,7 +191,7 @@ class _SearchPageState extends State<SearchPage> {
     var enabled = ComicSource.enabled();
     enabledSourceState = enabled.map((e) => e.key).join('\n');
     var all = enabled
-        .where((e) => e.searchPageData != null && !e.isKazumi)
+        .where((e) => e.searchPageData != null && !e.isSubscriptionSource)
         .map((e) => e.key)
         .toList();
     var settings = appdata.settings['searchSources'] as List;

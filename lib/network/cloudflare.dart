@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:dio/dio.dart';
@@ -7,7 +8,6 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/pages/webview.dart';
-import 'package:venera/utils/ext.dart';
 
 import 'cookie_jar.dart';
 
@@ -98,6 +98,112 @@ class CloudflareInterceptor extends Interceptor {
   }
 }
 
+/// Saves the webview's clearance once its page is no longer a challenge.
+Future<bool> _saveClearance(InAppWebViewController controller, Uri uri) async {
+  var head = (await controller.evaluateJavascript(
+    source: "document.head.innerHTML",
+  ))?.toString() ?? "";
+  var body = (await controller.evaluateJavascript(
+    source: "document.body.innerHTML",
+  ))?.toString() ?? "";
+  Log.info("Cloudflare", "Checking head: $head");
+  var isChallenging = head.contains('#challenge-success-text') ||
+      head.contains("#challenge-error-text") ||
+      head.contains("#challenge-form") ||
+      body.contains("challenge-platform") ||
+      body.contains("window._cf_chl_opt");
+  if (isChallenging) {
+    return false;
+  }
+  Log.info("Cloudflare", "Cloudflare is passed due to there is no challenge css");
+  var ua = await controller.getUA();
+  if (ua != null) {
+    appdata.implicitData['ua'] = ua;
+    appdata.writeImplicitData();
+  }
+  var cookies = await controller.getCookies(uri.toString()) ?? [];
+  if (!cookies.any((c) => c.name == 'cf_clearance')) {
+    return false;
+  }
+  SingleInstanceCookieJar.instance?.saveFromResponse(uri, cookies);
+  return true;
+}
+
+final _renewals = <String, Future<bool>>{};
+final _failedRenewals = <String, DateTime>{};
+
+/// Gets a new clearance for [url] in a hidden webview.
+///
+/// Clearance cookies are kept, but sites let them expire (often within an
+/// hour) and they stop matching when the IP changes. A challenge that the
+/// browser passes on its own is passed again here; one that needs the user
+/// fails after a while, and the user verifies as before.
+Future<bool> renewCloudflare(String url) {
+  var uri = Uri.tryParse(url);
+  if (uri == null || !(App.isAndroid || App.isIOS || App.isMacOS)) {
+    return Future.value(false);
+  }
+  var host = uri.host;
+  var failed = _failedRenewals[host];
+  if (failed != null &&
+      DateTime.now().difference(failed) < const Duration(minutes: 10)) {
+    return Future.value(false);
+  }
+  return _renewals[host] ??= _renew(uri).then((passed) {
+    if (!passed) {
+      _failedRenewals[host] = DateTime.now();
+    }
+    _renewals.remove(host);
+    return passed;
+  });
+}
+
+Future<bool> _renew(Uri uri) async {
+  Log.info("Cloudflare", "Renewing the clearance of ${uri.host}");
+  HeadlessInAppWebView? webview;
+  try {
+    await AppWebview.prepareEnvironment();
+    var passed = Completer<bool>();
+    Future<void> check(InAppWebViewController controller) async {
+      if (!passed.isCompleted && await _saveClearance(controller, uri)) {
+        if (!passed.isCompleted) {
+          passed.complete(true);
+        }
+      }
+    }
+
+    webview = HeadlessInAppWebView(
+      webViewEnvironment: AppWebview.webViewEnvironment,
+      initialUrlRequest: URLRequest(url: WebUri(uri.toString())),
+      onLoadStop: (controller, _) => check(controller),
+      onTitleChanged: (controller, _) => check(controller),
+      // The webview's own error page has no challenge either.
+      onReceivedError: (controller, request, error) {
+        if (request.isForMainFrame != false && !passed.isCompleted) {
+          passed.complete(false);
+        }
+      },
+    );
+    await webview.run();
+    var result = await passed.future.timeout(
+      const Duration(seconds: 20),
+      onTimeout: () => false,
+    );
+    Log.info(
+      "Cloudflare",
+      result
+          ? "Renewed the clearance of ${uri.host}"
+          : "${uri.host} needs to be verified by the user",
+    );
+    return result;
+  } catch (e) {
+    Log.warning("Cloudflare", "Failed to renew the clearance: $e");
+    return false;
+  } finally {
+    await webview?.dispose();
+  }
+}
+
 void passCloudflare(CloudflareException e, void Function() onFinished) async {
   var url = e.url;
   var uri = Uri.parse(url);
@@ -162,37 +268,10 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
   } else {
     bool success = false;
     void check(InAppWebViewController controller) async {
-      var head = await controller.evaluateJavascript(
-          source: "document.head.innerHTML") as String;
-      var body = await controller.evaluateJavascript(
-          source: "document.body.innerHTML") as String;
-      Log.info("Cloudflare", "Checking head: $head");
-      var isChallenging = head.contains('#challenge-success-text') ||
-          head.contains("#challenge-error-text") ||
-          head.contains("#challenge-form") ||
-          body.contains("challenge-platform") ||
-          body.contains("window._cf_chl_opt");
-      if (!isChallenging) {
-        Log.info(
-          "Cloudflare",
-          "Cloudflare is passed due to there is no challenge css",
-        );
-        var ua = await controller.getUA();
-        if (ua != null) {
-          appdata.implicitData['ua'] = ua;
-          appdata.writeImplicitData();
-        }
-        var cookies = await controller.getCookies(url) ?? [];
-        if (cookies.firstWhereOrNull(
-                (element) => element.name == 'cf_clearance') ==
-            null) {
-          return;
-        }
-        SingleInstanceCookieJar.instance?.saveFromResponse(uri, cookies);
-        if (!success) {
-          App.rootPop();
-          success = true;
-        }
+      if (await _saveClearance(controller, uri) && !success) {
+        _failedRenewals.remove(uri.host);
+        App.rootPop();
+        success = true;
       }
     }
 

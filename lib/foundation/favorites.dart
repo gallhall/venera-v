@@ -79,8 +79,8 @@ class FavoriteItem implements Comic {
   String get description {
     var time = this.time.substring(0, 10);
     return appdata.settings['comicDisplayMode'] == 'detailed'
-        ? "$time | ${type == ComicType.local ? 'local' : type.comicSource?.name ?? "Unknown"}"
-        : "${type.comicSource?.name ?? "Unknown"} | $time";
+        ? "$time | ${type == ComicType.local ? 'local' : type.sourceName ?? "Unknown"}"
+        : "${type.sourceName ?? "Unknown"} | $time";
   }
 
   @override
@@ -93,9 +93,7 @@ class FavoriteItem implements Comic {
   int? get maxPage => null;
 
   @override
-  String get sourceKey => type == ComicType.local
-      ? 'local'
-      : type.comicSource?.key ?? "Unknown:${type.value}";
+  String get sourceKey => type.sourceKey;
 
   @override
   double? get stars => null;
@@ -185,7 +183,7 @@ class FavoriteItemWithUpdateInfo extends FavoriteItem {
   @override
   String get description {
     var updateTime = this.updateTime ?? "Unknown";
-    var sourceName = type.comicSource?.name ?? "Unknown";
+    var sourceName = type.sourceName ?? "Unknown";
     return "$updateTime | $sourceName";
   }
 
@@ -878,6 +876,9 @@ class LocalFavoritesManager with ChangeNotifier {
     await Future.microtask(() {
       var all = allComics();
       for (var c in all) {
+        if (c.type.isBangumi) {
+          continue;
+        }
         var comicSource = c.type.comicSource;
         if ((c.type == ComicType.local &&
                 LocalManager().find(c.id, c.type) == null) ||

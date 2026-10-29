@@ -191,6 +191,7 @@ class Settings with ChangeNotifier {
     'defaultSearchTarget': null,
     'autoPageTurningInterval': 5, // in seconds
     'readerMode': 'galleryLeftToRight', // values of [ReaderMode]
+    'seamlessChapters': true,
     'readerScreenPicNumberForLandscape': 1, // 1 - 5
     'readerScreenPicNumberForPortrait': 1, // 1 - 5
     'enableTapToTurnPages': true,
@@ -220,6 +221,7 @@ class Settings with ChangeNotifier {
     'sni': true,
     'autoAddLanguageFilter': 'none', // none, chinese, english, japanese
     'comicSourceListUrl': defaultSourceListUrl,
+    'animekoSubscriptionUrl': '', // empty for AnimekoSource.defaultSubscriptionUrl
     'kazumiRuleRepoUrl': '', // empty for KazumiSource.defaultRepoUrl
     'preloadImageCount': 4,
     'followUpdatesFolder': null,
@@ -242,7 +244,14 @@ class Settings with ChangeNotifier {
         false, // show chapter comments at end of chapter
     'videoPlaybackRate': 1.0, // last speed picked in the player
     'videoFit': 'contain', // contain, cover, fill
+    'videoAutoSwitch': true,
+    'videoAutoSwitchTimeout': 20,
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'videoAnime4k': 'off', // default for media_kit playback
+    'btMaxCacheGB': '2',
+    'btDownloadLimitKB': '0',
+    'btUploadLimitKB': '0',
+    'btKeepFiles': false,
     'disabledComicSources': <String>[],
     'bangumiEchMode': 'doh',
     'bangumiEchDohUrl': 'https://dns.alidns.com/resolve',
@@ -256,6 +265,17 @@ class Settings with ChangeNotifier {
     'bangumiSourceKeywords': <String, dynamic>{},
     'bangumiCustomAliases': <String, dynamic>{},
     'bangumiManualSourceChoices': <String, dynamic>{},
+    'dandanplayAppId': '',
+    'dandanplayAppSecret': '',
+    'danmakuEnabled': false,
+    'danmakuOpacity': 0.8,
+    'danmakuFontSize': 24.0,
+    'danmakuArea': 0.5,
+    'danmakuDuration': 8.0,
+    'danmakuOffset': 0.0,
+    'danmakuHideScroll': false,
+    'danmakuHideTop': false,
+    'danmakuHideBottom': false,
     'bangumiToken': '', // access token of the Bangumi user
     'bangumiUser': null, // the token's user, [BangumiUser.toJson]
     'bangumiAutoSync': true, // mark finished episodes and chapters

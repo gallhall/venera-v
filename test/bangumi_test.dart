@@ -370,6 +370,11 @@ void main() {
         }
         expect(BangumiTitleMatch.normalize('Re:Zero'), 'rezero');
         expect(BangumiTitleMatch.numerals('Vivy OVA MIX'), 'Vivy OVA MIX');
+        expect(BangumiTitleMatch.numerals('Spy x Family'), 'Spy x Family');
+        expect(
+          BangumiTitleMatch.searchKeyword('Hunter X Hunter'),
+          'Hunter X Hunter',
+        );
         expect(BangumiTitleMatch.best(['Anime II'], ['Anime', 'Anime S2']), 1);
         expect(BangumiTitleMatch.best(['Anime II'], ['Anime II [Dub]']), 0);
       },

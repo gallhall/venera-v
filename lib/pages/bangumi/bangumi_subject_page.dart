@@ -9,11 +9,14 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/favorites.dart';
+import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/network/cloudflare.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
@@ -53,15 +56,28 @@ class BangumiSubjectTile extends StatelessWidget {
   );
 }
 
+// Comic grids allocate nonnegative IDs; Bangumi covers use negative IDs.
+int _nextBangumiHeroID = -1;
+
+int nextBangumiCoverHeroID() => _nextBangumiHeroID--;
+
 class BangumiSubjectPage extends StatefulWidget {
   const BangumiSubjectPage({
     super.key,
     required this.subjectId,
     this.preview,
+    this.heroID,
+    this.initialCover,
+    this.initialCoverProvider,
+    this.initialTitle,
     this.autoContinue = false,
   });
   final int subjectId;
   final BangumiSubject? preview;
+  final int? heroID;
+  final String? initialCover;
+  final ImageProvider? initialCoverProvider;
+  final String? initialTitle;
   final bool autoContinue;
   @override
   State<BangumiSubjectPage> createState() => _BangumiSubjectPageState();
@@ -93,7 +109,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   late bool _autoContinuePending = widget.autoContinue;
   bool unmatchedExpanded = false;
   final scrollController = ScrollController();
-  final coverHero = Object();
+  late final Object coverHero = widget.heroID == null
+      ? Object()
+      : 'cover${widget.heroID}';
   bool showAppbarTitle = false, showFAB = false;
   bool showAllEpisodes = false;
   ColorScheme? _coverTint;
@@ -141,6 +159,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     scrollController.addListener(onScroll);
     appdata.settings.addListener(onSettingsChanged);
     HistoryManager().addListener(onSettingsChanged);
+    LocalFavoritesManager().addListener(onFavoritesChanged);
     subject = widget.preview;
     load();
   }
@@ -149,6 +168,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   void dispose() {
     appdata.settings.removeListener(onSettingsChanged);
     HistoryManager().removeListener(onSettingsChanged);
+    LocalFavoritesManager().removeListener(onFavoritesChanged);
     scrollController.dispose();
     sourceUpdates.dispose();
     super.dispose();
@@ -748,10 +768,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       final preview = widget.preview;
       return Scaffold(
         body: DetailsLoadingView(
-          cover: preview != null && preview.image.isNotEmpty
-              ? CachedImageProvider(preview.image)
-              : null,
-          title: preview?.displayName,
+          cover: widget.initialCoverProvider ??
+              ((widget.initialCover ?? preview?.image ?? '').isEmpty
+                  ? null
+                  : CachedImageProvider(widget.initialCover ?? preview!.image)),
+          coverHeroTag: coverHero,
+          title: preview?.displayName ?? widget.initialTitle,
         ),
       );
     }
@@ -895,6 +917,34 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
+  void onFavoritesChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void openLocalFavorites() async {
+    var subject = this.subject;
+    if (subject == null) {
+      return;
+    }
+    await showLocalFavoritePanel(
+      App.rootContext,
+      bangumiSubjectFavorite(subject),
+    );
+    onFavoritesChanged();
+  }
+
+  void quickFavorite() {
+    var subject = this.subject;
+    var folder = appdata.settings['quickFavorite'];
+    if (subject == null || folder is! String) {
+      return;
+    }
+    LocalFavoritesManager().addComic(folder, bangumiSubjectFavorite(subject));
+    App.rootContext.showMessage(message: 'Added'.tl);
+  }
+
   Widget buildActions(BuildContext context) {
     var subject = this.subject!;
     var history = this.history;
@@ -926,6 +976,17 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                   onPressed: canPlay ? playFirst : pickSource,
                   isLoading: playLoading,
                 ),
+              ActionPill(
+                icon: const Icon(Icons.favorite_border),
+                activeIcon: const Icon(Icons.favorite),
+                isActive: LocalFavoritesManager().isExist(
+                  bangumiHistoryId(subject.id),
+                  ComicType.bangumi,
+                ),
+                text: 'Favorite'.tl,
+                onPressed: openLocalFavorites,
+                onLongPressed: quickFavorite,
+              ),
               ActionPill(
                 icon: const Icon(Icons.bookmark_outline_outlined),
                 activeIcon: const Icon(Icons.bookmark),
@@ -1258,6 +1319,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           chosen != null &&
           BangumiTitleMatch.match(allNames, chosen.title).matches,
       onSelect: chosen == null ? null : () => onPick(chosen),
+      onRetry: () => search(row),
       details: () => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1363,6 +1425,7 @@ class _PlaySourceCard extends StatefulWidget {
     required this.match,
     required this.matches,
     required this.onSelect,
+    required this.onRetry,
     required this.details,
   });
 
@@ -1370,6 +1433,7 @@ class _PlaySourceCard extends StatefulWidget {
   final bool playing, matches;
   final String? match;
   final VoidCallback? onSelect;
+  final VoidCallback onRetry;
   final Widget Function() details;
 
   @override
@@ -1388,6 +1452,10 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
     var row = widget.row;
     var chosen = row.chosen;
     var colors = context.colorScheme;
+    // Sites behind a Cloudflare challenge work once it is passed in a webview.
+    var cloudflare = chosen == null && row.error != null && !row.loading
+        ? CloudflareException.fromString(row.error!)
+        : null;
     return AppCard(
       highlighted: widget.playing,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1426,7 +1494,9 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
                         const SizedBox(height: 4),
                         Text(
                           chosen?.title ??
-                              row.error ??
+                              (cloudflare != null
+                                  ? 'Cloudflare verification required'.tl
+                                  : row.error) ??
                               (row.loading
                                   ? 'Loading'.tl
                                   : 'No matching result'.tl),
@@ -1463,6 +1533,11 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (cloudflare != null)
+                    FilledButton.tonal(
+                      onPressed: () => passCloudflare(cloudflare, widget.onRetry),
+                      child: Text('Verify'.tl),
                     )
                   else
                     IconButton(

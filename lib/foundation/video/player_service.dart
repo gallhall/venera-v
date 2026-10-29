@@ -1,13 +1,20 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+// Android's public setSize is unsupported in our pinned media_kit revision.
+// ignore: implementation_imports
+import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/video/anime4k.dart';
+import 'package:venera/foundation/video/anime4k_assets.dart';
 import 'package:venera/foundation/video/stream_failures.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/network/proxy.dart';
@@ -96,6 +103,8 @@ class PlayerControlAction {
 class PlayerControls {
   final String? title;
 
+  final String? resolutionLabel;
+
   /// Back button at the top left. On desktop the top bar is only shown in
   /// fullscreen, where its back button leaves fullscreen.
   final VoidCallback? onBack;
@@ -111,14 +120,24 @@ class PlayerControls {
 
   final bool isFullscreen;
 
+  final bool danmakuEnabled;
+
+  final void Function(BuildContext)? onToggleDanmaku;
+
+  final ValueChanged<Duration>? onSeek;
+
   const PlayerControls({
     this.title,
+    this.resolutionLabel,
     this.onBack,
     this.onPrevious,
     this.onNext,
     this.actions = const [],
     this.onToggleFullscreen,
     this.isFullscreen = false,
+    this.danmakuEnabled = false,
+    this.onToggleDanmaku,
+    this.onSeek,
   });
 }
 
@@ -191,7 +210,16 @@ class PlayerService implements VideoPlayback {
       ),
       _player.stream.completed.listen(_onCompleted),
       _player.stream.buffering.listen(_onBuffering),
+      _player.stream.videoParams.listen((_) => _scheduleAnime4kRenderSize()),
+      _player.stream.playing.listen((playing) {
+        if (playing) {
+          _checkAnime4k();
+        }
+      }),
     ]);
+    _anime4kSizeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _pollAnime4kSize();
+    });
   }
 
   static bool _initialized = false;
@@ -273,6 +301,395 @@ class PlayerService implements VideoPlayback {
 
   final _interrupted = StreamController<String>.broadcast();
 
+  final _anime4kFailures = StreamController<void>.broadcast();
+
+  Stream<void> get anime4kFailures => _anime4kFailures.stream;
+
+  Anime4kPreset get anime4kPreset => _anime4kPreset;
+
+  Anime4kPreset _anime4kPreset = Anime4kPreset.off;
+
+  bool _anime4kInitialized = false;
+
+  bool _anime4kFailed = false;
+
+  Future<void> _anime4kPending = Future.value();
+
+  final _anime4kStatus = ValueNotifier<Anime4kStatus>(
+    const Anime4kStatus(Anime4kState.off),
+  );
+
+  ValueListenable<Anime4kStatus> get anime4kStatus => _anime4kStatus;
+
+  final _anime4kOriginal = ValueNotifier(false);
+
+  ValueListenable<bool> get anime4kOriginal => _anime4kOriginal;
+
+  Timer? _anime4kRenderTimer;
+  Size? _videoArea;
+  double _videoPixelRatio = 1;
+  BoxFit _videoFit = BoxFit.contain;
+  bool _videoViewActive = false;
+  ({int width, int height})? _anime4kRenderSize;
+  AndroidVideoController? _anime4kAndroid;
+  bool _anime4kAndroidSizePaused = false;
+
+  void _onAnime4kAndroidRect() {
+    final size = _anime4kRenderSize;
+    final rect = _anime4kAndroid?.rect.value;
+    if (size != null && rect != null &&
+        (rect.width != size.width || rect.height != size.height)) {
+      _scheduleAnime4kRenderSize();
+    }
+  }
+
+  /// Called from the video area's LayoutBuilder, including fullscreen views.
+  void updateVideoArea(Size? area, double pixelRatio, BoxFit fit) {
+    if (_disposed) {
+      return;
+    }
+    final active = area != null;
+    if (_videoArea == area && _videoPixelRatio == pixelRatio &&
+        _videoFit == fit && _videoViewActive == active) {
+      return;
+    }
+    _videoArea = area;
+    _videoPixelRatio = pixelRatio;
+    _videoFit = fit;
+    _videoViewActive = active;
+    _scheduleAnime4kRenderSize();
+  }
+
+  void _scheduleAnime4kRenderSize() {
+    if (_disposed) {
+      return;
+    }
+    _anime4kRenderTimer?.cancel();
+    _anime4kRenderTimer = Timer(const Duration(milliseconds: 180), () {
+      _anime4kPending = _anime4kPending.then((_) => _resizeAnime4k());
+    });
+  }
+
+  Future<void> _resizeAnime4k() async {
+    final controller = _controller;
+    if (_disposed || controller == null) {
+      return;
+    }
+    final params = _player.state.videoParams;
+    var w = (params.dw ?? params.w ?? 0).toDouble();
+    var h = (params.dh ?? params.h ?? 0).toDouble();
+    if (params.rotate == 90 || params.rotate == 270) {
+      final swap = w;
+      w = h;
+      h = swap;
+    }
+    final area = _videoArea;
+    final size = _videoViewActive && area != null &&
+            _anime4kPreset != Anime4kPreset.off
+        ? anime4kRenderSize(
+            logicalWidth: area.width,
+            logicalHeight: area.height,
+            devicePixelRatio: _videoPixelRatio,
+            videoWidth: w,
+            videoHeight: h,
+            cover: _videoFit == BoxFit.cover,
+          )
+        : null;
+    final rect = _anime4kAndroid?.rect.value;
+    final androidMatches = size == null || _anime4kAndroid == null ||
+        (rect?.width == size.width && rect?.height == size.height);
+    if (size == _anime4kRenderSize && androidMatches &&
+        !(size == null && _anime4kAndroidSizePaused)) {
+      return;
+    }
+    try {
+      try {
+        await controller.setSize(width: size?.width, height: size?.height);
+      } on UnsupportedError {
+        if (!Platform.isAndroid) {
+          rethrow;
+        }
+        // This media_kit revision exposes setSize but throws on Android.
+        // Reuse its existing controller and resize under its own lock.
+        var android = _anime4kAndroid;
+        if (android == null) {
+          android = await AndroidVideoController.create(
+            _player, const VideoControllerConfiguration(),
+          ) as AndroidVideoController;
+          _anime4kAndroid = android;
+          android.rect.addListener(_onAnime4kAndroidRect);
+        }
+        final width = size?.width ?? w.toInt();
+        final height = size?.height ?? h.toInt();
+        if (size == null && _anime4kAndroidSizePaused) {
+          android.videoParamsSubscription?.resume();
+          _anime4kAndroidSizePaused = false;
+        }
+        if (width <= 0 || height <= 0 || _disposed) {
+          _anime4kRenderSize = null;
+          return;
+        }
+        // Otherwise the controller's videoParams listener resets the surface
+        // to the source size on the next stream/parameter change. Our own
+        // listener tracks those changes while this per-player override runs.
+        if (size != null && !_anime4kAndroidSizePaused) {
+          android.videoParamsSubscription?.pause();
+          _anime4kAndroidSizePaused = true;
+        }
+        final resized = android;
+        await resized.lock.synchronized(() async {
+          final handle = await _player.handle;
+          await const MethodChannel('com.alexmercerind/media_kit_video')
+              .invokeMethod<void>('VideoOutputManager.SetSurfaceSize', {
+            'handle': handle.toString(),
+            'width': width.toString(),
+            'height': height.toString(),
+          });
+          resized.rect.value = Rect.fromLTWH(
+            0, 0, width.toDouble(), height.toDouble(),
+          );
+        });
+        // Rebinds the resized surface using media_kit's normal lifecycle.
+        await android.widListener();
+      }
+      if (_disposed) {
+        return;
+      }
+      _anime4kRenderSize = size;
+      _checkAnime4k();
+    } catch (e) {
+      Log.warning('Video', 'Failed to resize Anime4K output: $e');
+    }
+  }
+
+  Timer? _anime4kSizeTimer;
+  String? _anime4kOutputSize;
+  bool _anime4kPollingSize = false;
+  bool _showingOriginal = false;
+  bool _anime4kVerifyAfterOriginal = false;
+  int _anime4kCheck = 0;
+
+  /// How mpv decodes and draws the stream, for the log.
+  Future<String> describeOutput() async {
+    final values = await Future.wait([
+      for (final name in ['hwdec-current', 'current-vo', 'width', 'height'])
+        _anime4kProperty(name),
+    ]);
+    return 'hwdec ${values[0] ?? '?'}, vo ${values[1] ?? '?'}, '
+        '${values[2] ?? '?'}x${values[3] ?? '?'}, '
+        'Anime4K ${_anime4kPreset.name}';
+  }
+
+  Future<String?> _anime4kProperty(String name) async {
+    final platform = _player.platform;
+    if (_disposed || platform is! NativePlayer) {
+      return null;
+    }
+    try {
+      return await platform.getProperty(name).timeout(
+        const Duration(milliseconds: 400),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _pollAnime4kSize() async {
+    if (_disposed || _anime4kPollingSize || !isPlaying ||
+        _showingOriginal || _anime4kPreset == Anime4kPreset.off) {
+      return;
+    }
+    _anime4kPollingSize = true;
+    try {
+      final values = await Future.wait([
+        _anime4kProperty('osd-dimensions/w'),
+        _anime4kProperty('osd-dimensions/h'),
+      ]);
+      final size = values.join('x');
+      if (!_disposed && size != _anime4kOutputSize) {
+        if (_showingOriginal) {
+          return;
+        }
+        _anime4kOutputSize = size;
+        _checkAnime4k();
+      }
+    } finally {
+      _anime4kPollingSize = false;
+    }
+  }
+
+  void _checkAnime4k() {
+    if (_disposed || _anime4kPreset == Anime4kPreset.off) {
+      return;
+    }
+    if (_showingOriginal) {
+      _anime4kVerifyAfterOriginal = true;
+      return;
+    }
+    final check = ++_anime4kCheck;
+    _anime4kStatus.value = const Anime4kStatus(Anime4kState.checking);
+    unawaited(_readAnime4kPasses(check));
+  }
+
+  Future<void> _readAnime4kPasses(int check) async {
+    var status = const Anime4kStatus(Anime4kState.unknown);
+    final descs = <String>{};
+    for (var attempt = 0; attempt < 6; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (_disposed || check != _anime4kCheck || _showingOriginal) {
+        return;
+      }
+      final values = await Future.wait([
+        _anime4kProperty('vo-passes'),
+        _anime4kProperty('hwdec-current'),
+        _anime4kProperty('video-params/w'),
+        _anime4kProperty('video-params/h'),
+        _anime4kProperty('osd-dimensions/w'),
+        _anime4kProperty('osd-dimensions/h'),
+      ]);
+      int? dimension(String? value) {
+        final number = int.tryParse(value ?? '');
+        return number != null && number > 0 ? number : null;
+      }
+      status = Anime4kStatus.fromPasses(
+        values[0],
+        hwdec: values[1],
+        videoWidth: dimension(values[2]),
+        videoHeight: dimension(values[3]),
+        outputWidth: dimension(values[4]),
+        outputHeight: dimension(values[5]),
+      );
+      descs.addAll(status.descs);
+      if (status.state == Anime4kState.active) {
+        break;
+      }
+    }
+    if (!_disposed && check == _anime4kCheck && !_showingOriginal) {
+      Log.info('Video', 'Anime4K render passes: ${descs.toList()}');
+      _anime4kStatus.value = !isPlaying && status.descs.isEmpty
+          ? Anime4kStatus(
+              Anime4kState.playToVerify,
+              hwdec: status.hwdec,
+              videoWidth: status.videoWidth,
+              videoHeight: status.videoHeight,
+              outputWidth: status.outputWidth,
+              outputHeight: status.outputHeight,
+            )
+          : status;
+    }
+  }
+
+  /// Temporary comparison shares the shader write queue with preset changes.
+  /// It does not change the preset, saved preference, or verification result.
+  Future<void> showAnime4kOriginal(bool original) {
+    if (_disposed) {
+      return Future.value();
+    }
+    _showingOriginal = original;
+    ++_anime4kCheck;
+    final result = _anime4kPending.then((_) async {
+      if (_disposed) {
+        return;
+      }
+      final platform = _player.platform;
+      if (platform is! NativePlayer) {
+        return;
+      }
+      try {
+        final paths = <String>[];
+        if (!original && _anime4kPreset != Anime4kPreset.off) {
+          final dir = await Anime4kAssets.prepare();
+          for (final name in _anime4kPreset.shaders) {
+            paths.add(FilePath.join(dir, name));
+          }
+        }
+        await platform.setProperty(
+          'glsl-shaders',
+          Anime4k.pathList(paths, windows: Platform.isWindows),
+        );
+        if (!_disposed && _showingOriginal == original) {
+          _anime4kOriginal.value = original;
+        }
+        if (!original && !_showingOriginal &&
+            (_anime4kStatus.value.state == Anime4kState.checking ||
+                _anime4kVerifyAfterOriginal)) {
+          _anime4kVerifyAfterOriginal = false;
+          _checkAnime4k();
+        }
+      } catch (e) {
+        Log.warning('Video', 'Failed to compare Anime4K: $e');
+      }
+    });
+    _anime4kPending = result;
+    return result;
+  }
+
+  /// Changes the filter on the running stream without opening it again.
+  Future<bool> setAnime4k(Anime4kPreset preset) {
+    _anime4kInitialized = true;
+    var result = _anime4kPending.then((_) => _applyAnime4k(preset));
+    _anime4kPending = result.then((_) {});
+    return result;
+  }
+
+  Future<bool> _applyAnime4k(Anime4kPreset preset) async {
+    if (_disposed) {
+      return false;
+    }
+    if (_anime4kFailed && preset != Anime4kPreset.off) {
+      _anime4kFailures.add(null);
+      return false;
+    }
+    var platform = _player.platform;
+    try {
+      if (platform is! NativePlayer) {
+        throw UnsupportedError('Anime4K requires native media_kit');
+      }
+      var paths = <String>[];
+      if (preset != Anime4kPreset.off) {
+        var dir = await Anime4kAssets.prepare();
+        for (var name in preset.shaders) {
+          paths.add(FilePath.join(dir, name));
+        }
+      }
+      await platform.setProperty(
+        'glsl-shaders',
+        _showingOriginal
+            ? ''
+            : Anime4k.pathList(paths, windows: Platform.isWindows),
+      );
+      _anime4kPreset = preset;
+      await _resizeAnime4k();
+      ++_anime4kCheck;
+      if (preset == Anime4kPreset.off) {
+        _anime4kStatus.value = const Anime4kStatus(Anime4kState.off);
+      } else {
+        _checkAnime4k();
+      }
+      return true;
+    } catch (e) {
+      Log.warning('Video', 'Failed to apply Anime4K: $e');
+      _anime4kFailed = true;
+      _anime4kPreset = Anime4kPreset.off;
+      await _resizeAnime4k();
+      ++_anime4kCheck;
+      if (!_disposed) {
+        _anime4kStatus.value = const Anime4kStatus(Anime4kState.unknown);
+      }
+      if (platform is NativePlayer) {
+        try {
+          await platform.setProperty('glsl-shaders', '');
+        } catch (e) {
+          Log.warning('Video', 'Failed to clear Anime4K: $e');
+        }
+      }
+      if (!_disposed) {
+        _anime4kFailures.add(null);
+      }
+      return false;
+    }
+  }
+
   /// Checks a wait for data, see [StreamFailures.stalled].
   Timer? _stallTimer;
 
@@ -347,7 +764,9 @@ class PlayerService implements VideoPlayback {
   Stream<Size?> get videoSize => _player.stream.videoParams.map((p) {
     var w = p.dw ?? p.w;
     var h = p.dh ?? p.h;
-    if (w == null || h == null || w == 0 || h == 0) return null;
+    if (w == null || h == null || w <= 0 || h <= 0) {
+      return null;
+    }
     return Size(w.toDouble(), h.toDouble());
   });
 
@@ -406,9 +825,19 @@ class PlayerService implements VideoPlayback {
     Duration? start,
     bool play = true,
   }) async {
+    ++_anime4kCheck;
+    _anime4kOutputSize = null;
     await _applyAudioOutput();
     await _applyCacheDir();
-    await _applyProxy();
+    await _applyProxy(request.url);
+    if (!_anime4kInitialized) {
+      var preset = Anime4kPreset.fromSetting(appdata.settings['videoAnime4k']);
+      if (preset != Anime4kPreset.off) {
+        await setAnime4k(preset);
+      } else {
+        _anime4kInitialized = true;
+      }
+    }
     var media = Media(
       request.url,
       httpHeaders: buildHeaders(request.url, request.headers),
@@ -417,6 +846,7 @@ class PlayerService implements VideoPlayback {
     _stallTimer?.cancel();
     _failures.reset();
     await _player.open(media, play: play);
+    _checkAnime4k();
     if (request.audioUrl == null && request.subtitles.isEmpty) {
       return;
     }
@@ -518,8 +948,10 @@ class PlayerService implements VideoPlayback {
     }
   }
 
-  Future<void> _applyProxy() async {
-    var proxy = await getProxy();
+  Future<void> _applyProxy(String url) async {
+    var host = Uri.tryParse(url)?.host;
+    var proxy = host == '127.0.0.1' || host == '::1'
+        ? null : await getProxy();
     if (proxy != null && !proxy.contains('://')) {
       proxy = 'http://$proxy';
     }
@@ -527,6 +959,12 @@ class PlayerService implements VideoPlayback {
     var platform = _player.platform;
     if (platform is NativePlayer) {
       await platform.setProperty('http-proxy', proxy ?? '');
+      // A local BT stream waits for peers; media_kit's 5 s would give up
+      // before the first pieces arrive.
+      await platform.setProperty(
+        'network-timeout',
+        host == '127.0.0.1' || host == '::1' ? '120' : '5',
+      );
     }
   }
 
@@ -576,12 +1014,20 @@ class PlayerService implements VideoPlayback {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    ++_anime4kCheck;
+    _anime4kSizeTimer?.cancel();
+    _anime4kRenderTimer?.cancel();
     _stallTimer?.cancel();
+    await _anime4kPending;
+    _anime4kAndroid?.rect.removeListener(_onAnime4kAndroidRect);
     for (var s in _subscriptions) {
       await s.cancel();
     }
     await _player.dispose();
     await _completed.close();
     await _interrupted.close();
+    await _anime4kFailures.close();
+    _anime4kStatus.dispose();
+    _anime4kOriginal.dispose();
   }
 }

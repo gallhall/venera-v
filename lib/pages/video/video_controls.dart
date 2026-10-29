@@ -384,6 +384,7 @@ class _VideoControlsState extends State<VideoControls> {
     seekingToTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => seekingTo = null);
     });
+    widget.controls.value.onSeek?.call(target);
     player.seek(target);
   }
 
@@ -746,8 +747,9 @@ class _VideoControlsState extends State<VideoControls> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               // Room next to the back button and the title.
-              var room =
-                  constraints.maxWidth - 96 - (c.onBack != null ? 40 : 0);
+              var room = constraints.maxWidth - 96 -
+                  (c.onBack != null ? 40 : 0) -
+                  (c.resolutionLabel != null ? 48 : 0);
               return Row(
                 children: [
                   if (c.onBack != null)
@@ -766,6 +768,16 @@ class _VideoControlsState extends State<VideoControls> {
                       ),
                     ),
                   ),
+                  if (c.resolutionLabel != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      c.resolutionLabel!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                   ...buildActions(context, actions, room),
                 ],
               );
@@ -839,6 +851,13 @@ class _VideoControlsState extends State<VideoControls> {
                     History.formatSeconds(duration.inSeconds),
                     style: _timeStyle,
                   ),
+                  if (c.onToggleDanmaku != null)
+                    button(
+                      c.danmakuEnabled
+                          ? Icons.subtitles : Icons.subtitles_outlined,
+                      () => c.onToggleDanmaku!(context),
+                      tooltip: 'Danmaku'.tl,
+                    ),
                   if (c.onToggleFullscreen != null)
                     button(
                       c.isFullscreen
@@ -893,11 +912,18 @@ class _VideoControlsState extends State<VideoControls> {
                         ),
                       ),
                       const Spacer(),
+                      if (c.onToggleDanmaku != null)
+                        button(
+                          c.danmakuEnabled
+                              ? Icons.subtitles : Icons.subtitles_outlined,
+                          () => c.onToggleDanmaku!(context),
+                          tooltip: 'Danmaku'.tl,
+                        ),
                       // Room left by the buttons and the time on the left.
                       ...buildActions(
                         context,
                         c.actions,
-                        constraints.maxWidth - 400,
+                        constraints.maxWidth - 440,
                         iconSize: 24,
                       ),
                       if (c.onToggleFullscreen != null)

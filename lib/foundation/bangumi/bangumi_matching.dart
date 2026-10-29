@@ -92,9 +92,12 @@ abstract final class BangumiTitleMatch {
       var c = m[0]!.codeUnitAt(0);
       return '${c - (c >= 0x2170 ? 0x2170 : 0x2160) + 1}';
     });
+    // Only a trailing numeral ("Overlord III", "Series II [Dub]"): the x of
+    // "Spy x Family" or "Hunter x Hunter" is not ten.
     value = value.replaceAllMapped(
       RegExp(
-        r'(?<![a-z])(?:VIII|VII|III|VI|IV|IX|II|X|V|I)(?![a-z])',
+        r'(?<![a-z])(?:VIII|VII|III|VI|IV|IX|II|X|V|I)(?![a-z])'
+        r'(?=\s*(?:$|[\[\(【（]))',
         caseSensitive: false,
       ),
       (m) => '${_roman[m[0]!.toUpperCase()]}',

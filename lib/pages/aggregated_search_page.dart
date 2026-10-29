@@ -48,7 +48,7 @@ class _AggregatedSearchPageState extends State<AggregatedSearchPage> {
 
   void findSources() {
     var all = ComicSource.enabled()
-        .where((e) => e.searchPageData != null && (widget.videoOnly || !e.isKazumi))
+        .where((e) => e.searchPageData != null && (widget.videoOnly || !e.isSubscriptionSource))
         .map((e) => e.key)
         .toList();
     var settings = appdata.settings['searchSources'] as List;

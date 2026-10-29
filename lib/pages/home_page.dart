@@ -800,14 +800,16 @@ class _LocalState extends State<_Local> {
 }
 
 class ImportComicsWidget extends StatefulWidget {
-  const ImportComicsWidget({super.key});
+  const ImportComicsWidget({super.key, this.initialType = 0});
+
+  final int initialType;
 
   @override
   State<ImportComicsWidget> createState() => ImportComicsWidgetState();
 }
 
 class ImportComicsWidgetState extends State<ImportComicsWidget> {
-  int type = 0;
+  late int type = widget.initialType;
 
   bool loading = false;
 

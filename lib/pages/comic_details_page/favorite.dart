@@ -1,5 +1,25 @@
 part of 'comic_page.dart';
 
+/// Opens the shared folder panel for an item without network favorites.
+Future<void> showLocalFavoritePanel(
+  BuildContext context,
+  FavoriteItem item, {
+  VoidCallback? onChanged,
+}) {
+  return showSideBar(
+    context,
+    _FavoritePanel(
+      cid: item.id,
+      type: item.type,
+      isFavorite: null,
+      onFavorite: (local, network) {
+        onChanged?.call();
+      },
+      favoriteItem: item,
+    ),
+  );
+}
+
 class _FavoritePanel extends StatefulWidget {
   const _FavoritePanel({
     required this.cid,
@@ -31,7 +51,7 @@ class _FavoritePanel extends StatefulWidget {
 
 class _FavoritePanelState extends State<_FavoritePanel>
     with SingleTickerProviderStateMixin {
-  late ComicSource comicSource;
+  late ComicSource? comicSource;
 
   late bool hasNetwork;
 
@@ -41,10 +61,10 @@ class _FavoritePanelState extends State<_FavoritePanel>
 
   @override
   void initState() {
-    comicSource = widget.type.comicSource!;
+    comicSource = widget.type.comicSource;
     localFolders = LocalFavoritesManager().folderNames;
     added = LocalFavoritesManager().find(widget.cid, widget.type);
-    hasNetwork = comicSource.favoriteData != null && comicSource.isLogged;
+    hasNetwork = comicSource?.favoriteData != null && comicSource!.isLogged;
     super.initState();
   }
 
@@ -88,7 +108,7 @@ class _FavoriteList extends StatefulWidget {
   final void Function(bool?, bool?) onFavorite;
   final FavoriteItem favoriteItem;
   final String? updateTime;
-  final ComicSource comicSource;
+  final ComicSource? comicSource;
   final bool hasNetwork;
   final List<String> localFolders;
   final List<String> added;
@@ -117,7 +137,7 @@ class _FavoriteListState extends State<_FavoriteList> {
     final networkSection = widget.hasNetwork
         ? _NetworkSection(
             cid: widget.cid,
-            comicSource: widget.comicSource,
+            comicSource: widget.comicSource!,
             isFavorite: widget.isFavorite,
             onFavorite: (network) {
               widget.onFavorite(null, network);

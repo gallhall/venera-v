@@ -326,10 +326,19 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
       SliverToBoxAdapter(child: SectionEmptyState(message));
 }
 
-class _AnimeSearchCard extends StatelessWidget {
+class _AnimeSearchCard extends StatefulWidget {
   const _AnimeSearchCard({required this.subject, required this.grid});
   final BangumiSubject subject;
   final bool grid;
+
+  @override
+  State<_AnimeSearchCard> createState() => __AnimeSearchCardState();
+}
+
+class __AnimeSearchCardState extends State<_AnimeSearchCard> {
+  final heroID = nextBangumiCoverHeroID();
+  BangumiSubject get subject => widget.subject;
+  bool get grid => widget.grid;
 
   @override
   Widget build(BuildContext context) {
@@ -337,28 +346,36 @@ class _AnimeSearchCard extends StatelessWidget {
       margin: EdgeInsets.only(bottom: grid ? 0 : 8),
       padding: const EdgeInsets.all(12),
       onTap: () => context.to(
-        () => BangumiSubjectPage(subjectId: subject.id, preview: subject),
+        () => BangumiSubjectPage(
+          subjectId: subject.id,
+          preview: subject,
+          heroID: heroID,
+          initialCover: subject.image,
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: 72,
-              height: 108,
-              color: context.colorScheme.surfaceContainerHigh,
-              child: subject.image.isEmpty
-                  ? Icon(
-                      Icons.movie_outlined,
-                      color: context.colorScheme.onSurfaceVariant,
-                    )
-                  : AnimatedImage(
-                      image: CachedImageProvider(subject.image),
-                      width: 72,
-                      height: 108,
-                      fit: BoxFit.cover,
-                    ),
+          Hero(
+            tag: 'cover$heroID',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 72,
+                height: 108,
+                color: context.colorScheme.surfaceContainerHigh,
+                child: subject.image.isEmpty
+                    ? Icon(
+                        Icons.movie_outlined,
+                        color: context.colorScheme.onSurfaceVariant,
+                      )
+                    : AnimatedImage(
+                        image: CachedImageProvider(subject.image),
+                        width: 72,
+                        height: 108,
+                        fit: BoxFit.cover,
+                      ),
+              ),
             ),
           ),
           const SizedBox(width: 12),

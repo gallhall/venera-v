@@ -220,6 +220,7 @@ Future<T?> showOptionsSheet<T>(
   String? title,
   required Map<T, String> options,
   T? selected,
+  Widget? content,
 }) {
   final colors = context.colorScheme;
   final screen = MediaQuery.sizeOf(context);
@@ -239,7 +240,8 @@ Future<T?> showOptionsSheet<T>(
                 child: Text(title, style: ts.s18),
               ),
             Flexible(
-              child: _PickerOptions<T>(options: options, selected: selected),
+              child: content ??
+                  _PickerOptions<T>(options: options, selected: selected),
             ),
           ],
         ),
@@ -282,6 +284,7 @@ Future<T?> showSidePicker<T>(
   required String title,
   required Map<T, String> options,
   T? selected,
+  Widget? content,
 }) {
   final media = MediaQuery.of(context);
   if (media.size.width < 600 && media.orientation == Orientation.portrait) {
@@ -290,6 +293,7 @@ Future<T?> showSidePicker<T>(
       title: title,
       options: options,
       selected: selected,
+      content: content,
     );
   }
   return showDialog<T>(
@@ -317,7 +321,8 @@ Future<T?> showSidePicker<T>(
                 child: Text(title, style: ts.s18),
               ),
               Expanded(
-                child: _PickerOptions<T>(options: options, selected: selected),
+                child: content ??
+                    _PickerOptions<T>(options: options, selected: selected),
               ),
             ],
           ),
@@ -1502,13 +1507,18 @@ class _EpisodeGridState extends State<EpisodeGrid> {
         }
         return Column(
           children: [
-            Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                for (var i = 0; i < count; i++)
-                  SizedBox(width: width, child: _EpisodeTile(items[i])),
-              ],
+            // Full width so that a short last row (or a single episode)
+            // starts at the left instead of being centered.
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: [
+                  for (var i = 0; i < count; i++)
+                    SizedBox(width: width, child: _EpisodeTile(items[i])),
+                ],
+              ),
             ),
             if (count < items.length)
               TextButton(

@@ -189,6 +189,22 @@ class AppDio with DioMixin {
         onReceiveProgress: onReceiveProgress,
       );
     } on DioException catch (e) {
+      if (e is CloudflareException &&
+          options?.extra?['cloudflareRenewed'] != true &&
+          await renewCloudflare(e.url)) {
+        Log.info("Network", "Retrying $path with the renewed clearance");
+        return await super.request<T>(
+          path,
+          data: data,
+          queryParameters: queryParameters,
+          cancelToken: cancelToken,
+          options: (options ?? Options()).copyWith(
+            extra: {...?options?.extra, 'cloudflareRenewed': true},
+          ),
+          onSendProgress: onSendProgress,
+          onReceiveProgress: onReceiveProgress,
+        );
+      }
       var method = options?.method ?? this.options.method;
       var fallback = jsDelivrFallback(path, method, e);
       if (fallback == null) rethrow;

@@ -360,7 +360,15 @@ class _IconButtonState extends State<_IconButton> {
 }
 
 class MenuButton extends StatefulWidget {
-  const MenuButton({super.key, required this.entries});
+  const MenuButton({
+    super.key,
+    required this.entries,
+    this.icon = Icons.more_horiz,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final String? tooltip;
 
   final List<MenuEntry> entries;
 
@@ -372,9 +380,9 @@ class _MenuButtonState extends State<MenuButton> {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'more'.tl,
+      message: widget.tooltip ?? 'more'.tl,
       child: Button.icon(
-        icon: const Icon(Icons.more_horiz),
+        icon: Icon(widget.icon),
         onPressed: () {
           var renderBox = context.findRenderObject() as RenderBox;
           var offset = renderBox.localToGlobal(Offset.zero);

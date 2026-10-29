@@ -45,10 +45,10 @@ packages:
     dependency: transitive
     description:
       name: args
-      sha256: bf9f5caeea8d8fe6721a9c358dd8a5c1947b27f1cfaa18b39c301273594919e6
+      sha256: d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04
       url: "https://pub.dev"
     source: hosted
-    version: "2.6.0"
+    version: "2.7.0"
   async:
     dependency: transitive
     description:
@@ -57,6 +57,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.0"
+  b_encode_decode:
+    dependency: transitive
+    description:
+      name: b_encode_decode
+      sha256: "4982fd1b21b967ddb606d80b68b4fb9fdcbc5eb0f4e1248d4ddaf789b020c24d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.5"
   battery_plus:
     dependency: "direct main"
     description:
@@ -89,6 +97,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.0"
+  canvas_danmaku:
+    dependency: "direct main"
+    description:
+      name: canvas_danmaku
+      sha256: "1ff071d027b1cf3320d4b58ff1aee6811de51ce39b5b5773c2e0d7693e02d401"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.3"
   characters:
     dependency: transitive
     description:
@@ -141,10 +157,10 @@ packages:
     dependency: "direct main"
     description:
       name: crypto
-      sha256: "1e445881f28f22d6140f181e07737b22f1e099a5e1ff94b0af2f9e4a463f4855"
+      sha256: e3626ae6270383c9e3a549f34c9e4cd26c09ae6a9adaab2bf4737a00340efdc4
       url: "https://pub.dev"
     source: hosted
-    version: "3.0.6"
+    version: "3.0.8"
   csslib:
     dependency: transitive
     description:
@@ -153,6 +169,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  dart_ipify:
+    dependency: transitive
+    description:
+      name: dart_ipify
+      sha256: "3b70d589504126107e81ad0703d91394cc8e2039cb0a11ebd92b9b824a5e9561"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.1"
   dbus:
     dependency: transitive
     description:
@@ -194,6 +218,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.2"
+  dtorrent_task_v2:
+    dependency: "direct main"
+    description:
+      path: "packages/dtorrent_task_v2"
+      relative: true
+    source: path
+    version: "0.5.4"
   dynamic_color:
     dependency: "direct main"
     description:
@@ -210,6 +241,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.0"
+  events_emitter2:
+    dependency: transitive
+    description:
+      name: events_emitter2
+      sha256: "1d2f7b249491e9a143a18992c9a500fc21ac5e271e59e157c12193553ccd3d57"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.4"
   expressions:
     dependency: transitive
     description:
@@ -616,6 +655,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.5"
+  iregexp:
+    dependency: transitive
+    description:
+      name: iregexp
+      sha256: c46919330b2edc54409b9b2dfffc34f14b5395fc0d12021edddafe5b9c1e490c
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.1"
   js:
     dependency: transitive
     description:
@@ -632,6 +679,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.9.0"
+  json_path:
+    dependency: "direct main"
+    description:
+      name: json_path
+      sha256: "99cef94ca7b604ad85b9442bc8852e55396f559c08c0ab961d10b90b730c326f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.9.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -737,6 +792,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
+  maybe_just_nothing:
+    dependency: transitive
+    description:
+      name: maybe_just_nothing
+      sha256: "57af3cacbbe57d5889a4479983755b76551db3c8862aa6335f57f50657945054"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.0"
   media_kit:
     dependency: "direct main"
     description:
@@ -863,10 +926,10 @@ packages:
     dependency: transitive
     description:
       name: petitparser
-      sha256: "07c8f0b1913bcde1ff0d26e57ace2f3012ccbf2b204e070290dad3bb22797646"
+      sha256: "91bd59303e9f769f108f8df05e371341b15d59e995e6806aefab827b58336675"
       url: "https://pub.dev"
     source: hosted
-    version: "6.1.0"
+    version: "7.0.2"
   photo_view:
     dependency: "direct main"
     description:
@@ -940,6 +1003,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.0"
+  rfc_6901:
+    dependency: transitive
+    description:
+      name: rfc_6901
+      sha256: "6a43b1858dca2febaf93e15639aa6b0c49ccdfd7647775f15a499f872b018154"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.1"
   rhttp:
     dependency: "direct main"
     description:
@@ -1297,6 +1368,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.4"
+  utp_protocol:
+    dependency: transitive
+    description:
+      name: utp_protocol
+      sha256: d2396507767ecf7053c4ad1e8cf56a648c36e1c0ba2275e460f68bd06e9e26c0
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.5"
   uuid:
     dependency: "direct main"
     description:
@@ -1406,10 +1485,10 @@ packages:
     dependency: "direct main"
     description:
       name: xml
-      sha256: b015a8ad1c488f66851d762d3090a21c600e479dc75e68328c52774040cf9226
+      sha256: "971043b3a0d3da28727e40ed3e0b5d18b742fa5a68665cca88e74b7876d5e025"
       url: "https://pub.dev"
     source: hosted
-    version: "6.5.0"
+    version: "6.6.1"
   xpath_selector:
     dependency: "direct main"
     description:

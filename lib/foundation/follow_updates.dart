@@ -13,6 +13,9 @@ class ComicUpdateResult {
 
 Future<ComicUpdateResult> updateComic(
     FavoriteItemWithUpdateInfo c, String folder) async {
+  if (c.type.isBangumi) {
+    return ComicUpdateResult(false, null);
+  }
   int retries = 3;
   while (true) {
     try {
@@ -102,7 +105,7 @@ void updateFolderBase(
   var comicsToUpdate = <FavoriteItemWithUpdateInfo>[];
 
   for (var comic in comics) {
-    if (comic.type.comicSource?.isEnabled == false) {
+    if (comic.type.isBangumi || comic.type.comicSource?.isEnabled == false) {
       current++;
       stream.add(UpdateProgress(total, current, errors, updated));
       continue;
