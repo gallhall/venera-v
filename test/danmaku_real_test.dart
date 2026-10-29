@@ -6,16 +6,23 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/danmaku/dandanplay_api.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
+import 'package:venera/utils/translations.dart';
 
 /// Real DanDanPlay API. Run with VENERA_NETWORK_TESTS=1 and
 /// `--dart-define-from-file=dart_defines.json` (the credentials).
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   var enabled = Platform.environment['VENERA_NETWORK_TESTS'] == '1' &&
       DanDanPlayApi.hasBuiltInCredentials;
 
   test('a split cour without a Bangumi link is found by its names', () async {
     var dir = await Directory.systemTemp.createTemp('venera_danmaku_real');
     App.dataPath = dir.path;
+    App.cachePath = dir.path;
+    await AppTranslation.init();
+    // The test binding answers every HTTP request with 400; this test needs
+    // the real network.
+    HttpOverrides.global = null;
     appdata.implicitData = {};
     appdata.settings['danmakuEnabled'] = false;
     var failures = <String>[];

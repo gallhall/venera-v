@@ -1,5 +1,7 @@
 {
   "zh_CN": {
+    "Danmaku quota used up until @time": "今日弹幕额度已用完，@time 后恢复",
+    "You can use your own credentials in Settings > Danmaku": "可在 设置 → 弹幕 中使用自己的凭据",
     "BT metered upload limit": "BT 按流量计费网络上传限速",
     "BT preferred release groups": "BT 优先发布组",
     "Groups in priority order, separated by commas or newlines; /regex/ supported": "按优先顺序填写，用逗号或换行分隔；支持 /正则/",
@@ -794,6 +796,8 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Danmaku quota used up until @time": "今日彈幕額度已用完，@time 後恢復",
+    "You can use your own credentials in Settings > Danmaku": "可在 設定 → 彈幕 中使用自己的憑證",
     "BT metered upload limit": "BT 計量網路上傳限速",
     "BT preferred release groups": "BT 優先發布組",
     "Groups in priority order, separated by commas or newlines; /regex/ supported": "按優先順序填寫，用逗號或換行分隔；支援 /正則/",

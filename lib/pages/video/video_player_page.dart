@@ -233,7 +233,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late final danmaku = DanmakuSession((message) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.showMessage(message: message.tl);
+        context.showMessage(message: message);
       }
     });
   });

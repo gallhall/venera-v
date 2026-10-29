@@ -149,6 +149,10 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
         return;
       }
       await session.load(chosen: anime, selected: episode);
+    } on DanmakuQuotaExceeded catch (error) {
+      if (mounted && session.target == target) {
+        session.reportQuotaExceeded(error);
+      }
     } catch (_) {
       if (mounted && session.target == target) {
         session.reportFailure('Could not load danmaku. Try matching manually.');
