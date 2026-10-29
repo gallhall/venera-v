@@ -31,10 +31,19 @@ class DanDanPlayApi {
         ? value.trim() : fallback;
   }
 
-  static String get appId => _credential('dandanplayAppId',
-      const String.fromEnvironment('DANDANPLAY_APP_ID'));
-  static String get secret => _credential('dandanplayAppSecret',
-      const String.fromEnvironment('DANDANPLAY_APP_SECRET'));
+  /// Built in with `--dart-define-from-file=dart_defines.json` (a local,
+  /// git-ignored file; CI writes it from repository secrets), never kept in
+  /// the source: the repository is public.
+  static const builtInAppId = String.fromEnvironment('DANDANPLAY_APP_ID');
+  static const builtInSecret =
+      String.fromEnvironment('DANDANPLAY_APP_SECRET');
+  static bool get hasBuiltInCredentials =>
+      builtInAppId.isNotEmpty && builtInSecret.isNotEmpty;
+
+  /// The user's own credentials, when entered, take precedence.
+  static String get appId => _credential('dandanplayAppId', builtInAppId);
+  static String get secret =>
+      _credential('dandanplayAppSecret', builtInSecret);
   static bool get hasCredentials => appId.isNotEmpty && secret.isNotEmpty;
 
   Future<Map> _get(String path, [Map<String, dynamic>? query]) async {

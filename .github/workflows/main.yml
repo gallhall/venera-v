@@ -14,6 +14,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -37,7 +43,7 @@ jobs:
 
       # Step 2: Build the Flutter macOS app
       - name: Build Flutter macOS App
-        run: flutter build macos --release
+        run: flutter build macos --release --dart-define-from-file=dart_defines.json
 
       # Step 3: Create the DMG file
       - name: Create DMG
@@ -68,6 +74,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -75,7 +87,7 @@ jobs:
           architecture: x64
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign --dart-define-from-file=dart_defines.json
       - run: |
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
@@ -98,6 +110,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
         with:
@@ -118,7 +136,7 @@ jobs:
       - name: Check rust-toolchain.toml
         run: rustup show
       - run: flutter pub get
-      - run: flutter build apk --release
+      - run: flutter build apk --release --dart-define-from-file=dart_defines.json
       - uses: actions/upload-artifact@v4
         with:
           name: apks
@@ -131,6 +149,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - name: install dependencies
         run: | 
           choco install yq -y
@@ -158,6 +182,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
@@ -208,6 +238,12 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: bash .github/scripts/set_version.sh "${{ github.ref_name }}"
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py || python .github/scripts/dart_defines.py
       - uses: subosito/flutter-action@v2
         with:
           channel: 'master'
