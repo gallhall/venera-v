@@ -11,6 +11,7 @@ import 'package:venera/foundation/danmaku/danmaku_models.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/utils/translations.dart';
 
 class _Adapter implements HttpClientAdapter {
   _Adapter(this.respond);
@@ -99,6 +100,15 @@ Map<String, Object> _animeJson(int id, String title, int count, {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(AppTranslation.init);
+  late Object? oldLanguage;
+  setUp(() {
+    oldLanguage = appdata.settings['language'];
+    appdata.settings['language'] = 'en-US';
+  });
+  tearDown(() {
+    appdata.settings['language'] = oldLanguage;
+  });
   test('signature is base64 SHA256 of app, timestamp, path, secret', () {
     const expected = 'rM6yuXgCjitEagRedf1MuUWrOf7+qZT1mUbd1UllZe0=';
     // Independently concatenate the fixed vector, without the signing helper.
@@ -309,6 +319,10 @@ void main() {
     setUp(() async {
       dir = await Directory.systemTemp.createTemp('venera_danmaku');
       App.dataPath = dir.path;
+      App.cachePath = dir.path;
+      DanmakuSession.resetQuotaWarning();
+      DanDanPlayApi.resetQuotaState();
+      DanDanPlayApi.clearCommentCache();
       oldImplicit = appdata.implicitData;
       appdata.implicitData = {};
       oldId = appdata.settings['dandanplayAppId'];
@@ -336,6 +350,179 @@ void main() {
       session.setTarget(target);
       await session.load();
     }
+
+    test('no-match cache skips requests for 24 hours and manual match clears it',
+        () async {
+      var api = _FakeApi({}, {});
+      const target = DanmakuTarget(key: 'missing', episodeKey: 'missing:1',
+        title: 'Missing Anime', index: 0, subjectId: 12);
+      appdata.implicitData['danmakuNoMatch:old'] = DateTime.now()
+          .subtract(const Duration(days: 8)).millisecondsSinceEpoch;
+      await load(api, target);
+      expect(appdata.implicitData['danmakuNoMatch:missing'], isA<int>());
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:old'), isFalse);
+      var queries = api.queries.length;
+      expect(queries, greaterThan(0));
+      await session.load();
+      expect(api.queries, hasLength(queries));
+      expect(api.bangumiRequests, 1);
+      expect(failures, hasLength(1));
+      session.setTarget(const DanmakuTarget(key: 'missing',
+        episodeKey: 'missing:2', title: 'Missing Anime', index: 1, subjectId: 12));
+      await session.load();
+      expect(api.queries, hasLength(queries));
+      expect(failures, hasLength(2));
+      appdata.implicitData['danmakuNoMatch:missing'] = DateTime.now()
+          .subtract(const Duration(hours: 25)).millisecondsSinceEpoch;
+      await session.load();
+      expect(api.queries.length, greaterThan(queries));
+      expect(api.bangumiRequests, 2);
+      var chosen = DanmakuAnime.fromJson(_animeJson(10, 'Manual', 2));
+      await session.load(chosen: chosen, selected: chosen.episodes[1]);
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:missing'), isFalse);
+      expect(session.anime, chosen);
+    });
+
+    test('no-Bangumi no-match is cached', () async {
+      var api = _FakeApi({}, {});
+      await load(api, const DanmakuTarget(key: 'no-subject',
+        episodeKey: '1', title: 'Missing Anime', index: 0));
+      var queries = api.queries.length;
+      await session.load();
+      expect(queries, greaterThan(0));
+      expect(api.queries, hasLength(queries));
+      expect(api.bangumiRequests, 0);
+    });
+
+    test('network and HTTP errors are never cached as no match', () async {
+      for (var network in [true, false]) {
+        var adapter = _Adapter((r) {
+          if (network) {
+            throw DioException.connectionError(
+              requestOptions: r, reason: 'offline');
+          }
+          return ResponseBody.fromString('Unavailable', 503);
+        });
+        var api = DanDanPlayApi(dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter);
+        await load(api, DanmakuTarget(key: 'failed-$network',
+          episodeKey: '1', title: 'Anime', index: 0));
+        await session.load();
+        expect(adapter.requests, hasLength(2));
+        expect(appdata.implicitData.containsKey('danmakuNoMatch:failed-$network'),
+          isFalse);
+        if (network) {
+          session.dispose();
+        }
+      }
+    });
+
+    test('blocked search still allows saved and Bangumi matches with comments',
+        () async {
+      var until = DateTime.now().toUtc().add(const Duration(hours: 1));
+      appdata.implicitData['dandanplayQuotaUntil'] = {
+        'test-app|search': until.millisecondsSinceEpoch,
+      };
+      appdata.implicitData['danmakuAnime:saved'] = 10;
+      var adapter = _Adapter((r) {
+        if (r.path == '/api/v2/bangumi/bgmtv/404') {
+          return {'success': false, 'errorCode': 7};
+        }
+        if (r.path.startsWith('/api/v2/bangumi/')) {
+          return {'bangumi': _animeJson(10, 'Anime', 2)};
+        }
+        if (r.path.startsWith('/api/v2/comment/')) {
+          return {'comments': [{'p': '1,1,16777215,u', 'm': 'Loaded'}]};
+        }
+        fail('Blocked search must not make a request: ${r.path}');
+      });
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      await load(api, const DanmakuTarget(key: 'saved',
+        episodeKey: 'saved:1', title: 'Anime', index: 0));
+      expect(session.comments.single.text, 'Loaded');
+      expect(adapter.requests.map((r) => r.path), [
+        '/api/v2/bangumi/10', '/api/v2/comment/1001',
+      ]);
+      session.setTarget(const DanmakuTarget(key: 'linked',
+        episodeKey: 'linked:2', title: 'Anime', index: 1, subjectId: 12));
+      await session.load();
+      expect(session.comments.single.text, 'Loaded');
+      expect(adapter.requests.skip(2).map((r) => r.path), [
+        '/api/v2/bangumi/bgmtv/12', '/api/v2/comment/1002',
+      ]);
+      expect(failures, isEmpty);
+      // A missing Bangumi match reaches the blocked by-name fallback.
+      session.setTarget(const DanmakuTarget(key: 'fallback',
+        episodeKey: 'fallback:1', title: 'Anime', index: 0, subjectId: 404));
+      await session.load();
+      session.setTarget(const DanmakuTarget(key: 'fallback',
+        episodeKey: 'fallback:2', title: 'Anime', index: 1, subjectId: 404));
+      await session.load();
+      expect(failures, hasLength(1));
+      expect(failures.single, startsWith('Danmaku quota used up until '));
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:fallback'), isFalse);
+      expect(adapter.requests, hasLength(6));
+      // Manual search shares the block and the once-per-run message.
+      try {
+        await api.search('Anime');
+        fail('Expected the search group to remain blocked');
+      } on DanmakuQuotaExceeded catch (error) {
+        session.reportQuotaExceeded(error);
+      }
+      expect(adapter.requests, hasLength(6));
+      expect(failures, hasLength(1));
+      DanDanPlayApi.resetQuotaState();
+    });
+
+    test('quota reporting translates the time and offers built-in credential help',
+        () async {
+      await load(_FakeApi({}, {}), const DanmakuTarget(key: 'missing',
+        episodeKey: '1', title: 'Missing Anime', index: 0));
+      appdata.settings['dandanplayAppId'] = ' ';
+      appdata.settings['language'] = 'zh-CN';
+      var until = DateTime(2026, 10, 30, 8, 5);
+      session.reportQuotaExceeded(DanmakuQuotaExceeded(until));
+      expect(failures, hasLength(2));
+      expect(failures.last, startsWith(
+        'Danmaku quota used up until @time'.tlParams({'time': '08:05'})));
+      expect(failures.last.contains(
+        'You can use your own credentials in Settings > Danmaku'.tl),
+        DanDanPlayApi.hasBuiltInCredentials);
+    });
+
+    test('quota message is shown once across episodes and sessions', () async {
+      DanDanPlayApi.resetQuotaState();
+      var adapter = _Adapter((r) => ResponseBody.fromString(
+        '{"success":false,"errorCode":429}', 200,
+        headers: {'retry-after': ['3600']},
+      ));
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter);
+      await load(api, const DanmakuTarget(key: 'quota',
+        episodeKey: '1', title: 'Anime', index: 0));
+      session.setTarget(const DanmakuTarget(key: 'quota',
+        episodeKey: '2', title: 'Anime', index: 1));
+      await session.load();
+      expect(failures, hasLength(1));
+      var until = DateTime.fromMillisecondsSinceEpoch(
+        appdata.implicitData['dandanplayQuotaUntil']['test-app|search'] as int).toLocal();
+      var time = '${until.hour.toString().padLeft(2, '0')}:'
+          '${until.minute.toString().padLeft(2, '0')}';
+      expect(failures.single, 'Danmaku quota used up until $time');
+      expect(adapter.requests, hasLength(1));
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:quota'), isFalse);
+      var other = DanmakuSession(failures.add, api: api);
+      other.setTarget(const DanmakuTarget(key: 'quota',
+        episodeKey: '3', title: 'Anime', index: 2));
+      await other.load();
+      // Manual matching shares this reporting path, even after a normal warning.
+      other.reportFailure('No danmaku match');
+      other.reportQuotaExceeded(DanmakuQuotaExceeded(until));
+      expect(failures.where((m) => m.startsWith('Danmaku quota')), hasLength(1));
+      other.dispose();
+      DanDanPlayApi.resetQuotaState();
+    });
 
     test('unlinked second cour searches Japanese name and uses relative ep',
         () async {
@@ -502,10 +689,19 @@ void main() {
   });
 
   group('API contract', () {
+    late Directory dir;
+    late Map<String, dynamic> oldImplicit;
     late Object? oldId;
     late Object? oldSecret;
 
-    setUp(() {
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('venera_danmaku_api');
+      App.dataPath = dir.path;
+      App.cachePath = dir.path;
+      oldImplicit = appdata.implicitData;
+      appdata.implicitData = {};
+      DanDanPlayApi.resetQuotaState();
+      DanDanPlayApi.clearCommentCache();
       DanDanPlayApi.resetClockCorrection();
       oldId = appdata.settings['dandanplayAppId'];
       oldSecret = appdata.settings['dandanplayAppSecret'];
@@ -513,10 +709,198 @@ void main() {
       appdata.settings['dandanplayAppSecret'] = 'test-secret';
     });
 
-    tearDown(() {
+    tearDown(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      appdata.implicitData = oldImplicit;
+      await dir.delete(recursive: true);
+      DanDanPlayApi.resetQuotaState();
+      DanDanPlayApi.clearCommentCache();
       DanDanPlayApi.resetClockCorrection();
       appdata.settings['dandanplayAppId'] = oldId;
       appdata.settings['dandanplayAppSecret'] = oldSecret;
+    });
+
+    for (var status in [200, 429]) {
+      for (var accept429 in [false, true]) {
+        test('quota $status blocks per AppId/group, persists and expires '
+            '(accept429: $accept429)', () async {
+          var now = DateTime.utc(2026, 10, 29, 14, 35, 55);
+          var exhausted = true;
+          var adapter = _Adapter((r) => exhausted
+            ? ResponseBody.fromString('{"success":false,"errorCode":429}',
+                status, headers: {'retry-after': ['33845']})
+            : {'animes': []});
+          var dio = Dio(BaseOptions(
+            baseUrl: 'https://api.dandanplay.net',
+            validateStatus: accept429 ? (s) => s != null && s < 500 : null,
+          ))..httpClientAdapter = adapter;
+          DanDanPlayApi createApi() => DanDanPlayApi(dio: dio, now: () => now);
+          var until = DateTime.utc(2026, 10, 30);
+          var quota = isA<DanmakuQuotaExceeded>()
+              .having((e) => e.until, 'until', until);
+          var logStart = Log.logs.length;
+          await expectLater(createApi().search('Anime'), throwsA(quota));
+          await expectLater(createApi().search('Anime'), throwsA(quota));
+          expect(adapter.requests, hasLength(1));
+          expect(appdata.implicitData['dandanplayQuotaUntil'], {
+            'test-app|search': until.millisecondsSinceEpoch,
+          });
+          expect(Log.logs.skip(logStart).where((l) =>
+            l.content.startsWith('DanDanPlay quota used up until ')), hasLength(1));
+          // Simulate a restart, including reloading persisted implicitData.
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          appdata.implicitData = Map<String, dynamic>.from(jsonDecode(
+            await File('${App.dataPath}/implicitData.json').readAsString()) as Map);
+          DanDanPlayApi.resetQuotaState();
+          await expectLater(createApi().search('Anime'), throwsA(quota));
+          expect(adapter.requests, hasLength(1));
+          exhausted = false;
+          appdata.settings['dandanplayAppId'] = 'own-app';
+          expect(await createApi().search('Anime'), isEmpty);
+          appdata.settings['dandanplayAppId'] = 'test-app';
+          await expectLater(createApi().search('Anime'), throwsA(quota));
+          expect(adapter.requests, hasLength(2));
+          now = until;
+          expect(await createApi().search('Anime'), isEmpty);
+          expect(adapter.requests, hasLength(3));
+        });
+      }
+    }
+
+    test('search quota covers both searches but allows bangumi and comments',
+        () async {
+      var adapter = _Adapter((r) {
+        if (r.path.startsWith('/api/v2/search/')) {
+          return {'success': false, 'errorCode': 429};
+        }
+        if (r.path.startsWith('/api/v2/bangumi/')) {
+          return {'bangumi': _animeJson(18886, 'Anime', 1)};
+        }
+        return {'comments': []};
+      });
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      await expectLater(api.search('Anime'), throwsA(isA<DanmakuQuotaExceeded>()));
+      await expectLater(api.searchEpisodes('Anime', 1),
+        throwsA(isA<DanmakuQuotaExceeded>()));
+      expect(adapter.requests, hasLength(1));
+      expect((await api.byBangumi(515759)).id, 18886);
+      expect((await api.anime(18886)).id, 18886);
+      expect(await api.comments(188860001), isEmpty);
+      expect(adapter.requests, hasLength(4));
+      expect(adapter.requests.skip(1).map((r) => r.path), [
+        '/api/v2/bangumi/bgmtv/515759', '/api/v2/bangumi/18886',
+        '/api/v2/comment/188860001',
+      ]);
+    });
+
+    test('quota writes preserve other groups and AppIds and prune expired entries',
+        () async {
+      var now = DateTime.utc(2026, 10, 29, 14);
+      var future = now.add(const Duration(hours: 2)).millisecondsSinceEpoch;
+      appdata.implicitData['dandanplayQuotaUntil'] = {
+        'test-app|bangumi': future,
+        'own-app|search': future,
+        'expired-app|comment': now.millisecondsSinceEpoch,
+        'older-app|search': now.subtract(const Duration(hours: 1))
+            .millisecondsSinceEpoch,
+      };
+      var adapter = _Adapter((r) => {'success': false, 'errorCode': 429});
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter,
+        now: () => now);
+      await expectLater(api.search('Anime'), throwsA(isA<DanmakuQuotaExceeded>()));
+      expect(appdata.implicitData['dandanplayQuotaUntil'], {
+        'test-app|bangumi': future,
+        'own-app|search': future,
+        'test-app|search': DateTime.utc(2026, 10, 30).millisecondsSinceEpoch,
+      });
+      await expectLater(api.anime(10), throwsA(isA<DanmakuQuotaExceeded>()));
+      expect(adapter.requests, hasLength(1));
+    });
+
+    test('old single-entry quota data is ignored and replaced on quota errors',
+        () async {
+      var now = DateTime.utc(2026, 10, 29, 14);
+      appdata.implicitData['dandanplayQuotaUntil'] = {
+        'appId': 'test-app',
+        'until': now.add(const Duration(days: 1)).millisecondsSinceEpoch,
+      };
+      var exhausted = false;
+      var adapter = _Adapter((r) => exhausted
+        ? {'success': false, 'errorCode': 429} : {'animes': []});
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter,
+        now: () => now);
+      expect(await api.search('Anime'), isEmpty);
+      exhausted = true;
+      await expectLater(api.search('Anime'), throwsA(isA<DanmakuQuotaExceeded>()));
+      expect(adapter.requests, hasLength(2));
+      expect(appdata.implicitData['dandanplayQuotaUntil'], {
+        'test-app|search': DateTime.utc(2026, 10, 30).millisecondsSinceEpoch,
+      });
+    });
+
+    test('quota without Retry-After lasts until next midnight UTC', () async {
+      var now = DateTime.utc(2026, 12, 31, 23, 59);
+      var adapter = _Adapter((r) => {'errorCode': 429, 'success': false});
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter,
+        now: () => now);
+      await expectLater(api.search('Anime'), throwsA(
+        isA<DanmakuQuotaExceeded>().having((e) => e.until, 'until',
+          DateTime.utc(2027)),
+      ));
+    });
+
+    test('comments survive a new run, expire, and separate language variants',
+        () async {
+      var adapter = _Adapter((r) => {'comments': [
+        {'p': '1,1,16777215,u', 'm': 'Cached'},
+      ]});
+      DanDanPlayApi createApi() => DanDanPlayApi(
+        dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter);
+      expect((await createApi().comments(123)).single.text, 'Cached');
+      var file = File('${App.cachePath}/danmaku/123-s.json');
+      expect(await file.exists(), isTrue);
+      DanDanPlayApi.clearCommentCache();
+      expect((await createApi().comments(123)).single.text, 'Cached');
+      expect(adapter.requests, hasLength(1));
+      await createApi().comments(123, traditional: true);
+      expect(await File('${App.cachePath}/danmaku/123-t.json').exists(), isTrue);
+      expect(adapter.requests, hasLength(2));
+      await file.setLastModified(DateTime.now().subtract(const Duration(hours: 13)));
+      DanDanPlayApi.clearCommentCache();
+      await createApi().comments(123);
+      expect(adapter.requests, hasLength(3));
+    });
+
+    test('corrupt comments are deleted even when refetch fails', () async {
+      var dir = await Directory('${App.cachePath}/danmaku').create();
+      for (var content in ['invalid json', '{}', '[{"p":"bad","m":"bad"}]']) {
+        var file = await File('${dir.path}/12-s.json').writeAsString(content);
+        var adapter = _Adapter((r) => ResponseBody.fromString('Unavailable', 503));
+        var api = DanDanPlayApi(dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter);
+        await expectLater(api.comments(12), throwsA(isA<DioException>()));
+        expect(await file.exists(), isFalse);
+        expect(adapter.requests, hasLength(1));
+      }
+    });
+
+    test('comment disk cache keeps the 100 newest files', () async {
+      var dir = await Directory('${App.cachePath}/danmaku').create();
+      for (var i = 1; i <= 100; i++) {
+        var file = await File('${dir.path}/$i-s.json').writeAsString('[]');
+        await file.setLastModified(DateTime.now().subtract(Duration(minutes: 101 - i)));
+      }
+      var adapter = _Adapter((r) => {'comments': []});
+      await DanDanPlayApi(dio: Dio(BaseOptions(baseUrl: 'https://api.dandanplay.net'))
+          ..httpClientAdapter = adapter).comments(101);
+      expect(await dir.list().length, 100);
+      expect(await File('${dir.path}/1-s.json').exists(), isFalse);
+      expect(await File('${dir.path}/101-s.json').exists(), isTrue);
     });
 
     for (var accept403 in [false, true]) {

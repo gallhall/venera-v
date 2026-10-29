@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_matching.dart';
+import 'package:venera/utils/translations.dart';
 
 import 'dandanplay_api.dart';
 import 'danmaku_models.dart';
@@ -129,6 +130,7 @@ class DanmakuSession extends ChangeNotifier {
     : api = api ?? DanDanPlayApi();
 
   final DanDanPlayApi api;
+  // Receives localized messages, including parameterized quota warnings.
   final void Function(String) onFailure;
   final _warned = <String>{};
   DanmakuTarget? target;
@@ -164,10 +166,34 @@ class DanmakuSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void reportFailure(String message) {
+  static bool _quotaWarned = false;
+
+  @visibleForTesting
+  static void resetQuotaWarning() {
+    _quotaWarned = false;
+  }
+
+  void reportQuotaExceeded(DanmakuQuotaExceeded error) {
+    if (_disposed || _quotaWarned) {
+      return;
+    }
+    _quotaWarned = true;
+    var local = error.until.toLocal();
+    var time = '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
+    var message = 'Danmaku quota used up until @time'.tlParams({'time': time});
+    var ownId = appdata.settings['dandanplayAppId'];
+    if (DanDanPlayApi.hasBuiltInCredentials &&
+        (ownId is! String || ownId.trim().isEmpty)) {
+      message += '\n${'You can use your own credentials in Settings > Danmaku'.tl}';
+    }
+    onFailure(message);
+  }
+
+  void reportFailure(String message, {bool translated = false}) {
     var key = target?.episodeKey;
     if (!_disposed && key != null && _warned.add(key)) {
-      onFailure(message);
+      onFailure(translated ? message : message.tl);
     }
   }
 
@@ -212,9 +238,19 @@ class DanmakuSession extends ChangeNotifier {
     }
     var chosen = chooseDanmakuAnime(candidates.values, target);
     if (chosen == null) {
+      _rememberNoMatch(target.key);
       throw const DanmakuNoMatch();
     }
     return api.anime(chosen.id);
+  }
+
+  void _rememberNoMatch(String key) {
+    var now = DateTime.now().millisecondsSinceEpoch;
+    appdata.implicitData.removeWhere((key, value) =>
+      key.startsWith('danmakuNoMatch:') && value is int &&
+      now - value > const Duration(days: 7).inMilliseconds);
+    appdata.implicitData['danmakuNoMatch:$key'] = now;
+    appdata.writeImplicitData();
   }
 
   Future<void> load({DanmakuAnime? chosen, DanmakuEpisode? selected}) async {
@@ -238,6 +274,13 @@ class DanmakuSession extends ChangeNotifier {
         a = chosen;
       } else {
         var saved = appdata.implicitData['danmakuAnime:${t.key}'];
+        var noMatch = appdata.implicitData['danmakuNoMatch:${t.key}'];
+        if (saved is! int && noMatch is int &&
+            DateTime.now().millisecondsSinceEpoch - noMatch <
+                const Duration(hours: 24).inMilliseconds) {
+          reportFailure('Could not load danmaku. Try matching manually.');
+          return;
+        }
         if (saved is int) {
           a = await api.anime(saved);
           byName = appdata.implicitData['danmakuByName:${t.key}'] == true;
@@ -264,6 +307,9 @@ class DanmakuSession extends ChangeNotifier {
       if (_disposed || request != _request) {
         return;
       }
+      if (chosen != null) {
+        appdata.implicitData.remove('danmakuNoMatch:${t.key}');
+      }
       appdata.implicitData['danmakuAnime:${t.key}'] = a.id;
       appdata.implicitData['danmakuByName:${t.key}'] = byName;
       appdata.writeImplicitData();
@@ -281,6 +327,10 @@ class DanmakuSession extends ChangeNotifier {
       comments = data;
       _loaded = true;
       revision++;
+    } on DanmakuQuotaExceeded catch (error) {
+      if (!_disposed && request == _request) {
+        reportQuotaExceeded(error);
+      }
     } catch (_) {
       if (!_disposed && request == _request) {
         reportFailure('Could not load danmaku. Try matching manually.');
