@@ -1,5 +1,10 @@
 import subprocess
 import sys
+import os
+
+# Build-time credentials, written by CI from repository secrets.
+DEFINES = (["--dart-define-from-file=dart_defines.json"]
+           if os.path.exists("dart_defines.json") else [])
 
 arch = sys.argv[1]
 debianContent = ''
@@ -27,7 +32,7 @@ with open('debian/gui/venera-v.desktop', 'w') as f:
 
 # A failed build fails the script, so that CI does not pass without a package.
 try:
-    subprocess.run(["flutter", "build", "linux"], check=True)
+    subprocess.run(["flutter", "build", "linux"] + DEFINES, check=True)
 
     subprocess.run(["$HOME/.pub-cache/bin/flutter_to_debian"], shell=True, check=True)
 finally:

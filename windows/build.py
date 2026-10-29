@@ -2,12 +2,16 @@ import subprocess
 import os
 import httpx
 
+# Build-time credentials, written by CI from repository secrets.
+DEFINES = (["--dart-define-from-file=dart_defines.json"]
+           if os.path.exists("dart_defines.json") else [])
+
 file = open('pubspec.yaml', 'r')
 content = file.read()
 file.close()
 
 # Failures fail the script, so that CI does not upload empty packages.
-subprocess.run(["flutter", "build", "windows"], shell=True, check=True)
+subprocess.run(["flutter", "build", "windows"] + DEFINES, shell=True, check=True)
 
 if os.path.exists("build/app-windows.zip"):
     os.remove("build/app-windows.zip")
