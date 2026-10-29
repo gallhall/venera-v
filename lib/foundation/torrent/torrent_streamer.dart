@@ -160,14 +160,32 @@ class DartTorrentStreamer implements TorrentStreamer {
       var task = TorrentTask.newTask(model,
         '${session.directory!.path}/data', true,
         magnet?.webSeeds, magnet?.acceptableSources,
-        SequentialConfig.forVideoStreaming());
+        const SequentialConfig(
+          lookAheadSize: 8,
+          criticalZoneSize: 10 * 1024 * 1024,
+          minSpeedForSequential: 100 * 1024,
+          autoDetectMoovAtom: false,
+          seekLatencyTolerance: 1,
+        ));
       session.task = task;
       task.setTransferLimits(
         download: _speed('btDownloadLimitKB'),
         upload: _speed('btUploadLimitKB'),
       );
+      for (var i = 0; i < model.files.length; i++) {
+        task.setFilePriority(i, identical(model.files[i], file)
+            ? FilePriority.high : FilePriority.skip);
+      }
+      task.setStreamFile(model.files.indexOf(file));
       await task.start();
       session.checkCancelled();
+      var selector = task.pieceManager?.pieceSelector;
+      var filePieces = (file.end - 1) ~/ model.pieceLength -
+          file.offset ~/ model.pieceLength + 1;
+      Log.info('Torrent', 'Streaming $filePieces pieces of '
+          '${model.pieceLength ~/ 1024} KB, critical '
+          '${selector is AdvancedSequentialPieceSelector
+              ? selector.criticalPieces.toList() : 'none'}');
       // DHT starts with TorrentTask.start(); request another discovery pass
       // after handing off the metadata peers.
       for (var peer in peers) {
@@ -180,10 +198,6 @@ class DartTorrentStreamer implements TorrentStreamer {
         task.startAnnounceUrl(tracker, model.infoHashBuffer);
       }
       task.requestPeersFromDHT();
-      for (var i = 0; i < model.files.length; i++) {
-        task.setFilePriority(i, identical(model.files[i], file)
-            ? FilePriority.high : FilePriority.skip);
-      }
       var elapsed = 0;
       session.timer = Timer.periodic(const Duration(seconds: 1), (_) {
         var status = session.status.value = TorrentStatus(

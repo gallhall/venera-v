@@ -781,9 +781,16 @@ class StateFileV2 {
 
   /// Update piece bitfield
   Future<bool> update(int index, {bool have = true, int uploaded = 0}) async {
+    if (_closed) {
+      return false;
+    }
     _access = await getAccess();
+    final controller = _streamController;
+    if (_closed || controller == null || controller.isClosed) {
+      return false;
+    }
     var completer = Completer<bool>();
-    _streamController?.add({
+    controller.add({
       'type': 'single',
       'index': index,
       'uploaded': uploaded,
