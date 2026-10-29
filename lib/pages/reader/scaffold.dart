@@ -591,7 +591,12 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       reversed: isReversed,
       divisions: (context.reader.maxPage - 1).clamp(2, 1 << 16),
       onChanged: (i) {
-        context.reader.toPage(i.toInt());
+        final controller = context.reader._imageViewController;
+        if (controller is _ContinuousModeState && controller.chain != null) {
+          controller.resetChain(i.toInt());
+        } else {
+          context.reader.toPage(i.toInt());
+        }
       },
     );
   }

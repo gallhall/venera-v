@@ -136,14 +136,13 @@ class ComicTile extends StatelessWidget {
             App.rootContext.showMessage(message: 'Title copied'.tl);
           },
         ),
-        if (!ComicType.fromKey(comic.sourceKey).isBangumi)
-          MenuEntry(
-            icon: Icons.stars_outlined,
-            text: 'Add to favorites'.tl,
-            onClick: () {
-              addFavorite([comic]);
-            },
-          ),
+        MenuEntry(
+          icon: Icons.stars_outlined,
+          text: 'Add to favorites'.tl,
+          onClick: () {
+            addFavorite([comic]);
+          },
+        ),
         if (!ComicType.fromKey(comic.sourceKey).isBangumi)
           MenuEntry(
             icon: Icons.block,
@@ -165,7 +164,7 @@ class ComicTile extends StatelessWidget {
 
     var isFavorite = appdata.settings['showFavoriteStatusOnTile']
         ? LocalFavoritesManager()
-            .isExist(comic.id, ComicType(comic.sourceKey.hashCode))
+            .isExist(comic.id, ComicType.fromKey(comic.sourceKey))
         : false;
     var history = appdata.settings['showHistoryStatusOnTile']
         ? HistoryManager().find(comic.id, ComicType(comic.sourceKey.hashCode))

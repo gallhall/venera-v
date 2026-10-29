@@ -78,6 +78,17 @@ String? validateFolderName(String newFolderName) {
   return null;
 }
 
+/// Bangumi anime are favorited under their history id, `bangumi:<subject>`,
+/// which opens the subject page.
+String _favoriteId(Comic comic) {
+  if (!ComicType.fromKey(comic.sourceKey).isBangumi ||
+      bangumiSubjectIdFromHistory(comic.id) != null) {
+    return comic.id;
+  }
+  var subjectId = int.tryParse(comic.id);
+  return subjectId == null ? comic.id : bangumiHistoryId(subjectId);
+}
+
 void addFavorite(List<Comic> comics) {
   var folders = LocalFavoritesManager().folderNames;
 
@@ -126,13 +137,11 @@ void addFavorite(List<Comic> comics) {
                     LocalFavoritesManager().addComic(
                       selectedFolder!,
                       FavoriteItem(
-                        id: comic.id,
+                        id: _favoriteId(comic),
                         name: comic.title,
                         coverPath: comic.cover,
                         author: comic.subtitle ?? '',
-                        type: ComicType((comic.sourceKey == 'local'
-                            ? 0
-                            : comic.sourceKey.hashCode)),
+                        type: ComicType.fromKey(comic.sourceKey),
                         tags: comic.tags ?? [],
                       ),
                     );
@@ -159,7 +168,9 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
       try {
         var c = comics[index];
         var comicSource = c.type.comicSource;
-        if (comicSource == null) return;
+        if (comicSource == null) {
+          return;
+        }
 
         var newInfo = (await comicSource.loadComicInfo!(c.id)).data;
 

@@ -96,14 +96,33 @@ class VideoSniffer {
     RegExp? exclude,
     String kind = 'request',
     bool embedded = false,
+    RegExp? nested,
   }) {
+    if (nested?.hasMatch(url) ?? false) {
+      return null;
+    }
     if (isStream(
       url,
       match: match,
       exclude: exclude,
       confirmed: kind == 'm3u8' || kind == 'media' || kind == 'embedded',
     )) {
-      return (url: url, deferred: false);
+      var found = match?.firstMatch(url);
+      var extracted = found != null && found.groupNames.contains('v')
+          ? found.namedGroup('v') ?? url : url;
+      var uri = Uri.tryParse(extracted);
+      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+        return null;
+      }
+      // A stream url found inside another url, e.g. in the query of a
+      // player page, that the pattern did not single out with a prefix
+      // such as `url=`: the player usually plays a signed url made from
+      // it, so that one is waited for first.
+      var inner = kind != 'embedded' &&
+          found != null &&
+          found.start > 0 &&
+          found[0] == extracted;
+      return (url: extracted, deferred: inner);
     }
     if (embedded && kind != 'embedded') {
       var inner = embeddedStream(url, exclude: exclude);
@@ -298,7 +317,9 @@ class VideoSniffer {
   /// a stream url in the query of a request or frame (see [embeddedStream])
   /// is taken if the page plays no other stream within [embeddedDelay]:
   /// players often play a signed url made from it. Throws if no stream
-  /// shows up within [timeout].
+  /// shows up within [timeout]. [nested] identifies player pages to load
+  /// before matching streams, including pages reported as plain requests.
+  /// A named `v` group in [match] extracts the stream from a wrapper URL.
   static Future<VideoSniffResult> sniff(
     String url, {
     RegExp? match,
@@ -308,6 +329,7 @@ class VideoSniffer {
     String? userAgent,
     String? script,
     bool embedded = false,
+    RegExp? nested,
   }) async {
     if (!isSupported) {
       throw "Web page sniffing is not supported on this platform";
@@ -320,6 +342,10 @@ class VideoSniffer {
     // Headers of the requests intercepted natively, by url.
     var intercepted = <String, Map<String, String>>{};
     Timer? embeddedTimer;
+    var nestedPages = <String>{url};
+    var children = <HeadlessInAppWebView>[];
+    var disposed = false;
+    late HeadlessInAppWebView Function(String) createWebview;
 
     Future<void> found(
       String streamUrl,
@@ -330,12 +356,27 @@ class VideoSniffer {
     ]) async {
       if (completer.isCompleted) return;
       if (seen.length < 200) seen.add("$kind $streamUrl");
+      if (nested?.hasMatch(streamUrl) ?? false) {
+        // Frames already run our script. Plain requests need a browsing
+        // context of their own, without interrupting the parent player.
+        if (kind == 'frame') {
+          nestedPages.add(streamUrl);
+        } else if (!disposed && nestedPages.length < 8 && nestedPages.add(streamUrl)) {
+          var child = createWebview(streamUrl);
+          children.add(child);
+          unawaited(child.run().catchError((Object e) {
+            Log.warning('Video Sniffer', 'Nested page failed: $e');
+          }));
+        }
+        return;
+      }
       var candidate = streamCandidate(
         streamUrl,
         match: match,
         exclude: exclude,
         kind: kind,
         embedded: embedded,
+        nested: nested,
       );
       if (candidate == null) {
         return;
@@ -348,6 +389,7 @@ class VideoSniffer {
         );
         return;
       }
+      streamUrl = candidate.url;
       // On Android, natively intercepted requests have the Referer the page
       // sent, if any. Elsewhere it is unknown for them, and the frame script
       // cannot see request headers: it is guessed from the page.
@@ -391,9 +433,9 @@ class VideoSniffer {
       );
     }
 
-    var webview = HeadlessInAppWebView(
+    createWebview = (pageUrl) => HeadlessInAppWebView(
       webViewEnvironment: AppWebview.webViewEnvironment,
-      initialUrlRequest: URLRequest(url: WebUri(url), headers: headers),
+      initialUrlRequest: URLRequest(url: WebUri(pageUrl), headers: headers),
       initialSettings: InAppWebViewSettings(
         userAgent: userAgent,
         useShouldInterceptRequest: true,
@@ -447,6 +489,7 @@ class VideoSniffer {
       },
     );
 
+    var webview = createWebview(url);
     try {
       await webview.run();
       return await completer.future.timeout(
@@ -460,7 +503,11 @@ class VideoSniffer {
         },
       );
     } finally {
+      disposed = true;
       embeddedTimer?.cancel();
+      for (var child in children) {
+        await child.dispose();
+      }
       await webview.dispose();
     }
   }

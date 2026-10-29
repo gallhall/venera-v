@@ -21,7 +21,7 @@ List<BangumiSubject> _sorted(List<BangumiSubject> day, Set<int> watching) {
 }
 
 /// Shared cover presentation for full-page Bangumi grids.
-class BangumiGridCover extends StatelessWidget {
+class BangumiGridCover extends StatefulWidget {
   const BangumiGridCover({
     super.key,
     required this.subject,
@@ -32,47 +32,64 @@ class BangumiGridCover extends StatelessWidget {
   final bool watching;
 
   @override
+  State<BangumiGridCover> createState() => _BangumiGridCoverState();
+}
+
+class _BangumiGridCoverState extends State<BangumiGridCover> {
+  final heroID = nextBangumiCoverHeroID();
+  BangumiSubject get subject => widget.subject;
+  bool get watching => widget.watching;
+
+  @override
   Widget build(BuildContext context) {
     return CoverButton(
       borderRadius: BorderRadius.circular(12),
       label: subject.displayName,
       onTap: () => context.to(
-        () => BangumiSubjectPage(subjectId: subject.id, preview: subject),
+        () => BangumiSubjectPage(
+          subjectId: subject.id,
+          preview: subject,
+          heroID: heroID,
+          initialCover: subject.image,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: ColoredBox(
-                color: context.colorScheme.surfaceContainerHigh,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (subject.image.isNotEmpty)
-                      AnimatedImage(
-                        image: CachedImageProvider(subject.image),
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-                    if (watching)
-                      Positioned(
-                        left: 4,
-                        top: 4,
-                        child: AppBadge(
-                          'Currently watching'.tl,
-                          highlighted: true,
+            child: Hero(
+              tag: 'cover$heroID',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ColoredBox(
+                  color: context.colorScheme.surfaceContainerHigh,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (subject.image.isNotEmpty)
+                        AnimatedImage(
+                          image: CachedImageProvider(subject.image),
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
                         ),
-                      ),
-                    if (subject.score > 0)
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: AppBadge(subject.score.toStringAsFixed(1)),
-                      ),
-                  ],
+                      if (watching)
+                        Positioned(
+                          left: 4,
+                          top: 4,
+                          child: AppBadge(
+                            'Currently watching'.tl,
+                            highlighted: true,
+                          ),
+                        ),
+                      if (subject.score > 0)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: AppBadge(subject.score.toStringAsFixed(1)),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -421,55 +438,72 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
 }
 
 /// Home covers use an ink overlay above the image and theme-based score badges.
-class _HomeSubjectCover extends StatelessWidget {
+class _HomeSubjectCover extends StatefulWidget {
   const _HomeSubjectCover({required this.subject, required this.watching});
 
   final BangumiSubject subject;
   final bool watching;
 
   @override
+  State<_HomeSubjectCover> createState() => __HomeSubjectCoverState();
+}
+
+class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
+  final heroID = nextBangumiCoverHeroID();
+  BangumiSubject get subject => widget.subject;
+  bool get watching => widget.watching;
+
+  @override
   Widget build(BuildContext context) {
     return CoverButton(
       label: subject.displayName,
       onTap: () => context.to(
-        () => BangumiSubjectPage(subjectId: subject.id, preview: subject),
+        () => BangumiSubjectPage(
+          subjectId: subject.id,
+          preview: subject,
+          heroID: heroID,
+          initialCover: subject.image,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: ColoredBox(
-                color: context.colorScheme.surfaceContainerHigh,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (subject.image.isNotEmpty)
-                      AnimatedImage(
-                        image: CachedImageProvider(subject.image),
-                        width: double.infinity,
-                        height: double.infinity,
-                      ),
-                    if (watching)
-                      Positioned(
-                        left: 4,
-                        top: 4,
-                        child: Tooltip(
-                          message: 'Currently watching'.tl,
-                          child: AppBadge(
-                            'Currently watching'.tl,
-                            highlighted: true,
+            child: Hero(
+              tag: 'cover$heroID',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: ColoredBox(
+                  color: context.colorScheme.surfaceContainerHigh,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (subject.image.isNotEmpty)
+                        AnimatedImage(
+                          image: CachedImageProvider(subject.image),
+                          width: double.infinity,
+                          height: double.infinity,
+                        ),
+                      if (watching)
+                        Positioned(
+                          left: 4,
+                          top: 4,
+                          child: Tooltip(
+                            message: 'Currently watching'.tl,
+                            child: AppBadge(
+                              'Currently watching'.tl,
+                              highlighted: true,
+                            ),
                           ),
                         ),
-                      ),
-                    if (subject.score > 0)
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: AppBadge(subject.score.toStringAsFixed(1)),
-                      ),
-                  ],
+                      if (subject.score > 0)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: AppBadge(subject.score.toStringAsFixed(1)),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),

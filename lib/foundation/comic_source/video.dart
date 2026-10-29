@@ -214,6 +214,8 @@ class VideoSkip {
 
 /// Result of `video.loadPlayInfo`: everything needed to play an episode.
 class VideoPlayInfo {
+  final bool isTorrent;
+  final int? torrentEpisode;
   /// At least one stream. The player starts with the first one.
   final List<VideoPlaySource> sources;
 
@@ -227,6 +229,8 @@ class VideoPlayInfo {
 
   const VideoPlayInfo({
     required this.sources,
+    this.isTorrent = false,
+    this.torrentEpisode,
     this.subtitles = const [],
     this.headers = const {},
     this.skips = const [],
@@ -354,6 +358,8 @@ class VideoPlayInfo {
     if (list.isEmpty) throw error ?? "No source";
     return VideoPlayInfo(
       sources: list,
+      isTorrent: isTorrent,
+      torrentEpisode: torrentEpisode,
       subtitles: subtitles,
       headers: headers,
       skips: skips,

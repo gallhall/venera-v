@@ -48,6 +48,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
+import 'reader_chain.dart';
+
 part 'scaffold.dart';
 
 part 'images.dart';
@@ -113,6 +115,57 @@ class Reader extends StatefulWidget {
 
 class _ReaderState extends State<Reader>
     with _ReaderLocation, _ReaderWindow, _VolumeListener, _ImagePerPageHandler {
+  int _chapterViewGeneration = 0;
+
+  bool get seamlessChapters => mode.isContinuous &&
+      appdata.settings.getReaderSetting(
+        cid, type.sourceKey, 'seamlessChapters',
+      ) != false;
+
+  @override
+  bool toChapter(int c, {bool toLastPage = false}) {
+    if (c < 1 || c > maxChapter || isLoading) {
+      return false;
+    }
+    _chapterViewGeneration++;
+    return super.toChapter(c, toLastPage: toLastPage);
+  }
+
+  @override
+  bool toNextPage() {
+    final controller = _imageViewController;
+    if (seamlessChapters && page == maxPage &&
+        !isLastChapterOfGroup && controller is _ContinuousModeState) {
+      controller.advanceChapter();
+      return true;
+    }
+    return super.toNextPage();
+  }
+
+  @override
+  bool toPrevPage() {
+    final controller = _imageViewController;
+    if (seamlessChapters && page == 1 &&
+        controller is _ContinuousModeState && controller.retreatChapter()) {
+      return true;
+    }
+    return super.toPrevPage();
+  }
+
+  Future<List<String>> loadChapterImages(int chapter) async {
+    if (type == ComicType.local || LocalManager().isDownloaded(
+      cid, type, chapter, widget.chapters,
+    )) {
+      return LocalManager().getImages(cid, type, chapter);
+    }
+    final cp = widget.chapters?.ids.elementAtOrNull(chapter - 1);
+    final res = await type.comicSource!.loadComicPages!(cid, cp);
+    if (res.error) {
+      throw res.errorMessage!;
+    }
+    return res.data;
+  }
+
   @override
   void update() {
     setState(() {});
@@ -301,7 +354,9 @@ class _ReaderState extends State<Reader>
             builder: (context) {
               return _ReaderScaffold(
                 child: _ReaderGestureDetector(
-                  child: _ReaderImages(key: Key(chapter.toString())),
+                  child: _ReaderImages(
+                    key: ValueKey(_chapterViewGeneration),
+                  ),
                 ),
               );
             },

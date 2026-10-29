@@ -108,7 +108,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
           addFavorite(selectedComics.keys.toList());
         },
       ),
-      if (selectedComics.length == 1)
+      if (selectedComics.length == 1 && !App.isAndroid && !App.isIOS)
         MenuEntry(
           icon: Icons.folder_open,
           text: "Open Folder".tl,
@@ -129,7 +129,33 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
         ),
       if (selectedComics.isNotEmpty)
         ...exportActions(selectedComics.keys.toList()),
+      MenuEntry(
+        icon: Icons.select_all,
+        text: "Select All".tl,
+        onClick: selectAll,
+      ),
+      MenuEntry(
+        icon: Icons.deselect,
+        text: "Deselect".tl,
+        onClick: deSelect,
+      ),
+      MenuEntry(
+        icon: Icons.flip,
+        text: "Invert Selection".tl,
+        onClick: invertSelection,
+      ),
     ]);
+  }
+
+  Future<void> importVideo(int type) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ImportComicsWidget(initialType: type),
+    );
+    if (mounted) {
+      update();
+    }
   }
 
   void selectAll() {
@@ -156,25 +182,6 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
   @override
   Widget build(BuildContext context) {
     List<Widget> selectActions = [
-      MenuButton(
-        entries: [
-          MenuEntry(
-            icon: Icons.select_all,
-            text: "Select All".tl,
-            onClick: selectAll,
-          ),
-          MenuEntry(
-            icon: Icons.deselect,
-            text: "Deselect".tl,
-            onClick: deSelect,
-          ),
-          MenuEntry(
-            icon: Icons.flip,
-            text: "Invert Selection".tl,
-            onClick: invertSelection,
-          ),
-        ],
-      ),
       buildMultiSelectMenu(),
     ];
 
@@ -194,14 +201,28 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
         message: "Sort".tl,
         child: IconButton(icon: const Icon(Icons.sort), onPressed: sort),
       ),
-      Tooltip(
-        message: "Downloading".tl,
-        child: IconButton(
-          icon: const Icon(Icons.download),
-          onPressed: () {
-            showPopUpWidget(context, const DownloadingPage());
-          },
-        ),
+      MenuButton(
+        icon: Icons.download,
+        tooltip: "Import and downloads".tl,
+        entries: [
+          MenuEntry(
+            icon: Icons.video_file_outlined,
+            text: "Import video files".tl,
+            onClick: () => importVideo(6),
+          ),
+          MenuEntry(
+            icon: Icons.video_library_outlined,
+            text: "Import video folder".tl,
+            onClick: () => importVideo(7),
+          ),
+          MenuEntry(
+            icon: Icons.download,
+            text: "Downloading".tl,
+            onClick: () {
+              showPopUpWidget(context, const DownloadingPage());
+            },
+          ),
+        ],
       ),
     ];
 
@@ -394,13 +415,14 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
               },
               menuBuilder: (c) {
                 return [
-                  MenuEntry(
-                    icon: Icons.folder_open,
-                    text: "Open Folder".tl,
-                    onClick: () {
-                      openComicFolder(c as LocalComic);
-                    },
-                  ),
+                  if (!App.isAndroid && !App.isIOS)
+                    MenuEntry(
+                      icon: Icons.folder_open,
+                      text: "Open Folder".tl,
+                      onClick: () {
+                        openComicFolder(c as LocalComic);
+                      },
+                    ),
                   MenuEntry(
                     icon: Icons.delete,
                     text: "Delete".tl,
@@ -628,6 +650,9 @@ typedef ExportComicFunc = Future<File> Function(
 
 /// Opens the folder containing the comic in the system file explorer
 Future<void> openComicFolder(LocalComic comic) async {
+  if (App.isAndroid || App.isIOS) {
+    return;
+  }
   try {
     final folderPath = comic.baseDir;
 
@@ -656,9 +681,6 @@ Future<void> openComicFolder(LocalComic comic) async {
           }
         }
       }
-    } else {
-      // For mobile platforms, use the URL launcher with file:// protocol
-      await launchUrlString('file://$folderPath');
     }
   } catch (e, s) {
     Log.error("Open Folder", "Failed to open comic folder: $e", s);

@@ -211,6 +211,21 @@ class _ReaderSettingsState extends State<ReaderSettings> {
               comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
               useDeviceSettings: useDeviceSpecificSettings,
             ),
+            _SettingsVisibility(
+              visible: (appdata.settings.getReaderSetting(
+                comicId ?? '', sourceKey ?? '', 'readerMode',
+              ) as String).startsWith('continuous'),
+              child: _SwitchSetting(
+                title: 'Seamless chapter transition'.tl,
+                settingKey: 'seamlessChapters',
+                onChanged: () {
+                  widget.onChanged?.call('seamlessChapters');
+                },
+                comicId: isEnabledSpecificSettings ? comicId : null,
+                comicSource: isEnabledSpecificSettings ? sourceKey : null,
+                useDeviceSettings: useDeviceSpecificSettings,
+              ),
+            ),
             _SliderSetting(
               title: "Auto page turning interval".tl,
               settingsIndex: "autoPageTurningInterval",

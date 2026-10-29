@@ -48,12 +48,13 @@ Future<BangumiPlayTarget> loadBangumiTarget(
   BangumiPlaybackContext context,
   Comic candidate, {
   ComicDetails? details,
+  bool fallback = true,
   void Function(Comic)? onSourceChanged,
 }) {
   var seen = <String>{candidate.sourceKey};
   var choices = [
     candidate,
-    for (var c in context.matchedCandidates)
+    for (var c in fallback ? context.matchedCandidates : <Comic>[])
       if (ComicSource.find(c.sourceKey)?.isEnabled == true &&
           seen.add(c.sourceKey))
         c,

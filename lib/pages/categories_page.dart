@@ -209,7 +209,9 @@ class _CategoryPage extends StatelessWidget {
         children.add(buildPart(null));
       }
     }
-    return Center(
+    // Top aligned: a short category list should not float in the middle.
+    return Align(
+      alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1200),
         child: SingleChildScrollView(

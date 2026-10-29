@@ -103,7 +103,13 @@ dependencies:
       path: ./media_kit_video
   screen_brightness: ^2.1.11
   volume_controller: ^3.5.0
-  xml: 6.5.0
+  xml: ^6.5.0
+  json_path: ^0.9.0
+  canvas_danmaku: ^0.3.3
+  # Pure Dart BitTorrent client, vendored: upstream 0.5.4 hashes the wrong
+  # bytes for the info hash of many .torrent files (see torrent_parser.dart).
+  dtorrent_task_v2:
+    path: packages/dtorrent_task_v2
 
 dev_dependencies:
   flutter_test:
@@ -129,6 +135,7 @@ flutter:
     - assets/tags.json
     - assets/tags_tw.json
     - assets/opencc.txt
+    - assets/shaders/anime4k/
 # fonts:
 
 flutter_to_arch:
@@ -168,3 +175,4 @@ flutter_to_arch:
     - lcms2
     - libarchive
     - libpulse
+

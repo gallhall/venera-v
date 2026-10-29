@@ -556,11 +556,14 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                           );
                         },
                       ),
-                    MenuEntry(
-                      icon: Icons.download,
-                      text: "Download".tl,
-                      onClick: downloadSelected,
-                    ),
+                    if (selectedComics.keys.any(
+                      (c) => !ComicType.fromKey(c.sourceKey).isBangumi,
+                    ))
+                      MenuEntry(
+                        icon: Icons.download,
+                        text: "Download".tl,
+                        onClick: downloadSelected,
+                      ),
                     if (selectedComics.length == 1)
                       MenuEntry(
                         icon: Icons.copy,
@@ -574,7 +577,10 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                           context.showMessage(message: "Copied".tl);
                         },
                       ),
-                    if (selectedComics.length == 1)
+                    if (selectedComics.length == 1 &&
+                        !ComicType.fromKey(
+                          selectedComics.keys.first.sourceKey,
+                        ).isBangumi)
                       MenuEntry(
                         icon: Icons.chrome_reader_mode_outlined,
                         text: "Read".tl,
@@ -697,17 +703,19 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                     });
                   },
                 ),
-                MenuEntry(
-                  icon: Icons.download,
-                  text: "Download".tl,
-                  onClick: () {
-                    downloadComic(c as FavoriteItem);
-                    context.showMessage(
-                      message: "Download started".tl,
-                    );
-                  },
-                ),
-                if (appdata.settings["onClickFavorite"] == "viewDetail")
+                if (!ComicType.fromKey(c.sourceKey).isBangumi)
+                  MenuEntry(
+                    icon: Icons.download,
+                    text: "Download".tl,
+                    onClick: () {
+                      downloadComic(c as FavoriteItem);
+                      context.showMessage(
+                        message: "Download started".tl,
+                      );
+                    },
+                  ),
+                if (!ComicType.fromKey(c.sourceKey).isBangumi &&
+                    appdata.settings["onClickFavorite"] == "viewDetail")
                   MenuEntry(
                     icon: Icons.menu_book_outlined,
                     text: "Read".tl,
@@ -733,7 +741,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                   }
                   lastSelectedIndex = comics.indexOf(c);
                 });
-              } else if (appdata.settings["onClickFavorite"] == "viewDetail") {
+              } else if (ComicType.fromKey(c.sourceKey).isBangumi ||
+                  appdata.settings["onClickFavorite"] == "viewDetail") {
                 App.mainNavigatorKey?.currentContext?.to(
                   () => ComicPage(
                     id: c.id,
@@ -1017,7 +1026,6 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
     var type = appdata.settings['comicDisplayMode'];
     var tiles = comics.map(
       (e) {
-        var comicSource = e.type.comicSource;
         return ComicTile(
           key: Key(e.hashCode.toString()),
           enableLongPressed: false,
@@ -1028,10 +1036,9 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
             e.author,
             e.tags,
             type == 'detailed'
-                ? "${e.time} | ${comicSource?.name ?? "Unknown"}"
-                : "${e.type.comicSource?.name ?? "Unknown"} | ${e.time}",
-            comicSource?.key ??
-                (e.type == ComicType.local ? "local" : "Unknown"),
+                ? "${e.time} | ${e.type.sourceName ?? "Unknown"}"
+                : "${e.type.sourceName ?? "Unknown"} | ${e.time}",
+            e.sourceKey,
             null,
             null,
           ),

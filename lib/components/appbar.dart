@@ -294,6 +294,7 @@ class _AppTabBarState extends State<AppTabBar> {
   late List<GlobalKey> keys;
   int? previousIndex;
   final scrollController = ScrollController();
+  final contentKey = GlobalKey();
   ScrollState? scrollParent;
   late final scrollId = -identityHashCode(this);
 
@@ -365,18 +366,22 @@ class _AppTabBarState extends State<AppTabBar> {
       if (!mounted || i < 0 || i >= keys.length) {
         return;
       }
-      final tabContext = keys[i].currentContext;
-      if (tabContext != null) {
-        final target = tabContext.findRenderObject();
-        if (scrollController.hasClients && target != null) {
-          scrollController.position.ensureVisible(
-            target,
-            alignment: 0.5,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        }
+      // Not ensureVisible: it reveals the tab in the TabBar's own viewport,
+      // which is as wide as all tabs, so a long tab far right scrolled the
+      // strip back to the start.
+      final tab = keys[i].currentContext?.findRenderObject() as RenderBox?;
+      final content = contentKey.currentContext?.findRenderObject();
+      if (!scrollController.hasClients || tab == null || content == null) {
+        return;
       }
+      final position = scrollController.position;
+      final x = tab.localToGlobal(Offset.zero, ancestor: content).dx;
+      final offset = x - (position.viewportDimension - tab.size.width) / 2;
+      scrollController.animateTo(
+        offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+      );
     });
   }
 
@@ -436,6 +441,7 @@ class _AppTabBarState extends State<AppTabBar> {
                     controller: scrollController,
                     scrollDirection: Axis.horizontal,
                     child: Row(
+                      key: contentKey,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         TabBar(

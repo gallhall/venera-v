@@ -1,5 +1,6 @@
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/favorites.dart';
 
 import 'bangumi_models.dart';
 
@@ -119,3 +120,13 @@ History bangumiSubjectHistory(
   'time': DateTime.now().millisecondsSinceEpoch,
   'readEpisode': progress.watched.map((n) => '$n').toList(),
 });
+
+/// Uses the same identity as Bangumi history so favorites open the subject.
+FavoriteItem bangumiSubjectFavorite(BangumiSubject subject) => FavoriteItem(
+  id: bangumiHistoryId(subject.id),
+  name: subject.displayName,
+  coverPath: subject.image,
+  author: subject.platform,
+  type: ComicType.bangumi,
+  tags: subject.tags.take(10).map((tag) => tag.name).toList(),
+);

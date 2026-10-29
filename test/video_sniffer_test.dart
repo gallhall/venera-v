@@ -3,6 +3,41 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/video/video_sniffer.dart';
 
 void main() {
+  test('custom video match extracts v and nested pages take priority', () {
+    const url = 'https://player.test/?url=https://cdn.test/a.m3u8';
+    var match = RegExp(r'url=(?<v>https://cdn\.test/[^&]+)');
+    expect(VideoSniffer.streamCandidate(url, match: match),
+        (url: 'https://cdn.test/a.m3u8', deferred: false));
+    expect(VideoSniffer.streamCandidate(url, match: match,
+        nested: RegExp(r'player\.test'), embedded: true), isNull);
+    expect(VideoSniffer.streamCandidate('https://cdn.test/a.mp4',
+        match: RegExp('mp4')), (url: 'https://cdn.test/a.mp4', deferred: false));
+    expect(VideoSniffer.streamCandidate(url, match: RegExp(r'(?<v>player)')), isNull);
+  });
+
+  test('a stream found inside a player url waits for the signed one', () {
+    // Animeko's default pattern, as 稀饭动漫 uses it.
+    var match = RegExp(
+      r'(?<v>http(s)?:\/\/(?!.*http(s)?:\/\/).+((\.mp4)|(\.mkv)|(m3u8)).*'
+      r'(\?.+)?)|(akamaized)|(bilivideo.com)',
+    );
+    const player = 'https://player.test/index.php?code=a&url='
+        'https://cdn.test/01.mp4';
+    expect(VideoSniffer.streamCandidate(player, match: match),
+        (url: 'https://cdn.test/01.mp4', deferred: true));
+    // After the delay it is taken as it is.
+    expect(VideoSniffer.streamCandidate('https://cdn.test/01.mp4',
+        match: match, kind: 'embedded'),
+        (url: 'https://cdn.test/01.mp4', deferred: false));
+    const signed = 'https://cdn.test/01.mp4?sign=abc&t=1';
+    expect(VideoSniffer.streamCandidate(signed, match: match),
+        (url: signed, deferred: false));
+    // A match inside the url without a v group plays the whole url.
+    const cdn = 'https://x.akamaized.net/stream';
+    expect(VideoSniffer.streamCandidate(cdn, match: match),
+        (url: cdn, deferred: false));
+  });
+
   group('isStream', () {
     test('streams by extension, not segments or pages', () {
       for (var url in [
