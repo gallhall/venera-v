@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,6 +13,7 @@ import 'package:logging/logging.dart';
 import 'package:utp_protocol/utp_protocol.dart' show UTPSocket;
 
 import '../protocol/peer.dart';
+import '../leech_filter.dart';
 import '../extensions/pex.dart';
 import '../extensions/holepunch.dart';
 import '../peer_priority.dart';
@@ -46,6 +48,21 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
     InternetAddress.tryParse('0.0.0.0')!,
     InternetAddress.tryParse('127.0.0.1')!
   ];
+
+  bool _leechFilter = false;
+  final _clientNames = <Peer, String>{};
+
+  bool isFiltered(Peer peer) => _leechFilter && LeechFilter.matches(
+    peerId: peer.remotePeerId, client: _clientNames[peer]);
+
+  int get filteredPeers => _activePeers.where(isFiltered).length;
+
+  void setLeechFilter(bool enabled) {
+    _leechFilter = enabled;
+    for (var peer in _activePeers) {
+      peer.sendChoke(isFiltered(peer) || !peer.interestedMe);
+    }
+  }
 
   bool _disposed = false;
 
@@ -260,11 +277,17 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
   void _hookPeer(Peer peer) {
     if (peer.address.address == localExternalIP) return;
     if (_peerExist(peer)) return;
+    peer.uploadAllowed = () => !isFiltered(peer);
     _peerListeners[peer] = peer.createListener();
     // emit all peer events
     _peerListeners[peer]!.listen((event) => events.emit(event));
     _peerListeners[peer]!
       ..on<PeerDisposeEvent>(_processPeerDispose)
+      ..on<PeerHandshakeEvent>((event) {
+        if (isFiltered(event.peer)) {
+          event.peer.sendChoke(true);
+        }
+      })
       ..on<PeerInterestedChanged>(_processInterestedChange)
       ..on<PeerConnected>(_peerConnected)
       ..on<PeerPieceEvent>(_processReceivePiece)
@@ -310,6 +333,14 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
       if (data is! Map) {
         _log.fine('Ignoring invalid handshake payload from ${source.address}');
         return;
+      }
+      var client = data['v'];
+      if (client != null) {
+        _clientNames[source] = client is List<int>
+            ? utf8.decode(client, allowMalformed: true) : client.toString();
+      }
+      if (isFiltered(source)) {
+        source.sendChoke(true);
       }
       final yourIpRaw = data['yourip'];
       if (localExternalIP != null &&
@@ -410,7 +441,8 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
     if (requestIndex >= 0) {
       final request = _remoteRequest.removeAt(requestIndex);
       final peer = request.peer;
-      if (!peer.isDisposed && peer.sendPiece(pieceIndex, begin, block)) {
+      if (!peer.isDisposed && !isFiltered(peer) &&
+          peer.sendPiece(pieceIndex, begin, block)) {
         _uploaded += block.length;
         _uploadedNotifySize += block.length;
       }
@@ -425,6 +457,7 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
 
   void _processPeerDispose(PeerDisposeEvent disposeEvent) {
     _peerListeners.remove(disposeEvent.peer);
+    _clientNames.remove(disposeEvent.peer);
     var reconnect = true;
     if (disposeEvent.reason is BadException) {
       reconnect = false;
@@ -479,6 +512,10 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
   }
 
   void _processRemoteRequest(PeerRequestEvent event) {
+    if (isFiltered(event.peer)) {
+      event.peer.sendChoke(true);
+      return;
+    }
     if (isPaused) {
       _pausedRemoteRequest[event.peer.id] ??= [];
       final pausedRequest = _pausedRemoteRequest[event.peer.id];
@@ -495,7 +532,7 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
   }
 
   void _processInterestedChange(PeerInterestedChanged event) {
-    if (event.interested) {
+    if (event.interested && !isFiltered(event.peer)) {
       event.peer.sendChoke(false);
     } else {
       event.peer.sendChoke(true); // Choke it if not interested.

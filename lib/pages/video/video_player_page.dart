@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/components/window_frame.dart';
+import 'package:venera/foundation/animeko/rss_preferences.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
@@ -503,6 +504,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     started = true;
+    if (source?.animekoSource?.factoryId == 'rss' && episode.group != null) {
+      RssLineMemory.remember(appdata.implicitData, sourceKey, details.id,
+        rssLineGroup(episode.group)!);
+      appdata.writeImplicitData();
+    }
     var p = active;
     var elapsed = DateTime.now().difference(openTime).inMilliseconds;
     if (p is PlayerService) {

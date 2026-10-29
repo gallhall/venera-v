@@ -172,6 +172,8 @@ abstract class TorrentTask with EventsEmittable<TaskEvent> {
   /// Aggregate payload limits in bytes/second; zero means unlimited.
   void setTransferLimits({int download = 0, int upload = 0});
 
+  void setLeechFilter(bool enabled);
+
   // Dispose task object
 
   Future<void> dispose();
@@ -536,6 +538,14 @@ class _TorrentTask
   final _downloadLimiter = TransferLimiter();
   final _uploadLimiter = TransferLimiter();
 
+  bool _leechFilter = false;
+
+  @override
+  void setLeechFilter(bool enabled) {
+    _leechFilter = enabled;
+    _peersManager?.setLeechFilter(enabled);
+  }
+
   @override
   void setTransferLimits({int download = 0, int upload = 0}) {
     _downloadLimiter.bytesPerSecond = download;
@@ -751,6 +761,7 @@ class _TorrentTask
     _fileManager ??= await DownloadFileManager.createFileManager(
         model, savePath, _stateFile!, _pieceManager!.pieces.values.toList());
     _peersManager ??= PeersManager(_peerId, model, ipFilter: _ipFilter);
+    _peersManager?.setLeechFilter(_leechFilter);
     _peersManager?.setSSLConfig(_sslConfig);
     _peersManager?.setProtocolEncryptionConfig(_encryptionConfig);
     _advancedSelector?.setLocalPeerEndpoint(
@@ -1673,7 +1684,11 @@ class _TorrentTask
   }
 
   void _processPeerRequest(PeerRequestEvent event) async {
-    if (!await _uploadLimiter.acquire(event.length) || event.peer.isDisposed) {
+    if (!event.peer.canUpload) {
+      return;
+    }
+    if (!await _uploadLimiter.acquire(event.length) || event.peer.isDisposed ||
+        !event.peer.canUpload) {
       return;
     }
     if (_fileManager == null ||

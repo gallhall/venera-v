@@ -22,6 +22,7 @@ import 'animeko_rss_engine.dart';
 import 'animeko_selector_engine.dart';
 import 'animeko_source_config.dart';
 import 'mikan.dart';
+import 'rss_preferences.dart';
 
 export 'animeko_source_config.dart';
 
@@ -51,6 +52,32 @@ abstract final class AnimekoSource {
     return Comic(title, '', jsonEncode({
       'keyword': title, 'mikanBangumiId': id,
     }), null, null, '', source.key, null, null);
+  }
+
+  static bool isRssSource(ComicSource source) =>
+      source.animekoSource?.factoryId == 'rss';
+
+  static Future<List<Comic>> findRssBangumiSubject(ComicSource source,
+      List<String> keywords, List<String> names) async {
+    var runtime = _runtimes[source] ??= _AnimekoRuntime(source.animekoSource!);
+    var queries = keywords.where((k) => k.trim().isNotEmpty).toSet()
+        .take(3).toList();
+    if (queries.isEmpty) {
+      return [];
+    }
+    var items = AnimekoRssEngine.merge([
+      for (var query in queries) await runtime.rssReleases(query),
+    ], names: names);
+    var subjects = AnimekoRssEngine.subjects(queries.first, items,
+      keywords: queries, names: names);
+    for (var subject in subjects) {
+      runtime._subjects[subject.id] = AnimekoSubject(subject.id, subject.title, '');
+    }
+    while (runtime._subjects.length > 1000) {
+      runtime._subjects.remove(runtime._subjects.keys.first);
+    }
+    return [for (var subject in subjects)
+      Comic(subject.title, '', subject.id, null, null, '', source.key, null, null)];
   }
 
   static const fileExtension = '.animeko.json';
@@ -318,15 +345,17 @@ class _AnimekoRuntime {
     return response.data ?? '';
   }
 
-  Future<List<RssSubject>> rssSubjects(String keyword) async {
-    var items = _rssSearches[keyword] ??= AnimekoRssEngine.parse(
-      await send(rss.searchRequest(keyword)),
-    );
+  Future<List<RssRelease>> rssReleases(String keyword) async {
+    var items = _rssSearches[keyword] ??= await rss.search(keyword,
+      (request) => send(request));
     while (_rssSearches.length > 32) {
       _rssSearches.remove(_rssSearches.keys.first);
     }
-    return AnimekoRssEngine.subjects(keyword, items);
+    return items;
   }
+
+  Future<List<RssSubject>> rssSubjects(String keyword) async =>
+      AnimekoRssEngine.subjects(keyword, await rssReleases(keyword));
 
   Future<List<AnimekoSubject>> search(String keyword) async {
     var ttl =
@@ -395,13 +424,16 @@ class _AnimekoRuntime {
         while (_mikanFeeds.length > 32) {
           _mikanFeeds.remove(_mikanFeeds.keys.first);
         }
-        return [for (var group in AnimekoRssEngine.rank(
-          AnimekoRssEngine.subjectKeyword(id), AnimekoRssEngine.group(releases)))
+        var groups = RssPreferences.fromSettings((key) => appdata.settings[key])
+            .order(AnimekoRssEngine.subjectKeyword(id),
+              AnimekoRssEngine.group(releases));
+        return [for (var group in groups)
           AnimekoChannel(group.name.displayName, group.episodes)];
       }
-      var subjects = await rssSubjects(AnimekoRssEngine.subjectKeyword(id));
-      var groups = subjects.where((s) => s.id == id).firstOrNull?.groups;
-      return [for (var group in groups ?? <RssSeries>[])
+      var keyword = AnimekoRssEngine.subjectKeyword(id);
+      var groups = await AnimekoRssEngine.subjectGroups(id, rssReleases);
+      return [for (var group in RssPreferences.fromSettings((key) => appdata.settings[key])
+          .order(keyword, groups))
         AnimekoChannel(group.name.displayName, group.episodes)];
     }
     return entry.isJsonApi
@@ -422,7 +454,10 @@ class _AnimekoRuntime {
     var title = isRss
         ? _subjects[id]?.name ?? AnimekoRssEngine.subjectKeyword(id)
         : knownTitle(id);
-    var groups = entry.orderChannels(await channels(id, title), (g) => g.name);
+    var groups = await channels(id, title);
+    if (!isRss) {
+      groups = entry.orderChannels(groups, (g) => g.name);
+    }
     groups = groups.where((g) => g.episodes.isNotEmpty).toList();
     if (groups.isEmpty) {
       throw 'No episodes found'.tl;

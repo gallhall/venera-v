@@ -80,6 +80,13 @@ class RssReleaseName {
       end = int.tryParse(match[5] ?? match[8] ?? '');
       version = int.tryParse(match[2] ?? match[4] ?? match[7] ?? '') ?? 1;
     }
+    for (var revision in RegExp(r'(?<![a-z0-9])v(\d+)(?!\d)',
+        caseSensitive: false).allMatches(text)) {
+      var value = int.parse(revision[1]!);
+      if (value > version) {
+        version = value;
+      }
+    }
     var series = match == null ? text : text.substring(0, match.start);
     // S2E05 also carries the season, which belongs in the series title.
     if (match != null && match[1] != null) {
@@ -132,9 +139,12 @@ class RssSubject {
   /// Null for the season the keyword names (1 when it names none).
   final int? season;
   final List<RssSeries> groups;
-  RssSubject(this.keyword, this.season, this.groups);
+  final List<String>? keywords;
+  final List<String>? names;
+  RssSubject(this.keyword, this.season, this.groups, {this.keywords, this.names});
 
-  String get id => AnimekoRssEngine.subjectId(keyword, season: season);
+  String get id => AnimekoRssEngine.subjectId(keyword, season: season,
+      keywords: keywords, names: names);
 
   String get title {
     if (season == null) {
@@ -156,8 +166,11 @@ class AnimekoRssEngine {
   const AnimekoRssEngine(this.source);
 
   /// The id keeps the keyword to fetch the feed again.
-  static String subjectId(String keyword, {int? season}) => jsonEncode({
+  static String subjectId(String keyword, {int? season,
+      List<String>? keywords, List<String>? names}) => jsonEncode({
     'keyword': keyword,
+    if (keywords != null) 'keywords': keywords,
+    if (names != null) 'names': names,
     if (season != null) 'season': season,
   });
 
@@ -168,7 +181,8 @@ class AnimekoRssEngine {
   /// their episode numbers must not mix with the wanted one ("间谍过家家"
   /// finds the third season first): releases that name another season are
   /// subjects of their own, after the keyword's.
-  static List<RssSubject> subjects(String keyword, List<RssRelease> items) {
+  static List<RssSubject> subjects(String keyword, List<RssRelease> items,
+      {List<String>? keywords, List<String>? names}) {
     var wanted = BangumiTitleMatch.season(keyword);
     int seasonOf(RssRelease item) =>
         BangumiTitleMatch.season(RssReleaseName.parse(item.title).series);
@@ -198,7 +212,7 @@ class AnimekoRssEngine {
     return [
       for (var season in keys)
         RssSubject(keyword, season == wanted ? null : season,
-          rank(keyword, group(seasons[season]!))),
+          rank(keyword, group(seasons[season]!)), keywords: keywords, names: names),
     ];
   }
 
@@ -221,11 +235,62 @@ class AnimekoRssEngine {
     return [for (var e in indexed) e.$2];
   }
 
-  AnimekoRequest searchRequest(String keyword) => AnimekoRequest(
+  AnimekoRequest searchRequest(String keyword, {int page = 1}) => AnimekoRequest(
     (source.searchConfig['searchUrl'] as String)
-        .replaceAll('{keyword}', Uri.encodeComponent(keyword)),
+        .replaceAll('{keyword}', Uri.encodeComponent(keyword))
+        .replaceAll('{page}', '$page'),
     headers: {'accept': 'application/rss+xml, application/xml, text/xml'},
   );
+
+  static String releaseKey(RssRelease release) =>
+      release.infoHash?.toLowerCase() ?? release.url;
+
+  /// The first keyword's results are kept as a single search keeps them;
+  /// [names] only guards what the other keywords add.
+  static List<RssRelease> merge(Iterable<List<RssRelease>> pages,
+      {List<String>? names}) {
+    var seen = <String>{};
+    return [for (var (i, page) in pages.indexed) for (var release in page)
+      if (seen.add(releaseKey(release)) && (names == null || i == 0 ||
+          BangumiTitleMatch.match(names,
+            RssReleaseName.parse(release.title).series).matches)) release];
+  }
+
+  /// The caller supplies the gated transport; every page uses it.
+  Future<List<RssRelease>> search(String keyword,
+      Future<String> Function(AnimekoRequest) send) async {
+    var items = <RssRelease>[];
+    var seen = <String>{};
+    var pages = (source.searchConfig['searchUrl'] as String).contains('{page}')
+        ? 5 : 1;
+    for (var page = 1; page <= pages; page++) {
+      var fresh = parse(await send(searchRequest(keyword, page: page)))
+          .where((r) => seen.add(releaseKey(r))).toList();
+      if (fresh.isEmpty) {
+        break;
+      }
+      items.addAll(fresh);
+    }
+    return items;
+  }
+
+  static List<String> subjectKeywords(String id) {
+    var data = jsonDecode(id) as Map;
+    return data['keywords'] is List
+        ? (data['keywords'] as List).cast<String>() : [data['keyword'] as String];
+  }
+
+  /// Replays both new multi-keyword ids and existing single-keyword ids.
+  static Future<List<RssSeries>> subjectGroups(String id,
+      Future<List<RssRelease>> Function(String) fetch) async {
+    var data = jsonDecode(id) as Map;
+    var keyword = subjectKeyword(id);
+    var items = merge([
+      for (var query in subjectKeywords(id)) await fetch(query),
+    ], names: (data['names'] as List?)?.cast<String>());
+    return subjects(keyword, items).where((s) => s.season == data['season'])
+        .firstOrNull?.groups ?? <RssSeries>[];
+  }
 
   static final _hexHash = RegExp(r'(?<![0-9a-f])([0-9a-f]{40})(?![0-9a-f])',
     caseSensitive: false);

@@ -486,6 +486,21 @@ void main() {
           BangumiTitleMatch.searchKeyword('[Anime] Season 2'),
           'Anime Season 2',
         );
+        // Chinese numerals in names are searched as written; matching
+        // still treats 第二季 and 第2季 alike.
+        expect(
+          BangumiTitleMatch.searchKeyword('弹珠汽水瓶里的千岁同学 第2部分'),
+          '弹珠汽水瓶里的千岁同学 第2部分',
+        );
+        expect(BangumiTitleMatch.searchKeyword('一拳超人 第三季'), '一拳超人 第三季');
+        expect(
+          bangumiKeywordChain(['七大罪', '千歳くんはラムネ瓶のなか']),
+          ['七大罪', '千歳くんはラムネ瓶のなか'],
+        );
+        expect(
+          BangumiTitleMatch.match(['一拳超人 第三季'], '一拳超人 第3季').matches,
+          isTrue,
+        );
       },
     );
 

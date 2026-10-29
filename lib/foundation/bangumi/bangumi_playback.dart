@@ -11,15 +11,26 @@ int? bangumiSourceEpisode(
   BangumiEpisode episode,
   List<({String title, int position})> source, {
   int offset = 0,
+  Iterable<int>? preferredIndices,
 }) {
-  for (var target in [
-    episode.ep,
-    if (episode.sort == episode.sort.toInt()) episode.sort.toInt(),
+  var preferred = preferredIndices?.toSet() ?? <int>{};
+  for (var indices in [
+    if (preferred.isNotEmpty) preferred,
+    {for (var i = 0; i < source.length; i++) if (!preferred.contains(i)) i},
   ]) {
-    if (target == null || target < 1) continue;
-    for (var i = 0; i < source.length; i++) {
-      var number = BangumiEpisodeNumber.of(source[i].title, source[i].position);
-      if (number != null && number + offset == target) return i;
+    for (var target in [
+      episode.ep,
+      if (episode.sort == episode.sort.toInt()) episode.sort.toInt(),
+    ]) {
+      if (target == null || target < 1) {
+        continue;
+      }
+      for (var i in indices) {
+        var number = BangumiEpisodeNumber.of(source[i].title, source[i].position);
+        if (number != null && number + offset == target) {
+          return i;
+        }
+      }
     }
   }
   return null;
