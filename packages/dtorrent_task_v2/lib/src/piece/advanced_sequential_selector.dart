@@ -36,6 +36,51 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
   /// Current playback position in piece index
   int _currentPlaybackPiece = 0;
 
+  int? _fileFirstPiece;
+  int? _fileLastPiece;
+
+  bool get hasStreamFile => _fileFirstPiece != null;
+  Set<int> get criticalPieces => Set.unmodifiable(_criticalPieces);
+  Set<int> get lookAheadPieces => Set.unmodifiable(_priorityPieces);
+  int get currentPlaybackPiece => _currentPlaybackPiece;
+
+  int get _windowEnd => min(
+    _currentPlaybackPiece + config.lookAheadSize - (hasStreamFile ? 1 : 0),
+    _fileLastPiece ?? _totalPieces! - 1,
+  );
+
+  /// Pieces needed for the focused file's metadata or current playback buffer.
+  bool isUrgent(int pieceIndex) => hasStreamFile &&
+      (_criticalPieces.contains(pieceIndex) ||
+          pieceIndex >= _currentPlaybackPiece && pieceIndex <= _windowEnd);
+
+  /// Focus streaming on the header, index and playback window of one file.
+  /// Call after initialize, which supplies the torrent's piece length.
+  void setStreamFile(int offset, int length,
+      {int headBytes = 128 * 1024, int tailBytes = 128 * 1024}) {
+    if (_pieceLength == null || offset < 0 || length <= 0 ||
+        headBytes < 0 || tailBytes < 0) {
+      throw ArgumentError('Invalid stream file or uninitialized selector');
+    }
+    final pieceLength = _pieceLength!;
+    final end = offset + length;
+    _fileFirstPiece = offset ~/ pieceLength;
+    _fileLastPiece = (end - 1) ~/ pieceLength;
+    _currentPlaybackPiece = _fileFirstPiece!;
+    _criticalPieces.clear();
+    void addRange(int start, int end) {
+      if (start >= end) {
+        return;
+      }
+      for (var i = start ~/ pieceLength; i <= (end - 1) ~/ pieceLength; i++) {
+        _criticalPieces.add(i);
+      }
+    }
+    addRange(offset, offset + min(headBytes, length));
+    addRange(end - min(tailBytes, length), end);
+    _rebuildPriorityPieces();
+  }
+
   /// Current download strategy
   DownloadStrategy _currentStrategy = DownloadStrategy.sequential;
 
@@ -73,6 +118,9 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
 
   @override
   void setPriorityPieces(Iterable<int> pieces) {
+    if (hasStreamFile) {
+      return;
+    }
     _priorityPieces.clear();
     _priorityPieces.addAll(pieces);
 
@@ -101,6 +149,10 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
   void setPlaybackPosition(int bytePosition, int pieceLength) {
     final oldPiece = _currentPlaybackPiece;
     _currentPlaybackPiece = bytePosition ~/ pieceLength;
+    if (hasStreamFile) {
+      _currentPlaybackPiece = min(_fileLastPiece!,
+          max(_fileFirstPiece!, _currentPlaybackPiece));
+    }
 
     if (oldPiece != _currentPlaybackPiece) {
       _seekCount++;
@@ -144,13 +196,12 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
     _priorityPieces.clear();
 
     // Add critical pieces (highest priority)
-    _priorityPieces.addAll(_criticalPieces);
+    if (!hasStreamFile) {
+      _priorityPieces.addAll(_criticalPieces);
+    }
 
     // Add look-ahead buffer
-    final endPiece = min(
-      _currentPlaybackPiece + config.lookAheadSize,
-      _totalPieces! - 1,
-    );
+    final endPiece = _windowEnd;
 
     for (var i = _currentPlaybackPiece; i <= endPiece; i++) {
       _priorityPieces.add(i);
@@ -177,7 +228,7 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
     }
 
     // Try suggested pieces first (Fast Extension - BEP 0006)
-    if (suggestPieces != null && suggestPieces.isNotEmpty) {
+    if (!hasStreamFile && suggestPieces != null && suggestPieces.isNotEmpty) {
       for (var pieceIndex in suggestPieces) {
         final piece = provider[pieceIndex];
         if (piece != null &&
@@ -240,7 +291,8 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
 
     // Priority 3: Sequential from current position
     if (_totalPieces != null) {
-      for (var i = _currentPlaybackPiece; i < _totalPieces!; i++) {
+      final lastPiece = _fileLastPiece ?? _totalPieces! - 1;
+      for (var i = _currentPlaybackPiece; i <= lastPiece; i++) {
         // Skip pieces that are marked as skipped
         if (_skippedPieces.contains(i)) {
           continue;
@@ -387,10 +439,7 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
 
     // Calculate buffered pieces (completed pieces in look-ahead window)
     int bufferedCount = 0;
-    final endPiece = min(
-      _currentPlaybackPiece + config.lookAheadSize,
-      _totalPieces! - 1,
-    );
+    final endPiece = _windowEnd;
 
     for (var i = _currentPlaybackPiece; i <= endPiece; i++) {
       final piece = provider[i];
@@ -400,7 +449,10 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
     }
 
     // Calculate buffer health (percentage of look-ahead buffer that's ready)
-    final bufferHealth = (bufferedCount / config.lookAheadSize) * 100.0;
+    final windowSize = hasStreamFile
+        ? endPiece - _currentPlaybackPiece + 1 : config.lookAheadSize;
+    final bufferHealth = windowSize <= 0 ? 0.0
+        : (bufferedCount / windowSize) * 100.0;
 
     // Count downloading pieces
     final downloadingCount = provider.downloadingPieces.length;

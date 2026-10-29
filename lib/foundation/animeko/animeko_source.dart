@@ -21,10 +21,38 @@ import 'animeko_json_api_engine.dart';
 import 'animeko_rss_engine.dart';
 import 'animeko_selector_engine.dart';
 import 'animeko_source_config.dart';
+import 'mikan.dart';
 
 export 'animeko_source_config.dart';
 
 abstract final class AnimekoSource {
+  static final _runtimes = Expando<_AnimekoRuntime>();
+  static final _mikanMappings = <String, MikanMapping>{};
+
+  static bool supportsBangumiSubject(ComicSource source) =>
+      source.animekoSource != null && isMikanSource(source.animekoSource!);
+
+  static Future<Comic?> findBangumiSubject(ComicSource source, int subjectId,
+      List<String> keywords) async {
+    if (!supportsBangumiSubject(source)) {
+      return null;
+    }
+    var runtime = _runtimes[source] ??= _AnimekoRuntime(source.animekoSource!);
+    var mapping = _mikanMappings.putIfAbsent(runtime.mikanHost, () =>
+      MikanMapping(runtime.mikanHost, appdata.implicitData,
+        appdata.writeImplicitData));
+    var id = await mapping.findBangumiId(subjectId, keywords, (url) =>
+      runtime.send(AnimekoRequest(url, headers: {'accept': 'text/html'}),
+        interval: 1000));
+    if (id == null) {
+      return null;
+    }
+    var title = mapping.titleFor(id) ?? keywords.firstOrNull ?? '$id';
+    return Comic(title, '', jsonEncode({
+      'keyword': title, 'mikanBangumiId': id,
+    }), null, null, '', source.key, null, null);
+  }
+
   static const fileExtension = '.animeko.json';
   static const defaultSubscriptionUrl =
       'https://sub.creamycake.org/v1/css1.json';
@@ -136,7 +164,7 @@ abstract final class AnimekoSource {
       throw entry.unsupportedReason!.tl;
     }
     var runtime = _AnimekoRuntime(entry);
-    return ComicSource(
+    var source = ComicSource(
       entry.name,
       entry.key,
       null,
@@ -215,6 +243,8 @@ abstract final class AnimekoSource {
       null,
       entry,
     );
+    _runtimes[source] = runtime;
+    return source;
   }
 
   static Res<T> _error<T>(AnimekoSourceConfig entry, Object e, StackTrace s) {
@@ -229,6 +259,11 @@ class _AnimekoRuntime {
   late final api = AnimekoJsonApiEngine(entry);
   late final rss = AnimekoRssEngine(entry);
   final _rssSearches = <String, List<RssRelease>>{};
+  final _mikanFeeds = <int, List<RssRelease>>{};
+  String get mikanHost => Uri.parse(entry.searchConfig['searchUrl'] as String).host;
+
+  int? mikanId(String id) => isMikanSource(entry)
+      ? (jsonDecode(id) as Map)['mikanBangumiId'] as int? : null;
   bool get isRss => entry.factoryId == 'rss';
   _AnimekoRuntime(this.entry);
 
@@ -248,8 +283,8 @@ class _AnimekoRuntime {
     return ua.isEmpty ? webUA : ua;
   }
 
-  Future<String> send(AnimekoRequest request) async {
-    var interval =
+  Future<String> send(AnimekoRequest request, {int? interval}) async {
+    interval ??=
         (entry.searchConfig['requestInterval'] as num?)?.toInt() ??
         (entry.isJsonApi ? 1000 : 3000);
     await (_gates.putIfAbsent(entry.key, _RequestGate.new)).wait(interval);
@@ -352,6 +387,18 @@ class _AnimekoRuntime {
 
   Future<List<AnimekoChannel>> channels(String id, String title) async {
     if (isRss) {
+      var exact = mikanId(id);
+      if (exact != null) {
+        var releases = _mikanFeeds[exact] ??= AnimekoRssEngine.parse(await send(
+          AnimekoRequest(Uri.https(mikanHost, '/RSS/Bangumi',
+            {'bangumiId': '$exact'}).toString())));
+        while (_mikanFeeds.length > 32) {
+          _mikanFeeds.remove(_mikanFeeds.keys.first);
+        }
+        return [for (var group in AnimekoRssEngine.rank(
+          AnimekoRssEngine.subjectKeyword(id), AnimekoRssEngine.group(releases)))
+          AnimekoChannel(group.name.displayName, group.episodes)];
+      }
       var subjects = await rssSubjects(AnimekoRssEngine.subjectKeyword(id));
       var groups = subjects.where((s) => s.id == id).firstOrNull?.groups;
       return [for (var group in groups ?? <RssSeries>[])
@@ -399,7 +446,9 @@ class _AnimekoRuntime {
       'sourceKey': entry.key,
       'comicId': id,
       'url': isRss
-          ? rss.searchRequest(AnimekoRssEngine.subjectKeyword(id)).url
+          ? mikanId(id) != null
+              ? Uri.https(mikanHost, '/Home/Bangumi/${mikanId(id)}').toString()
+              : rss.searchRequest(AnimekoRssEngine.subjectKeyword(id)).url
           : entry.isJsonApi ? api.subjectUrl(id) : id,
     });
   }

@@ -7,6 +7,8 @@ import 'package:photo_view/photo_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/animeko/animeko_source.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -91,6 +93,7 @@ class _SourceResult {
   String? error;
   String keyword = '';
   final resultKeywords = <String, String>{};
+  final exactIds = <String>{};
   bool loading = true;
   int generation = 0;
 }
@@ -348,6 +351,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       row.error = null;
       row.results = [];
       row.resultKeywords.clear();
+      row.exactIds.clear();
       row.matched = null;
       row.chosen = rememberedCandidate(row);
       updateCandidates();
@@ -365,7 +369,32 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         .map((e) => e.defaultValue)
         .toList();
     try {
-      for (var query in keywords) {
+      if (keyword == null && AnimekoSource.supportsBangumiSubject(row.source)) {
+        Comic? exact;
+        try {
+          exact = await AnimekoSource.findBangumiSubject(
+            row.source, widget.subjectId, keywords);
+          if (exact == null) {
+            Log.info('Mikan', 'No exact match for ${widget.subjectId}');
+          }
+        } catch (e) {
+          Log.warning('Mikan', 'Exact lookup failed: $e');
+        }
+        if (!mounted || generation != row.generation ||
+            !row.source.isEnabled || !sources.contains(row)) {
+          return;
+        }
+        if (exact != null) {
+          row.results = [exact];
+          row.matched = exact;
+          row.exactIds.add(exact.id);
+          row.keyword = exact.title;
+          row.resultKeywords[exact.id] = exact.title;
+          manager.rememberKeyword(widget.subjectId, row.source.key, exact.title);
+          setState(() => updateCandidates());
+        }
+      }
+      for (var query in row.matched == null ? keywords : <String>[]) {
         if (query.isEmpty) continue;
         row.keyword = query;
         sourceUpdates.value++;
@@ -460,7 +489,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       for (var comic in [
         if (row.chosen != null) row.chosen!,
         ...row.results.where(
-          (c) => BangumiTitleMatch.match(names, c.title).matches,
+          (c) => row.exactIds.contains(c.id) ||
+              BangumiTitleMatch.match(names, c.title).matches,
         ),
       ]) {
         if (seen.add(comic.id)) candidates.add(comic);
@@ -498,6 +528,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   String matchLabel(Comic comic) {
+    if (sources.any((row) => row.source.key == comic.sourceKey &&
+        row.exactIds.contains(comic.id))) {
+      return 'Exact match'.tl;
+    }
     var match = BangumiTitleMatch.match(allNames, comic.title);
     return switch (match.kind) {
       BangumiMatchKind.exact => 'Exact match'.tl,

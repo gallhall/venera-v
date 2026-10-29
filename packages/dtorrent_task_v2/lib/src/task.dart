@@ -81,6 +81,10 @@ class PartialSeedStatus {
 
 var _log = Logger('TorrentTask');
 
+/// Timeout release policy, exposed separately so it can be tested without peers.
+bool shouldReleaseTimedOutRequest(int resendCount, {required bool urgent}) =>
+    urgent || resendCount >= 3;
+
 abstract class TorrentTask with EventsEmittable<TaskEvent> {
   factory TorrentTask.newTask(
     TorrentModel metaInfo,
@@ -201,6 +205,9 @@ abstract class TorrentTask with EventsEmittable<TaskEvent> {
   /// task.setFilePriority(0, FilePriority.high); // Set first file to high priority
   /// ```
   void setFilePriority(int fileIndex, FilePriority priority);
+
+  void setStreamFile(int fileIndex,
+      {int headBytes = 128 * 1024, int tailBytes = 128 * 1024});
 
   /// Set priorities for multiple files
   ///
@@ -515,6 +522,8 @@ class _TorrentTask
 
   /// File priority manager for managing file priorities
   FilePriorityManager? _filePriorityManager;
+  final _pendingFilePriorities = <int, FilePriority>{};
+  ({int index, int head, int tail})? _streamFile;
 
   /// Auto-move manager for completed files.
   AutoMoveManager? _autoMoveManager;
@@ -677,6 +686,8 @@ class _TorrentTask
       }
     }
 
+    _filePriorityManager!.setPriorities(_pendingFilePriorities);
+
     // Initialize piece manager with appropriate selector
     if (_pieceManager == null) {
       PieceSelector selector;
@@ -699,6 +710,13 @@ class _TorrentTask
               model.length!, model.pieceLength);
         }
 
+        final focus = _streamFile;
+        // initialize() above supplies the piece length the focus needs.
+        if (focus != null && model.pieces != null) {
+          final file = model.files[focus.index];
+          advancedSelector.setStreamFile(file.offset, file.length,
+              headBytes: focus.head, tailBytes: focus.tail);
+        }
         _advancedSelector = advancedSelector;
         selector = advancedSelector;
         _log.info(
@@ -1158,9 +1176,23 @@ class _TorrentTask
   }
 
   @override
+  void setStreamFile(int fileIndex,
+      {int headBytes = 128 * 1024, int tailBytes = 128 * 1024}) {
+    RangeError.checkValidIndex(fileIndex, _metaInfo.files);
+    if (headBytes < 0 || tailBytes < 0 || _metaInfo.files[fileIndex].length <= 0) {
+      throw ArgumentError('Invalid stream file range');
+    }
+    _streamFile = (index: fileIndex, head: headBytes, tail: tailBytes);
+    final file = _metaInfo.files[fileIndex];
+    _advancedSelector?.setStreamFile(file.offset, file.length,
+        headBytes: headBytes, tailBytes: tailBytes);
+    _updatePiecePriorities();
+  }
+
+  @override
   void setFilePriority(int fileIndex, FilePriority priority) {
+    _pendingFilePriorities[fileIndex] = priority;
     if (_filePriorityManager == null) {
-      _log.warning('FilePriorityManager not initialized');
       return;
     }
 
@@ -1171,8 +1203,8 @@ class _TorrentTask
 
   @override
   void setFilePriorities(Map<int, FilePriority> priorities) {
+    _pendingFilePriorities.addAll(priorities);
     if (_filePriorityManager == null) {
-      _log.warning('FilePriorityManager not initialized');
       return;
     }
 
@@ -1185,7 +1217,7 @@ class _TorrentTask
   @override
   FilePriority getFilePriority(int fileIndex) {
     if (_filePriorityManager == null) {
-      return FilePriority.normal;
+      return _pendingFilePriorities[fileIndex] ?? FilePriority.normal;
     }
     return _filePriorityManager!.getPriority(fileIndex);
   }
@@ -1290,7 +1322,9 @@ class _TorrentTask
     priorityPieces.addAll(piecesByPriority[FilePriority.low]!);
 
     // Update piece selector
-    _pieceManager!.pieceSelector.setPriorityPieces(priorityPieces);
+    if (!(_advancedSelector?.hasStreamFile ?? false)) {
+      _pieceManager!.pieceSelector.setPriorityPieces(priorityPieces);
+    }
 
     // Mark skipped pieces (if any)
     final skippedPieces = _filePriorityManager!.getSkippedPieces();
@@ -1794,7 +1828,8 @@ class _TorrentTask
     if (_pieceManager == null || _peersManager == null) return;
     var flag = false;
     for (var request in requests) {
-      if (request[4] >= 3) {
+      if (shouldReleaseTimedOutRequest(request[4],
+          urgent: _advancedSelector?.isUrgent(request[0]) ?? false)) {
         flag = true;
         Timer.run(() => peer.requestCancel(request[0], request[1], request[2]));
         var index = request[0];
