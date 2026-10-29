@@ -253,6 +253,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       key: key,
       episodeKey: '$key:${b?.number ?? episode.id ?? current}',
       title: b?.subject.displayName ?? details.title,
+      names: b == null ? [details.title]
+          : [b.subject.displayName, ...b.subject.allNames],
+      airDate: DateTime.tryParse(b?.subject.date ?? ''),
+      episodeCount: b?.episodes.length ?? episodes.length,
       subjectId: b?.subject.id,
       ep: e?.ep ?? (b == null
           ? BangumiEpisodeNumber.of(

@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
 import 'danmaku_models.dart';
@@ -15,6 +18,10 @@ String dandanplaySignature(
   utf8.encode('$appId$timestamp$path$secret'),
 ).bytes);
 
+class DanmakuNoMatch implements Exception {
+  const DanmakuNoMatch();
+}
+
 class DanDanPlayApi {
   DanDanPlayApi({Dio? dio})
     : dio = dio ?? AppDio(BaseOptions(
@@ -24,6 +31,39 @@ class DanDanPlayApi {
       ));
 
   final Dio dio;
+
+  static Duration _clockOffset = Duration.zero;
+  static bool _clockCorrectionLogged = false;
+
+  @visibleForTesting
+  static void resetClockCorrection() {
+    _clockOffset = Duration.zero;
+    _clockCorrectionLogged = false;
+  }
+
+  static bool _correctClock(Response<dynamic> response) {
+    var dates = response.headers['date'];
+    if (dates == null || dates.length != 1) {
+      return false;
+    }
+    DateTime serverTime;
+    try {
+      serverTime = HttpDate.parse(dates.single);
+    } on HttpException {
+      return false;
+    }
+    var offset = serverTime.difference(DateTime.now().toUtc());
+    if (offset.inMilliseconds.abs() <= 60000) {
+      return false;
+    }
+    _clockOffset = offset;
+    if (!_clockCorrectionLogged) {
+      _clockCorrectionLogged = true;
+      Log.warning('Danmaku', 'Device clock is off by ${offset.inSeconds}s; '
+          'using the server time');
+    }
+    return true;
+  }
 
   static String _credential(String key, String fallback) {
     var value = appdata.settings[key];
@@ -50,16 +90,42 @@ class DanDanPlayApi {
     if (!hasCredentials) {
       throw StateError('Danmaku credentials needed');
     }
-    var timestamp = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-    var response = await dio.get<dynamic>(path,
-      queryParameters: query,
-      options: Options(headers: {
-        'cache-time': 'no',
-        'X-AppId': appId,
-        'X-Timestamp': '$timestamp',
-        'X-Signature': dandanplaySignature(appId, secret, timestamp, path),
-      }),
-    );
+    Future<Response<dynamic>> request() async {
+      var timestamp = DateTime.now().toUtc().add(_clockOffset)
+          .millisecondsSinceEpoch ~/ 1000;
+      var response = await dio.get<dynamic>(path,
+        queryParameters: query,
+        options: Options(
+          headers: {
+            'cache-time': 'no',
+            'X-AppId': appId,
+            'X-Timestamp': '$timestamp',
+            'X-Signature': dandanplaySignature(appId, secret, timestamp, path),
+          },
+          extra: {'maskHeadersInLog': ['X-AppId', 'X-Signature']},
+        ),
+      );
+      // Also handle callers whose validateStatus accepts a 403 response.
+      if (response.statusCode == 403) {
+        throw DioException.badResponse(statusCode: 403,
+          requestOptions: response.requestOptions, response: response);
+      }
+      return response;
+    }
+
+    Response<dynamic> response;
+    try {
+      response = await request();
+    } on DioException catch (error) {
+      var rejected = error.response;
+      if (error.type != DioExceptionType.badResponse ||
+          rejected == null || rejected.statusCode != 403 ||
+          !_correctClock(rejected)) {
+        rethrow;
+      }
+      // This retry is outside the catch's protection: never retry twice.
+      response = await request();
+    }
     var data = response.data;
     if (data is String) {
       data = jsonDecode(data);
@@ -69,6 +135,9 @@ class DanDanPlayApi {
     }
     if (data['success'] == false ||
         (data['errorCode'] is num && data['errorCode'] != 0)) {
+      if (data['errorCode'] == 7) {
+        throw const DanmakuNoMatch();
+      }
       // Keep API errors away from playback; callers show a localized message.
       throw StateError('DanDanPlay ${data['errorCode']}: '
           '${data['errorMessage']}');
@@ -79,7 +148,7 @@ class DanDanPlayApi {
   Future<DanmakuAnime> _anime(String path) async {
     var data = (await _get(path))['bangumi'];
     if (data is! Map) {
-      throw const FormatException('No DanDanPlay match');
+      throw const DanmakuNoMatch();
     }
     return DanmakuAnime.fromJson(data);
   }

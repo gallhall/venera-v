@@ -64,7 +64,7 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
 
   Future<void> match() async {
     var target = session.target;
-    var input = target?.title ?? '';
+    var input = cleanDanmakuTitle(target?.title ?? '');
     var query = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -94,6 +94,11 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
     setState(() => matching = true);
     try {
       var results = await session.api.search(query);
+      var clean = cleanDanmakuTitle(query);
+      if (results.isEmpty && clean.length >= 2 &&
+          clean.toLowerCase() != query.toLowerCase()) {
+        results = await session.api.search(clean);
+      }
       if (!mounted || session.target != target) {
         return;
       }
@@ -101,10 +106,23 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
         session.reportFailure('No danmaku match');
         return;
       }
+      results.sort((a, b) {
+        if (a.startDate == null) {
+          return b.startDate == null ? 0 : 1;
+        }
+        return b.startDate?.compareTo(a.startDate!) ?? -1;
+      });
       var chosen = await showSidePicker<DanmakuAnime>(
         context,
         title: 'Match danmaku'.tl,
-        options: {for (var a in results) a: a.title},
+        options: {
+          for (var a in results) a: [
+            a.title,
+            if (a.startDate != null)
+              a.startDate!.toIso8601String().split('T').first,
+            if (a.episodeCount != null) '${a.episodeCount} ${'Episodes'.tl}',
+          ].join(' · '),
+        },
       );
       if (!mounted || chosen == null || session.target != target) {
         return;
@@ -124,7 +142,8 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
           for (var e in anime.episodes) e: '${e.number} · ${e.title}',
         },
         selected: matchDanmakuEpisode(anime.episodes,
-          ep: target?.ep, sort: target?.sort, index: target?.index ?? 0),
+          ep: target?.ep, sort: target?.sort, index: target?.index ?? 0,
+          preferSort: true),
       );
       if (!mounted || episode == null || session.target != target) {
         return;
