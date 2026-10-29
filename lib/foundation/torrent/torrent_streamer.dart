@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:venera/foundation/animeko/animeko_rss_engine.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -168,10 +169,9 @@ class DartTorrentStreamer implements TorrentStreamer {
           seekLatencyTolerance: 1,
         ));
       session.task = task;
-      task.setTransferLimits(
-        download: _speed('btDownloadLimitKB'),
-        upload: _speed('btUploadLimitKB'),
-      );
+      task.setLeechFilter(appdata.settings['btBlockLeechers'] != false);
+      await _refreshLimits(session);
+      session.checkCancelled();
       for (var i = 0; i < model.files.length; i++) {
         task.setFilePriority(i, identical(model.files[i], file)
             ? FilePriority.high : FilePriority.skip);
@@ -207,10 +207,14 @@ class DartTorrentStreamer implements TorrentStreamer {
           bytesPerSecond: task.currentDownloadSpeed * 1024,
           buffered: task.getSequentialStats()?.bufferHealth ?? 0,
         );
-        if (++elapsed % 15 == 0) {
+        if (++elapsed % 30 == 0) {
+          unawaited(_refreshLimits(session));
+        }
+        if (elapsed % 15 == 0) {
           Log.info('Torrent', '${status.peers} peers, '
               '${(status.bytesPerSecond / 1024).round()} KB/s, '
-              'buffer ${status.buffered.round()}% after ${elapsed}s');
+              'buffer ${status.buffered.round()}% after ${elapsed}s, '
+              '${task.peersManager?.filteredPeers ?? 0} peers filtered');
         }
       });
       session.status.value = const TorrentStatus(metadata: false);
@@ -233,6 +237,46 @@ class DartTorrentStreamer implements TorrentStreamer {
 
   int _speed(String key) =>
       (int.tryParse('${appdata.settings[key]}') ?? 0) * 1024;
+
+  /// Zero means unlimited; it must not win a minimum against a finite cap.
+  static int uploadLimit(int normal, int metered, bool isMetered) =>
+      !isMetered || metered == 0 ? normal : normal == 0
+          ? metered : min(normal, metered);
+
+  Future<void> _refreshLimits(_TorrentSession session) async {
+    if (session.checkingLimits) {
+      return;
+    }
+    session.checkingLimits = true;
+    try {
+      var metered = false;
+      if (Platform.isAndroid) {
+        try {
+          metered = await const MethodChannel('venera/method_channel')
+              .invokeMethod<bool>('isActiveNetworkMetered') ?? false;
+        } on PlatformException catch (e) {
+          Log.warning('Torrent', 'Unable to check metered network: $e');
+        } on MissingPluginException {
+          // Older platform hosts do not implement this method.
+        }
+      }
+      if (session.cancelled.isCompleted) {
+        return;
+      }
+      var download = _speed('btDownloadLimitKB');
+      var upload = uploadLimit(_speed('btUploadLimitKB'),
+        _speed('btMeteredUploadLimitKB'), metered);
+      if (session.uploadLimit != upload || session.downloadLimit != download) {
+        session.task?.setTransferLimits(download: download, upload: upload);
+        session.uploadLimit = upload;
+        session.downloadLimit = download;
+        Log.info('Torrent', 'Transfer limits: download ${download ~/ 1024} KB/s, '
+            'upload ${upload ~/ 1024} KB/s (0 = unlimited, metered: $metered)');
+      }
+    } finally {
+      session.checkingLimits = false;
+    }
+  }
 
   /// One metadata download, null when it makes no progress for 30 seconds
   /// (or runs out of [left]). The engine can keep waiting on peers that never
@@ -460,6 +504,9 @@ class _TorrentSession {
   Directory? directory;
   String? localUrl;
   Timer? timer;
+  bool checkingLimits = false;
+  int? uploadLimit;
+  int? downloadLimit;
   int reserved = 0;
   Future<void>? cleanup;
 

@@ -196,6 +196,10 @@ abstract class Peer
   /// Did I choke the other party, the default is true
   bool chokeRemote = true;
 
+  /// Swarm upload policy, also enforced for allowed-fast requests.
+  bool Function()? uploadAllowed;
+  bool get canUpload => uploadAllowed?.call() ?? true;
+
   /// Whether the other party is interested in my resources, the default is false
   bool _interestedMe = false;
 
@@ -1192,6 +1196,12 @@ abstract class Peer
           '$address : request block length larger than limit : $length > $maxRequestLength'));
       return;
     }
+    if (!canUpload) {
+      if (remoteEnableFastPeer && localEnableFastPeer) {
+        sendRejectRequest(index, begin, length);
+      }
+      return;
+    }
     if (chokeRemote) {
       if (_allowFastPieces.contains(index)) {
         // Piece is in allowed fast set, accept the request even when choked
@@ -1453,6 +1463,9 @@ abstract class Peer
   /// - begin: integer specifying the zero-based byte offset within the piece
   /// - block: block of data, which is a subset of the piece specified by index.
   bool sendPiece(int index, int begin, List<int> block) {
+    if (!canUpload) {
+      return false;
+    }
     if (chokeRemote) {
       if (!remoteEnableFastPeer || !_allowFastPieces.contains(index)) {
         return false;
@@ -1615,6 +1628,7 @@ abstract class Peer
   /// then reject requests so that the peer receiving the choke does not
   /// re-request the pieces.
   void sendChoke(bool choke) {
+    choke = choke || !canUpload;
     if (chokeRemote == choke) {
       return;
     }

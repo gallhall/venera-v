@@ -8,6 +8,36 @@ class AppSettings extends StatefulWidget {
 }
 
 class _AppSettingsState extends State<AppSettings> {
+  Future<void> editBtGroups() async {
+    var draft = appdata.settings['btPreferredGroups'] as String;
+    var value = await showDialog<String>(context: context, builder: (context) =>
+      AlertDialog(
+        title: Text('BT preferred release groups'.tl),
+        content: TextFormField(
+          initialValue: draft,
+          onChanged: (value) => draft = value,
+          minLines: 3,
+          maxLines: 6,
+          decoration: InputDecoration(
+            hintText: 'Groups in priority order, separated by commas or newlines; /regex/ supported'.tl,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'.tl)),
+          TextButton(onPressed: () => Navigator.pop(context, draft),
+            child: Text('Confirm'.tl)),
+        ],
+      ));
+    if (value != null) {
+      appdata.settings['btPreferredGroups'] = value;
+      appdata.saveData();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SmoothCustomScrollView(
@@ -307,17 +337,48 @@ class _AppSettingsState extends State<AppSettings> {
             for (var entry in {
               'btDownloadLimitKB': 'BT download limit',
               'btUploadLimitKB': 'BT upload limit',
+              'btMeteredUploadLimitKB': 'BT metered upload limit',
             }.entries)
               SelectSetting(
                 title: entry.value.tl,
                 settingKey: entry.key,
-                optionTranslation: const {
+                optionTranslation: {
+                  if (entry.key == 'btMeteredUploadLimitKB') '10': '10 KB/s',
                   '0': 'Unlimited', '128': '128 KB/s',
                   '512': '512 KB/s', '1024': '1 MB/s',
                   '2048': '2 MB/s', '5120': '5 MB/s',
                   '10240': '10 MB/s',
                 },
               ),
+            _CallbackSetting(
+              title: 'BT preferred release groups'.tl,
+              subtitle: appdata.settings['btPreferredGroups'] as String,
+              callback: editBtGroups,
+              actionTitle: 'Edit'.tl,
+            ),
+            SelectSetting(
+              title: 'BT preferred resolution'.tl,
+              settingKey: 'btPreferredResolution',
+              optionTranslation: const {
+                'any': 'Any', '2160': '2160P', '1080': '1080P', '720': '720P',
+              },
+            ),
+            SelectSetting(
+              title: 'BT preferred subtitles'.tl,
+              settingKey: 'btPreferredSubtitles',
+              optionTranslation: const {
+                'any': 'Any', 'simplified': 'Simplified Chinese',
+                'traditional': 'Traditional Chinese', 'both': 'Simplified and traditional Chinese',
+              },
+            ),
+            _SwitchSetting(
+              title: 'Show raw releases'.tl,
+              settingKey: 'btShowRaw',
+            ),
+            _SwitchSetting(
+              title: 'Block uploads to leeching clients'.tl,
+              settingKey: 'btBlockLeechers',
+            ),
             _SwitchSetting(
               title: 'Keep downloaded torrents'.tl,
               settingKey: 'btKeepFiles',

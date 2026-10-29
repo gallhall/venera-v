@@ -82,7 +82,10 @@ abstract final class BangumiTitleMatch {
     'X': 10,
   };
 
-  static String numerals(String title) {
+  /// Without [chinese], Chinese numerals stay as they are: they are also
+  /// ordinary characters of names (千岁, 一拳超人, 七大罪), which a site must be
+  /// searched with unchanged.
+  static String numerals(String title, {bool chinese = true}) {
     var value = String.fromCharCodes(
       title.runes.map((c) => c >= 0xff10 && c <= 0xff19 ? c - 0xff10 + 48 : c),
     );
@@ -102,6 +105,9 @@ abstract final class BangumiTitleMatch {
       ),
       (m) => '${_roman[m[0]!.toUpperCase()]}',
     );
+    if (!chinese) {
+      return value;
+    }
     return value.replaceAllMapped(
       RegExp(
         r'[\u96f6\u3007\u4e00\u4e8c\u4e24\u5169\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\u5343]+',
@@ -150,7 +156,7 @@ abstract final class BangumiTitleMatch {
   }
 
   /// Search keeps readable word boundaries and does not rewrite season syntax.
-  static String searchKeyword(String title) => numerals(title)
+  static String searchKeyword(String title) => numerals(title, chinese: false)
       .replaceAll(
         RegExp(
           r'\u5287\u5834\u7248|\u5267\u573a\u7248|\u96fb\u5f71|\u7535\u5f71|\u7e3d\u96c6\u7bc7|\u603b\u96c6\u7bc7|\bOVA\b|\bOAD\b',

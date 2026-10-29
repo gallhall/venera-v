@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -125,6 +126,10 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, res ->
             when (call.method) {
                 "getProxy" -> res.success(getProxy())
+                "isActiveNetworkMetered" -> {
+                    val connectivity = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                    res.success(connectivity.isActiveNetworkMetered)
+                }
                 "setScreenOn" -> {
                     val set = call.argument<Boolean>("set") ?: false
                     if (set) {

@@ -368,7 +368,33 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     var options = (data.searchOptions ?? [])
         .map((e) => e.defaultValue)
         .toList();
+    var mergedRss = false;
     try {
+      if (keyword == null && AnimekoSource.isRssSource(row.source) &&
+          !AnimekoSource.supportsBangumiSubject(row.source)) {
+        try {
+          var merged = await AnimekoSource.findRssBangumiSubject(
+            row.source, keywords, names);
+          if (!mounted || generation != row.generation ||
+              !row.source.isEnabled || !sources.contains(row)) {
+            return;
+          }
+          row.results = merged;
+          var index = BangumiTitleMatch.best(names,
+            merged.map((c) => c.title).toList());
+          row.matched = index == null ? null : merged[index];
+          row.keyword = keywords.take(3).join(', ');
+          for (var comic in merged) {
+            row.resultKeywords[comic.id] = keywords.first;
+          }
+          setState(() => updateCandidates());
+          // Nothing found by the merged search: the single-keyword loop below
+          // still gets its chance, as before.
+          mergedRss = merged.isNotEmpty;
+        } catch (e) {
+          Log.warning('RSS', 'Subject lookup failed: $e');
+        }
+      }
       if (keyword == null && AnimekoSource.supportsBangumiSubject(row.source)) {
         Comic? exact;
         try {
@@ -394,7 +420,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           setState(() => updateCandidates());
         }
       }
-      for (var query in row.matched == null ? keywords : <String>[]) {
+      for (var query in !mergedRss && row.matched == null ? keywords : <String>[]) {
         if (query.isEmpty) continue;
         row.keyword = query;
         sourceUpdates.value++;

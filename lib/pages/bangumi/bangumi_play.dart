@@ -1,3 +1,5 @@
+import 'package:venera/foundation/animeko/rss_preferences.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -95,6 +97,9 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   }
   var episodes = VideoEpisode.fromDetails(details);
   var binding = BangumiManager().bindingOf(candidate.sourceKey, candidate.id);
+  var remembered = source.animekoSource?.factoryId == 'rss'
+      ? RssLineMemory.read(appdata.implicitData, candidate.sourceKey, candidate.id)
+      : null;
   var target = BangumiEpisodeNumber.match(context.episodes, context.number);
   var index = target == null
       ? null
@@ -107,6 +112,9 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
                 position: episodes.toHistory(i).ep,
               ),
           ],
+          preferredIndices: [for (var i = 0; i < episodes.length; i++)
+            if (remembered != null &&
+                rssLineGroup(episodes[i].group) == remembered) i],
           offset: binding?.subjectId == context.subject.id
               ? binding!.offset
               : 0,
