@@ -35,6 +35,31 @@ class DanmakuTarget {
   });
 }
 
+bool _usableDanmakuType(DanmakuAnime candidate, DanmakuTarget target) {
+  var type = candidate.type?.toLowerCase();
+  return ['tvseries', 'tv', 'web', 'ova', 'oad', 'movie'].contains(type) &&
+      (type != 'movie' || target.episodeCount == 1);
+}
+
+int _danmakuTitleScore(String candidateTitle, Iterable<String> names) {
+  var title = normalizeDanmakuTitle(candidateTitle);
+  var clean = normalizeDanmakuTitle(cleanDanmakuTitle(candidateTitle));
+  var titleMatch = 0;
+  for (var name in names) {
+    var normalized = normalizeDanmakuTitle(name);
+    var base = normalizeDanmakuTitle(cleanDanmakuTitle(name));
+    if (title.isEmpty || base.isEmpty) {
+      continue;
+    }
+    var score = title == normalized ? 3 : clean == base ? 2
+        : clean.contains(base) || base.contains(clean) ? 1 : 0;
+    if (score > titleMatch) {
+      titleMatch = score;
+    }
+  }
+  return clean.isEmpty ? 0 : titleMatch;
+}
+
 // Dates distinguish split cours whose DanDanPlay titles omit the part marker.
 // Without dates, require a unique best title/season match.
 DanmakuAnime? chooseDanmakuAnime(
@@ -49,12 +74,7 @@ DanmakuAnime? chooseDanmakuAnime(
   (int, int, int)? bestScore;
   var tied = false;
   for (var candidate in candidates) {
-    var type = candidate.type?.toLowerCase();
-    if (!['tvseries', 'tv', 'web', 'ova', 'oad', 'movie']
-        .contains(type)) {
-      continue;
-    }
-    if (type == 'movie' && target.episodeCount != 1) {
+    if (!_usableDanmakuType(candidate, target)) {
       continue;
     }
     var count = candidate.episodeCount;
@@ -80,22 +100,8 @@ DanmakuAnime? chooseDanmakuAnime(
         dateMatch = 1;
       }
     }
-    var title = normalizeDanmakuTitle(candidate.title);
-    var clean = normalizeDanmakuTitle(cleanDanmakuTitle(candidate.title));
-    var titleMatch = 0;
-    for (var name in names) {
-      var normalized = normalizeDanmakuTitle(name);
-      var base = normalizeDanmakuTitle(cleanDanmakuTitle(name));
-      if (title.isEmpty || base.isEmpty) {
-        continue;
-      }
-      var score = title == normalized ? 3 : clean == base ? 2
-          : clean.contains(base) || base.contains(clean) ? 1 : 0;
-      if (score > titleMatch) {
-        titleMatch = score;
-      }
-    }
-    if (titleMatch == 0 || clean.isEmpty) {
+    var titleMatch = _danmakuTitleScore(candidate.title, names);
+    if (titleMatch == 0) {
       continue;
     }
     var seasonMatch = BangumiTitleMatch.season(candidate.title) == season ? 1 : 0;
@@ -126,10 +132,12 @@ DanmakuAnime? chooseDanmakuAnime(
 }
 
 class DanmakuSession extends ChangeNotifier {
-  DanmakuSession(this.onFailure, {DanDanPlayApi? api})
-    : api = api ?? DanDanPlayApi();
+  DanmakuSession(this.onFailure, {DanDanPlayApi? api, DateTime Function()? now})
+    : api = api ?? DanDanPlayApi(),
+      _now = now ?? DateTime.now;
 
   final DanDanPlayApi api;
+  final DateTime Function() _now;
   // Receives localized messages, including parameterized quota warnings.
   final void Function(String) onFailure;
   final _warned = <String>{};
@@ -181,7 +189,14 @@ class DanmakuSession extends ChangeNotifier {
     var local = error.until.toLocal();
     var time = '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
-    var message = 'Danmaku quota used up until @time'.tlParams({'time': time});
+    var now = _now().toLocal();
+    if (DateTime(local.year, local.month, local.day)
+        .isAfter(DateTime(now.year, now.month, now.day))) {
+      time = 'tomorrow @time'.tlParams({'time': time});
+    }
+    var message = (error.group == 'search'
+        ? 'Danmaku search quota used up until @time; matched anime are not affected'
+        : 'Danmaku quota used up until @time').tlParams({'time': time});
     var ownId = appdata.settings['dandanplayAppId'];
     if (DanDanPlayApi.hasBuiltInCredentials &&
         (ownId is! String || ownId.trim().isEmpty)) {
@@ -228,8 +243,15 @@ class DanmakuSession extends ChangeNotifier {
   Future<DanmakuAnime> _byName(DanmakuTarget target) async {
     var candidates = <int, DanmakuAnime>{};
     for (var query in danmakuTitleVariants(target.searchNames)) {
-      for (var candidate in await api.search(query)) {
-        candidates[candidate.id] = candidate;
+      try {
+        for (var candidate in await api.search(query)) {
+          candidates[candidate.id] = candidate;
+        }
+      } on DanmakuQuotaExceeded catch (error) {
+        if (error.group != 'search') {
+          rethrow;
+        }
+        return _byFileName(target, candidates, error);
       }
       var chosen = chooseDanmakuAnime(candidates.values, target, early: true);
       if (chosen != null) {
@@ -242,6 +264,59 @@ class DanmakuSession extends ChangeNotifier {
       throw const DanmakuNoMatch();
     }
     return api.anime(chosen.id);
+  }
+
+  Future<DanmakuAnime> _byFileName(DanmakuTarget target,
+      Map<int, DanmakuAnime> candidates, DanmakuQuotaExceeded quota) async {
+    var names = <String>{};
+    var details = <int, DanmakuAnime>{};
+    var attempted = <int>{};
+    var calls = 0;
+    var number = (target.ep ?? target.sort ?? target.index + 1)
+        .toInt().toString().padLeft(2, '0');
+    try {
+      for (var name in target.searchNames) {
+        var base = cleanDanmakuTitle(name).toLowerCase();
+        if (base.isEmpty || !names.add(base)) {
+          continue;
+        }
+        if (calls == 3) {
+          break;
+        }
+        calls++;
+        List<DanmakuAnime> matches;
+        try {
+          matches = await api.matchByName('$name $number');
+        } on DanmakuNoMatch {
+          matches = const [];
+        }
+        for (var candidate in matches) {
+          candidates.putIfAbsent(candidate.id, () => candidate);
+        }
+        for (var candidate in candidates.values) {
+          if (attempted.length == 4) {
+            break;
+          }
+          if (!_usableDanmakuType(candidate, target) ||
+              _danmakuTitleScore(candidate.title, target.searchNames) == 0 ||
+              !attempted.add(candidate.id)) {
+            continue;
+          }
+          try {
+            details[candidate.id] = await api.anime(candidate.id);
+          } on DanmakuNoMatch {
+            continue;
+          }
+        }
+        var chosen = chooseDanmakuAnime(details.values, target);
+        if (chosen != null) {
+          return chosen;
+        }
+      }
+    } on DanmakuQuotaExceeded {
+      throw quota;
+    }
+    throw quota;
   }
 
   void _rememberNoMatch(String key) {
