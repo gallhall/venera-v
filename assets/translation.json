@@ -1,5 +1,8 @@
 {
   "zh_CN": {
+    "Cannot reach @host (blocked or down)": "无法连接 @host（可能被网络屏蔽或站点故障）",
+    "Connection to @host timed out": "连接 @host 超时（可能被网络屏蔽或站点故障）",
+    "Rematch sources": "重新匹配",
     "Danmaku quota used up until @time": "今日弹幕额度已用完，@time 后恢复",
     "You can use your own credentials in Settings > Danmaku": "可在 设置 → 弹幕 中使用自己的凭据",
     "BT metered upload limit": "BT 按流量计费网络上传限速",
@@ -796,6 +799,9 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Cannot reach @host (blocked or down)": "無法連線 @host（可能被網路封鎖或網站故障）",
+    "Connection to @host timed out": "連線 @host 逾時（可能被網路封鎖或網站故障）",
+    "Rematch sources": "重新配對",
     "Danmaku quota used up until @time": "今日彈幕額度已用完，@time 後恢復",
     "You can use your own credentials in Settings > Danmaku": "可在 設定 → 彈幕 中使用自己的憑證",
     "BT metered upload limit": "BT 計量網路上傳限速",

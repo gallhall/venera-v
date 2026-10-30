@@ -11,6 +11,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/bangumi_network.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'loopback_server.dart';
@@ -144,7 +145,7 @@ class DartTorrentStreamer implements TorrentStreamer {
         if (uri.scheme != 'http' && uri.scheme != 'https') {
           throw FormatException('Invalid torrent URL'.tl);
         }
-        var response = await AppDio().get<List<int>>(
+        var response = await BangumiNetwork.dio().get<List<int>>(
           magnetOrTorrentUrl,
           cancelToken: session.cancelToken,
           options: Options(responseType: ResponseType.bytes,

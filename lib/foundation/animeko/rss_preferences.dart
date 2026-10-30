@@ -2,7 +2,7 @@ import 'animeko_rss_engine.dart';
 
 enum RssSubtitle { none, simplified, traditional, both }
 
-/// Technical tags only: the series title and release group are not language tags.
+/// Subtitle evidence may come from technical tags or the release group.
 class RssReleaseTags {
   final int? resolution;
   final RssSubtitle subtitles;
@@ -16,11 +16,17 @@ class RssReleaseTags {
     if (tags.isNotEmpty && tags.first.trim() == group) {
       tags.removeAt(0);
     }
-    var text = tags.join(' ');
+    var text = [group, ...tags].join(' ');
     bool has(String pattern) => RegExp(pattern, caseSensitive: false)
         .hasMatch(text);
     var simplified = has(r'\u7b80|\u7c21|(?<![a-z])(?:CHS|GB|SC)(?![a-z])');
-    var traditional = has(r'\u7e41|(?<![a-z])(?:CHT|BIG5|TC)(?![a-z])');
+    var traditional = has(r'\u7e41|(?<![a-z])(?:CHT|BIG5|TC|Baha)(?![a-z])');
+    if (has(r'(?<![a-z])(?:B-Global|Bilibili)(?![a-z])')) {
+      simplified = true;
+      traditional = true;
+    }
+    var subtitled = simplified || traditional ||
+        has(r'中字|中文|双语|雙語|内封|內封|内嵌|內嵌|外挂|字幕');
     var resolution = RegExp(r'(?<!\d)(2160|1080|720|480)(?:[pi])?(?!\d)',
       caseSensitive: false).firstMatch(title)?[1];
     return RssReleaseTags(
@@ -29,8 +35,7 @@ class RssReleaseTags {
       simplified && traditional ? RssSubtitle.both : simplified
           ? RssSubtitle.simplified : traditional
           ? RssSubtitle.traditional : RssSubtitle.none,
-      RegExp(r'raws$', caseSensitive: false).hasMatch(group) ||
-          has(r'(?<![a-z])RAW(?![a-z])'),
+      !subtitled,
     );
   }
 }
@@ -41,14 +46,14 @@ class RssPreferences {
   final String subtitles;
   final bool showRaw;
   const RssPreferences({this.groups = '', this.resolution = 1080,
-    this.subtitles = 'any', this.showRaw = true});
+    this.subtitles = 'any', this.showRaw = false});
 
   factory RssPreferences.fromSettings(Object? Function(String) setting) =>
       RssPreferences(
         groups: setting('btPreferredGroups') as String? ?? '',
         resolution: int.tryParse('${setting('btPreferredResolution') ?? 1080}'),
         subtitles: setting('btPreferredSubtitles') as String? ?? 'any',
-        showRaw: setting('btShowRaw') != false,
+        showRaw: setting('btShowRaw') == true,
       );
 
   List<RssSeries> order(String keyword, List<RssSeries> input) {
@@ -166,3 +171,14 @@ abstract final class RssLineMemory {
 
 String? rssLineGroup(String? line) => line == null ? null :
     RegExp(r'^\[([^\]]+)\]').firstMatch(line)?[1] ?? '';
+
+/// Returns whether settings/persistence need saving. The switch is respected afterwards.
+bool migrateRssRawFilter(Map<String, dynamic> implicitData,
+    void Function(String, Object) setSetting) {
+  if (implicitData['btRawFilterMigrated'] == true) {
+    return false;
+  }
+  setSetting('btShowRaw', false);
+  implicitData['btRawFilterMigrated'] = true;
+  return true;
+}

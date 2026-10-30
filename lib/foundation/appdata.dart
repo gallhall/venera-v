@@ -9,6 +9,8 @@ import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/init.dart';
 import 'package:venera/utils/io.dart';
 
+import 'animeko/rss_preferences.dart';
+
 class Appdata with Init {
   Appdata._create();
 
@@ -133,6 +135,8 @@ class Appdata with Init {
     var dataPath = (await getApplicationSupportDirectory()).path;
     var file = File(FilePath.join(dataPath, 'appdata.json'));
     if (!await file.exists()) {
+      migrateRssRawFilter(implicitData, (key, value) => settings[key] = value);
+      writeImplicitData();
       return;
     }
     try {
@@ -162,6 +166,10 @@ class Appdata with Init {
       Log.info("Appdata", "Resetting implicit data");
       var implicitDataFile = File(FilePath.join(dataPath, 'implicitData.json'));
       implicitDataFile.deleteIgnoreError();
+    }
+    if (migrateRssRawFilter(implicitData, (key, value) => settings[key] = value)) {
+      await saveData(false);
+      writeImplicitData();
     }
   }
 }
@@ -256,7 +264,7 @@ class Settings with ChangeNotifier {
     'btPreferredGroups': '',
     'btPreferredResolution': '1080',
     'btPreferredSubtitles': 'any',
-    'btShowRaw': true,
+    'btShowRaw': false,
     'btKeepFiles': false,
     'disabledComicSources': <String>[],
     'bangumiEchMode': 'doh',

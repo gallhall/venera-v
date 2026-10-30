@@ -30,7 +30,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(AppTranslation.init);
 
-  test('real release titles expose technical tags without reading group names', () {
+  test('real release titles expose resolution and subtitle evidence', () {
     var cases = <String, (int?, RssSubtitle, bool)>{
       '[桜都字幕组] 弹珠汽水瓶里的千岁同学 第二季 / '
           'Chitose-kun wa Ramune Bin no Naka (2026) [01][1080P][简体内嵌]':
@@ -53,13 +53,47 @@ void main() {
       '[G] Series [01][繁中]': (null, RssSubtitle.traditional, false),
       '[G-raws] Series [01]': (null, RssSubtitle.none, true),
       '[G] Series [01][RAW]': (null, RssSubtitle.none, true),
-      '[SC] Series [01]': (null, RssSubtitle.none, false),
+      '[SC] Series [01]': (null, RssSubtitle.simplified, false),
     };
     for (var entry in cases.entries) {
       var tags = RssReleaseTags.parse(entry.key);
       expect((tags.resolution, tags.subtitles, tags.raw), entry.value,
         reason: entry.key);
     }
+  });
+
+  test('unlabelled Japanese releases are raw, Chinese subtitle evidence is retained', () {
+    var cases = <String, (RssSubtitle, bool)>{
+      '[黒ネズミたち] 彈珠汽水瓶裡的千歲同學 第二季 / '
+          'Chitose-kun wa Ramune Bin no Naka Part 2 - 14 '
+          '(ABEMA 1920x1080 AVC AAC MKV)': (RssSubtitle.none, true),
+      '[G] Series - 01 [CR][1080p]': (RssSubtitle.none, true),
+      '[G] Series - 01 [TVer][AT-X]': (RssSubtitle.none, true),
+      '[ANi] Series - 01 [Baha][1080p]': (RssSubtitle.traditional, false),
+      '[ANi] Series - 01 [CHT]': (RssSubtitle.traditional, false),
+      '[LoliHouse] Series [简繁内封字幕]': (RssSubtitle.both, false),
+      '[桜都字幕组] Series [1080p]': (RssSubtitle.none, false),
+      '[动漫国字幕组] Series [1080p]': (RssSubtitle.none, false),
+      '[G] Series [B-Global]': (RssSubtitle.both, false),
+      '[G] Series [Bilibili]': (RssSubtitle.both, false),
+      '[G] Series [雙語][內嵌]': (RssSubtitle.none, false),
+    };
+    for (var e in cases.entries) {
+      var tags = RssReleaseTags.parse(e.key);
+      expect((tags.subtitles, tags.raw), e.value, reason: e.key);
+    }
+    expect(RssPreferences.fromSettings((_) => null).showRaw, isFalse);
+  });
+
+  test('raw filter migration runs once and preserves subsequent user choices', () {
+    var settings = <String, dynamic>{'btShowRaw': true};
+    var data = <String, dynamic>{};
+    void setSetting(String key, Object value) => settings[key] = value;
+    expect(migrateRssRawFilter(data, setSetting), isTrue);
+    expect(settings['btShowRaw'], isFalse);
+    settings['btShowRaw'] = true;
+    expect(migrateRssRawFilter(data, setSetting), isFalse);
+    expect(settings['btShowRaw'], isTrue);
   });
 
   test('group preference is case insensitive, ordered and ignores invalid regex', () {
@@ -70,7 +104,7 @@ void main() {
       release('[LoliHouse] Series - 01 [1080P]'),
       release('[Last] Series - 01 [1080P]'),
     ]);
-    var sorted = const RssPreferences(groups: '/[/, lolihouse\n/^ani\$/')
+    var sorted = const RssPreferences(groups: '/[/, lolihouse\n/^ani\$/', showRaw: true)
         .order('Series', groups);
     expect(sorted.map((g) => g.name.group), ['LoliHouse', 'ANi', 'Other', 'Last']);
     expect(groups.first.name.group, 'Other');
@@ -113,7 +147,8 @@ void main() {
     var hidden = const RssPreferences(showRaw: false).order('Series', groups);
     expect(hidden, hasLength(1));
     expect(hidden.single.releases, [subbed]);
-    expect(const RssPreferences().order('Series', groups), hasLength(2));
+    expect(const RssPreferences(showRaw: true).order('Series', groups), hasLength(2));
+    expect(const RssPreferences().order('Series', groups), hasLength(1));
   });
 
   test('paged search stops when a page adds no new hash or URL', () async {

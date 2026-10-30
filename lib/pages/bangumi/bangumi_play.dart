@@ -1,5 +1,6 @@
 import 'package:venera/foundation/animeko/rss_preferences.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/res.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -13,6 +14,14 @@ class BangumiEpisodeUnavailable implements Exception {
   @override
   String toString() =>
       'This source has no matching episode. Try switching source.'.tl;
+}
+
+class BangumiSourceLoadException implements Exception {
+  BangumiSourceLoadException(this.candidate, this.error);
+  final Comic candidate;
+  final Object error;
+  @override
+  String toString() => error.toString();
 }
 
 Future<VideoPlayerPage> bangumiPlayer(
@@ -86,15 +95,22 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
     throw Exception('Source disabled'.tl);
   }
   if (details == null) {
-    var result = await source.loadComicInfo!(candidate.id);
+    late final Res<ComicDetails> result;
+    try {
+      result = await source.loadComicInfo!(candidate.id);
+    } catch (e) {
+      throw BangumiSourceLoadException(candidate, e);
+    }
     if (!source.isEnabled) {
       throw Exception('Source disabled'.tl);
     }
     if (result.error) {
-      throw Exception(result.errorMessage);
+      throw BangumiSourceLoadException(candidate, result.errorMessage!);
     }
     details = result.data;
   }
+  // No episodes (e.g. only raw releases left) stays BangumiEpisodeUnavailable,
+  // so automatic source switching still moves on to the next source.
   var episodes = VideoEpisode.fromDetails(details);
   var binding = BangumiManager().bindingOf(candidate.sourceKey, candidate.id);
   var remembered = source.animekoSource?.factoryId == 'rss'
