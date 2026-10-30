@@ -6,6 +6,7 @@ import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/animeko/animeko_rss_engine.dart';
 import 'package:venera/foundation/animeko/animeko_source_config.dart';
+import 'package:venera/foundation/bangumi/bangumi_matching.dart';
 import 'package:venera/foundation/torrent/torrent_id.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/utils/translations.dart';
@@ -77,6 +78,25 @@ void main() {
       '[Group] Series 01-12 [1080p]': (1, 12),
       '[Group] Series (BDRip 1080p HEVC FLAC)': (null, null),
       '[Group] Series S2 [1080p][x265][10bit]': (null, null),
+      '[黒ネズミたち] 弹珠汽水瓶里的千岁同学 第二季 / '
+          'Chitose-kun wa Ramune Bin no Naka Part 2 - 13.5 '
+          '(CR 1920x1080 AVC AAC MKV)': (null, null),
+      '[黒ネズミたち] 弹珠汽水瓶里的千岁同学 第二季 / '
+          'Chitose-kun wa Ramune Bin no Naka Part 2 - 16 '
+          '(Baha 1920x1080 AVC AAC MP4)': (16, null),
+      '[G] Series Season 3 - 13 [1080p]': (13, null),
+      '[G] Series Part 2 - 16 [1080p]': (16, null),
+      '[G] Series Cour 2 - 16 [1080p]': (16, null),
+      '[G] Series 第2部分 - 16 [1080p]': (16, null),
+      '[G] Series 第2クール - 16 [1080p]': (16, null),
+      '[G] Series 第2部分 [1080p]': (null, null),
+      '[G] Series 第2クール [1080p]': (null, null),
+      '[G] 某番 第2季 - 05 [1080p]': (5, null),
+      '[G] 某番 第2期 - 05 [1080p]': (5, null),
+      '[G] 某番 第2季 第05话 [1080p]': (5, null),
+      '[G] Series [13.5] [1080p]': (null, null),
+      '[G] Series EP13.5 [1080p]': (null, null),
+      '[G] Series S2E13.5 [1080p]': (null, null),
     };
     for (var entry in titles.entries) {
       var name = RssReleaseName.parse(entry.key);
@@ -151,6 +171,39 @@ void main() {
     expect(third.first.season, isNull);
     expect(third.first.groups, hasLength(3));
     expect(third.first.title, '间谍过家家 第三季');
+  });
+
+  test('a split cour is found by its series name and season', () {
+    var keywords = [
+      '弹珠汽水瓶里的千岁同学 第2部分',
+      '千歳くんはラムネ瓶のなか 第2クール',
+      '千岁同学在波子汽水瓶内 第2部分',
+    ];
+    expect(AnimekoRssEngine.seriesKeywords(keywords),
+      ['弹珠汽水瓶里的千岁同学', '千歳くんはラムネ瓶のなか']);
+    expect(AnimekoRssEngine.seriesKeywords([
+      'Spy x Family Season 3', 'Series Part 2', 'Series 2nd Season',
+      'Series S2', 'Series 第二季',
+    ]), ['Spy x Family', 'Series']);
+    // Without a marker there is nothing else to search.
+    expect(AnimekoRssEngine.seriesKeywords(['弹珠汽水瓶里的千岁同学']), isEmpty);
+    // 动漫花园 titles of both cours (checked 2026-10-30).
+    var releases = [
+      for (var title in [
+        '[LoliHouse] 弹珠汽水瓶里的千岁同学 第二季 / Chitose-kun wa Ramune Bin '
+            'no Naka Part 2 - 14 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]',
+        '[桜都字幕组] 弹珠汽水瓶里的千岁同学 第二季 [15][1080p][简体内嵌]',
+        '[LoliHouse] 弹珠汽水瓶里的千岁同学 / Chitose-kun wa Ramune Bin no Naka'
+            ' - 13 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]',
+      ]) RssRelease(title: title, url: 'https://example.org/$title.torrent'),
+    ];
+    var subjects = AnimekoRssEngine.subjects('弹珠汽水瓶里的千岁同学', releases);
+    expect(subjects.map((s) => s.season), [null, 2]);
+    var names = ['弹珠汽水瓶里的千岁同学 第2部分', '千歳くんはラムネ瓶のなか 第2クール'];
+    expect(BangumiTitleMatch.best(names,
+      subjects.map((s) => s.title).toList()), 1);
+    expect(subjects[1].groups.map((g) => g.name.group),
+      containsAll(['LoliHouse', '桜都字幕组']));
   });
 
   test('RSS requests encode search keywords once', () {

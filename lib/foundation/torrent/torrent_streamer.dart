@@ -14,6 +14,7 @@ import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'loopback_server.dart';
+import 'torrent_lookup.dart';
 
 const publicTorrentTrackers = [
   'udp://tracker.opentrackr.org:1337/announce',
@@ -105,33 +106,40 @@ class DartTorrentStreamer implements TorrentStreamer {
         if (magnet == null) {
           throw FormatException('Invalid magnet link'.tl);
         }
-        var trackers = {...magnet.trackers,
-          ...publicTorrentTrackers.map(Uri.parse)};
-        Log.info('Torrent', 'Fetching metadata of ${magnet.infoHashString} '
-            '(episode $episode) from ${trackers.length} trackers and DHT');
-        var started = DateTime.now();
-        List<int>? bytes;
-        for (var attempt = 1; bytes == null; attempt++) {
-          var left = const Duration(seconds: 90) -
-              DateTime.now().difference(started);
-          if (left <= Duration.zero) {
-            throw TimeoutException('Torrent metadata timed out'.tl);
+        var torrent = matchingTorrent(await mikanTorrent(magnet.infoHashString,
+          cancelToken: session.cancelToken), magnet.infoHashString);
+        session.checkCancelled();
+        if (torrent != null) {
+          model = torrent;
+        } else {
+          var trackers = {...magnet.trackers,
+            ...publicTorrentTrackers.map(Uri.parse)};
+          Log.info('Torrent', 'Fetching metadata of ${magnet.infoHashString} '
+              '(episode $episode) from ${trackers.length} trackers and DHT');
+          var started = DateTime.now();
+          List<int>? bytes;
+          for (var attempt = 1; bytes == null; attempt++) {
+            var left = const Duration(seconds: 90) -
+                DateTime.now().difference(started);
+            if (left <= Duration.zero) {
+              throw TimeoutException('Torrent metadata timed out'.tl);
+            }
+            if (attempt > 1) {
+              Log.info('Torrent', 'No metadata yet, starting over with other '
+                  'peers (attempt $attempt)');
+              await Future.any([
+                Future<void>.delayed(const Duration(seconds: 1)),
+                session.cancelled.future,
+              ]);
+              session.checkCancelled();
+            }
+            bytes = await _fetchMetadata(magnet, trackers.toList(), session,
+              peers, left);
           }
-          if (attempt > 1) {
-            Log.info('Torrent', 'No metadata yet, starting over with other '
-                'peers (attempt $attempt)');
-            await Future.any([
-              Future<void>.delayed(const Duration(seconds: 1)),
-              session.cancelled.future,
-            ]);
-            session.checkCancelled();
-          }
-          bytes = await _fetchMetadata(magnet, trackers.toList(), session,
-            peers, left);
+          model = TorrentParser.parseBytes(Uint8List.fromList([
+            ...'d4:info'.codeUnits, ...bytes, 101,
+          ]));
         }
-        model = TorrentParser.parseBytes(Uint8List.fromList([
-          ...'d4:info'.codeUnits, ...bytes, 101,
-        ]));
       } else {
         if (uri.scheme != 'http' && uri.scheme != 'https') {
           throw FormatException('Invalid torrent URL'.tl);
@@ -141,6 +149,7 @@ class DartTorrentStreamer implements TorrentStreamer {
           cancelToken: session.cancelToken,
           options: Options(responseType: ResponseType.bytes,
             receiveTimeout: const Duration(seconds: 30),
+            extra: {'connectTimeout': const Duration(seconds: 10)},
             headers: {'cache-time': 'no'}),
         );
         model = TorrentParser.parseBytes(Uint8List.fromList(response.data!));
