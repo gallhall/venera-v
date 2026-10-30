@@ -13,6 +13,8 @@ import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/torrent/torrent_id.dart';
 import 'package:venera/foundation/video/video_sniffer.dart';
 import 'package:venera/network/app_dio.dart';
+import 'package:venera/network/bangumi_network.dart';
+import 'package:venera/network/network_error.dart';
 import 'package:venera/pages/webview.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -52,6 +54,13 @@ abstract final class AnimekoSource {
     return Comic(title, '', jsonEncode({
       'keyword': title, 'mikanBangumiId': id,
     }), null, null, '', source.key, null, null);
+  }
+
+  static void clearSearchCache(ComicSource source) {
+    final runtime = _runtimes[source];
+    runtime?._cache.clear();
+    runtime?._rssSearches.clear();
+    runtime?._mikanFeeds.clear();
   }
 
   static bool isRssSource(ComicSource source) =>
@@ -281,8 +290,8 @@ abstract final class AnimekoSource {
   }
 
   static Res<T> _error<T>(AnimekoSourceConfig entry, Object e, StackTrace s) {
-    Log.error('Animeko', '${entry.name}: $e\n$s');
-    return Res.error('${entry.name}: $e');
+    Log.warning('Animeko', '${entry.name}: $e\n$s');
+    return Res.error('${entry.name}: ${describeNetworkError(e)}');
   }
 }
 
@@ -321,7 +330,7 @@ class _AnimekoRuntime {
         (entry.searchConfig['requestInterval'] as num?)?.toInt() ??
         (entry.isJsonApi ? 1000 : 3000);
     await (_gates.putIfAbsent(entry.key, _RequestGate.new)).wait(interval);
-    var response = await AppDio().request<String>(
+    var response = await BangumiNetwork.dio().request<String>(
       request.url,
       data: request.body,
       options: Options(

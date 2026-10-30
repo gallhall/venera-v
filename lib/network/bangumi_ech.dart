@@ -10,6 +10,55 @@ bool isBangumiHost(String host) {
   return ['bgm.tv', 'chii.in'].any((s) => host == s || host.endsWith('.$s'));
 }
 
+/// Host names are exact matches for BT sites; Bangumi's existing subdomains stay valid.
+class EchHosts {
+  EchHosts({required this.read, required this.write, DateTime Function()? now})
+      : now = now ?? DateTime.now;
+  final Object? Function() read;
+  final void Function(Map<String, int>) write;
+  final DateTime Function() now;
+  static const builtIn = {
+    'share.dmhy.org', 'dmhy.org', 'bangumi.moe', 'share.acgnx.se', 'acgnx.se',
+  };
+  static String normalize(String host) =>
+      host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+
+  Map<String, int> _entries() {
+    final stored = read();
+    final cutoff = now().subtract(const Duration(days: 30)).millisecondsSinceEpoch;
+    return {if (stored is Map)
+      for (final e in stored.entries)
+        if (e.key is String && e.value is int && (e.value as int) > cutoff)
+          normalize(e.key as String): e.value as int};
+  }
+
+  bool contains(String host, {String mode = 'doh'}) {
+    host = normalize(host);
+    return mode != 'off' &&
+        (isBangumiHost(host) || builtIn.contains(host) || _entries().containsKey(host));
+  }
+
+  void record(String host, {required bool echAnswered}) {
+    if (!echAnswered) {
+      return;
+    }
+    host = normalize(host);
+    final entries = _entries()..remove(host);
+    entries[host] = now().millisecondsSinceEpoch;
+    final ordered = entries.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
+    write(Map.fromEntries(ordered.skip((ordered.length - 50).clamp(0, ordered.length))));
+  }
+
+  /// A Cloudflare error page for a host it does not serve is no success: such a
+  /// host would otherwise go ECH-first for 30 days, also on networks where plain works.
+  Future<T> learnFrom<T>(String host, Future<T> Function() ech,
+      {required bool Function(T) answered}) async {
+    final response = await ech();
+    record(host, echAnswered: answered(response));
+    return response;
+  }
+}
+
 /// Retain the original URL for image cache keys. A base may include a path prefix.
 String rewriteBangumiImageUrl(String url, String base) {
   final original = Uri.tryParse(url.startsWith('//') ? 'https:$url' : url);

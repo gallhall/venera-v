@@ -8,6 +8,7 @@ import 'package:venera/foundation/log.dart';
 
 import 'app_dio.dart';
 import 'bangumi_ech.dart';
+import 'network_error.dart';
 
 export 'bangumi_ech.dart';
 
@@ -16,6 +17,13 @@ void _echLog(String message) => Log.info('Network', '[ECH] $message');
 /// Shared across API objects and thumbnail downloaders, including the backoff.
 class BangumiNetwork {
   static final backoff = EchBackoff();
+  static final hosts = EchHosts(
+    read: () => appdata.implicitData['echLearnedHosts'],
+    write: (data) {
+      appdata.implicitData['echLearnedHosts'] = data;
+      appdata.writeImplicitData();
+    },
+  );
   static final provider = EchConfigProvider(
     fetchWire: (uri) async {
       final dio = AppDio();
@@ -97,7 +105,7 @@ class BangumiNetwork {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          if (isBangumiHost(options.uri.host) &&
+          if (hosts.contains(options.uri.host) &&
               (appdata.settings['bangumiEchMode'] as String? ?? 'doh') !=
                   'off') {
             options.connectTimeout = const Duration(seconds: 10);
@@ -291,7 +299,6 @@ class BangumiAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     final host = options.uri.host.toLowerCase();
-    if (!isBangumiHost(host)) return _normal.fetch(options, body, cancelFuture);
     try {
       final response = await _normal.fetch(options, body, cancelFuture);
       BangumiNetwork._outcome(host, [], 1, false, response: response);
@@ -316,17 +323,46 @@ class BangumiAdapter implements HttpClientAdapter {
     RequestOptions options,
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
-    int redirects,
-  ) async {
+    int redirects, {
+    bool discovery = false,
+  }) async {
     final host = options.uri.host.toLowerCase();
+    var cancelled = false;
+    unawaited(
+      cancelFuture?.then((_) {
+        cancelled = true;
+      }),
+    );
     options.extra.remove('bangumiEchError');
     BangumiNetwork._syncConfiguration();
     final mode = appdata.settings['bangumiEchMode'] as String? ?? 'doh';
-    if (options.uri.scheme != 'https' ||
-        !isBangumiHost(host) ||
-        mode == 'off' ||
-        !BangumiNetwork.backoff.allows(host)) {
-      if (mode == 'off') BangumiNetwork._discard(host);
+    if (options.uri.scheme != 'https' || mode == 'off') {
+      if (mode == 'off') {
+        BangumiNetwork._discard(host);
+      }
+      return _plain(options, requestStream, cancelFuture);
+    }
+    if (!discovery && !BangumiNetwork.hosts.contains(host, mode: mode)) {
+      final chunks = requestStream == null ? null : await requestStream.toList();
+      Stream<Uint8List>? replay() => chunks == null ? null : Stream.fromIterable(chunks);
+      try {
+        return await _plain(options, replay(), cancelFuture);
+      } catch (e) {
+        if (cancelled || !isTransportError(e)) {
+          rethrow;
+        }
+        // Replay only safe reads: a transport error can follow sending a write.
+        final cause = e is DioException ? e.error : e;
+        final beforeSend = cause is rhttp.RhttpConnectionException ||
+            (e is DioException && e.type == DioExceptionType.connectionTimeout);
+        if (!canReplayEchRequest(method: options.method, hasResponse: false,
+            cancelled: false, beforeSend: beforeSend)) {
+          rethrow;
+        }
+        return _fetch(options, replay(), cancelFuture, redirects, discovery: true);
+      }
+    }
+    if (!discovery && !BangumiNetwork.backoff.allows(host)) {
       return _plain(options, requestStream, cancelFuture);
     }
     final bytes = await BangumiNetwork.provider.get(
@@ -340,6 +376,10 @@ class BangumiAdapter implements HttpClientAdapter {
     if (bytes == null) {
       BangumiNetwork._discard(host);
       _echLog('no config for $host; fallback');
+      if (discovery) {
+        throw DioException(requestOptions: options,
+          type: DioExceptionType.connectionError, message: 'No ECH config for $host');
+      }
       return _plain(options, requestStream, cancelFuture);
     }
     final userIps = BangumiNetwork._userOverrides()[host];
@@ -354,12 +394,6 @@ class BangumiAdapter implements HttpClientAdapter {
     final body = requestStream == null ? null : await requestStream.toList();
     Stream<Uint8List>? replay() =>
         body == null ? null : Stream.fromIterable(body);
-    var cancelled = false;
-    unawaited(
-      cancelFuture?.then((_) {
-        cancelled = true;
-      }),
-    );
     final permit = await BangumiNetwork.limiter.acquire(host);
     ResponseBody response;
     try {
@@ -373,7 +407,7 @@ class BangumiAdapter implements HttpClientAdapter {
       // interceptor so queue time is not counted against network deadlines.
       options.connectTimeout = const Duration(seconds: 10);
       options.receiveTimeout = const Duration(seconds: 20);
-      response = BangumiNetwork.backoff.allows(host)
+      response = discovery || BangumiNetwork.backoff.allows(host)
           ? await _echThenPlain(
               options,
               bytes,
@@ -381,6 +415,7 @@ class BangumiAdapter implements HttpClientAdapter {
               replay,
               cancelFuture,
               () => cancelled,
+              discovery: discovery,
             )
           : await _plain(options, replay(), cancelFuture);
     } catch (_) {
@@ -465,8 +500,9 @@ class BangumiAdapter implements HttpClientAdapter {
     List<String> addresses,
     Stream<Uint8List>? Function() replay,
     Future<void>? cancelFuture,
-    bool Function() cancelled,
-  ) async {
+    bool Function() cancelled, {
+    bool discovery = false,
+  }) async {
     final host = options.uri.host.toLowerCase();
     Object? echError;
     StackTrace? echStack;
@@ -499,10 +535,14 @@ class BangumiAdapter implements HttpClientAdapter {
           );
         }
         beforeSend = false;
-        final response = await RHttpAdapter(
+        Future<ResponseBody> send() => RHttpAdapter(
           client: client,
           receiveTimeout: const Duration(seconds: 20),
         ).fetch(options, replay(), cancelFuture);
+        final response = discovery
+            ? await BangumiNetwork.hosts.learnFrom(host, send,
+                answered: (response) => response.statusCode < 400)
+            : await send();
         options.extra.remove('bangumiEchError');
         BangumiNetwork._outcome(
           host,
@@ -568,6 +608,9 @@ class BangumiAdapter implements HttpClientAdapter {
           error: e,
         );
         options.extra['bangumiEchError'] = e.toString();
+        if (discovery) {
+          rethrow;
+        }
         if (e is rhttp.RhttpEchRejectedException &&
             !isCancelled &&
             !hasResponse) {

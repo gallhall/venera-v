@@ -20,6 +20,61 @@ const _aReply =
     'c00c000500010000012c00060363646ec010c028000100010000012c0004681a0817';
 
 void main() {
+  test('ECH host gate preserves Bangumi hosts and adds exact BT hosts', () {
+    final hosts = EchHosts(read: () => null, write: (_) {});
+    for (final host in ['bgm.tv', 'api.bgm.tv', 'lain.bgm.tv', 'chii.in',
+      'www.chii.in', ...EchHosts.builtIn]) {
+      expect(hosts.contains(host), isTrue, reason: host);
+      expect(hosts.contains(host.toUpperCase()), isTrue, reason: host);
+      expect(hosts.contains(host, mode: 'off'), isFalse, reason: host);
+    }
+    for (final host in ['acg.rip', 'nyaa.si', 'mikanime.tv',
+      'share.dmhy.org.evil.test', 'other.dmhy.org']) {
+      expect(hosts.contains(host), isFalse, reason: host);
+    }
+    expect(isBangumiHost('api.bgm.tv'), isTrue);
+    expect(isBangumiHost('www.chii.in.'), isTrue);
+    expect(isBangumiHost('share.dmhy.org'), isFalse);
+    expect(isBangumiHost('bangumi.tv'), isFalse);
+  });
+
+  test('learn only an answering ECH route, expire after 30 days, bound to 50', () async {
+    var time = DateTime.utc(2026, 10, 30);
+    Object? stored;
+    var writes = 0;
+    final hosts = EchHosts(read: () => stored, write: (value) {
+      stored = value;
+      writes++;
+    }, now: () => time);
+    bool ok(int status) => status < 400;
+    await expectLater(hosts.learnFrom<int>('failed.test', () async {
+      throw TimeoutException('ECH failed');
+    }, answered: ok), throwsA(isA<TimeoutException>()));
+    expect(writes, 0);
+    expect(hosts.contains('failed.test'), isFalse);
+    // Cloudflare answering for a host it does not serve.
+    expect(await hosts.learnFrom('acg.rip', () async => 403, answered: ok), 403);
+    expect(hosts.contains('acg.rip'), isFalse);
+    expect(await hosts.learnFrom('Learned.test.', () async => 200, answered: ok),
+      200);
+    expect(hosts.contains('learned.test'), isTrue);
+    expect(hosts.contains('learned.test', mode: 'off'), isFalse);
+    final restored = EchHosts(read: () => jsonDecode(jsonEncode(stored)),
+      write: (_) {}, now: () => time);
+    expect(restored.contains('learned.test'), isTrue);
+    time = time.add(const Duration(days: 30));
+    expect(hosts.contains('learned.test'), isFalse);
+    for (var i = 0; i < 51; i++) {
+      await hosts.learnFrom('$i.test', () async => 200, answered: ok);
+      time = time.add(const Duration(seconds: 1));
+    }
+    expect(stored, hasLength(50));
+    expect(hosts.contains('0.test'), isFalse);
+    expect(hosts.contains('50.test'), isTrue);
+    hosts.record('never-answered.test', echAnswered: false);
+    expect(hosts.contains('never-answered.test'), isFalse);
+  });
+
   test(
     'late rejected fetch cannot overwrite a learned server retry config',
     () async {
