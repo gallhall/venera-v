@@ -98,6 +98,53 @@ Map<String, Object> _animeJson(int id, String title, int count, {
   ],
 };
 
+final _courTarget = DanmakuTarget(
+  key: '584847', episodeKey: '584847:1',
+  title: '弹珠汽水瓶里的千岁同学 第2部分',
+  names: ['弹珠汽水瓶里的千岁同学 第2部分',
+    '弹珠汽水瓶里的千岁同学 第二季', '千歳くんはラムネ瓶のなか 第2クール'],
+  airDate: DateTime(2026, 10, 13), subjectId: 584847,
+  ep: 1, sort: 14, index: 0,
+);
+
+Map<String, Object> _courDetails() => {
+  'animeId': 20240, 'animeTitle': '千歳くんはラムネ瓶のなか (2026)',
+  'type': 'tvseries',
+  'episodes': [
+    for (var n = 1; n <= 11; n++)
+      {'episodeId': 202400000 + n, 'episodeNumber': '$n',
+        'episodeTitle': 'Episode $n',
+        'airDate': DateTime(2026, 10, 13).add(Duration(days: (n - 1) * 7))
+            .toIso8601String()},
+  ],
+};
+
+Map<String, Object> _nameMatches({bool japanese = false}) {
+  var entries = japanese ? [
+    (20240, '千歳くんはラムネ瓶のなか (2026)', 'tvseries'),
+    (18811, '弹珠汽水瓶里的千岁同学', 'tvseries'),
+    (36883, '私の町の千葉くんは。', 'jpdrama'),
+    (14420, '一骑当千 Western Wolves', 'ova'),
+    (20142, '夜桜さんちの大作戦 (2026 2クール)', 'tvseries'),
+    (1092, '瓶诘妖精', 'tvseries'),
+  ] : [
+    (12703, '怪物弹珠 第二季', 'tvseries'),
+    (18811, '弹珠汽水瓶里的千岁同学', 'tvseries'),
+    (13486, '怪物弹珠 第二季 后篇 消失的宇宙篇', 'tvseries'),
+    (3586, '劲爆BOM BOM弹珠人', 'tvseries'),
+    (14183, '怪物弹珠 新系列', 'tvseries'),
+  ];
+  return {
+    'success': true, 'errorCode': 0, 'isMatched': false,
+    'matches': [
+      for (var (id, title, type) in entries)
+        {'animeId': id, 'animeTitle': title, 'episodeId': id * 10000 + 1,
+          'episodeTitle': 'Episode 1', 'type': type,
+          'typeDescription': type, 'shift': 0},
+    ],
+  };
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(AppTranslation.init);
@@ -266,6 +313,22 @@ void main() {
       .startDate, isNull);
   });
 
+  test('details derive the earliest air date and episode count', () {
+    var json = _courDetails();
+    var episodes = json['episodes'] as List;
+    episodes.insert(0, episodes.removeLast());
+    var anime = DanmakuAnime.fromJson(json);
+    expect(anime.startDate, DateTime(2026, 10, 13));
+    expect(anime.episodeCount, 11);
+    expect(anime.episodes.last.number, '10');
+    expect(anime.episodes.first.id, 202400011);
+    json['startDate'] = '2026-10-01';
+    json['episodeCount'] = 12;
+    var explicit = DanmakuAnime.fromJson(json);
+    expect(explicit.startDate, DateTime(2026, 10, 1));
+    expect(explicit.episodeCount, 12);
+  });
+
   test('equally cleaned titles prefer the matching season, and ties fail', () {
     const target = DanmakuTarget(
       key: 'spy', episodeKey: 'spy:1', title: '间谍过家家 第2季',
@@ -351,6 +414,158 @@ void main() {
       await session.load();
     }
 
+    test('search quota falls back to distinct names and saves the second cour',
+        () async {
+      var adapter = _Adapter((r) {
+        if (r.path == '/api/v2/bangumi/bgmtv/584847') {
+          return {'success': false, 'errorCode': 7};
+        }
+        if (r.path.startsWith('/api/v2/search/')) {
+          return ResponseBody.fromString('', 429,
+            headers: {'retry-after': ['66459']});
+        }
+        if (r.path == '/api/v2/match') {
+          return _nameMatches(japanese:
+            (r.data as Map)['fileName'].toString().startsWith('千歳'));
+        }
+        if (r.path == '/api/v2/bangumi/18811') {
+          return {'bangumi': _animeJson(18811, '弹珠汽水瓶里的千岁同学', 13,
+            date: '2025-10-07T00:00:00')};
+        }
+        if (r.path == '/api/v2/bangumi/20240') {
+          return {'bangumi': _courDetails()};
+        }
+        if (r.path == '/api/v2/comment/202400001') {
+          return {'comments': []};
+        }
+        fail('Unexpected request: ${r.path}');
+      });
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      await load(api, _courTarget);
+      expect(session.anime?.id, 20240);
+      expect(session.episode?.number, '1');
+      expect(session.episode?.id, 202400001);
+      expect(failures, isEmpty);
+      var matches = adapter.requests.where((r) => r.path == '/api/v2/match');
+      expect(matches.map((r) => (r.data as Map)['fileName']), [
+        '弹珠汽水瓶里的千岁同学 第2部分 01', '千歳くんはラムネ瓶のなか 第2クール 01',
+      ]);
+      expect(matches.length, lessThanOrEqualTo(3));
+      var details = adapter.requests.where((r) =>
+        RegExp(r'^/api/v2/bangumi/\d+$').hasMatch(r.path));
+      expect(details.map((r) => r.path), [
+        '/api/v2/bangumi/18811', '/api/v2/bangumi/20240',
+      ]);
+      expect(details.length, lessThanOrEqualTo(4));
+      expect(appdata.implicitData['danmakuAnime:584847'], 20240);
+      expect(appdata.implicitData['danmakuByName:584847'], isTrue);
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:584847'), isFalse);
+      var count = adapter.requests.length;
+      await session.load();
+      expect(adapter.requests.skip(count).map((r) => r.path),
+        ['/api/v2/bangumi/20240']);
+    });
+
+    test('quota after partial search merges candidates and bounds fallback calls',
+        () async {
+      var searches = 0;
+      var adapter = _Adapter((r) {
+        if (r.path.startsWith('/api/v2/search/')) {
+          if (++searches == 1) {
+            return {'animes': [
+              {'animeId': 10, 'animeTitle': 'Alpha', 'type': 'tvseries'},
+            ]};
+          }
+          return ResponseBody.fromString('', 429,
+            headers: {'retry-after': ['66459']});
+        }
+        if (r.path == '/api/v2/match') {
+          return {'isMatched': false, 'matches': [
+            for (var id = 11; id <= 16; id++)
+              {'animeId': id, 'animeTitle': 'Alpha', 'type': 'tvseries'},
+          ]};
+        }
+        var id = int.parse(r.path.split('/').last);
+        return {'bangumi': _animeJson(id, 'Alpha', 20,
+          date: '2025-10-07T00:00:00')};
+      });
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      await load(api, DanmakuTarget(key: 'partial', episodeKey: 'partial:1',
+        title: 'Alpha Season 2', names: ['Alpha Part 2', 'Beta', 'Gamma', 'Delta'],
+        airDate: DateTime(2026, 10, 13), sort: 14, index: 13));
+      expect(searches, 2);
+      var matches = adapter.requests.where((r) => r.path == '/api/v2/match');
+      expect(matches.map((r) => (r.data as Map)['fileName']),
+        ['Alpha Season 2 14', 'Beta 14', 'Gamma 14']);
+      var details = adapter.requests.where((r) => r.path.startsWith('/api/v2/bangumi/'));
+      expect(details.map((r) => r.path), [
+        '/api/v2/bangumi/10', '/api/v2/bangumi/11',
+        '/api/v2/bangumi/12', '/api/v2/bangumi/13',
+      ]);
+      expect(session.anime, isNull);
+      expect(failures.single, startsWith('Danmaku search quota used up until '));
+      expect(appdata.implicitData.containsKey('danmakuNoMatch:partial'), isFalse);
+    });
+
+    for (var blocked in ['none', 'match', 'bangumi']) {
+      test('unsuccessful fallback ($blocked) reports original search quota',
+          () async {
+        var now = DateTime.utc(2026, 10, 30, 5, 31, 21);
+        var until = now.add(const Duration(seconds: 66459));
+        var adapter = _Adapter((r) {
+          if (r.path.startsWith('/api/v2/search/')) {
+            return ResponseBody.fromString('', 429,
+              headers: {'retry-after': ['66459']});
+          }
+          if ((blocked == 'match' && r.path == '/api/v2/match') ||
+              (blocked == 'bangumi' && r.path.startsWith('/api/v2/bangumi/'))) {
+            return ResponseBody.fromString('', 429,
+              headers: {'retry-after': ['60']});
+          }
+          if (r.path == '/api/v2/match') {
+            return blocked == 'bangumi' ? _nameMatches() : {'matches': []};
+          }
+          fail('Unexpected request: ${r.path}');
+        });
+        var api = DanDanPlayApi(dio: Dio(BaseOptions(
+          baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter,
+          now: () => now);
+        session = DanmakuSession(failures.add, api: api, now: () => now);
+        session.setTarget(DanmakuTarget(key: 'empty', episodeKey: 'empty:1',
+          title: _courTarget.title, names: _courTarget.names, ep: 1, index: 0));
+        await session.load();
+        expect(session.anime, isNull);
+        expect(appdata.implicitData.containsKey('danmakuNoMatch:empty'), isFalse);
+        var local = until.toLocal();
+        var time = '${local.hour.toString().padLeft(2, '0')}:'
+            '${local.minute.toString().padLeft(2, '0')}';
+        if (DateTime(local.year, local.month, local.day).isAfter(
+            DateTime(now.toLocal().year, now.toLocal().month, now.toLocal().day))) {
+          time = 'tomorrow $time';
+        }
+        expect(failures, ['Danmaku search quota used up until $time; '
+          'matched anime are not affected']);
+      });
+    }
+
+    for (var language in ['zh-CN', 'zh-TW']) {
+      for (var tomorrow in [false, true]) {
+        test('quota message local day ($language, tomorrow: $tomorrow)', () {
+          var now = DateTime(2026, 10, 30, 1);
+          session = DanmakuSession(failures.add, now: () => now);
+          appdata.settings['language'] = language;
+          var until = DateTime(2026, 10, tomorrow ? 31 : 30, 8);
+          session.reportQuotaExceeded(DanmakuQuotaExceeded(until, group: 'search'));
+          var time = tomorrow ? '明天 08:00' : '08:00';
+          expect(failures.single, language == 'zh-CN'
+            ? '弹幕搜索次数今日已用完（与总额度分开计算），$time 后恢复；已匹配过的番剧不受影响'
+            : '彈幕搜尋次數今日已用完（與總額度分開計算），$time 後恢復；已配對過的動畫不受影響');
+        });
+      }
+    }
+
     test('no-match cache skips requests for 24 hours and manual match clears it',
         () async {
       var api = _FakeApi({}, {});
@@ -434,6 +649,9 @@ void main() {
         if (r.path.startsWith('/api/v2/comment/')) {
           return {'comments': [{'p': '1,1,16777215,u', 'm': 'Loaded'}]};
         }
+        if (r.path == '/api/v2/match') {
+          return {'matches': []};
+        }
         fail('Blocked search must not make a request: ${r.path}');
       });
       var api = DanDanPlayApi(dio: Dio(BaseOptions(
@@ -460,9 +678,9 @@ void main() {
         episodeKey: 'fallback:2', title: 'Anime', index: 1, subjectId: 404));
       await session.load();
       expect(failures, hasLength(1));
-      expect(failures.single, startsWith('Danmaku quota used up until '));
+      expect(failures.single, startsWith('Danmaku search quota used up until '));
       expect(appdata.implicitData.containsKey('danmakuNoMatch:fallback'), isFalse);
-      expect(adapter.requests, hasLength(6));
+      expect(adapter.requests, hasLength(8));
       // Manual search shares the block and the once-per-run message.
       try {
         await api.search('Anime');
@@ -470,7 +688,7 @@ void main() {
       } on DanmakuQuotaExceeded catch (error) {
         session.reportQuotaExceeded(error);
       }
-      expect(adapter.requests, hasLength(6));
+      expect(adapter.requests, hasLength(8));
       expect(failures, hasLength(1));
       DanDanPlayApi.resetQuotaState();
     });
@@ -481,8 +699,9 @@ void main() {
         episodeKey: '1', title: 'Missing Anime', index: 0));
       appdata.settings['dandanplayAppId'] = ' ';
       appdata.settings['language'] = 'zh-CN';
-      var until = DateTime(2026, 10, 30, 8, 5);
-      session.reportQuotaExceeded(DanmakuQuotaExceeded(until));
+      var now = DateTime.now();
+      var until = DateTime(now.year, now.month, now.day, 8, 5);
+      session.reportQuotaExceeded(DanmakuQuotaExceeded(until, group: 'comment'));
       expect(failures, hasLength(2));
       expect(failures.last, startsWith(
         'Danmaku quota used up until @time'.tlParams({'time': '08:05'})));
@@ -509,8 +728,12 @@ void main() {
         appdata.implicitData['dandanplayQuotaUntil']['test-app|search'] as int).toLocal();
       var time = '${until.hour.toString().padLeft(2, '0')}:'
           '${until.minute.toString().padLeft(2, '0')}';
-      expect(failures.single, 'Danmaku quota used up until $time');
-      expect(adapter.requests, hasLength(1));
+      if (until.day != DateTime.now().day) {
+        time = 'tomorrow $time';
+      }
+      expect(failures.single, 'Danmaku search quota used up until $time; '
+        'matched anime are not affected');
+      expect(adapter.requests, hasLength(2));
       expect(appdata.implicitData.containsKey('danmakuNoMatch:quota'), isFalse);
       var other = DanmakuSession(failures.add, api: api);
       other.setTarget(const DanmakuTarget(key: 'quota',
@@ -518,8 +741,8 @@ void main() {
       await other.load();
       // Manual matching shares this reporting path, even after a normal warning.
       other.reportFailure('No danmaku match');
-      other.reportQuotaExceeded(DanmakuQuotaExceeded(until));
-      expect(failures.where((m) => m.startsWith('Danmaku quota')), hasLength(1));
+      other.reportQuotaExceeded(DanmakuQuotaExceeded(until, group: 'comment'));
+      expect(failures.where((m) => m.startsWith('Danmaku search quota')), hasLength(1));
       other.dispose();
       DanDanPlayApi.resetQuotaState();
     });
@@ -720,6 +943,86 @@ void main() {
       appdata.settings['dandanplayAppSecret'] = oldSecret;
     });
 
+    test('name matching signs a JSON POST and keeps unmatched candidates in order',
+        () async {
+      var adapter = _Adapter((r) => _nameMatches(japanese: true));
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      const name = '千歳くんはラムネ瓶のなか 第2クール 01';
+      var candidates = await api.matchByName(name);
+      expect(candidates.map((a) => a.id), [20240, 18811, 36883, 14420, 20142, 1092]);
+      expect(candidates.first.title, '千歳くんはラムネ瓶のなか (2026)');
+      expect(candidates.first.type, 'tvseries');
+      expect(candidates.every((a) => a.episodes.isEmpty), isTrue);
+      expect(candidates.first.startDate, isNull);
+      expect(candidates.first.episodeCount, isNull);
+      var request = adapter.requests.single;
+      expect(request.method, 'POST');
+      expect(request.path, '/api/v2/match');
+      expect(request.contentType, Headers.jsonContentType);
+      expect(request.queryParameters, isEmpty);
+      expect(request.data, {
+        'fileName': name, 'fileHash': '00000000000000000000000000000000',
+        'fileSize': 0, 'matchMode': 'fileNameOnly',
+      });
+      expect(request.headers['X-AppId'], 'test-app');
+      var timestamp = int.parse(request.headers['X-Timestamp'] as String);
+      expect(request.headers['X-Signature'], dandanplaySignature(
+        'test-app', 'test-secret', timestamp, '/api/v2/match'));
+      expect(request.headers['cache-time'], 'no');
+      expect(request.extra['maskHeadersInLog'], ['X-AppId', 'X-Signature']);
+    });
+
+    test('match quota records and blocks only the match group', () async {
+      var now = DateTime.utc(2026, 10, 30, 5);
+      var adapter = _Adapter((r) => r.path == '/api/v2/match'
+        ? ResponseBody.fromString('', 429, headers: {'retry-after': ['60']})
+        : {'animes': []});
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter,
+        now: () => now);
+      var quota = isA<DanmakuQuotaExceeded>()
+          .having((e) => e.group, 'group', 'match')
+          .having((e) => e.until, 'until', now.add(const Duration(minutes: 1)));
+      await expectLater(api.matchByName('Anime 01'), throwsA(quota));
+      await expectLater(api.matchByName('Anime 01'), throwsA(quota));
+      expect(appdata.implicitData['dandanplayQuotaUntil'], {
+        'test-app|match': now.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
+      });
+      expect(await api.search('Anime'), isEmpty);
+      expect(adapter.requests.map((r) => r.path),
+        ['/api/v2/match', '/api/v2/search/anime']);
+    });
+
+    test('match POST retries clock correction with the same body', () async {
+      var date = HttpDate.format(DateTime.now().toUtc().add(const Duration(days: 2)));
+      var calls = 0;
+      var adapter = _Adapter((r) {
+        if (++calls == 1) {
+          return ResponseBody.fromString('Forbidden', 403, headers: {'date': [date]});
+        }
+        return _nameMatches();
+      });
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      expect(await api.matchByName('Anime 01'), hasLength(5));
+      expect(adapter.requests, hasLength(2));
+      var retry = adapter.requests.last;
+      expect(retry.method, 'POST');
+      expect(retry.data, adapter.requests.first.data);
+      var timestamp = int.parse(retry.headers['X-Timestamp'] as String);
+      expect(timestamp, closeTo(HttpDate.parse(date).millisecondsSinceEpoch ~/ 1000, 3));
+      expect(retry.headers['X-Signature'], dandanplaySignature(
+        'test-app', 'test-secret', timestamp, '/api/v2/match'));
+    });
+
+    test('match errors use the shared API error handling', () async {
+      var adapter = _Adapter((r) => {'success': false, 'errorCode': 500});
+      var api = DanDanPlayApi(dio: Dio(BaseOptions(
+        baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter);
+      await expectLater(api.matchByName('Anime 01'), throwsStateError);
+    });
+
     for (var status in [200, 429]) {
       for (var accept429 in [false, true]) {
         test('quota $status blocks per AppId/group, persists and expires '
@@ -737,6 +1040,7 @@ void main() {
           DanDanPlayApi createApi() => DanDanPlayApi(dio: dio, now: () => now);
           var until = DateTime.utc(2026, 10, 30);
           var quota = isA<DanmakuQuotaExceeded>()
+              .having((e) => e.group, 'group', 'search')
               .having((e) => e.until, 'until', until);
           var logStart = Log.logs.length;
           await expectLater(createApi().search('Anime'), throwsA(quota));

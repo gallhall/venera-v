@@ -93,11 +93,23 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
     }
     setState(() => matching = true);
     try {
-      var results = await session.api.search(query);
-      var clean = cleanDanmakuTitle(query);
-      if (results.isEmpty && clean.length >= 2 &&
-          clean.toLowerCase() != query.toLowerCase()) {
-        results = await session.api.search(clean);
+      List<DanmakuAnime> results;
+      var fileNameMatch = false;
+      try {
+        results = await session.api.search(query);
+        var clean = cleanDanmakuTitle(query);
+        if (results.isEmpty && clean.length >= 2 &&
+            clean.toLowerCase() != query.toLowerCase()) {
+          results = await session.api.search(clean);
+        }
+      } on DanmakuQuotaExceeded catch (error) {
+        if (error.group != 'search') {
+          rethrow;
+        }
+        var number = (target?.ep ?? target?.sort ?? (target?.index ?? 0) + 1)
+            .toInt().toString().padLeft(2, '0');
+        results = await session.api.matchByName('$query $number');
+        fileNameMatch = true;
       }
       if (!mounted || session.target != target) {
         return;
@@ -114,10 +126,13 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
       });
       var chosen = await showSidePicker<DanmakuAnime>(
         context,
-        title: 'Match danmaku'.tl,
+        title: fileNameMatch
+            ? '${'Match danmaku'.tl}\n${'Search quota used up; results come from file name matching'.tl}'
+            : 'Match danmaku'.tl,
         options: {
           for (var a in results) a: [
             a.title,
+            if (fileNameMatch && a.type != null) a.type!,
             if (a.startDate != null)
               a.startDate!.toIso8601String().split('T').first,
             if (a.episodeCount != null) '${a.episodeCount} ${'Episodes'.tl}',
