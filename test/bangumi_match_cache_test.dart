@@ -41,6 +41,35 @@ void main() {
     expect(cache.read(1, 'source'), isNull);
   });
 
+  test('raw-only no-match reason survives persistence and expires in six hours', () {
+    cache.store(1, 'rss', candidates: [], matchedId: null, exactIds: [],
+      keyword: 'Series', onlyWithoutChineseSubtitles: true, showRaw: false);
+    var restored = BangumiMatchCache(jsonDecode(jsonEncode(data)), now: () => time);
+    expect(restored.read(1, 'rss', showRaw: false)?[
+      'onlyWithoutChineseSubtitles'], isTrue);
+    expect(restored.read(1, 'rss', showRaw: true), isNull);
+    time = time.add(const Duration(hours: 6));
+    expect(restored.read(1, 'rss', showRaw: false), isNull);
+  });
+
+  test('raw setting changes invalidate RSS entries, other sources keep theirs', () {
+    cache.store(1, 'rss', candidates: [], matchedId: null, exactIds: [],
+      keyword: 'Series', showRaw: false);
+    expect(cache.read(1, 'rss', showRaw: true), isNull);
+    // A match made while raws were shown may have nothing left to play.
+    cache.store(4, 'rss', candidates: [
+      {'id': 'item', 'title': 'Series', 'cover': ''},
+    ], matchedId: 'item', exactIds: [], keyword: 'Series', showRaw: true);
+    expect(cache.read(4, 'rss', showRaw: true)?['matchedId'], 'item');
+    expect(cache.read(4, 'rss', showRaw: false), isNull);
+    // Non-RSS sources pass no setting.
+    store(2);
+    expect(cache.read(2, 'source')?['matchedId'], 'item');
+    // Entries written before the setting was recorded are searched again.
+    store(3);
+    expect(cache.read(3, 'source', showRaw: false), isNull);
+  });
+
   test('errors are never stored and invalidate a previous match', () {
     store(1, error: 'connection failure');
     expect(cache.read(1, 'source'), isNull);

@@ -85,6 +85,35 @@ void main() {
     expect(RssPreferences.fromSettings((_) => null).showRaw, isFalse);
   });
 
+  test('raw-only subjects are a reasoned no-match; mixed and showRaw survive', () {
+    var raw = [
+      release('[Erai-raws] Series Part 2 - 03 '
+        '[1080p CR WEBRip HEVC AAC][MultiSub]'),
+      release('[DKB] Series Part 2 - 03 [1080p][Multi-Subs]'),
+      release('[G] Series Part 2 - 03 [CR][1080p]'),
+    ];
+    var subjects = AnimekoRssEngine.subjects('Series Part 2', raw);
+    expect(subjects, isNotEmpty);
+    var hidden = const RssPreferences().selectSubjects(subjects);
+    expect(hidden.subjects, isEmpty);
+    expect(hidden.onlyWithoutChineseSubtitles, isTrue);
+    var enabled = RssPreferences.fromSettings((key) =>
+      key == 'btShowRaw' ? true : null).selectSubjects(subjects);
+    expect(enabled.subjects, subjects);
+    expect(enabled.onlyWithoutChineseSubtitles, isFalse);
+    var mixed = AnimekoRssEngine.subjects('Series Part 2', [
+      ...raw, release('[\u685c\u90fd\u5b57\u5e55\u7ec4] Series Part 2 - 03 [1080p]'),
+    ]);
+    var kept = const RssPreferences().selectSubjects(mixed);
+    expect(kept.subjects, hasLength(1));
+    expect(kept.onlyWithoutChineseSubtitles, isFalse);
+    expect(const RssPreferences().order(kept.subjects.single.keyword,
+      kept.subjects.single.groups).single.releases, hasLength(1));
+    var empty = const RssPreferences().selectSubjects([]);
+    expect(empty.subjects, isEmpty);
+    expect(empty.onlyWithoutChineseSubtitles, isFalse);
+  });
+
   test('raw filter migration runs once and preserves subsequent user choices', () {
     var settings = <String, dynamic>{'btShowRaw': true};
     var data = <String, dynamic>{};

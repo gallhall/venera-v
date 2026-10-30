@@ -25,6 +25,10 @@ import 'animeko_selector_engine.dart';
 import 'animeko_source_config.dart';
 import 'mikan.dart';
 import 'rss_preferences.dart';
+import 'episode_cache.dart';
+import 'episode_unavailable.dart';
+
+export 'episode_unavailable.dart';
 
 export 'animeko_source_config.dart';
 
@@ -63,11 +67,24 @@ abstract final class AnimekoSource {
     runtime?._mikanFeeds.clear();
   }
 
+  static void forgetEpisodes(ComicSource source, String id) {
+    var runtime = _runtimes[source];
+    if (runtime == null) {
+      return;
+    }
+    var keys = animekoEpisodeCacheKeys(runtime.entry, id);
+    for (var keyword in keys.keywords) {
+      runtime._rssSearches.remove(keyword);
+    }
+    runtime._mikanFeeds.remove(keys.mikanId);
+  }
+
   static bool isRssSource(ComicSource source) =>
       source.animekoSource?.factoryId == 'rss';
 
   static Future<List<Comic>> findRssBangumiSubject(ComicSource source,
-      List<String> keywords, List<String> names) async {
+      List<String> keywords, List<String> names,
+      {void Function(bool)? onFiltered}) async {
     var runtime = _runtimes[source] ??= _AnimekoRuntime(source.animekoSource!);
     var queries = keywords.where((k) => k.trim().isNotEmpty).toSet()
         .take(3).toList();
@@ -83,8 +100,11 @@ abstract final class AnimekoSource {
       }
     }
     var items = AnimekoRssEngine.merge(pages, names: names);
-    var subjects = AnimekoRssEngine.subjects(queries.first, items,
-      keywords: queries, names: names);
+    var selection = RssPreferences.fromSettings((key) => appdata.settings[key])
+        .selectSubjects(AnimekoRssEngine.subjects(queries.first, items,
+          keywords: queries, names: names));
+    onFiltered?.call(selection.onlyWithoutChineseSubtitles);
+    var subjects = selection.subjects;
     for (var subject in subjects) {
       runtime._subjects[subject.id] = AnimekoSubject(subject.id, subject.title, '');
     }
@@ -219,9 +239,9 @@ abstract final class AnimekoSource {
           return const Res([], subData: 1);
         }
         try {
-          var items = await runtime.search(keyword);
-          return Res([
-            for (var item in items)
+          var result = await runtime.search(keyword);
+          return AnimekoSearchResult([
+            for (var item in result.items)
               Comic(
                 item.name,
                 '',
@@ -233,7 +253,7 @@ abstract final class AnimekoSource {
                 null,
                 null,
               ),
-          ], subData: 1);
+          ], onlyWithoutChineseSubtitles: result.onlyWithoutChineseSubtitles);
         } catch (e, s) {
           return _error(entry, e, s);
         }
@@ -275,7 +295,7 @@ abstract final class AnimekoSource {
       (id, epId) async {
         try {
           if (epId == null) {
-            throw 'No episodes found'.tl;
+            throw AnimekoEpisodesUnavailable();
           }
           return Res(await runtime.play(id, epId));
         } catch (e, s) {
@@ -291,8 +311,14 @@ abstract final class AnimekoSource {
 
   static Res<T> _error<T>(AnimekoSourceConfig entry, Object e, StackTrace s) {
     Log.warning('Animeko', '${entry.name}: $e\n$s');
-    return Res.error('${entry.name}: ${describeNetworkError(e)}');
+    return Res.error('${entry.name}: ${describeNetworkError(e)}', errorCause: e);
   }
+}
+
+class AnimekoSearchResult extends Res<List<Comic>> {
+  final bool onlyWithoutChineseSubtitles;
+  const AnimekoSearchResult(super.data,
+      {required this.onlyWithoutChineseSubtitles}) : super(subData: 1);
 }
 
 class _AnimekoRuntime {
@@ -311,7 +337,8 @@ class _AnimekoRuntime {
 
   static final _gates = <String, _RequestGate>{};
   final _subjects = <String, AnimekoSubject>{};
-  final _cache = <String, ({DateTime time, List<AnimekoSubject> items})>{};
+  final _cache = <String, ({DateTime time, List<AnimekoSubject> items,
+    bool showRaw, bool onlyWithoutChineseSubtitles})>{};
 
   String get userAgent {
     var ua = entry.searchConfig['userAgent']?.toString().trim() ?? '';
@@ -372,14 +399,18 @@ class _AnimekoRuntime {
   Future<List<RssSubject>> rssSubjects(String keyword) async =>
       AnimekoRssEngine.subjects(keyword, await rssReleases(keyword));
 
-  Future<List<AnimekoSubject>> search(String keyword) async {
+  Future<({List<AnimekoSubject> items, bool onlyWithoutChineseSubtitles})>
+      search(String keyword) async {
+    var onlyWithoutChineseSubtitles = false;
+    var showRaw = appdata.settings['btShowRaw'] == true;
     var ttl =
         (entry.searchConfig['searchCacheTtl'] as num?)?.toInt() ?? 7200000;
     var cached = _cache[keyword];
     if (ttl > 0 &&
-        cached != null &&
+        cached != null && (!isRss || cached.showRaw == showRaw) &&
         DateTime.now().difference(cached.time).inMilliseconds < ttl) {
-      return cached.items;
+      return (items: cached.items,
+        onlyWithoutChineseSubtitles: cached.onlyWithoutChineseSubtitles);
     }
     List<AnimekoSubject> items;
     if (isRss) {
@@ -388,8 +419,11 @@ class _AnimekoRuntime {
       // should match the whole feed instead of the group with the closest
       // title.
       _rssSearches.remove(keyword);
+      var selection = RssPreferences.fromSettings((key) => appdata.settings[key])
+          .selectSubjects(await rssSubjects(keyword));
+      onlyWithoutChineseSubtitles = selection.onlyWithoutChineseSubtitles;
       items = [
-        for (var subject in await rssSubjects(keyword))
+        for (var subject in selection.subjects)
           AnimekoSubject(subject.id, subject.title, ''),
       ];
     } else {
@@ -404,12 +438,13 @@ class _AnimekoRuntime {
       _subjects.remove(_subjects.keys.first);
     }
     if (ttl > 0) {
-      _cache[keyword] = (time: DateTime.now(), items: items);
+      _cache[keyword] = (time: DateTime.now(), items: items, showRaw: showRaw,
+        onlyWithoutChineseSubtitles: onlyWithoutChineseSubtitles);
       while (_cache.length > 32) {
         _cache.remove(_cache.keys.first);
       }
     }
-    return items;
+    return (items: items, onlyWithoutChineseSubtitles: onlyWithoutChineseSubtitles);
   }
 
   String knownTitle(String id) {
@@ -475,7 +510,7 @@ class _AnimekoRuntime {
     }
     groups = groups.where((g) => g.episodes.isNotEmpty).toList();
     if (groups.isEmpty) {
-      throw 'No episodes found'.tl;
+      throw AnimekoEpisodesUnavailable();
     }
     var chapters = <String, Map<String, String>>{};
     for (var i = 0; i < groups.length; i++) {

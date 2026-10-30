@@ -56,6 +56,14 @@ class RssPreferences {
         showRaw: setting('btShowRaw') == true,
       );
 
+  ({List<RssSubject> subjects, bool onlyWithoutChineseSubtitles}) selectSubjects(
+      List<RssSubject> input) {
+    var subjects = input.where((s) => order(s.keyword, s.groups).isNotEmpty)
+        .toList();
+    return (subjects: subjects,
+      onlyWithoutChineseSubtitles: input.isNotEmpty && subjects.isEmpty);
+  }
+
   List<RssSeries> order(String keyword, List<RssSeries> input) {
     var patterns = <RegExp>[];
     for (var entry in groups.split(RegExp(r'[,\r\n]+'))) {

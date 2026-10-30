@@ -27,8 +27,14 @@ class BangumiMatchCache {
           c['id'] is String && c['title'] is String && c['cover'] is String);
   }
 
-  Map? read(int subjectId, String sourceKey) {
+  /// [showRaw] is passed for RSS sources: an entry made under the other raw
+  /// setting, or before it was recorded, may name an item with no release
+  /// left to play (or miss one), so it is searched again.
+  Map? read(int subjectId, String sourceKey, {bool? showRaw}) {
     final entry = _entries()[key(subjectId, sourceKey)];
+    if (showRaw != null && entry is Map && entry['showRaw'] != showRaw) {
+      return null;
+    }
     return _fresh(entry) ? entry as Map : null;
   }
 
@@ -45,6 +51,8 @@ class BangumiMatchCache {
     required String keyword,
     Map<String, String> resultKeywords = const {},
     Object? error,
+    bool onlyWithoutChineseSubtitles = false,
+    bool? showRaw,
   }) {
     final entries = _entries()..removeWhere((_, value) => !_fresh(value));
     final identity = key(subjectId, sourceKey);
@@ -52,7 +60,9 @@ class BangumiMatchCache {
     if (error == null) {
       entries[identity] = {'candidates': candidates, 'matchedId': matchedId,
         'exactIds': exactIds, 'keyword': keyword, 'resultKeywords': resultKeywords,
-        'time': now().millisecondsSinceEpoch};
+        'time': now().millisecondsSinceEpoch,
+        'onlyWithoutChineseSubtitles': onlyWithoutChineseSubtitles,
+        'showRaw': showRaw};
     }
     final ordered = entries.entries.toList()..sort((a, b) =>
       (a.value['time'] as int).compareTo(b.value['time'] as int));

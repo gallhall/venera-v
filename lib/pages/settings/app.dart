@@ -372,7 +372,7 @@ class _AppSettingsState extends State<AppSettings> {
               },
             ),
             _SwitchSetting(
-              title: 'Show raw releases'.tl,
+              title: 'Show releases without Chinese subtitles'.tl,
               settingKey: 'btShowRaw',
             ),
             _SwitchSetting(

@@ -99,6 +99,8 @@ class _SourceResult {
   bool loading = true;
   int generation = 0;
   bool fromCache = false;
+  Future<void>? recovery;
+  bool onlyWithoutChineseSubtitles = false;
 }
 
 class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
@@ -107,11 +109,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   List<BangumiEpisode> episodes = [];
   final sources = <_SourceResult>[];
   Comic? current;
+  final _details = <(String, String), Future<ComicDetails>>{};
   final candidates = <Comic>[];
   final matchedCandidates = <Comic>[];
   String? error, playError;
   bool loading = true, playing = false;
   bool sourcesReady = false;
+  bool _showRaw = appdata.settings['btShowRaw'] == true;
   late bool _autoContinuePending = widget.autoContinue;
   bool unmatchedExpanded = false;
   final scrollController = ScrollController();
@@ -184,6 +188,18 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     scheduleMicrotask(() {
       if (!mounted) return;
       if (sourcesReady) syncSources();
+      var showRaw = appdata.settings['btShowRaw'] == true;
+      if (_showRaw != showRaw) {
+        _showRaw = showRaw;
+        _details.removeWhere((key, _) => sources.any((row) =>
+          row.source.key == key.$1 && AnimekoSource.isRssSource(row.source)));
+        for (var row in sources) {
+          if (AnimekoSource.isRssSource(row.source) && row.matched == null &&
+              !row.loading) {
+            search(row);
+          }
+        }
+      }
       if (collectionToken != manager.token) loadCollection();
       setState(() {
         var choice = sourceChoiceId;
@@ -202,6 +218,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         }
       });
       sourceUpdates.value++;
+      _refreshCurrent();
     });
   }
 
@@ -353,8 +370,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       return;
     }
     var cached = useCache && keyword == null
-        ? matchCache.read(widget.subjectId, row.source.key) : null;
+        ? matchCache.read(widget.subjectId, row.source.key,
+            showRaw: AnimekoSource.isRssSource(row.source)
+                ? appdata.settings['btShowRaw'] == true : null) : null;
     row.fromCache = cached != null;
+    row.recovery = null;
+    _details.removeWhere((key, _) => key.$1 == row.source.key);
     if (cached == null) {
       matchCache.remove(widget.subjectId, row.source.key);
       appdata.writeImplicitData();
@@ -364,6 +385,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     setState(() {
       row.loading = true;
       row.error = null;
+      row.onlyWithoutChineseSubtitles = false;
       row.keyword = '';
       row.results = [];
       row.resultKeywords.clear();
@@ -391,9 +413,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         row.results = [for (var c in cached['candidates'])
           Comic(c['title'], c['cover'], c['id'], null, null, '',
             row.source.key, null, null)];
+        row.onlyWithoutChineseSubtitles = cached['onlyWithoutChineseSubtitles'] == true;
         row.keyword = cached['keyword'];
         row.exactIds.addAll((cached['exactIds'] as List).whereType<String>());
         row.matched = row.results.where((c) => c.id == cached['matchedId']).firstOrNull;
+        for (var comic in [row.matched, rememberedCandidate(row)].whereType<Comic>()) {
+          AnimekoSource.forgetEpisodes(row.source, comic.id);
+        }
         for (var comic in row.results) {
           final saved = cached['resultKeywords'];
           row.resultKeywords[comic.id] = saved is Map && saved[comic.id] is String
@@ -404,7 +430,11 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             !AnimekoSource.supportsBangumiSubject(row.source)) {
           try {
             var merged = await AnimekoSource.findRssBangumiSubject(
-              row.source, keywords, names);
+              row.source, keywords, names, onFiltered: (only) {
+                if (generation == row.generation) {
+                  row.onlyWithoutChineseSubtitles |= only;
+                }
+              });
             if (!mounted || generation != row.generation ||
                 !row.source.isEnabled || !sources.contains(row)) {
               return;
@@ -475,6 +505,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               continue;
             }
             row.error = null;
+            if (res is AnimekoSearchResult) {
+              row.onlyWithoutChineseSubtitles |= res.onlyWithoutChineseSubtitles;
+            }
             for (var c in res.data) {
               if (!row.results.any((old) => old.id == c.id)) {
                 row.results.add(c);
@@ -510,16 +543,22 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             !sources.contains(row)) {
           return;
         }
+        row.onlyWithoutChineseSubtitles = row.onlyWithoutChineseSubtitles &&
+            row.results.isEmpty && !hadError;
         matchCache.store(widget.subjectId, row.source.key,
           candidates: [for (var c in row.results)
             {'id': c.id, 'title': c.title, 'cover': c.cover}],
           matchedId: row.matched?.id, exactIds: row.exactIds.toList(),
           keyword: row.keyword, resultKeywords: Map.of(row.resultKeywords),
+          onlyWithoutChineseSubtitles: row.onlyWithoutChineseSubtitles,
+          showRaw: AnimekoSource.isRssSource(row.source)
+              ? appdata.settings['btShowRaw'] == true : null,
           error: hadError ? row.error ?? 'Search failed' : null);
         appdata.writeImplicitData();
       }
       // Re-read after searching: a user may have picked a result in the meantime.
-      row.chosen = rememberedCandidate(row) ?? row.matched;
+      row.chosen = row.onlyWithoutChineseSubtitles
+          ? null : rememberedCandidate(row) ?? row.matched;
       updateCandidates();
       var choice = manager.sourceChoice(widget.subjectId);
       var chosen = [
@@ -546,9 +585,45 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           row.loading = false;
           updateCandidates();
         });
+        _refreshCurrent();
         _tryAutoContinue();
       }
     }
+  }
+
+  void _refreshCurrent() {
+    var comic = current;
+    if (comic == null) {
+      return;
+    }
+    var row = sources.where((row) => row.source.key == comic.sourceKey)
+        .firstOrNull;
+    // Wait only for rows that can still change the current pick: its own and
+    // the chosen source's. A slow, uncached source elsewhere (several gated
+    // RSS pages) must not hold up the refresh.
+    var choice = manager.sourceChoice(widget.subjectId)?['sourceKey'];
+    var choiceLoading = choice != comic.sourceKey &&
+        sources.any((row) => row.source.key == choice && row.loading);
+    var key = (comic.sourceKey, comic.id);
+    if (row == null || row.loading || choiceLoading || !row.fromCache ||
+        _details.containsKey(key)) {
+      return;
+    }
+    var generation = row.generation;
+    var future = loadBangumiDetails(comic);
+    _details[key] = future;
+    // Attach the error handler immediately; play awaits the same future.
+    // A cached item with nothing playable left (e.g. only raw releases) is
+    // stale too: search the source again once, like a failed load.
+    future.then<void>((_) {}, onError: (Object error, StackTrace stack) async {
+      if (mounted && generation == row.generation && row.fromCache &&
+          row.source.isEnabled && sources.contains(row) &&
+          (error is BangumiEpisodeUnavailable ||
+              shouldRetryBangumiMatch(error, fromCache: row.fromCache))) {
+        row.recovery = search(row);
+        await row.recovery;
+      }
+    });
   }
 
   void updateCandidates() {
@@ -597,6 +672,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       manager.chooseSource(widget.subjectId, comic.sourceKey, comic.id);
     }
     setState(() => current = comic);
+    _refreshCurrent();
     sourceUpdates.value++;
   }
 
@@ -691,6 +767,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       playError = null;
     });
     var progress = manager.localProgress(widget.subjectId);
+    var candidate = current!;
+    var refreshedDetails = _details[(candidate.sourceKey, candidate.id)];
     try {
       await openBangumiPlayer(
         context,
@@ -701,17 +779,31 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           matchedCandidates: matchedCandidates,
           number: episode.number,
         ),
-        current!,
+        candidate,
+        details: refreshedDetails,
         position: progress.episode == episode.number && !progress.finished
             ? Duration(seconds: progress.position)
             : Duration.zero,
       );
     } catch (e) {
-      final row = e is BangumiSourceLoadException ? sources.where(
-        (row) => row.source.key == e.candidate.sourceKey && row.fromCache &&
-            row.matched?.id == e.candidate.id).firstOrNull : null;
-      if (mounted && retryCached && row != null) {
-        await search(row);
+      _SourceResult? row;
+      if (shouldRetryBangumiMatch(e, retryCached: retryCached) &&
+          e is BangumiSourceLoadException) {
+        row = sources.where((row) => row.source.key == e.candidate.sourceKey)
+            .firstOrNull;
+        if (row != null) {
+          var recovering = row.recovery != null && (row.loading ||
+              (refreshedDetails != null && candidate.sourceKey == e.candidate.sourceKey &&
+                  candidate.id == e.candidate.id));
+          var cachedItem = row.fromCache && (row.matched?.id == e.candidate.id ||
+              row.chosen?.id == e.candidate.id);
+          if (!recovering && !cachedItem) {
+            row = null;
+          }
+        }
+      }
+      if (mounted && row != null) {
+        await (row.recovery ?? search(row));
         if (mounted && row.matched != null) {
           select(row.matched!);
           setState(() => playing = false);
@@ -1627,7 +1719,9 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
                                   : row.error) ??
                               (row.loading
                                   ? 'Loading'.tl
-                                  : 'No matching result'.tl),
+                                  : row.onlyWithoutChineseSubtitles
+                                      ? 'Only releases without Chinese subtitles'.tl
+                                      : 'No matching result'.tl),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: ts.s12.copyWith(
