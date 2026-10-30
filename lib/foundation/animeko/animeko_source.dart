@@ -65,9 +65,15 @@ abstract final class AnimekoSource {
     if (queries.isEmpty) {
       return [];
     }
-    var items = AnimekoRssEngine.merge([
-      for (var query in queries) await runtime.rssReleases(query),
-    ], names: names);
+    var pages = [for (var query in queries) await runtime.rssReleases(query)];
+    if (pages.every((page) => page.isEmpty)) {
+      var series = AnimekoRssEngine.seriesKeywords(queries);
+      if (series.isNotEmpty) {
+        queries = series;
+        pages = [for (var query in queries) await runtime.rssReleases(query)];
+      }
+    }
+    var items = AnimekoRssEngine.merge(pages, names: names);
     var subjects = AnimekoRssEngine.subjects(queries.first, items,
       keywords: queries, names: names);
     for (var subject in subjects) {

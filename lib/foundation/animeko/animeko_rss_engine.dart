@@ -46,12 +46,12 @@ class RssReleaseName {
       .replaceAll(RegExp(r'[\s_]+'), ' ').trim();
 
   static final _episode = RegExp(
-    r'S\d+E(\d{1,3})(?:v(\d+))?'
-    r'|(?:EP(?:ISODE)?\.?\s*|第\s*)(\d{1,3})'
+    r'S\d+E(\d{1,3})(?:\.\d+)?(?:v(\d+))?'
+    r'|(?:EP(?:ISODE)?\.?\s*|第\s*)(\d{1,3})(?:\.\d+)?'
     r'(?:v(\d+))?(?:\s*[-~–]\s*(\d{1,3}))?(?:\s*[话話集])?'
-    // "Season 3 - 13" is episode 13, not a batch of 3 to 13.
-    r'|(?:\[|\s-\s*|(?<!season)\s(?=\d{1,3}\s*[-~–]))'
-    r'(\d{1,3})(?:v(\d+))?'
+    // Series markers are masked before matching; keep their text in series.
+    r'|(?:\[|\s-\s*|\s(?=\d{1,3}\s*[-~–]))'
+    r'(\d{1,3})(?:\.\d+)?(?:v(\d+))?'
     r'(?:\s*[-~–]\s*(\d{1,3}))?(?=\]|\s|\(|$)',
     caseSensitive: false,
   );
@@ -71,13 +71,20 @@ class RssReleaseName {
     if (first != null) {
       text = text.substring(first.end).trim();
     }
-    var match = _episode.firstMatch(text);
+    // Preserve offsets so series names retain Season/Part/Cour markers.
+    var episodeText = text.replaceAllMapped(RegExp(
+      r'\b(?:Season|Part|Cour)\s*\d+\b|第\s*[\d一二三四五六七八九十]+'
+      r'\s*(?:部分|クール|季|期)', caseSensitive: false),
+      (m) => ' ' * m[0]!.length);
+    var match = _episode.firstMatch(episodeText);
     int? number;
     int? end;
     var version = 1;
     if (match != null) {
-      number = int.parse((match[1] ?? match[3] ?? match[6])!);
-      end = int.tryParse(match[5] ?? match[8] ?? '');
+      if (!RegExp(r'\d\.\d').hasMatch(match[0]!)) {
+        number = int.parse((match[1] ?? match[3] ?? match[6])!);
+        end = int.tryParse(match[5] ?? match[8] ?? '');
+      }
       version = int.tryParse(match[2] ?? match[4] ?? match[7] ?? '') ?? 1;
     }
     for (var revision in RegExp(r'(?<![a-z0-9])v(\d+)(?!\d)',
@@ -273,6 +280,23 @@ class AnimekoRssEngine {
     }
     return items;
   }
+
+  static final _seasonMarker = RegExp(
+    r'第\s*[\d一二三四五六七八九十]+\s*(?:部分|クール|季|期|部)'
+    r'|\b(?:season|part|cour)\s*\d+\b|\b\d+(?:st|nd|rd|th)\s+season\b'
+    r'|\bS\d{1,2}\b',
+    caseSensitive: false,
+  );
+
+  /// Feeds such as 动漫花园 match keywords literally, and releases rarely
+  /// spell a later season the way Bangumi does ("第2部分", "第2クール"); the
+  /// series names without the marker find them, and [subjects] splits the
+  /// results by season again.
+  static List<String> seriesKeywords(List<String> keywords) => {
+    for (var keyword in keywords)
+      keyword.replaceAll(_seasonMarker, ' ').replaceAll(RegExp(r'\s+'), ' ')
+          .trim(),
+  }.where((k) => k.isNotEmpty && !keywords.contains(k)).take(2).toList();
 
   static List<String> subjectKeywords(String id) {
     var data = jsonDecode(id) as Map;

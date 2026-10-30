@@ -247,14 +247,17 @@ class RHttpAdapter implements HttpClientAdapter {
 
   Future<rhttp.ClientSettings> get settings => settingsFor(null);
 
-  Future<rhttp.ClientSettings> settingsFor(Duration? connectTimeout) async {
+  Future<rhttp.ClientSettings> settingsFor(Duration? connectTimeout,
+      {bool followRedirects = true}) async {
     var proxy = await getProxy();
 
     return rhttp.ClientSettings(
       proxySettings: proxy == null
           ? const rhttp.ProxySettings.noProxy()
           : rhttp.ProxySettings.proxy(proxy),
-      redirectSettings: const rhttp.RedirectSettings.limited(5),
+      redirectSettings: followRedirects
+          ? const rhttp.RedirectSettings.limited(5)
+          : const rhttp.RedirectSettings.none(),
       timeoutSettings: rhttp.TimeoutSettings(
         connectTimeout: connectTimeout ?? const Duration(seconds: 15),
         keepAliveTimeout: Duration(seconds: 60),
@@ -326,7 +329,8 @@ class RHttpAdapter implements HttpClientAdapter {
         : rhttp.Rhttp.request(
             method: method,
             url: url,
-            settings: await settingsFor(options.extra['connectTimeout'] as Duration?),
+            settings: await settingsFor(options.extra['connectTimeout'] as Duration?,
+              followRedirects: options.followRedirects),
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
