@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:venera/foundation/animeko/rss_preferences.dart';
+import 'package:venera/foundation/animeko/episode_unavailable.dart';
+import 'package:venera/network/network_error.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:flutter/material.dart';
@@ -17,16 +21,64 @@ class BangumiEpisodeUnavailable implements Exception {
 }
 
 class BangumiSourceLoadException implements Exception {
-  BangumiSourceLoadException(this.candidate, this.error);
+  BangumiSourceLoadException(this.candidate, this.error, {this.message});
   final Comic candidate;
   final Object error;
+  final String? message;
   @override
-  String toString() => error.toString();
+  String toString() => message ?? error.toString();
+}
+
+/// Only a stale item load warrants rematching. Missing episodes use fallback.
+bool shouldRetryBangumiMatch(Object error, {bool fromCache = true,
+    bool retryCached = true}) =>
+    fromCache && retryCached && error is BangumiSourceLoadException &&
+        error.error is! AnimekoEpisodesUnavailable && !isTransportError(error.error);
+
+ComicDetails bangumiDetailsResult(Comic candidate, Res<ComicDetails> result) {
+  if (result.error) {
+    if (result.errorCause is AnimekoEpisodesUnavailable) {
+      throw BangumiEpisodeUnavailable();
+    }
+    throw BangumiSourceLoadException(candidate,
+      result.errorCause ?? result.errorMessage!, message: result.errorMessage);
+  }
+  var details = result.data;
+  if (details.chapters != null && details.chapters!.allChapters.isEmpty) {
+    throw BangumiEpisodeUnavailable();
+  }
+  return details;
+}
+
+Future<ComicDetails> loadBangumiDetails(Comic candidate) async {
+  var source = ComicSource.find(candidate.sourceKey);
+  if (source?.loadComicInfo == null) {
+    throw Exception('Video source not found'.tl);
+  }
+  if (!source!.isEnabled) {
+    throw Exception('Source disabled'.tl);
+  }
+  try {
+    var result = await source.loadComicInfo!(candidate.id);
+    if (!source.isEnabled) {
+      throw Exception('Source disabled'.tl);
+    }
+    return bangumiDetailsResult(candidate, result);
+  } on BangumiSourceLoadException {
+    rethrow;
+  } on BangumiEpisodeUnavailable {
+    rethrow;
+  } on AnimekoEpisodesUnavailable {
+    throw BangumiEpisodeUnavailable();
+  } catch (e) {
+    throw BangumiSourceLoadException(candidate, e);
+  }
 }
 
 Future<VideoPlayerPage> bangumiPlayer(
   BangumiPlaybackContext context,
   Comic candidate, {
+  FutureOr<ComicDetails>? details,
   Duration? position,
   bool startFullscreen = false,
   void Function(Comic)? onSourceChanged,
@@ -34,6 +86,7 @@ Future<VideoPlayerPage> bangumiPlayer(
   return loadBangumiTarget(
     context,
     candidate,
+    details: details,
     onSourceChanged: onSourceChanged,
   ).then(
     (target) => VideoPlayerPage(
@@ -58,7 +111,7 @@ typedef BangumiPlayTarget = ({
 Future<BangumiPlayTarget> loadBangumiTarget(
   BangumiPlaybackContext context,
   Comic candidate, {
-  ComicDetails? details,
+  FutureOr<ComicDetails>? details,
   bool fallback = true,
   void Function(Comic)? onSourceChanged,
 }) {
@@ -72,10 +125,10 @@ Future<BangumiPlayTarget> loadBangumiTarget(
   ];
   return bangumiLoadEpisode(
     choices,
-    (c) => _loadBangumiTarget(
+    (c) async => _loadBangumiTarget(
       context,
       c,
-      details: identical(c, candidate) ? details : null,
+      details: identical(c, candidate) ? await details : null,
     ),
     missingEpisode: (e) => e is BangumiEpisodeUnavailable,
     onSwitch: onSourceChanged,
@@ -94,21 +147,7 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   if (!source!.isEnabled) {
     throw Exception('Source disabled'.tl);
   }
-  if (details == null) {
-    late final Res<ComicDetails> result;
-    try {
-      result = await source.loadComicInfo!(candidate.id);
-    } catch (e) {
-      throw BangumiSourceLoadException(candidate, e);
-    }
-    if (!source.isEnabled) {
-      throw Exception('Source disabled'.tl);
-    }
-    if (result.error) {
-      throw BangumiSourceLoadException(candidate, result.errorMessage!);
-    }
-    details = result.data;
-  }
+  details ??= await loadBangumiDetails(candidate);
   // No episodes (e.g. only raw releases left) stays BangumiEpisodeUnavailable,
   // so automatic source switching still moves on to the next source.
   var episodes = VideoEpisode.fromDetails(details);
@@ -160,12 +199,14 @@ Future<void> openBangumiPlayer(
   BuildContext context,
   BangumiPlaybackContext playback,
   Comic candidate, {
+  FutureOr<ComicDetails>? details,
   Duration? position,
   bool replace = false,
 }) async {
   var page = await bangumiPlayer(
     playback,
     candidate,
+    details: details,
     position: position,
     onSourceChanged: (c) {
       if (context.mounted) {

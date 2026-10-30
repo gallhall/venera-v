@@ -2,6 +2,9 @@ class Res<T> {
   /// error info
   final String? errorMessage;
 
+  /// Original typed failure, when supplied by the source.
+  final Object? errorCause;
+
   /// data
   final T? _data;
 
@@ -24,12 +27,13 @@ class Res<T> {
 
   Res.fromErrorRes(Res another, {this.subData})
       : _data = null,
-        errorMessage = another.errorMessage;
+        errorMessage = another.errorMessage,
+        errorCause = another.errorCause;
 
   /// network result
-  const Res(this._data, {this.errorMessage, this.subData});
+  const Res(this._data, {this.errorMessage, this.subData, this.errorCause});
 
-  const Res.error(String err)
+  const Res.error(String err, {this.errorCause})
       : _data = null,
         subData = null,
         errorMessage = err;
