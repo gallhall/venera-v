@@ -257,6 +257,7 @@ class Settings with ChangeNotifier {
     'videoAutoSkip': false, // skip the ranges a video source marks
     'videoAnime4kHalfPrecision': true,
     'videoAnime4k': 'off', // default for media_kit playback
+    'videoSubtitle': 'auto', // auto, no, or the title of the chosen track
     'btMaxCacheGB': '2',
     'btDownloadLimitKB': '0',
     'btUploadLimitKB': '0',
