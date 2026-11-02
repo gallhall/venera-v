@@ -255,6 +255,7 @@ class Settings with ChangeNotifier {
     'videoAutoSwitch': true,
     'videoAutoSwitchTimeout': 20,
     'videoAutoSkip': false, // skip the ranges a video source marks
+    'videoAnime4kHalfPrecision': true,
     'videoAnime4k': 'off', // default for media_kit playback
     'btMaxCacheGB': '2',
     'btDownloadLimitKB': '0',

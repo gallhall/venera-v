@@ -400,6 +400,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       // Engine warnings say why a stream failed, e.g. which request.
       p.logs.listen((line) => Log.info('Video', line)),
       p.tracks.listen((v) => setState(() => tracks = v)),
+      p.anime4kGuardEvents.listen((event) {
+        if (mounted && identical(active, p)) {
+          context.showMessage(
+            message: (event.preset == Anime4kPreset.off
+                ? (event.thermal ? 'Device is hot; Anime4K temporarily disabled'
+                    : 'Playback stutter; Anime4K temporarily disabled')
+                : (event.thermal ? 'Device is hot; Anime4K temporarily reduced to “@preset”'
+                    : 'Playback stutter; Anime4K temporarily reduced to “@preset”'))
+                .tlParams({'preset': event.preset.label.tl}),
+          );
+        }
+      }),
       p.anime4kFailures.listen((_) {
         if (mounted && identical(active, p)) {
           setState(() {});
@@ -1332,9 +1344,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Anime4kStatusView(player: active as PlayerService),
                     ),
+                    if (App.isAndroid)
+                      SwitchListTile(
+                        title: Text("Half precision acceleration (faster, almost identical quality)".tl),
+                        value: appdata.settings['videoAnime4kHalfPrecision'] != false,
+                        onChanged: (value) async {
+                          appdata.settings['videoAnime4kHalfPrecision'] = value;
+                          appdata.saveData();
+                          setDialogState(() {});
+                          await (active as PlayerService).refreshAnime4kPrecision();
+                        },
+                      ),
                     Text(
-                      "Higher presets need a strong GPU and more battery; "
-                      "Quality is intended for desktop".tl,
+                      "Phones should start with Fast; higher presets need "
+                      "a stronger GPU and more battery".tl,
                       style: ts.s12,
                     ).paddingHorizontal(16),
                     const SizedBox(height: 8),
