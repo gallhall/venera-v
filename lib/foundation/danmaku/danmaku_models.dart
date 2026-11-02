@@ -26,17 +26,29 @@ class DanmakuAnime {
     this.episodeCount,
   });
 
-  factory DanmakuAnime.fromJson(Map json) => DanmakuAnime(
-    (json['animeId'] as num).toInt(),
-    json['animeTitle'] as String? ?? '',
-    [
-      for (var e in json['episodes'] as List? ?? const [])
-        DanmakuEpisode.fromJson(e as Map),
-    ],
-    type: json['type'] as String?,
-    startDate: DateTime.tryParse(json['startDate'] as String? ?? ''),
-    episodeCount: (json['episodeCount'] as num?)?.toInt(),
-  );
+  factory DanmakuAnime.fromJson(Map json) {
+    var episodes = json['episodes'] as List?;
+    var startDate = DateTime.tryParse(json['startDate'] as String? ?? '');
+    if (json['startDate'] == null) {
+      for (var e in episodes ?? const []) {
+        var date = DateTime.tryParse(e['airDate'] as String? ?? '');
+        if (date != null && (startDate == null || date.isBefore(startDate))) {
+          startDate = date;
+        }
+      }
+    }
+    return DanmakuAnime(
+      (json['animeId'] as num).toInt(),
+      json['animeTitle'] as String? ?? '',
+      [
+        for (var e in episodes ?? const [])
+          DanmakuEpisode.fromJson(e as Map),
+      ],
+      type: json['type'] as String?,
+      startDate: startDate,
+      episodeCount: (json['episodeCount'] as num?)?.toInt() ?? episodes?.length,
+    );
+  }
 }
 
 class DanmakuComment {
