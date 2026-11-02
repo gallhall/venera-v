@@ -24,9 +24,10 @@ class DanmakuNoMatch implements Exception {
 }
 
 class DanmakuQuotaExceeded implements Exception {
-  const DanmakuQuotaExceeded(this.until);
+  const DanmakuQuotaExceeded(this.until, {required this.group});
 
   final DateTime until;
+  final String group;
 }
 
 class DanDanPlayApi {
@@ -49,12 +50,12 @@ class DanDanPlayApi {
     _quotaLogged = false;
   }
 
-  static Never _throwQuota(DateTime until) {
+  static Never _throwQuota(DateTime until, String group) {
     if (!_quotaLogged) {
       _quotaLogged = true;
       Log.warning('Danmaku', 'DanDanPlay quota used up until ${until.toLocal()}');
     }
-    throw DanmakuQuotaExceeded(until);
+    throw DanmakuQuotaExceeded(until, group: group);
   }
 
   void _restoreQuota() {
@@ -75,7 +76,7 @@ class DanDanPlayApi {
     }
   }
 
-  Never _recordQuota(Response<dynamic> response, String key) {
+  Never _recordQuota(Response<dynamic> response, String key, String group) {
     var now = _now().toUtc();
     var seconds = int.tryParse(response.headers.value('retry-after') ?? '');
     var until = seconds != null && seconds >= 0
@@ -89,7 +90,7 @@ class DanDanPlayApi {
         entry.key: entry.value.millisecondsSinceEpoch,
     };
     appdata.writeImplicitData();
-    _throwQuota(until);
+    _throwQuota(until, group);
   }
 
   static Duration _clockOffset = Duration.zero;
@@ -146,7 +147,13 @@ class DanDanPlayApi {
       _credential('dandanplayAppSecret', builtInSecret);
   static bool get hasCredentials => appId.isNotEmpty && secret.isNotEmpty;
 
-  Future<Map> _get(String path, [Map<String, dynamic>? query]) async {
+  Future<Map> _get(String path, [Map<String, dynamic>? query]) =>
+      _send('GET', path, query: query);
+
+  Future<Map> _send(String method, String path, {
+    Map<String, dynamic>? query,
+    Map<String, dynamic>? body,
+  }) async {
     if (!hasCredentials) {
       throw StateError('Danmaku credentials needed');
     }
@@ -155,16 +162,19 @@ class DanDanPlayApi {
     _restoreQuota();
     var until = _quotaUntil[quotaKey];
     if (until != null && _now().toUtc().isBefore(until)) {
-      _throwQuota(until);
+      _throwQuota(until, group);
     }
     Future<Response<dynamic>> request() async {
       var timestamp = DateTime.now().toUtc().add(_clockOffset)
           .millisecondsSinceEpoch ~/ 1000;
       Response<dynamic> response;
       try {
-        response = await dio.get<dynamic>(path,
+        response = await dio.request<dynamic>(path,
+          data: body,
           queryParameters: query,
           options: Options(
+            method: method,
+            contentType: body == null ? null : Headers.jsonContentType,
             headers: {
               'cache-time': 'no',
               'X-AppId': appId,
@@ -176,12 +186,12 @@ class DanDanPlayApi {
         );
       } on DioException catch (error) {
         if (error.response?.statusCode == 429) {
-          _recordQuota(error.response!, quotaKey);
+          _recordQuota(error.response!, quotaKey, group);
         }
         rethrow;
       }
       if (response.statusCode == 429) {
-        _recordQuota(response, quotaKey);
+        _recordQuota(response, quotaKey, group);
       }
       // Also handle callers whose validateStatus accepts a 403 response.
       if (response.statusCode == 403) {
@@ -212,7 +222,7 @@ class DanDanPlayApi {
       throw const FormatException('Invalid DanDanPlay response');
     }
     if (data['errorCode'] == 429) {
-      _recordQuota(response, quotaKey);
+      _recordQuota(response, quotaKey, group);
     }
     if (data['success'] == false ||
         (data['errorCode'] is num && data['errorCode'] != 0)) {
@@ -245,6 +255,21 @@ class DanDanPlayApi {
     return [
       for (var a in data['animes'] as List? ?? const [])
         DanmakuAnime.fromJson(a as Map),
+    ];
+  }
+
+  Future<List<DanmakuAnime>> matchByName(String fileName) async {
+    var data = await _send('POST', '/api/v2/match', body: {
+      'fileName': fileName,
+      'fileHash': '00000000000000000000000000000000',
+      'fileSize': 0,
+      'matchMode': 'fileNameOnly',
+    });
+    return [
+      for (var a in data['matches'] as List? ?? const [])
+        DanmakuAnime((a['animeId'] as num).toInt(),
+          a['animeTitle'] as String? ?? '', const [],
+          type: a['type'] as String?),
     ];
   }
 
