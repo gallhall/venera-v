@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/utils/translations.dart';
@@ -12,6 +13,16 @@ class Anime4kStatusView extends StatelessWidget {
   final PlayerService player;
 
   String _label(Anime4kStatus status) {
+    if (player.anime4kSource4k) {
+      return '4K sources do not use Anime4K'.tl;
+    }
+    final requested = player.anime4kPreset.forPlatform(desktop: App.isDesktop);
+    if (player.effectiveAnime4kPreset != requested) {
+      return 'Temporarily reduced to @applied (set to @requested)'.tlParams({
+        'applied': player.effectiveAnime4kPreset.label.tl,
+        'requested': requested.label.tl,
+      });
+    }
     return switch (status.state) {
       Anime4kState.off => 'Off'.tl,
       Anime4kState.checking => 'Checking Anime4K render passes...'.tl,
@@ -85,7 +96,8 @@ class Anime4kPicker extends StatefulWidget {
 
 class _Anime4kPickerState extends State<Anime4kPicker>
     with WidgetsBindingObserver {
-  late Anime4kPreset selected = widget.selected;
+  late Anime4kPreset selected =
+      widget.selected.forPlatform(desktop: App.isDesktop);
   bool held = false;
   bool applying = false;
   int? pointer;
@@ -126,7 +138,7 @@ class _Anime4kPickerState extends State<Anime4kPicker>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final preset in Anime4kPreset.values)
+          for (final preset in Anime4kPreset.available(desktop: App.isDesktop))
             OptionRow(
               text: preset.label.tl,
               selected: selected == preset,
@@ -139,7 +151,8 @@ class _Anime4kPickerState extends State<Anime4kPicker>
                 try {
                   await widget.onSelected(preset);
                   if (mounted) {
-                    setState(() => selected = widget.player.anime4kPreset);
+                    setState(() => selected = widget.player.anime4kPreset
+                        .forPlatform(desktop: App.isDesktop));
                   }
                 } finally {
                   if (mounted) {

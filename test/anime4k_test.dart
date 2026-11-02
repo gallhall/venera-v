@@ -192,8 +192,8 @@ void main() {
     ]);
   });
 
-  test('Quality is official Mode A (HQ), in order', () {
-    expect(Anime4kPreset.quality.shaders, [
+  test('Ultra retains official Mode A (HQ), in order', () {
+    expect(Anime4kPreset.ultra.shaders, [
       'Anime4K_Clamp_Highlights.glsl',
       'Anime4K_Restore_CNN_VL.glsl',
       'Anime4K_Upscale_CNN_x2_VL.glsl',
@@ -203,13 +203,36 @@ void main() {
     ]);
   });
 
-  test('installation includes both chains and the license once', () {
+  test('mobile chains and platform availability', () {
+    for (final entry in {
+      Anime4kPreset.fast: ['S', 'S', 'S'],
+      Anime4kPreset.quality: ['L', 'L', 'M'],
+    }.entries) {
+      expect(entry.key.shaders, [
+        'Anime4K_Clamp_Highlights.glsl',
+        'Anime4K_Restore_CNN_${entry.value[0]}.glsl',
+        'Anime4K_Upscale_CNN_x2_${entry.value[1]}.glsl',
+        'Anime4K_AutoDownscalePre_x2.glsl',
+        'Anime4K_AutoDownscalePre_x4.glsl',
+        'Anime4K_Upscale_CNN_x2_${entry.value[2]}.glsl',
+      ]);
+    }
+    expect(Anime4kPreset.ultra.forPlatform(desktop: false), Anime4kPreset.quality);
+    expect(Anime4kPreset.ultra.forPlatform(desktop: true), Anime4kPreset.ultra);
+    expect(Anime4kPreset.available(desktop: false), isNot(contains(Anime4kPreset.ultra)));
+    expect(Anime4kPreset.available(desktop: true), Anime4kPreset.values);
+    expect(Anime4kPreset.fromSetting('efficiency'), Anime4kPreset.efficiency);
+    expect(Anime4kPreset.fromSetting('quality'), Anime4kPreset.quality);
+  });
+
+  test('installation includes every chain and the license once', () {
     var files = Anime4k.bundledFiles;
-    expect(files.length, 9);
+    expect(files.length, 12);
     expect(files.toSet().length, files.length);
     expect(files, contains('LICENSE'));
     for (var preset in Anime4kPreset.values) {
-      expect(files, containsAll(preset.shaders));
+      // A chain may use one shader twice (Fast: Upscale S); it is bundled once.
+      expect(files, containsAll(preset.shaders.toSet()));
     }
   });
 

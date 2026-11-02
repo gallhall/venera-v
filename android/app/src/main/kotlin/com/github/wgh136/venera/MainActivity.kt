@@ -11,6 +11,7 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.Environment
 import android.provider.Settings
 import android.util.Log
@@ -119,6 +120,22 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "venera/thermal")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "sample") {
+                    result.notImplemented()
+                } else {
+                    try {
+                        val power = getSystemService(POWER_SERVICE) as PowerManager
+                        val status = if (Build.VERSION.SDK_INT >= 29) power.currentThermalStatus else -1
+                        val headroom = if (Build.VERSION.SDK_INT >= 30) power.getThermalHeadroom(10) else Float.NaN
+                        result.success(mapOf("status" to status,
+                            "headroom" to if (headroom.isFinite()) headroom.toDouble() else null))
+                    } catch (_: Exception) {
+                        result.success(mapOf("status" to -1, "headroom" to null))
+                    }
+                }
+            }
         GeneratedPluginRegistrant.registerWith(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

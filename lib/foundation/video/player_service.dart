@@ -206,17 +206,33 @@ class PlayerService implements VideoPlayback {
   PlayerService._(this._player, this._controller) {
     _subscriptions.addAll([
       _player.stream.log.listen(
-        (e) => _failures.log(e.prefix, e.level, e.text),
+        (e) {
+          _failures.log(e.prefix, e.level, e.text);
+          // Only the video output compiles shaders; other errors (network,
+          // demuxer) must not disable fp16 for good.
+          final text = e.text.toLowerCase();
+          if ((e.level == 'error' || e.level == 'fatal') &&
+              e.prefix.startsWith('vo') &&
+              RegExp(r'shader|compile|link').hasMatch(text)) {
+            _fallbackAnime4kPrecision('mpv ${e.level}: ${e.text}');
+          }
+        },
       ),
       _player.stream.completed.listen(_onCompleted),
       _player.stream.buffering.listen(_onBuffering),
-      _player.stream.videoParams.listen((_) => _scheduleAnime4kRenderSize()),
+      _player.stream.videoParams.listen((_) {
+        _updateAnime4kSource();
+        _scheduleAnime4kRenderSize();
+      }),
       _player.stream.playing.listen((playing) {
         if (playing) {
           _checkAnime4k();
         }
       }),
     ]);
+    _anime4kGuardTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      unawaited(_sampleAnime4kGuard());
+    });
     _anime4kSizeTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _pollAnime4kSize();
     });
@@ -309,6 +325,12 @@ class PlayerService implements VideoPlayback {
 
   Anime4kPreset _anime4kPreset = Anime4kPreset.off;
 
+  Anime4kPreset get effectiveAnime4kPreset => _effectiveAnime4kPreset;
+
+  bool get anime4kSource4k => _anime4kGuard.source4k;
+
+  Anime4kPreset _effectiveAnime4kPreset = Anime4kPreset.off;
+
   bool _anime4kInitialized = false;
 
   bool _anime4kFailed = false;
@@ -385,7 +407,7 @@ class PlayerService implements VideoPlayback {
     }
     final area = _videoArea;
     final size = _videoViewActive && area != null &&
-            _anime4kPreset != Anime4kPreset.off
+            _effectiveAnime4kPreset != Anime4kPreset.off
         ? anime4kRenderSize(
             logicalWidth: area.width,
             logicalHeight: area.height,
@@ -462,6 +484,157 @@ class PlayerService implements VideoPlayback {
     }
   }
 
+  final _anime4kGuard = Anime4kGuard(Anime4kPreset.off);
+  final _anime4kGuardEvents =
+      StreamController<({Anime4kPreset preset, bool thermal})>.broadcast();
+  Stream<({Anime4kPreset preset, bool thermal})> get anime4kGuardEvents =>
+      _anime4kGuardEvents.stream;
+  Timer? _anime4kGuardTimer;
+  bool _anime4kSampling = false;
+  bool _anime4kOpening = false;
+  int _anime4kGeneration = 0;
+  bool _anime4kVoOptionsSet = false;
+  bool _anime4kUsingFp16 = false;
+  bool _anime4kPrecisionFallback = false;
+  static const _anime4kCounterNames = [
+    'frame-drop-count', 'decoder-frame-drop-count',
+    'vo-delayed-frame-count', 'mistimed-frame-count',
+  ];
+  static String get _anime4kFallbackKey => 'anime4k-fp16-failed-${Anime4k.version}';
+
+  Future<String> _prepareAnime4k() {
+    _anime4kUsingFp16 = App.isAndroid &&
+        appdata.settings['videoAnime4kHalfPrecision'] != false &&
+        !_anime4kPrecisionFallback &&
+        appdata.implicitData[_anime4kFallbackKey] != true;
+    return Anime4kAssets.prepare(halfPrecision: _anime4kUsingFp16);
+  }
+
+  void _fallbackAnime4kPrecision(String reason) {
+    if (_disposed || _showingOriginal || !_anime4kUsingFp16 ||
+        _anime4kPrecisionFallback) {
+      return;
+    }
+    _anime4kPrecisionFallback = true;
+    _anime4kUsingFp16 = false;
+    appdata.implicitData[_anime4kFallbackKey] = true;
+    appdata.writeImplicitData();
+    Log.warning('Video', 'Anime4K fp16 fallback: $reason');
+    _anime4kPending = _anime4kPending.then((_) async {
+      await _applyAnime4k(_anime4kGuard.effective);
+    });
+  }
+
+  /// Reinstall the selected precision without changing the playback policy.
+  /// Turning the setting on again retries fp16 after an automatic fallback.
+  Future<void> refreshAnime4kPrecision() {
+    if (appdata.settings['videoAnime4kHalfPrecision'] != false) {
+      _anime4kPrecisionFallback = false;
+      appdata.implicitData.remove(_anime4kFallbackKey);
+      appdata.writeImplicitData();
+    }
+    _anime4kPending = _anime4kPending.then((_) async {
+      await _applyAnime4k(_anime4kGuard.effective);
+    });
+    return _anime4kPending;
+  }
+
+  void _updateAnime4kSource() {
+    if (_disposed || _anime4kOpening) {
+      return;
+    }
+    final params = _player.state.videoParams;
+    final width = params.w ?? 0;
+    final height = params.h ?? 0;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    final previous = _anime4kGuard.source4k;
+    _anime4kGuard.source(width, height);
+    if (!_anime4kFailed && (previous != _anime4kGuard.source4k ||
+        _effectiveAnime4kPreset != _anime4kGuard.effective)) {
+      ++_anime4kGeneration;
+      Log.info('Video', 'Anime4K source ${width}x$height, '
+          '4K veto=${_anime4kGuard.source4k}, applied=${_anime4kGuard.effective.name}');
+      _anime4kPending = _anime4kPending.then((_) async {
+        await _applyAnime4k(_anime4kGuard.effective);
+      });
+    }
+  }
+
+  Future<void> _sampleAnime4kGuard() async {
+    if (_disposed || _anime4kFailed || _anime4kSampling ||
+        _anime4kOpening || !isPlaying ||
+        _showingOriginal || _anime4kPreset == Anime4kPreset.off) {
+      return;
+    }
+    _anime4kSampling = true;
+    final generation = _anime4kGeneration;
+    try {
+      final values = await Future.wait([
+        for (final name in _anime4kCounterNames) _anime4kProperty(name),
+      ]);
+      var thermal = Anime4kThermal.normal;
+      int status = -1;
+      double? headroom;
+      if (App.isAndroid) {
+        try {
+          final data = await const MethodChannel('venera/thermal')
+              .invokeMapMethod<String, dynamic>('sample')
+              .timeout(const Duration(seconds: 2));
+          status = (data?['status'] as num?)?.toInt() ?? -1;
+          headroom = (data?['headroom'] as num?)?.toDouble();
+          thermal = anime4kThermal(status: status, headroom: headroom);
+        } catch (_) {
+          // Unsupported Android releases and channel failures are normal.
+        }
+      }
+      final counters = values.map((v) => int.tryParse(v ?? '')).toList();
+      await _anime4kPending;
+      if (_disposed || generation != _anime4kGeneration || !isPlaying ||
+          _showingOriginal || _anime4kOpening) {
+        return;
+      }
+      // Some counters don't exist in every mpv build or sync mode (Android's
+      // libmpv has no mistimed-frame-count): a missing one counts as 0.
+      if (counters.every((v) => v == null)) {
+        _anime4kGuard.applied();
+        Log.info('Video', 'Anime4K guard: counters unavailable $values, '
+            'thermal=$status headroom=$headroom');
+        // Heat still matters without frame counters.
+        if (thermal == Anime4kThermal.normal) {
+          return;
+        }
+      }
+      final before = _anime4kGuard.effective;
+      final next = _anime4kGuard.sample(Anime4kCounters(
+        counters[0] ?? 0, counters[1] ?? 0,
+        counters[2] ?? 0, counters[3] ?? 0,
+      ), thermal);
+      Log.info('Video', 'Anime4K guard: ${_anime4kGuard.deltas ?? 'baseline'}, '
+          'thermal=$status headroom=$headroom (${thermal.name}), '
+          '${before.name} -> ${next.name}');
+      if (next != before) {
+        final requested = _anime4kPreset;
+        _anime4kPending = _anime4kPending.then((_) async {
+          if (_disposed || generation != _anime4kGeneration ||
+              _showingOriginal || _anime4kOpening) {
+            return;
+          }
+          if (await _applyAnime4k(next) && !_disposed &&
+              _anime4kPreset == requested && _anime4kGuard.effective == next &&
+              next.index < before.index) {
+            _anime4kGuardEvents.add((preset: next,
+              thermal: thermal != Anime4kThermal.normal));
+          }
+        });
+        await _anime4kPending;
+      }
+    } finally {
+      _anime4kSampling = false;
+    }
+  }
+
   Timer? _anime4kSizeTimer;
   String? _anime4kOutputSize;
   bool _anime4kPollingSize = false;
@@ -472,12 +645,15 @@ class PlayerService implements VideoPlayback {
   /// How mpv decodes and draws the stream, for the log.
   Future<String> describeOutput() async {
     final values = await Future.wait([
-      for (final name in ['hwdec-current', 'current-vo', 'width', 'height'])
+      for (final name in ['hwdec-current', 'current-vo', 'width', 'height',
+        ..._anime4kCounterNames])
         _anime4kProperty(name),
     ]);
     return 'hwdec ${values[0] ?? '?'}, vo ${values[1] ?? '?'}, '
         '${values[2] ?? '?'}x${values[3] ?? '?'}, '
-        'Anime4K ${_anime4kPreset.name}';
+        'Anime4K ${_effectiveAnime4kPreset.name} (set ${_anime4kPreset.name}), '
+        '${_anime4kCounterNames.asMap().entries.map((e) =>
+            '${e.value}=${values[e.key + 4] ?? '?'}').join(', ')}';
   }
 
   Future<String?> _anime4kProperty(String name) async {
@@ -496,7 +672,7 @@ class PlayerService implements VideoPlayback {
 
   Future<void> _pollAnime4kSize() async {
     if (_disposed || _anime4kPollingSize || !isPlaying ||
-        _showingOriginal || _anime4kPreset == Anime4kPreset.off) {
+        _showingOriginal || _effectiveAnime4kPreset == Anime4kPreset.off) {
       return;
     }
     _anime4kPollingSize = true;
@@ -519,7 +695,7 @@ class PlayerService implements VideoPlayback {
   }
 
   void _checkAnime4k() {
-    if (_disposed || _anime4kPreset == Anime4kPreset.off) {
+    if (_disposed || _effectiveAnime4kPreset == Anime4kPreset.off) {
       return;
     }
     if (_showingOriginal) {
@@ -566,6 +742,9 @@ class PlayerService implements VideoPlayback {
     }
     if (!_disposed && check == _anime4kCheck && !_showingOriginal) {
       Log.info('Video', 'Anime4K render passes: ${descs.toList()}');
+      if (isPlaying && status.state == Anime4kState.inactive) {
+        _fallbackAnime4kPrecision('no Anime4K render passes');
+      }
       _anime4kStatus.value = !isPlaying && status.descs.isEmpty
           ? Anime4kStatus(
               Anime4kState.playToVerify,
@@ -586,6 +765,8 @@ class PlayerService implements VideoPlayback {
       return Future.value();
     }
     _showingOriginal = original;
+    ++_anime4kGeneration;
+    _anime4kGuard.applied();
     ++_anime4kCheck;
     final result = _anime4kPending.then((_) async {
       if (_disposed) {
@@ -597,9 +778,9 @@ class PlayerService implements VideoPlayback {
       }
       try {
         final paths = <String>[];
-        if (!original && _anime4kPreset != Anime4kPreset.off) {
-          final dir = await Anime4kAssets.prepare();
-          for (final name in _anime4kPreset.shaders) {
+        if (!original && _effectiveAnime4kPreset != Anime4kPreset.off) {
+          final dir = await _prepareAnime4k();
+          for (final name in _effectiveAnime4kPreset.shaders) {
             paths.add(FilePath.join(dir, name));
           }
         }
@@ -627,12 +808,18 @@ class PlayerService implements VideoPlayback {
   /// Changes the filter on the running stream without opening it again.
   Future<bool> setAnime4k(Anime4kPreset preset) {
     _anime4kInitialized = true;
-    var result = _anime4kPending.then((_) => _applyAnime4k(preset));
+    _anime4kPreset = preset;
+    ++_anime4kGeneration;
+    final source4k = _anime4kGuard.source4k;
+    _anime4kGuard.reset(preset.forPlatform(desktop: App.isDesktop));
+    _anime4kGuard.source4k = source4k;
+    var result = _anime4kPending.then((_) => _applyAnime4k(_anime4kGuard.effective));
     _anime4kPending = result.then((_) {});
     return result;
   }
 
   Future<bool> _applyAnime4k(Anime4kPreset preset) async {
+    ++_anime4kGeneration;
     if (_disposed) {
       return false;
     }
@@ -641,13 +828,27 @@ class PlayerService implements VideoPlayback {
       return false;
     }
     var platform = _player.platform;
+    var usedFp16 = false;
     try {
       if (platform is! NativePlayer) {
         throw UnsupportedError('Anime4K requires native media_kit');
       }
       var paths = <String>[];
       if (preset != Anime4kPreset.off) {
-        var dir = await Anime4kAssets.prepare();
+        if (App.isAndroid && !_anime4kVoOptionsSet) {
+          _anime4kVoOptionsSet = true;
+          const options = {'opengl-pbo': 'yes', 'opengl-early-flush': 'no'};
+          for (final option in options.entries) {
+            try {
+              await platform.setProperty(option.key, option.value);
+            } catch (e) {
+              Log.warning('Video', 'Anime4K option ${option.key}: $e');
+            }
+          }
+        }
+        var dir = await _prepareAnime4k();
+        usedFp16 = _anime4kUsingFp16;
+        Log.info('Video', 'Anime4K ${preset.name} from $dir');
         for (var name in preset.shaders) {
           paths.add(FilePath.join(dir, name));
         }
@@ -658,19 +859,30 @@ class PlayerService implements VideoPlayback {
             ? ''
             : Anime4k.pathList(paths, windows: Platform.isWindows),
       );
-      _anime4kPreset = preset;
+      _effectiveAnime4kPreset = preset;
+      if (preset == Anime4kPreset.off) {
+        _anime4kUsingFp16 = false;
+      }
+      _anime4kGuard.applied();
       await _resizeAnime4k();
       ++_anime4kCheck;
       if (preset == Anime4kPreset.off) {
-        _anime4kStatus.value = const Anime4kStatus(Anime4kState.off);
+        final params = _player.state.videoParams;
+        _anime4kStatus.value = Anime4kStatus(Anime4kState.off,
+          videoWidth: params.w, videoHeight: params.h,
+        );
       } else {
         _checkAnime4k();
       }
       return true;
     } catch (e) {
       Log.warning('Video', 'Failed to apply Anime4K: $e');
+      if (usedFp16) {
+        _fallbackAnime4kPrecision('apply failed: $e');
+        return false;
+      }
       _anime4kFailed = true;
-      _anime4kPreset = Anime4kPreset.off;
+      _effectiveAnime4kPreset = Anime4kPreset.off;
       await _resizeAnime4k();
       ++_anime4kCheck;
       if (!_disposed) {
@@ -827,16 +1039,23 @@ class PlayerService implements VideoPlayback {
   }) async {
     ++_anime4kCheck;
     _anime4kOutputSize = null;
+    ++_anime4kGeneration;
     await _applyAudioOutput();
     await _applyCacheDir();
     await _applyProxy(request.url);
     if (!_anime4kInitialized) {
-      var preset = Anime4kPreset.fromSetting(appdata.settings['videoAnime4k']);
-      if (preset != Anime4kPreset.off) {
-        await setAnime4k(preset);
-      } else {
-        _anime4kInitialized = true;
-      }
+      _anime4kPreset = Anime4kPreset.fromSetting(appdata.settings['videoAnime4k']);
+      _anime4kInitialized = true;
+    }
+    // The next episode keeps the shaders unless a guard step is undone;
+    // a 4K source turns them off once its size is known.
+    _anime4kGuard.reset(_anime4kPreset.forPlatform(desktop: App.isDesktop));
+    if (!_anime4kFailed &&
+        _effectiveAnime4kPreset != _anime4kGuard.effective) {
+      _anime4kPending = _anime4kPending.then((_) async {
+        await _applyAnime4k(_anime4kGuard.effective);
+      });
+      await _anime4kPending;
     }
     var media = Media(
       request.url,
@@ -845,7 +1064,13 @@ class PlayerService implements VideoPlayback {
     );
     _stallTimer?.cancel();
     _failures.reset();
-    await _player.open(media, play: play);
+    _anime4kOpening = true;
+    try {
+      await _player.open(media, play: play);
+    } finally {
+      _anime4kOpening = false;
+    }
+    _updateAnime4kSource();
     _checkAnime4k();
     if (request.audioUrl == null && request.subtitles.isEmpty) {
       return;
@@ -1016,6 +1241,7 @@ class PlayerService implements VideoPlayback {
     _disposed = true;
     ++_anime4kCheck;
     _anime4kSizeTimer?.cancel();
+    _anime4kGuardTimer?.cancel();
     _anime4kRenderTimer?.cancel();
     _stallTimer?.cancel();
     await _anime4kPending;
@@ -1027,6 +1253,7 @@ class PlayerService implements VideoPlayback {
     await _completed.close();
     await _interrupted.close();
     await _anime4kFailures.close();
+    await _anime4kGuardEvents.close();
     _anime4kStatus.dispose();
     _anime4kOriginal.dispose();
   }

@@ -142,8 +142,10 @@ class Anime4kStatus {
 
 enum Anime4kPreset {
   off('Off'),
-  efficiency('Efficiency'),
-  quality('Quality');
+  fast('Fast'),
+  efficiency('Balanced'),
+  quality('Quality'),
+  ultra('Ultra (desktop GPU)');
 
   const Anime4kPreset(this.label);
 
@@ -156,8 +158,22 @@ enum Anime4kPreset {
     );
   }
 
+  Anime4kPreset forPlatform({required bool desktop}) =>
+      this == ultra && !desktop ? quality : this;
+
+  static List<Anime4kPreset> available({required bool desktop}) =>
+      values.where((preset) => desktop || preset != ultra).toList();
+
   List<String> get shaders => switch (this) {
     off => const [],
+    fast => const [
+      'Anime4K_Clamp_Highlights.glsl',
+      'Anime4K_Restore_CNN_S.glsl',
+      'Anime4K_Upscale_CNN_x2_S.glsl',
+      'Anime4K_AutoDownscalePre_x2.glsl',
+      'Anime4K_AutoDownscalePre_x4.glsl',
+      'Anime4K_Upscale_CNN_x2_S.glsl',
+    ],
     efficiency => const [
       'Anime4K_Clamp_Highlights.glsl',
       'Anime4K_Restore_CNN_M.glsl',
@@ -167,6 +183,14 @@ enum Anime4kPreset {
       'Anime4K_Upscale_CNN_x2_S.glsl',
     ],
     quality => const [
+      'Anime4K_Clamp_Highlights.glsl',
+      'Anime4K_Restore_CNN_L.glsl',
+      'Anime4K_Upscale_CNN_x2_L.glsl',
+      'Anime4K_AutoDownscalePre_x2.glsl',
+      'Anime4K_AutoDownscalePre_x4.glsl',
+      'Anime4K_Upscale_CNN_x2_M.glsl',
+    ],
+    ultra => const [
       'Anime4K_Clamp_Highlights.glsl',
       'Anime4K_Restore_CNN_VL.glsl',
       'Anime4K_Upscale_CNN_x2_VL.glsl',
@@ -179,11 +203,10 @@ enum Anime4kPreset {
 
 class Anime4k {
   // Bump whenever the bundled shaders or their file names change.
-  static const version = 'mode-a-1';
+  static const version = 'mode-a-mobile-2';
 
   static List<String> get bundledFiles => {
-    ...Anime4kPreset.efficiency.shaders,
-    ...Anime4kPreset.quality.shaders,
+    for (final preset in Anime4kPreset.values) ...preset.shaders,
     'LICENSE',
   }.toList();
 
@@ -194,5 +217,117 @@ class Anime4k {
   /// mpv path lists use ';' on Windows and ':' on other platforms.
   static String pathList(Iterable<String> paths, {required bool windows}) {
     return paths.join(windows ? ';' : ':');
+  }
+}
+
+enum Anime4kThermal { normal, elevated, severe }
+
+Anime4kThermal anime4kThermal({int status = -1, double? headroom}) {
+  final heat = headroom != null && headroom.isFinite ? headroom : -1.0;
+  if (status >= 3 || heat >= 1.0) {
+    return Anime4kThermal.severe;
+  }
+  if (status >= 2 || heat >= 0.8) {
+    return Anime4kThermal.elevated;
+  }
+  return Anime4kThermal.normal;
+}
+
+class Anime4kCounters {
+  const Anime4kCounters(this.dropped, this.decoderDropped, this.delayed,
+      this.mistimed);
+
+  final int dropped;
+  final int decoderDropped;
+  final int delayed;
+  final int mistimed;
+
+  Anime4kCounters since(Anime4kCounters previous) => Anime4kCounters(
+    math.max(0, dropped - previous.dropped),
+    math.max(0, decoderDropped - previous.decoderDropped),
+    math.max(0, delayed - previous.delayed),
+    math.max(0, mistimed - previous.mistimed),
+  );
+
+  bool get pressure => dropped + decoderDropped >= 3 || delayed >= 8 ||
+      mistimed >= 12;
+
+  @override
+  String toString() => 'drop=$dropped decoderDrop=$decoderDropped '
+      'delayed=$delayed mistimed=$mistimed';
+}
+
+/// Playback-local policy. The source veto is independent of performance steps.
+class Anime4kGuard {
+  Anime4kGuard(Anime4kPreset preset) {
+    reset(preset);
+  }
+
+  late Anime4kPreset requested;
+  late Anime4kPreset _level;
+  Anime4kCounters? _previous;
+  Anime4kCounters? deltas;
+  final _failures = <Anime4kPreset, int>{};
+  int _normal = 0;
+  bool source4k = false;
+
+  Anime4kPreset get effective => source4k ? Anime4kPreset.off : _level;
+
+  void reset(Anime4kPreset preset) {
+    requested = preset;
+    _level = preset;
+    _failures.clear();
+    source4k = false;
+    _normal = 0;
+    applied();
+  }
+
+  /// Compilation drops never contribute to the next interval.
+  void applied() {
+    _previous = null;
+    deltas = null;
+    _normal = 0;
+  }
+
+  void source(int width, int height) {
+    final veto = math.max(width, height) >= 3840 ||
+        math.min(width, height) >= 2160;
+    if (veto != source4k) {
+      source4k = veto;
+      applied();
+    }
+  }
+
+  Anime4kPreset sample(Anime4kCounters counters, Anime4kThermal thermal) {
+    final previous = _previous;
+    _previous = counters;
+    deltas = previous == null ? null : counters.since(previous);
+    if (source4k || requested == Anime4kPreset.off) {
+      return effective;
+    }
+    final frames = deltas?.pressure ?? false;
+    final pressure = thermal != Anime4kThermal.normal || frames;
+    if (pressure) {
+      _normal = 0;
+      // Heat alone steps down to Fast; only severe heat or dropped frames
+      // turn the shaders off.
+      final next = thermal == Anime4kThermal.severe ? Anime4kPreset.off
+          : _level == Anime4kPreset.off ||
+                  (!frames && _level == Anime4kPreset.fast)
+              ? _level : Anime4kPreset.values[_level.index - 1];
+      if (next != _level) {
+        _failures.update(_level, (n) => n + 1, ifAbsent: () => 1);
+        _level = next;
+      }
+    } else if (previous != null && ++_normal >= 3) {
+      _normal = 0;
+      if (_level.index < requested.index) {
+        final next = Anime4kPreset.values[_level.index + 1];
+        if ((_failures[next] ?? 0) < 2) {
+          _level = next;
+        }
+      }
+    }
+    return effective;
   }
 }
