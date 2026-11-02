@@ -255,6 +255,9 @@ class PlayerService implements VideoPlayback {
         title: 'venera-v',
         bufferSize: 64 * 1024 * 1024,
         logLevel: MPVLogLevel.warn,
+        // mpv draws subtitles with libass, keeping ASS/SSA styles, positions
+        // and effects; media_kit's own overlay only shows plain text.
+        libass: true,
       ),
     );
     return PlayerService._(player, VideoController(player));
@@ -1042,6 +1045,7 @@ class PlayerService implements VideoPlayback {
     ++_anime4kGeneration;
     await _applyAudioOutput();
     await _applyCacheDir();
+    await _applySubtitleFont();
     await _applyProxy(request.url);
     if (!_anime4kInitialized) {
       _anime4kPreset = Anime4kPreset.fromSetting(appdata.settings['videoAnime4k']);
@@ -1085,6 +1089,8 @@ class PlayerService implements VideoPlayback {
         AudioTrack.uri(request.audioUrl!, title: 'External'),
       );
     }
+    // Besides "auto" and "no".
+    var subtitleCount = _player.state.tracks.subtitle.length - 2;
     for (var s in request.subtitles) {
       await _player.setSubtitleTrack(
         SubtitleTrack.uri(
@@ -1093,6 +1099,36 @@ class PlayerService implements VideoPlayback {
           language: s.language,
         ),
       );
+    }
+    if (request.subtitles.isNotEmpty) {
+      await _restoreSubtitleTrack(subtitleCount + request.subtitles.length);
+    }
+  }
+
+  /// Selects the subtitle chosen last time, see [selectSubtitleTrack]. Adding
+  /// a subtitle file selects it and media_kit records it by its URI, which
+  /// matches no track in the list, so a track is always selected again.
+  Future<void> _restoreSubtitleTrack(int count) async {
+    try {
+      bool hasAdded(Tracks t) => t.subtitle.length - 2 >= count;
+      // The track list may not include the new files yet.
+      var tracks = hasAdded(_player.state.tracks)
+          ? _player.state.tracks
+          : await _player.stream.tracks
+              .firstWhere(hasAdded)
+              .timeout(const Duration(seconds: 5));
+      var chosen = appdata.settings['videoSubtitle'] as String? ?? 'auto';
+      var track = switch (chosen) {
+        'auto' => SubtitleTrack.auto(),
+        'no' => SubtitleTrack.no(),
+        _ => tracks.subtitle.firstWhere(
+            (e) => (e.title ?? e.language) == chosen,
+            orElse: SubtitleTrack.auto,
+          ),
+      };
+      await _player.setSubtitleTrack(track);
+    } catch (e) {
+      Log.warning('Video', 'Failed to restore the subtitle track: $e');
     }
   }
 
@@ -1173,6 +1209,51 @@ class PlayerService implements VideoPlayback {
     }
   }
 
+  bool _subtitleFontApplied = false;
+
+  /// System CJK fonts and their family names, most common first.
+  static const _androidSubtitleFonts = [
+    ('/system/fonts/NotoSansCJK-Regular.ttc', 'Noto Sans CJK SC'),
+    ('/system/fonts/NotoSansSC-Regular.otf', 'Noto Sans SC'),
+    ('/system/fonts/DroidSansFallbackFull.ttf', 'Droid Sans Fallback'),
+    ('/system/fonts/DroidSansFallback.ttf', 'Droid Sans Fallback'),
+  ];
+
+  /// libass on Android has no font provider, so it finds no system font and
+  /// draws no text unless the subtitle file embeds its fonts. Give it a
+  /// system CJK font as the fallback for fonts it cannot find.
+  Future<void> _applySubtitleFont() async {
+    if (_subtitleFontApplied || !Platform.isAndroid) return;
+    var platform = _player.platform;
+    if (platform is! NativePlayer) return;
+    _subtitleFontApplied = true;
+    try {
+      String? path, family;
+      for (var (p, f) in _androidSubtitleFonts) {
+        if (await File(p).exists()) {
+          (path, family) = (p, f);
+          break;
+        }
+      }
+      if (path == null) {
+        Log.warning('Video', 'No system font found for subtitles');
+        return;
+      }
+      // libass loads every font in the directory, so it holds only this one.
+      var dir = Directory(FilePath.join(App.cachePath, 'subtitle_fonts'));
+      await dir.create(recursive: true);
+      try {
+        await Link(FilePath.join(dir.path, File(path).name)).create(path);
+      } on PathExistsException {
+        // Left by an earlier run. Checking first misses it on Android.
+      }
+      await platform.setProperty('sub-fonts-dir', dir.path);
+      await platform.setProperty('sub-font', family!);
+    } catch (e) {
+      Log.warning('Video', 'Failed to set the subtitle font: $e');
+    }
+  }
+
   Future<void> _applyProxy(String url) async {
     var host = Uri.tryParse(url)?.host;
     var proxy = host == '127.0.0.1' || host == '::1'
@@ -1222,6 +1303,11 @@ class PlayerService implements VideoPlayback {
       orElse: () => SubtitleTrack.no(),
     );
     await _player.setSubtitleTrack(track);
+    appdata.settings['videoSubtitle'] = switch (track.id) {
+      'auto' || 'no' => track.id,
+      _ => track.title ?? track.language ?? 'auto',
+    };
+    appdata.saveData();
   }
 
   /// The video view, with media_kit's own controls if [controls]. The video
@@ -1232,6 +1318,10 @@ class PlayerService implements VideoPlayback {
       controller: _controller,
       fit: fit,
       controls: controls ? AdaptiveVideoControls : null,
+      // mpv already draws the subtitles, see `libass` in [create].
+      subtitleViewConfiguration: const SubtitleViewConfiguration(
+        visible: false,
+      ),
     );
   }
 
