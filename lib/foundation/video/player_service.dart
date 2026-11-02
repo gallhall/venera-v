@@ -1076,7 +1076,17 @@ class PlayerService implements VideoPlayback {
     }
     _updateAnime4kSource();
     _checkAnime4k();
+    var opened = ++_opened;
     if (request.audioUrl == null && request.subtitles.isEmpty) {
+      // Without "auto", restore the choice among embedded subtitles once
+      // they are known, without holding up the caller.
+      if (appdata.settings['videoSubtitle'] != 'auto') {
+        unawaited(() async {
+          if (await _waitForLoaded() && opened == _opened && !_disposed) {
+            await _restoreSubtitleTrack(0);
+          }
+        }());
+      }
       return;
     }
     // External tracks can only be added once the file is loaded.
@@ -1100,14 +1110,16 @@ class PlayerService implements VideoPlayback {
         ),
       );
     }
-    if (request.subtitles.isNotEmpty) {
-      await _restoreSubtitleTrack(subtitleCount + request.subtitles.length);
-    }
+    await _restoreSubtitleTrack(subtitleCount + request.subtitles.length);
   }
 
-  /// Selects the subtitle chosen last time, see [selectSubtitleTrack]. Adding
-  /// a subtitle file selects it and media_kit records it by its URI, which
-  /// matches no track in the list, so a track is always selected again.
+  /// Counts [open] calls, so that a late step of one never acts on the next.
+  int _opened = 0;
+
+  /// Selects the subtitle chosen last time, see [selectSubtitleTrack], once
+  /// [count] subtitle tracks are known. Adding a subtitle file selects it
+  /// and media_kit records it by its URI, which matches no track in the
+  /// list, so after adding files a track is always selected again.
   Future<void> _restoreSubtitleTrack(int count) async {
     try {
       bool hasAdded(Tracks t) => t.subtitle.length - 2 >= count;
