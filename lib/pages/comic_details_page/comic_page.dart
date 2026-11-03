@@ -950,6 +950,28 @@ Future<bool> downloadVideoEpisodes(
   } else {
     var local = LocalManager().find(comic.id, comic.comicType);
     var ids = chapters.ids.toList();
+    var titles = chapters.titles.toList();
+    // Groups of a video source are its lines, each with every episode:
+    // the episodes of one line are downloaded, not those of all of them.
+    if (chapters.groupCount > 1) {
+      var groups = chapters.groups.toList();
+      var line = await showSidePicker<int>(
+        App.rootContext,
+        title: "Download line".tl,
+        options: {
+          for (int i = 0; i < groups.length; i++)
+            i: '${groups[i]} (${chapters.getGroupByIndex(i).length})',
+        },
+      );
+      if (line == null) return false;
+      var start = 0;
+      for (int i = 0; i < line; i++) {
+        start += chapters.getGroupByIndex(i).length;
+      }
+      var end = start + chapters.getGroupByIndex(line).length;
+      ids = ids.sublist(start, end);
+      titles = titles.sublist(start, end);
+    }
     var downloaded = [
       for (int i = 0; i < ids.length; i++)
         if (local?.downloadedChapters.contains(ids[i]) ?? false) i,
@@ -958,7 +980,7 @@ Future<bool> downloadVideoEpisodes(
     await showSideBar(
       App.rootContext,
       _SelectDownloadChapter(
-        chapters.titles.toList(),
+        titles,
         (v) => selected = v,
         downloaded,
       ),

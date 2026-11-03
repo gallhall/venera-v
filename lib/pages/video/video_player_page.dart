@@ -829,13 +829,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Future<String>? torrentOpening;
   String? torrentUrl;
 
+  /// The episode of [torrentInput], for a batch torrent.
+  int? torrentEpisode;
+
   Future<void> releaseTorrent() async {
     var input = torrentInput;
     torrentInput = null;
     torrentOpening = null;
     torrentUrl = null;
     if (input != null) {
-      await TorrentStreamer.instance.release(input);
+      await TorrentStreamer.instance.release(input, episode: torrentEpisode);
     }
   }
 
@@ -866,6 +869,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             return;
           }
           torrentInput = input;
+          torrentEpisode = info.torrentEpisode;
           torrentOpening = TorrentStreamer.instance.open(
             input, episode: info.torrentEpisode,
           );
@@ -881,6 +885,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         });
         request = VideoStreamRequest(url);
       } catch (e) {
+        // Not opened, so not released: a download may share the stream.
+        if (torrentInput == input) {
+          torrentInput = null;
+          torrentOpening = null;
+          torrentUrl = null;
+        }
         if (mounted && token == openToken) {
           // A torrent file that failed to download may still work as a
           // magnet. Otherwise retrying the same release would wait as long
@@ -919,7 +929,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         startupTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           var input = torrentInput;
           var status = input == null
-              ? null : TorrentStreamer.instance.status(input)?.value;
+              ? null
+              : TorrentStreamer.instance
+                  .status(input, episode: torrentEpisode)
+                  ?.value;
           idle = (status?.bytesPerSecond ?? 0) > 0 ? 0 : idle + 1;
           if (playbackAdvanced || token != openToken) {
             timer.cancel();
@@ -2036,7 +2049,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildTorrentStatus() {
-    var status = TorrentStreamer.instance.status(torrentInput!);
+    var status = TorrentStreamer.instance.status(
+      torrentInput!,
+      episode: torrentEpisode,
+    );
     if (status == null) {
       return const SizedBox.shrink();
     }

@@ -244,9 +244,14 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         return "file://${file.path}";
       });
       if (!_isCurrent(run)) return;
-      if (res.error) return _setError("Error: ${res.errorMessage}");
-      _cover = res.data;
-      await LocalManager().saveCurrentDownloadingTasks();
+      if (res.error) {
+        // The episodes are downloaded without it: a cover host can be
+        // unreachable (e.g. Bangumi's from some networks).
+        Log.warning("Download", "No cover: ${res.errorMessage}");
+      } else {
+        _cover = res.data;
+        await LocalManager().saveCurrentDownloadingTasks();
+      }
     }
 
     var targets = _targets;
@@ -286,6 +291,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     });
     if (res.error) throw res.errorMessage!;
     var info = res.data;
+    if (info.isTorrent) return _downloadTorrent(dir, info, label, run);
 
     // Use the first source that can be downloaded, trying the ones named
     // after the quality setting (e.g. "720P") first. Without a limit the
@@ -378,6 +384,61 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     throw lastError ?? "No source to download";
   }
 
+  /// Downloads a BT episode through the streamer the player uses: the file
+  /// it serves on the loopback server is copied, its pieces fetched as
+  /// they are read. The sources are the same release (torrent, then
+  /// magnet), tried in turn.
+  Future<void> _downloadTorrent(
+    Directory dir,
+    VideoPlayInfo info,
+    String label,
+    int run,
+  ) async {
+    Object? lastError;
+    for (var source in info.sources) {
+      if (!_isCurrent(run)) return;
+      var input = source.url;
+      // Released only if opened: the player may share the stream.
+      var opened = false;
+      try {
+        await _claimDirectory(
+          dir,
+          "${info.sources.indexOf(source)}:${source.name}",
+        );
+        _message = "${label}Connecting to peers...";
+        notifyListeners();
+        var url = await TorrentStreamer.instance.open(
+          input,
+          episode: info.torrentEpisode,
+          download: true,
+        );
+        opened = true;
+        if (!_isCurrent(run)) return;
+        var name = "video${_fileExtension(url, '.mkv')}";
+        await _downloadFile(url, dir.joinFile(name), const {}, (p) {
+          _episodeProgress = p;
+          _message = "$label${(p * 100).toStringAsFixed(1)}%";
+        }, run, stallTimeout: const Duration(minutes: 5));
+        if (!_isCurrent(run)) return;
+        await _writeManifest(dir, info, source, const {}, name, null, run);
+        await dir.joinFile(_sourceMarkerName).deleteIgnoreError();
+        return;
+      } catch (e) {
+        if (!_isCurrent(run)) return;
+        Log.warning("Download", "Torrent ${source.name} failed: $e");
+        lastError = e;
+      } finally {
+        if (opened) {
+          await TorrentStreamer.instance.release(
+            input,
+            episode: info.torrentEpisode,
+          );
+        }
+      }
+    }
+    throw lastError ?? "No source to download";
+  }
+
   /// Names the source the files of an unfinished episode come from.
   static const _sourceMarkerName = 'downloading_source';
 
@@ -420,6 +481,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     var res = await source.loadVideoPlayInfo!(videoId, ep);
     if (res.error) throw res.errorMessage!;
     var info = res.data;
+    // A torrent has its one file.
+    if (info.isTorrent) return [];
     var levels = <VideoQualityLevel>[
       for (var s in info.sources)
         if (VideoQuality.heightFromName(s.name) case var h?)
@@ -727,6 +790,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     void Function(double progress)? onProgress,
     int run, {
     String? range,
+    Duration stallTimeout = const Duration(seconds: 30),
   }) async {
     // Paused: do not start a new request.
     if (!_isCurrent(run)) return;
@@ -766,9 +830,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     var raf = await part.open(mode: start > 0 ? FileMode.append : FileMode.write);
     var received = start;
     try {
-      await for (var chunk in response.data!.stream.timeout(
-        const Duration(seconds: 30),
-      )) {
+      // A torrent waits for peers far longer than a server.
+      await for (var chunk in response.data!.stream.timeout(stallTimeout)) {
         if (!_isCurrent(run)) return;
         await raf.writeFrom(chunk);
         received += chunk.length;
@@ -865,7 +928,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           .toList(),
       directory: Directory(path!).name,
       chapters: comic!.chapters,
-      cover: File(_cover!.split("file://").last).name,
+      // Not downloaded: a missing file, shown as a broken cover.
+      cover: _cover == null
+          ? "cover.jpg"
+          : File(_cover!.split("file://").last).name,
       comicType: comicType,
       downloadedChapters: _completed.where((e) => e.isNotEmpty).toList(),
       createdAt: DateTime.now(),

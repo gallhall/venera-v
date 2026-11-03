@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:path_provider/path_provider.dart';
@@ -721,7 +722,14 @@ class LocalManager with ChangeNotifier {
         builder.write(char);
       }
     }
-    return builder.toString();
+    var result = builder.toString();
+    // Too long for a file name (255 bytes), e.g. the JSON id of a BT
+    // episode with its magnet link: named after its hash instead. Shorter
+    // names are kept, as chapters already downloaded are found by them.
+    if (utf8.encode(result).length > 255) {
+      return 'ep_${md5.convert(utf8.encode(name))}';
+    }
+    return result;
   }
 }
 

@@ -68,8 +68,22 @@ abstract class ImageDownloader {
       dio.httpClientAdapter = RHttpAdapter();
     }
     try {
-      var req = await dio.request<ResponseBody>(requestUrl,
-          data: configs['data']);
+      Response<ResponseBody> req;
+      try {
+        req = await dio.request<ResponseBody>(requestUrl,
+            data: configs['data']);
+      } catch (e) {
+        // Followed outside the ECH client (ECH off or backing off), Bangumi's
+        // redirect to its dead mirror fails: fetched through a proxy instead.
+        if (imageBase.trim().isNotEmpty ||
+            Uri.tryParse(requestUrl)?.host.toLowerCase() != 'lain.bgm.tv' ||
+            !'$e'.contains('cycimg.me')) {
+          rethrow;
+        }
+        req = await dio.request<ResponseBody>(
+            bangumiImageProxyUrl(requestUrl),
+            data: configs['data']);
+      }
       var stream = req.data?.stream ?? (throw "Error: Empty response body.");
       int? expectedBytes = req.data!.contentLength;
       if (expectedBytes == -1) {

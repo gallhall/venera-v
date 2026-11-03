@@ -80,6 +80,19 @@ String rewriteBangumiImageUrl(String url, String base) {
       .toString();
 }
 
+/// Whether [host] is the mirror Bangumi sends some visitors' images to
+/// (seen from China), whose domain has expired: nothing loads from it.
+bool isDeadBangumiImageMirror(String host) {
+  host = host.toLowerCase();
+  return host == 'cycimg.me' || host.endsWith('.cycimg.me');
+}
+
+/// [url], a Bangumi image, through the public wsrv.nl image proxy, which
+/// fetches it from Bangumi itself: used when Bangumi sends it to its dead
+/// mirror.
+String bangumiImageProxyUrl(String url) =>
+    Uri.https('wsrv.nl', '/', {'url': url}).toString();
+
 Uint8List? decodeEchConfig(String value) {
   try {
     final normalized = value.trim().replaceAll(RegExp(r'\s+'), '');

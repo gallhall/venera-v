@@ -990,6 +990,16 @@ void main() {
       original,
     );
   });
+  test('dead image mirror is detected and images go through the proxy', () {
+    expect(isDeadBangumiImageMirror('img2.cycimg.me'), isTrue);
+    expect(isDeadBangumiImageMirror('CYCIMG.ME'), isTrue);
+    expect(isDeadBangumiImageMirror('lain.bgm.tv'), isFalse);
+    expect(isDeadBangumiImageMirror('notcycimg.me'), isFalse);
+    expect(
+      bangumiImageProxyUrl('https://lain.bgm.tv/r/800/pic/cover/a.jpg?x=1'),
+      'https://wsrv.nl/?url=https%3A%2F%2Flain.bgm.tv%2Fr%2F800%2Fpic%2Fcover%2Fa.jpg%3Fx%3D1',
+    );
+  });
   test(
     'fallback excludes HTTP responses and cancellation; backoff expires',
     () {

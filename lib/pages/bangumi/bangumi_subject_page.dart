@@ -626,6 +626,19 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     });
   }
 
+  /// Loads the details of [comic], picked by the user, in the background,
+  /// so that downloading or playing it need not wait for them. Forgotten if
+  /// they fail, to be loaded again when needed.
+  void _preloadDetails(Comic comic) {
+    var key = (comic.sourceKey, comic.id);
+    if (_details.containsKey(key)) return;
+    var future = loadBangumiDetails(comic);
+    _details[key] = future;
+    future.then<void>((_) {}, onError: (Object error, StackTrace stack) {
+      if (identical(_details[key], future)) _details.remove(key);
+    });
+  }
+
   void updateCandidates() {
     candidates.clear();
     matchedCandidates.clear();
@@ -670,6 +683,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     }
     if (remember) {
       manager.chooseSource(widget.subjectId, comic.sourceKey, comic.id);
+      _preloadDetails(comic);
     }
     setState(() => current = comic);
     _refreshCurrent();
