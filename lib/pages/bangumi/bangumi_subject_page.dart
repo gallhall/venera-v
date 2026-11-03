@@ -321,18 +321,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   );
 
   Future<void> searchAlias(SubjectSourceRow row) async {
-    var keyword = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text('Search with alias'.tl),
-        children: [
-          for (var name in allNames)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, name),
-              child: Text(name),
-            ),
-        ],
-      ),
+    var keyword = await showOptionsSheet<String>(
+      context,
+      title: 'Search with alias'.tl,
+      options: {for (final name in allNames) name: name},
     );
     if (mounted && keyword != null) await matcher.searchRow(row, keyword: keyword);
   }
@@ -470,6 +462,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           onClick: () => copy(subject!.url),
         ),
       ],
+      title: subject!.displayName,
     );
   }
 
@@ -935,7 +928,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                     text: 'Copy'.tl,
                     onClick: () => copy(text),
                   ),
-                ]),
+                ], title: subject.displayName),
           child: Text(
             text,
             style: ts.s14,

@@ -151,6 +151,7 @@ class ComicTile extends StatelessWidget {
           ),
         ...?menuOptions,
       ],
+      title: comic.title,
     );
   }
 

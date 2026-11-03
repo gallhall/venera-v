@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_brightness/screen_brightness.dart';
+import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
@@ -666,27 +667,20 @@ class _VideoControlsState extends State<VideoControls> {
           ),
         ),
       if (more.isNotEmpty)
-        PopupMenuButton<int>(
-          icon: Icon(
-            Icons.more_vert_rounded,
-            size: iconSize,
-            color: Colors.white,
-          ),
+        widgetButton(
+          Icon(Icons.more_vert_rounded, size: iconSize),
+          () async {
+            final choice = await showSidePicker<int>(
+              context,
+              title: "More".tl,
+              options: {for (int i = 0; i < more.length; i++) i: more[i].label},
+              icons: {for (int i = 0; i < more.length; i++) i: more[i].buildIcon(20)},
+            );
+            if (choice != null && context.mounted) {
+              more[choice].onPressed(context);
+            }
+          },
           tooltip: "More".tl,
-          onSelected: (i) => more[i].onPressed(context),
-          itemBuilder: (context) => [
-            for (int i = 0; i < more.length; i++)
-              PopupMenuItem(
-                value: i,
-                child: Row(
-                  children: [
-                    more[i].buildIcon(20),
-                    const SizedBox(width: 12),
-                    Text(more[i].label),
-                  ],
-                ),
-              ),
-          ],
         ),
     ];
   }

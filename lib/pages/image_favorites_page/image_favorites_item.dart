@@ -100,7 +100,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
           goPhotoView(widget.imageFavoritesComic.images.first);
         },
       ),
-    ]);
+    ], title: widget.imageFavoritesComic.title);
   }
 
   @override

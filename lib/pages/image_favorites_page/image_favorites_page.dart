@@ -470,7 +470,7 @@ class _ImageFavoritesDialogState extends State<_ImageFavoritesDialog> {
         tabs: optionTypes.map((e) => Tab(text: e.tl, key: Key(e))).toList(),
       ),
     );
-    return AppSurfaceDialog(
+    return ContentDialog(
       content: DefaultTabController(
         length: 2,
         child: Column(

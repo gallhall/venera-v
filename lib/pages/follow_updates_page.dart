@@ -367,7 +367,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return AppSurfaceDialog(
+            return ContentDialog(
               title: "Choose Folder".tl,
               content: Column(
                 children: [

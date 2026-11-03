@@ -158,114 +158,45 @@ abstract mixin class _ComicPageActions {
     }
 
     if (comicSource.archiveDownloader != null) {
-      bool useNormalDownload = false;
-      List<ArchiveInfo>? archives;
-      int selected = -1;
-      bool isLoading = false;
-      bool isGettingLink = false;
-      await showDialog(
-        context: App.rootContext,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setState) {
-              return ContentDialog(
-                title: "Download".tl,
-                content: RadioGroup<int>(
-                  groupValue: selected,
-                  onChanged: (v) {
-                    setState(() {
-                      selected = v ?? selected;
-                    });
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      RadioListTile<int>(
-                        value: -1,
-                        title: Text("Normal".tl),
-                      ),
-                      ExpansionTile(
-                        title: Text("Archive".tl),
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.zero,
-                        ),
-                        collapsedShape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.zero,
-                        ),
-                        onExpansionChanged: (b) {
-                          if (!isLoading && b && archives == null) {
-                            isLoading = true;
-                            comicSource.archiveDownloader!
-                                .getArchives(comic.id)
-                                .then((value) {
-                              if (value.success) {
-                                archives = value.data;
-                              } else {
-                                App.rootContext
-                                    .showMessage(message: value.errorMessage!);
-                              }
-                              setState(() {
-                                isLoading = false;
-                              });
-                            });
-                          }
-                        },
-                        children: [
-                          if (archives == null)
-                            const ListFooter.loading().toCenter()
-                          else
-                            for (int i = 0; i < archives!.length; i++)
-                              RadioListTile<int>(
-                                value: i,
-                                title: Text(archives![i].title),
-                                subtitle: Text(archives![i].description),
-                              )
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-                actions: [
-                  Button.filled(
-                    isLoading: isGettingLink,
-                    onPressed: () async {
-                      if (selected == -1) {
-                        useNormalDownload = true;
-                        context.pop();
-                        return;
-                      }
-                      setState(() {
-                        isGettingLink = true;
-                      });
-                      var res =
-                          await comicSource.archiveDownloader!.getDownloadUrl(
-                        comic.id,
-                        archives![selected].id,
-                      );
-                      if (res.error) {
-                        App.rootContext.showMessage(message: res.errorMessage!);
-                        setState(() {
-                          isGettingLink = false;
-                        });
-                      } else if (context.mounted) {
-                        if (res.data.isNotEmpty) {
-                          LocalManager()
-                            .addTask(ArchiveDownloadTask(res.data, comic));
-                          App.rootContext
-                            .showMessage(message: "Download started".tl);
-                        }
-                        context.pop();
-                      }
-                    },
-                    child: Text("Confirm".tl),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+      final method = await showOptionsSheet<int>(
+        App.rootContext,
+        title: "Download".tl,
+        options: {-1: "Normal".tl, 0: "Archive".tl},
+        selected: -1,
       );
-      if (!useNormalDownload) {
+      if (method == null) {
+        return;
+      }
+      if (method == 0) {
+        final loading = showLoadingDialog(App.rootContext, allowCancel: false);
+        final result = await comicSource.archiveDownloader!.getArchives(comic.id);
+        loading.close();
+        if (result.error) {
+          App.rootContext.showMessage(message: result.errorMessage!);
+          return;
+        }
+        final archives = result.data;
+        final selected = await showOptionsSheet<int>(
+          App.rootContext,
+          title: "Archive".tl,
+          options: {
+            for (int i = 0; i < archives.length; i++)
+              i: "${archives[i].title}\n${archives[i].description}",
+          },
+        );
+        if (selected == null) {
+          return;
+        }
+        final gettingLink = showLoadingDialog(App.rootContext, allowCancel: false);
+        final res = await comicSource.archiveDownloader!.getDownloadUrl(
+          comic.id, archives[selected].id);
+        gettingLink.close();
+        if (res.error) {
+          App.rootContext.showMessage(message: res.errorMessage!);
+        } else if (res.data.isNotEmpty) {
+          LocalManager().addTask(ArchiveDownloadTask(res.data, comic));
+          App.rootContext.showMessage(message: "Download started".tl);
+        }
         return;
       }
     }
@@ -362,7 +293,7 @@ abstract mixin class _ComicPageActions {
                 launchUrlString(comic.url!);
               },
             ),
-        ]);
+        ], title: comic.title);
   }
 
   void showComments() {
@@ -400,10 +331,9 @@ abstract mixin class _ComicPageActions {
     showDialog(
       context: App.rootContext,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => SimpleDialog(
-          title: const Text("Rating"),
-          alignment: Alignment.center,
-          children: [
+        builder: (context, setState) => ContentDialog(
+          title: "Rating".tl,
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
               height: 100,
               child: Center(
@@ -450,7 +380,7 @@ abstract mixin class _ComicPageActions {
                 ),
               ),
             )
-          ],
+          ]),
         ),
       ),
     );

@@ -124,7 +124,7 @@ Future<void> checkUpdateUi([
       showDialog(
         context: App.rootContext,
         builder: (context) {
-          return AppSurfaceDialog(
+          return ContentDialog(
             title: "New version available".tl,
             content: Text(
               "A new version is available. Do you want to update now?".tl,

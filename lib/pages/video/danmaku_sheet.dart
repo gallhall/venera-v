@@ -67,8 +67,8 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
     var input = cleanDanmakuTitle(target?.title ?? '');
     var query = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Match danmaku'.tl),
+      builder: (context) => ContentDialog(
+        title: 'Match danmaku'.tl,
         content: TextFormField(
           initialValue: input,
           onChanged: (value) => input = value,

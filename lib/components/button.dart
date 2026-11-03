@@ -365,10 +365,14 @@ class MenuButton extends StatefulWidget {
     required this.entries,
     this.icon = Icons.more_horiz,
     this.tooltip,
+    this.title,
+    this.color,
   });
 
   final IconData icon;
   final String? tooltip;
+  final String? title;
+  final Color? color;
 
   final List<MenuEntry> entries;
 
@@ -382,7 +386,7 @@ class _MenuButtonState extends State<MenuButton> {
     return Tooltip(
       message: widget.tooltip ?? 'more'.tl,
       child: Button.icon(
-        icon: Icon(widget.icon),
+        icon: Icon(widget.icon, color: widget.color),
         onPressed: () {
           var renderBox = context.findRenderObject() as RenderBox;
           var offset = renderBox.localToGlobal(Offset.zero);
@@ -390,6 +394,7 @@ class _MenuButtonState extends State<MenuButton> {
             context,
             offset,
             widget.entries,
+            title: widget.title,
           );
         },
       ),

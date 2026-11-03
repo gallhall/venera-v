@@ -300,51 +300,33 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
             ),
             actions: [
               if (networkSource != null && !isAllFolder)
-                Tooltip(
-                  message: "Sync".tl,
-                  child: Flyout(
-                    flyoutBuilder: (context) {
-                      final GlobalKey<_SelectUpdatePageNumState>
-                          selectUpdatePageNumKey =
-                          GlobalKey<_SelectUpdatePageNumState>();
-                      var updatePageWidget = _SelectUpdatePageNum(
+                IconButton(
+                  tooltip: "Sync".tl,
+                  icon: const Icon(Icons.sync),
+                  onPressed: () {
+                    final key = GlobalKey<_SelectUpdatePageNumState>();
+                    showConfirmDialog(
+                      context: context,
+                      title: "Sync".tl,
+                      content: '',
+                      contentWidget: _SelectUpdatePageNum(
                         networkSource: networkSource!,
                         networkFolder: networkFolder,
-                        key: selectUpdatePageNumKey,
-                      );
-                      return FlyoutContent(
-                        title: "Sync".tl,
-                        content: updatePageWidget,
-                        actions: [
-                          Button.filled(
-                            child: Text("Update".tl),
-                            onPressed: () {
-                              context.pop();
-                              importNetworkFolder(
-                                networkSource!,
-                                selectUpdatePageNumKey
-                                    .currentState!.updatePageNum,
-                                widget.folder,
-                                networkFolder!,
-                              ).then(
-                                (value) {
-                                  updateComics();
-                                },
-                              );
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                    child: Builder(builder: (context) {
-                      return IconButton(
-                        icon: const Icon(Icons.sync),
-                        onPressed: () {
-                          Flyout.of(context).show();
-                        },
-                      );
-                    }),
-                  ),
+                        key: key,
+                      ),
+                      confirmText: "Update",
+                      onConfirm: () {
+                        final pages = key.currentState!.updatePageNum;
+                        importNetworkFolder(
+                          networkSource!, pages, widget.folder, networkFolder!,
+                        ).then((_) {
+                          if (mounted) {
+                            updateComics();
+                          }
+                        });
+                      },
+                    );
+                  },
                 ),
               Tooltip(
                 message: "Filter".tl,
@@ -386,6 +368,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               ),
               if (!isAllFolder)
                 _FavoriteMenuButton(
+                  title: title,
                   entries: [
                     MenuEntry(
                       icon: Icons.edit_outlined,
