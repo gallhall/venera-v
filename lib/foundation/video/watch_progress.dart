@@ -82,8 +82,21 @@ class SourceWatchProgress extends WatchProgress {
   final BangumiWatchSync _sync;
   final void Function(BangumiSyncResult)? onSync;
 
+  History? _history;
+
+  /// What [history] was loaded for; another subject is another history.
+  Object? get _historyKey => null;
+  Object? _loadedKey;
+
   @override
-  late final History history = _loadHistory();
+  History get history {
+    var key = _historyKey;
+    if (_history == null || key != _loadedKey) {
+      _loadedKey = key;
+      _history = _loadHistory();
+    }
+    return _history!;
+  }
 
   History _loadHistory() =>
       _initialHistory ??
@@ -113,6 +126,7 @@ class SourceWatchProgress extends WatchProgress {
   void begin() {
     _markedWatched = false;
     _playedToEnd = false;
+    _syncFailed = false;
   }
 
   @override
@@ -140,7 +154,9 @@ class SourceWatchProgress extends WatchProgress {
   }
 
   void _saveEpisode(bool sync) {
-    history.readEpisode.add(episodes().historyKey(current()));
+    if (_markedWatched || _playedToEnd) {
+      history.readEpisode.add(episodes().historyKey(current()));
+    }
     if (sync) {
       // Defer notifications from dispose, while listeners cannot rebuild.
       store.add(history, notifyLater: true);
@@ -149,7 +165,18 @@ class SourceWatchProgress extends WatchProgress {
     }
   }
 
-  void _watched(Duration position, Duration duration, bool canSave) {}
+  /// Saved at once, so the episode shows as watched.
+  void _watched(Duration position, Duration duration, bool canSave) {
+    save(
+      position: position,
+      currentPosition: canSave ? position : null,
+      duration: duration,
+      started: true,
+    );
+  }
+
+  /// The last sync failed: tried again when the episode ends.
+  bool _syncFailed = false;
 
   /// Marks once per episode after 85%, including a seek past the threshold.
   @override
@@ -170,7 +197,10 @@ class SourceWatchProgress extends WatchProgress {
       // A video without episodes is the first one.
       title: episode.id == null ? '' : episode.title,
       position: episodes().toHistory(current()).ep,
-    ).then((result) => onSync?.call(result));
+    ).then((result) {
+      _syncFailed = result is BangumiSyncFailed;
+      onSync?.call(result);
+    });
     return true;
   }
 
@@ -181,17 +211,23 @@ class SourceWatchProgress extends WatchProgress {
     bool canSave = true,
   }) {
     _playedToEnd = true;
+    if (_syncFailed) {
+      _syncFailed = false;
+      _markedWatched = false;
+    }
+    // Marked without its own save: the one below records the end.
+    update(duration, duration, started: started, canSave: false);
     save(
       currentPosition: canSave ? duration : null,
       duration: duration,
       started: started,
     );
-    update(duration, duration, started: started, canSave: canSave);
   }
 }
 
 /// Uses the live Bangumi context, falling back to source rules while absent.
-/// History remains fixed at first use, including when a source is linked later.
+/// Its history is the subject's while there is one: linking a subject later
+/// moves saving to it.
 class BangumiWatchProgress extends SourceWatchProgress {
   BangumiWatchProgress({
     required super.sourceKey,
@@ -214,6 +250,9 @@ class BangumiWatchProgress extends SourceWatchProgress {
   final Duration? Function() initialPosition;
   final BangumiLocalProgress Function(int) _localProgress;
   final void Function(int) _clearLegacyProgress;
+
+  @override
+  Object? get _historyKey => bangumi()?.subject.id;
 
   @override
   History _loadHistory() {
@@ -242,17 +281,5 @@ class BangumiWatchProgress extends SourceWatchProgress {
     }
     _clearLegacyProgress(b.subject.id);
     store.add(history, notifyLater: sync);
-  }
-
-  @override
-  void _watched(Duration position, Duration duration, bool canSave) {
-    if (bangumi() != null) {
-      save(
-        position: position,
-        currentPosition: canSave ? position : null,
-        duration: duration,
-        started: true,
-      );
-    }
   }
 }

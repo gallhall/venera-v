@@ -54,10 +54,12 @@ extension VideoEpisodeList on List<VideoEpisode> {
   }
 
   /// The index for [ep] and [group], null if out of range. Without a
-  /// group, [ep] counts over all episodes.
+  /// group, or episodes without groups, [ep] counts over all episodes.
   int? fromHistory(int ep, int? group) {
     int index;
-    if (group == null) {
+    // Without groups, a group is ignored: the details page continues with
+    // group 1 when the history has none.
+    if (group == null || _groups.isEmpty) {
       index = ep - 1;
     } else {
       var groups = _groups;

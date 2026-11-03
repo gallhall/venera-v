@@ -192,12 +192,12 @@ void main() {
         expect(h.update(85), isTrue);
       });
 
-      test('ended saves duration before syncing, playing clears completion', () {
+      test('ended syncs, then saves once at the duration; playing clears completion', () {
         var h = _Harness(bangumi: bangumi);
         h.progress.ended(const Duration(seconds: 100), started: true);
-        expect(h.store.writes.map((w) => w.page), bangumi ? [100, 100] : [100]);
+        expect(h.store.writes.map((w) => w.page), [100]);
         expect(h.store.events, bangumi
-            ? ['clear', 'add', 'clear', 'add', 'sync'] : ['async', 'sync']);
+            ? ['sync', 'clear', 'add'] : ['sync', 'async']);
         expect(h.progress.isWatched(bangumi ? '7' : '1-1'), isTrue);
         h.save(currentPosition: 97);
         expect(h.progress.history.page, 100);
@@ -240,15 +240,21 @@ void main() {
     expect(h.progress.resumeAt(0), const Duration(seconds: 20));
   });
 
-  test('source always records the episode and saves async unless sync', () {
+  test('source records an episode only once watched, and saves async unless sync', () {
     var h = _Harness();
     h.save();
-    expect(h.progress.history.readEpisode, {'1-1'});
+    expect(h.progress.history.readEpisode, isEmpty);
     expect(h.store.writes.single.isAsync, isTrue);
+    h.update(85);
+    expect(h.progress.history.readEpisode, {'1-1'});
+    expect(h.progress.history.page, 85);
     h.current = 2;
     h.progress.begin();
     h.save(sync: true);
+    expect(h.progress.history.readEpisode, {'1-1'});
+    h.progress.ended(const Duration(seconds: 100), started: true);
     expect(h.progress.history.readEpisode, {'1-1', '2-1'});
+    h.save(sync: true);
     expect(h.progress.history.group, 2);
     expect(h.progress.history.ep, 1);
     expect(h.store.writes.last.isAsync, isFalse);
@@ -256,10 +262,58 @@ void main() {
     h.episodes = const [VideoEpisode(null, 'Video', null)];
     h.current = 0;
     h.progress.begin();
-    h.save();
-    expect(h.progress.isWatched('1'), isTrue);
     h.update(85);
+    expect(h.progress.isWatched('1'), isTrue);
     expect(h.synced.last, ('local', 'video', '', 1));
+  });
+
+  test('a failed sync is tried again when the episode ends', () async {
+    var h = _Harness(bangumi: true);
+    var calls = 0;
+    var progress = BangumiWatchProgress(
+      sourceKey: () => h.sourceKey,
+      details: () => h.details,
+      episodes: () => h.episodes,
+      current: () => h.current,
+      store: h.store,
+      sync: ({required sourceKey, required id, required title,
+          required position}) async {
+        calls++;
+        return calls == 1 ? BangumiSyncFailed(StateError('offline'))
+            : const BangumiSyncMarked(7, false);
+      },
+      bangumi: () => h.context,
+      initialPosition: () => null,
+      localProgress: (_) => const BangumiLocalProgress(),
+      clearLegacyProgress: (_) {},
+    );
+    progress.update(const Duration(seconds: 85), const Duration(seconds: 100),
+        started: true);
+    await Future<void>.delayed(Duration.zero);
+    expect(progress.update(const Duration(seconds: 90),
+        const Duration(seconds: 100), started: true), isFalse);
+    progress.ended(const Duration(seconds: 100), started: true);
+    expect(calls, 2);
+    await Future<void>.delayed(Duration.zero);
+    progress.ended(const Duration(seconds: 100), started: true);
+    expect(calls, 2);
+  });
+
+  test('episodes without groups ignore a group from the details page', () {
+    const flat = [
+      VideoEpisode('a', 'EP1', null),
+      VideoEpisode('b', 'EP2', null),
+      VideoEpisode('c', 'EP3', null),
+    ];
+    expect(flat.fromHistory(3, 1), 2);
+    expect(flat.fromHistory(3, null), 2);
+    expect(flat.fromHistory(4, 1), isNull);
+    const grouped = [
+      VideoEpisode('a', 'EP1', 'A'),
+      VideoEpisode('b', 'EP1', 'B'),
+    ];
+    expect(grouped.fromHistory(1, 2), 1);
+    expect(grouped.fromHistory(1, 3), isNull);
   });
 
   test('Bangumi resumes at the supplied initial position for any index', () {
@@ -313,54 +367,34 @@ void main() {
     expect(h.store.finds, [('video', ComicType.local)]);
   });
 
-  test('live context changes rules but retains history identity and flags', () {
-    var h = _Harness(dynamicContext: true);
-    h.save();
-    var history = h.progress.history;
-    h.context = _context(42, 7);
-    expect(h.progress.resumeAt(0), const Duration(seconds: 23));
-    h.save();
-    expect(h.progress.history, same(history));
-    expect(history.id, 'video');
-    expect(history.readEpisode, {'1-1'});
-    expect(history.ep, 7);
-    expect(h.localReads, isEmpty);
-    expect(h.store.writes.last.isAsync, isFalse);
-    h.update(85);
-    h.context = _context(43, 9);
-    h.save();
-    expect(h.progress.history, same(history));
-    expect(history.readEpisode, {'1-1', '7', '9'});
-    expect(h.update(85), isFalse);
-    expect(h.cleared.last, 43);
-    h.sourceKey = 'other-source';
-    h.details = _Details('other-video');
-    h.episodes = const [VideoEpisode('d', 'EP20', null)];
-    h.current = 0;
-    h.progress.begin();
-    h.update(85);
-    expect(h.synced.last, ('other-source', 'other-video', 'EP20', 1));
-    expect(h.progress.history, same(history));
-    expect(history.id, 'video');
-    h.context = null;
-    h.progress.begin();
-    h.save();
-    expect(h.store.writes.last.isAsync, isTrue);
-  });
-
-  test('Bangumi history uses context at first use and stays fixed', () {
+  test('linking a subject later moves saving to its history', () {
     var existing = History.fromModel(model: _Details(), ep: 2, page: 30);
     var h = _Harness(dynamicContext: true, initialHistory: existing);
+    h.save();
+    expect(h.progress.history, same(existing));
+    expect(h.store.writes.last.isAsync, isTrue);
     h.context = _context(42, 7);
     var history = h.progress.history;
     expect(history.id, bangumiHistoryId(42));
-    expect(history, isNot(same(existing)));
     expect(h.localReads, [42]);
-    h.context = _context(43, 9);
+    expect(existing.ep, 1);
     h.save();
-    expect(h.progress.history, same(history));
-    expect(history.id, bangumiHistoryId(42));
-    expect(history.ep, 9);
-    expect(h.localReads, [42]);
+    expect(history.ep, 7);
+    expect(h.store.writes.last.isAsync, isFalse);
+    expect(h.progress.resumeAt(0), const Duration(seconds: 23));
+  });
+
+  test('another subject is another history; the same one is kept', () {
+    var h = _Harness(bangumi: true);
+    var first = h.progress.history;
+    h.context = h.context!.at(8);
+    expect(h.progress.history, same(first));
+    h.context = _context(43, 9);
+    var second = h.progress.history;
+    expect(second.id, bangumiHistoryId(43));
+    h.save();
+    expect(second.ep, 9);
+    expect(first.ep, 0);
+    expect(h.localReads, [42, 43]);
   });
 }
