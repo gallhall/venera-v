@@ -174,15 +174,26 @@ void main() {
     });
   }
 
-  test('remembered manual source is the only provider tried', () async {
+  test('remembered manual source goes first and the other is the fallback', () async {
     memory.setManual(_target.key, DanmakuSource.dandanplay);
     var session = sessionWith([
       _Provider(DanmakuSource.bilibili, calls),
       _Provider(DanmakuSource.dandanplay, calls)..failure = const DanmakuNoMatch(),
     ]);
     await session.load();
+    expect(calls, ['find:DanmakuSource.dandanplay', 'find:DanmakuSource.bilibili']);
+    expect(session.anime?.source, DanmakuSource.bilibili);
+    expect(memory.manual(_target.key), DanmakuSource.dandanplay);
+  });
+
+  test('a remembered manual source that works is the only one tried', () async {
+    memory.setManual(_target.key, DanmakuSource.dandanplay);
+    var session = sessionWith([
+      _Provider(DanmakuSource.bilibili, calls),
+      _Provider(DanmakuSource.dandanplay, calls),
+    ]);
+    await session.load();
     expect(calls, ['find:DanmakuSource.dandanplay']);
-    expect(session.anime, isNull);
   });
 
   test('manual choice clears both marks and remembers the source', () async {
@@ -228,7 +239,7 @@ void main() {
     expect(found.error, isNull);
   });
 
-  test('failed file-name fallback keeps the degraded note with other results', () async {
+  test('failed file-name fallback shows other results without the degraded note', () async {
     var error = StateError('match failed');
     var session = sessionWith([
       _Provider(DanmakuSource.bilibili, calls)
@@ -238,8 +249,21 @@ void main() {
     ]);
     var found = await session.search('Example');
     expect(found.results, hasLength(1));
-    expect(found.degraded, isTrue);
+    expect(found.degraded, isFalse);
     expect(found.error, same(error));
+  });
+
+  test('future-dated no-match marks are not recent and are pruned', () {
+    var data = <String, dynamic>{};
+    var now = DateTime(2026, 1, 2);
+    var memory = DanmakuMatchMemory(data, now: () => now);
+    var future = now.add(const Duration(hours: 1)).millisecondsSinceEpoch;
+    data['danmakuNoMatch:${_target.key}'] = future;
+    data['danmakuBiliNoMatch:other'] = future;
+    expect(memory.noMatchRecent(DanmakuSource.dandanplay, _target.key), isFalse);
+    memory.rememberNoMatch(DanmakuSource.bilibili, _target.key);
+    expect(data.containsKey('danmakuBiliNoMatch:other'), isFalse);
+    expect(data['danmakuNoMatch:${_target.key}'], isNull);
   });
 
   test('manual search retries a cleaned title when empty', () async {

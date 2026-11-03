@@ -48,9 +48,12 @@ class DanmakuMatchMemory {
 
   bool noMatchRecent(DanmakuSource source, String key) {
     var noMatch = data[_noMatchKey(source, key)];
-    return noMatch is int &&
-        _now().millisecondsSinceEpoch - noMatch <
-            const Duration(hours: 24).inMilliseconds;
+    if (noMatch is! int) {
+      return false;
+    }
+    // A mark from the future (the clock was set back) is not trusted.
+    var age = _now().millisecondsSinceEpoch - noMatch;
+    return age >= 0 && age < const Duration(hours: 24).inMilliseconds;
   }
 
   void rememberNoMatch(DanmakuSource source, String key) {
@@ -59,7 +62,7 @@ class DanmakuMatchMemory {
       (key.startsWith('danmakuNoMatch:') ||
           key.startsWith('danmakuBiliNoMatch:')) &&
       value is int &&
-      now - value > const Duration(days: 7).inMilliseconds);
+      (now - value > const Duration(days: 7).inMilliseconds || value > now));
     data[_noMatchKey(source, key)] = now;
     _save?.call();
   }

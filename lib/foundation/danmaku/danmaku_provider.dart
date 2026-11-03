@@ -291,10 +291,10 @@ class DanDanPlayDanmakuProvider implements DanmakuProvider {
           .toInt().toString().padLeft(2, '0');
       try {
         var results = await api.matchByName('$query $number');
-        return (results: results, degraded: true, error: null);
+        // The note is about these results: none, no note.
+        return (results: results, degraded: results.isNotEmpty, error: null);
       } catch (error) {
-        // The picker keeps the degraded note even if this fallback fails.
-        return (results: const <DanmakuAnime>[], degraded: true, error: error);
+        return (results: const <DanmakuAnime>[], degraded: false, error: error);
       }
     }
   }

@@ -170,7 +170,9 @@ class DanmakuSession extends ChangeNotifier {
   }
 
   /// Without a manual match, the preferred source is tried first and the
-  /// other one when it has no match, no comments or fails.
+  /// other one when it has no match, no comments or fails. A source matched
+  /// by hand earlier goes first, with the other one still as the fallback;
+  /// one picked now is the only one tried.
   Future<void> load({DanmakuAnime? chosen, DanmakuEpisode? selected}) async {
     var t = target;
     if (t == null || _disposed) {
@@ -182,7 +184,10 @@ class DanmakuSession extends ChangeNotifier {
     var manual = chosen?.source ?? _memory.manual(t.key);
     var errors = <Object>[];
     try {
-      var order = manual != null ? [manual] : DanmakuSource.order;
+      var order = chosen != null ? [chosen.source]
+          : manual != null
+              ? [manual, for (var s in DanmakuSource.order) if (s != manual) s]
+              : DanmakuSource.order;
       for (var provider in order.expand((source) =>
           _providers.where((p) => p.source == source))) {
         var source = provider.source;
