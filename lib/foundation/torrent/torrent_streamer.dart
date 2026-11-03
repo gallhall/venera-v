@@ -213,7 +213,15 @@ class DartTorrentStreamer implements TorrentStreamer {
             ? FilePriority.high : FilePriority.skip);
       }
       task.setStreamFile(model.files.indexOf(file));
-      await task.start();
+      // A step of the engine that never returns (it once looped forever
+      // offline) must not keep a released stream from closing: cleanup
+      // stops the task.
+      await Future.any([
+        task.start(),
+        session.cancelled.future.then<Map>((_) {
+          throw StateError('Torrent playback cancelled'.tl);
+        }),
+      ]);
       session.checkCancelled();
       var selector = task.pieceManager?.pieceSelector;
       var filePieces = (file.end - 1) ~/ model.pieceLength -
