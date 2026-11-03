@@ -116,8 +116,6 @@ class PlayerControlAction {
 class PlayerControls {
   final String? title;
 
-  final String? resolutionLabel;
-
   /// Back button at the top left. On desktop the top bar is only shown in
   /// fullscreen, where its back button leaves fullscreen.
   final VoidCallback? onBack;
@@ -141,7 +139,6 @@ class PlayerControls {
 
   const PlayerControls({
     this.title,
-    this.resolutionLabel,
     this.onBack,
     this.onPrevious,
     this.onNext,

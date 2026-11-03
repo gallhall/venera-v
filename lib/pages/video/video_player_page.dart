@@ -1464,16 +1464,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ? videoResolutionLabel(videoSize?.width, videoSize?.height)
       : null;
 
-  String streamLabel(int index) {
-    final name = playInfo!.sources[index].name;
-    final resolution = index == sourceIndex ? resolutionLabel : null;
-    // Quality-named sources ("720P") already say it.
-    return resolution == null ||
-            name.toUpperCase().contains(resolution.toUpperCase())
-        ? name
-        : '$name $resolution';
-  }
-
   String get playingSource => source?.name ?? sourceKey;
 
   String get playerTitle => bangumi != null
@@ -1669,7 +1659,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var info = playInfo;
     return PlayerControls(
       title: playerTitle,
-      resolutionLabel: resolutionLabel,
       onBack: isFullscreen
           ? () => setFullscreen(false)
           : (showPlayerBack ? () => context.pop() : null),
@@ -1719,7 +1708,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           PlayerControlAction(Icons.hd_rounded, "Source".tl, (context) async {
             var i = await pick(context, "Source".tl, {
               for (int i = 0; i < info.sources.length; i++)
-                i: streamLabel(i),
+                i: info.sources[i].name,
             }, sourceIndex);
             if (i != null) switchSource(i);
           }),
@@ -2179,7 +2168,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   shape: const StadiumBorder(),
                   showCheckmark: false,
                   selectedColor: context.colorScheme.secondaryContainer,
-                  label: Text(streamLabel(i)),
+                  label: Text(info.sources[i].name),
                   selected: sourceIndex == i,
                   onSelected: (_) => switchSource(i),
                 ),
@@ -2198,13 +2187,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Playback source'.tl,
-                      style: ts.s12.copyWith(
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
                     Text(playingSource, style: ts.s14),
+                    if (resolutionLabel != null)
+                      Text(
+                        resolutionLabel!,
+                        style: ts.s12.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                   ],
                 ),
               ),
