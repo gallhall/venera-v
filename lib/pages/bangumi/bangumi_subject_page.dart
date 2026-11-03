@@ -7,8 +7,6 @@ import 'package:photo_view/photo_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/animeko/animeko_source.dart';
-import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -19,8 +17,8 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/network/cloudflare.dart';
-import 'package:venera/network/network_error.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
+import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
@@ -87,31 +85,24 @@ class BangumiSubjectPage extends StatefulWidget {
   State<BangumiSubjectPage> createState() => _BangumiSubjectPageState();
 }
 
-class _SourceResult {
-  final ComicSource source;
-  _SourceResult(this.source);
-  List<Comic> results = [];
-  Comic? chosen, matched;
-  String? error;
-  String keyword = '';
-  final resultKeywords = <String, String>{};
-  final exactIds = <String>{};
-  bool loading = true;
-  int generation = 0;
-  bool fromCache = false;
-  Future<void>? recovery;
-  bool onlyWithoutChineseSubtitles = false;
-}
-
 class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   final manager = BangumiManager();
   BangumiSubject? subject;
   List<BangumiEpisode> episodes = [];
-  final sources = <_SourceResult>[];
-  Comic? current;
-  final _details = <(String, String), Future<ComicDetails>>{};
-  final candidates = <Comic>[];
-  final matchedCandidates = <Comic>[];
+  late final matcher = SubjectSourceMatcher(
+    subjectId: widget.subjectId,
+    search: ComicSourceSearch(),
+    memory: BangumiManagerMemory(manager),
+    cache: BangumiMatchCache(appdata.implicitData),
+    loadDetails: loadBangumiDetails,
+    showRaw: () => appdata.settings['btShowRaw'] == true,
+    saveCache: appdata.writeImplicitData,
+  );
+  List<SubjectSourceRow> get sources => matcher.rows;
+  Comic? get current => matcher.current;
+  List<Comic> get candidates => matcher.candidates;
+  List<Comic> get matchedCandidates => matcher.matchedCandidates;
+  List<String> get allNames => matcher.allNames;
   String? error, playError;
   bool loading = true, playing = false;
   bool sourcesReady = false;
@@ -155,22 +146,18 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   BangumiCollection? collection;
   String? collectionError, collectionToken;
   final sourceUpdates = ValueNotifier<int>(0);
-  late (Object?, Object?) observedChoice;
-
-  (Object?, Object?) get sourceChoiceId {
-    var choice = manager.sourceChoice(widget.subjectId);
-    return (choice?['sourceKey'], choice?['id']);
-  }
+  final _loadingSources = <SubjectSourceRow>{};
 
   @override
   void initState() {
     super.initState();
-    observedChoice = sourceChoiceId;
+    matcher.addListener(onMatcherChanged);
     scrollController.addListener(onScroll);
     appdata.settings.addListener(onSettingsChanged);
     HistoryManager().addListener(onSettingsChanged);
     LocalFavoritesManager().addListener(onFavoritesChanged);
     subject = widget.preview;
+    if (subject != null) matcher.setSubject(subject!);
     load();
   }
 
@@ -180,8 +167,24 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     HistoryManager().removeListener(onSettingsChanged);
     LocalFavoritesManager().removeListener(onFavoritesChanged);
     scrollController.dispose();
+    matcher.dispose();
     sourceUpdates.dispose();
     super.dispose();
+  }
+
+  void onMatcherChanged() {
+    if (!mounted) return;
+    setState(() {});
+    sourceUpdates.value++;
+    var settled = sources.any((row) => !row.loading && _loadingSources.contains(row));
+    _loadingSources
+      ..clear()
+      ..addAll(sources.where((row) => row.loading));
+    if (settled) {
+      scheduleMicrotask(() {
+        if (mounted) _tryAutoContinue();
+      });
+    }
   }
 
   void onSettingsChanged() {
@@ -191,34 +194,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       var showRaw = appdata.settings['btShowRaw'] == true;
       if (_showRaw != showRaw) {
         _showRaw = showRaw;
-        _details.removeWhere((key, _) => sources.any((row) =>
-          row.source.key == key.$1 && AnimekoSource.isRssSource(row.source)));
-        for (var row in sources) {
-          if (AnimekoSource.isRssSource(row.source) && row.matched == null &&
-              !row.loading) {
-            search(row);
-          }
-        }
+        matcher.showRawChanged();
       }
       if (collectionToken != manager.token) loadCollection();
-      setState(() {
-        var choice = sourceChoiceId;
-        if (choice != observedChoice) {
-          observedChoice = choice;
-          var selected = candidates
-              .where((c) => c.sourceKey == choice.$1 && c.id == choice.$2)
-              .firstOrNull;
-          if (selected != null) {
-            current = selected;
-            var row = sources
-                .where((s) => s.source.key == selected.sourceKey)
-                .firstOrNull;
-            if (row != null) row.chosen = selected;
-          }
-        }
-      });
+      matcher.choiceChanged();
+      setState(() {});
       sourceUpdates.value++;
-      _refreshCurrent();
     });
   }
 
@@ -271,6 +252,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       var value = await manager.api.subject(widget.subjectId);
       if (!mounted) return;
       setState(() => subject = value);
+      matcher.setSubject(value);
       loadCollection();
       sourcesReady = true;
       syncSources();
@@ -300,408 +282,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               configured.contains(s.key),
         )
         .toList();
-    if (enabled.length == sources.length &&
-        List.generate(
-          enabled.length,
-          (i) => enabled[i].key == sources[i].source.key,
-        ).every((v) => v)) {
-      return;
-    }
-    var old = {for (var row in sources) row.source.key: row};
-    var added = <_SourceResult>[];
-    setState(() {
-      for (var row in sources) {
-        if (!enabled.any((s) => s.key == row.source.key)) row.generation++;
-      }
-      sources
-        ..clear()
-        ..addAll(
-          enabled.map((source) {
-            var row = old[source.key];
-            if (row != null) return row;
-            row = _SourceResult(source);
-            added.add(row);
-            return row;
-          }),
-        );
-      updateCandidates();
-      current =
-          candidates
-              .where(
-                (c) => c.sourceKey == current?.sourceKey && c.id == current?.id,
-              )
-              .firstOrNull ??
-          candidates.firstOrNull;
-    });
-    for (var row in added) {
-      search(row, useCache: true);
-    }
-  }
-
-  List<String> get allNames => bangumiNames([
-    ...?subject?.allNames,
-    ...manager.customAliases(widget.subjectId),
-  ]);
-
-  Comic? rememberedCandidate(_SourceResult row) {
-    var value = manager.manualSourceChoice(widget.subjectId, row.source.key);
-    var choice = manager.sourceChoice(widget.subjectId);
-    if (value == null && choice?['sourceKey'] == row.source.key) value = choice;
-    var id = value?['id'];
-    if (id is! String) return null;
-    return row.results.where((c) => c.id == id).firstOrNull ??
-        Comic(
-          value?['title'] is String ? value!['title'] : subject!.displayName,
-          value?['cover'] is String ? value!['cover'] : subject!.image,
-          id,
-          null,
-          null,
-          '',
-          row.source.key,
-          null,
-          null,
-        );
-  }
-
-  late final matchCache = BangumiMatchCache(appdata.implicitData);
-
-  Future<void> search(_SourceResult row, {String? keyword, bool useCache = false}) async {
-    if (!row.source.isEnabled || !sources.contains(row)) {
-      return;
-    }
-    var cached = useCache && keyword == null
-        ? matchCache.read(widget.subjectId, row.source.key,
-            showRaw: AnimekoSource.isRssSource(row.source)
-                ? appdata.settings['btShowRaw'] == true : null) : null;
-    row.fromCache = cached != null;
-    row.recovery = null;
-    _details.removeWhere((key, _) => key.$1 == row.source.key);
-    if (cached == null) {
-      matchCache.remove(widget.subjectId, row.source.key);
-      appdata.writeImplicitData();
-      AnimekoSource.clearSearchCache(row.source);
-    }
-    var generation = ++row.generation;
-    setState(() {
-      row.loading = true;
-      row.error = null;
-      row.onlyWithoutChineseSubtitles = false;
-      row.keyword = '';
-      row.results = [];
-      row.resultKeywords.clear();
-      row.exactIds.clear();
-      row.matched = null;
-      row.chosen = rememberedCandidate(row);
-      updateCandidates();
-    });
-    var names = allNames;
-    var keywords = keyword == null
-        ? bangumiKeywordChain(
-            subject!.allNames,
-            remembered: manager.sourceKeyword(widget.subjectId, row.source.key),
-            customAliases: manager.customAliases(widget.subjectId),
-          )
-        : [BangumiTitleMatch.searchKeyword(keyword)];
-    var data = row.source.searchPageData!;
-    var options = (data.searchOptions ?? [])
-        .map((e) => e.defaultValue)
-        .toList();
-    var mergedRss = false;
-    var hadError = false;
-    try {
-      if (cached != null) {
-        row.results = [for (var c in cached['candidates'])
-          Comic(c['title'], c['cover'], c['id'], null, null, '',
-            row.source.key, null, null)];
-        row.onlyWithoutChineseSubtitles = cached['onlyWithoutChineseSubtitles'] == true;
-        row.keyword = cached['keyword'];
-        row.exactIds.addAll((cached['exactIds'] as List).whereType<String>());
-        row.matched = row.results.where((c) => c.id == cached['matchedId']).firstOrNull;
-        for (var comic in [row.matched, rememberedCandidate(row)].whereType<Comic>()) {
-          AnimekoSource.forgetEpisodes(row.source, comic.id);
-        }
-        for (var comic in row.results) {
-          final saved = cached['resultKeywords'];
-          row.resultKeywords[comic.id] = saved is Map && saved[comic.id] is String
-              ? saved[comic.id] as String : row.keyword;
-        }
-      } else {
-        if (keyword == null && AnimekoSource.isRssSource(row.source) &&
-            !AnimekoSource.supportsBangumiSubject(row.source)) {
-          try {
-            var merged = await AnimekoSource.findRssBangumiSubject(
-              row.source, keywords, names, onFiltered: (only) {
-                if (generation == row.generation) {
-                  row.onlyWithoutChineseSubtitles |= only;
-                }
-              });
-            if (!mounted || generation != row.generation ||
-                !row.source.isEnabled || !sources.contains(row)) {
-              return;
-            }
-            row.results = merged;
-            var index = BangumiTitleMatch.best(names,
-              merged.map((c) => c.title).toList());
-            row.matched = index == null ? null : merged[index];
-            row.keyword = keywords.take(3).join(', ');
-            for (var comic in merged) {
-              row.resultKeywords[comic.id] = keywords.first;
-            }
-            setState(() => updateCandidates());
-            // Nothing found by the merged search: the single-keyword loop below
-            // still gets its chance, as before.
-            mergedRss = merged.isNotEmpty;
-          } catch (e) {
-            hadError = true;
-            Log.warning('RSS', 'Subject lookup failed: $e');
-          }
-        }
-        if (keyword == null && AnimekoSource.supportsBangumiSubject(row.source)) {
-          Comic? exact;
-          try {
-            exact = await AnimekoSource.findBangumiSubject(
-              row.source, widget.subjectId, keywords);
-            if (exact == null) {
-              Log.info('Mikan', 'No exact match for ${widget.subjectId}');
-            }
-          } catch (e) {
-            hadError = true;
-            Log.warning('Mikan', 'Exact lookup failed: $e');
-          }
-          if (!mounted || generation != row.generation ||
-              !row.source.isEnabled || !sources.contains(row)) {
-            return;
-          }
-          if (exact != null) {
-            row.results = [exact];
-            row.matched = exact;
-            row.exactIds.add(exact.id);
-            row.keyword = exact.title;
-            row.resultKeywords[exact.id] = exact.title;
-            manager.rememberKeyword(widget.subjectId, row.source.key, exact.title);
-            setState(() => updateCandidates());
-          }
-        }
-        for (var query in !mergedRss && row.matched == null ? keywords : <String>[]) {
-          if (query.isEmpty) {
-            continue;
-          }
-          row.keyword = query;
-          sourceUpdates.value++;
-          try {
-            var res = data.loadPage != null
-                ? await data.loadPage!(query, 1, options)
-                : await data.loadNext!(query, null, options);
-            if (!mounted ||
-                generation != row.generation ||
-                !row.source.isEnabled ||
-                !sources.contains(row)) {
-              return;
-            }
-            if (res.error) {
-              hadError = true;
-              row.error = describeNetworkError(res.errorMessage ?? 'Search failed');
-              sourceUpdates.value++;
-              continue;
-            }
-            row.error = null;
-            if (res is AnimekoSearchResult) {
-              row.onlyWithoutChineseSubtitles |= res.onlyWithoutChineseSubtitles;
-            }
-            for (var c in res.data) {
-              if (!row.results.any((old) => old.id == c.id)) {
-                row.results.add(c);
-              }
-              row.resultKeywords[c.id] = query;
-            }
-            var index = BangumiTitleMatch.best(
-              names,
-              row.results.map((c) => c.title).toList(),
-            );
-            row.matched = index == null ? null : row.results[index];
-            setState(() => updateCandidates());
-            if (row.matched != null) {
-              manager.rememberKeyword(widget.subjectId, row.source.key, query);
-              break;
-            }
-          } catch (e) {
-            if (!mounted ||
-                generation != row.generation ||
-                !row.source.isEnabled ||
-                !sources.contains(row)) {
-              return;
-            }
-            hadError = true;
-            Log.warning('Animeko', 'Source search failed: $e');
-            row.error = describeNetworkError(e);
-            sourceUpdates.value++;
-          }
-        }
-        if (!mounted ||
-            generation != row.generation ||
-            !row.source.isEnabled ||
-            !sources.contains(row)) {
-          return;
-        }
-        row.onlyWithoutChineseSubtitles = row.onlyWithoutChineseSubtitles &&
-            row.results.isEmpty && !hadError;
-        matchCache.store(widget.subjectId, row.source.key,
-          candidates: [for (var c in row.results)
-            {'id': c.id, 'title': c.title, 'cover': c.cover}],
-          matchedId: row.matched?.id, exactIds: row.exactIds.toList(),
-          keyword: row.keyword, resultKeywords: Map.of(row.resultKeywords),
-          onlyWithoutChineseSubtitles: row.onlyWithoutChineseSubtitles,
-          showRaw: AnimekoSource.isRssSource(row.source)
-              ? appdata.settings['btShowRaw'] == true : null,
-          error: hadError ? row.error ?? 'Search failed' : null);
-        appdata.writeImplicitData();
-      }
-      // Re-read after searching: a user may have picked a result in the meantime.
-      row.chosen = row.onlyWithoutChineseSubtitles
-          ? null : rememberedCandidate(row) ?? row.matched;
-      updateCandidates();
-      var choice = manager.sourceChoice(widget.subjectId);
-      var chosen = [
-        for (var source in sources)
-          if (source.chosen != null) source.chosen!,
-      ];
-      var preferred = chosen
-          .where((c) => c.sourceKey == choice?['sourceKey'])
-          .firstOrNull;
-      var previous = chosen
-          .where(
-            (c) => c.sourceKey == current?.sourceKey && c.id == current?.id,
-          )
-          .firstOrNull;
-      var selected = preferred ?? previous ?? chosen.firstOrNull;
-      if (selected != null) {
-        select(selected, remember: false);
-      } else {
-        setState(() => current = null);
-      }
-    } finally {
-      if (mounted && generation == row.generation) {
-        setState(() {
-          row.loading = false;
-          updateCandidates();
-        });
-        _refreshCurrent();
-        _tryAutoContinue();
-      }
-    }
-  }
-
-  void _refreshCurrent() {
-    var comic = current;
-    if (comic == null) {
-      return;
-    }
-    var row = sources.where((row) => row.source.key == comic.sourceKey)
-        .firstOrNull;
-    // Wait only for rows that can still change the current pick: its own and
-    // the chosen source's. A slow, uncached source elsewhere (several gated
-    // RSS pages) must not hold up the refresh.
-    var choice = manager.sourceChoice(widget.subjectId)?['sourceKey'];
-    var choiceLoading = choice != comic.sourceKey &&
-        sources.any((row) => row.source.key == choice && row.loading);
-    var key = (comic.sourceKey, comic.id);
-    if (row == null || row.loading || choiceLoading || !row.fromCache ||
-        _details.containsKey(key)) {
-      return;
-    }
-    var generation = row.generation;
-    var future = loadBangumiDetails(comic);
-    _details[key] = future;
-    // Attach the error handler immediately; play awaits the same future.
-    // A cached item with nothing playable left (e.g. only raw releases) is
-    // stale too: search the source again once, like a failed load.
-    future.then<void>((_) {}, onError: (Object error, StackTrace stack) async {
-      if (mounted && generation == row.generation && row.fromCache &&
-          row.source.isEnabled && sources.contains(row) &&
-          (error is BangumiEpisodeUnavailable ||
-              shouldRetryBangumiMatch(error, fromCache: row.fromCache))) {
-        row.recovery = search(row);
-        await row.recovery;
-      }
-    });
-  }
-
-  /// Loads the details of [comic], picked by the user, in the background,
-  /// so that downloading or playing it need not wait for them. Forgotten if
-  /// they fail, to be loaded again when needed.
-  void _preloadDetails(Comic comic) {
-    var key = (comic.sourceKey, comic.id);
-    if (_details.containsKey(key)) return;
-    var future = loadBangumiDetails(comic);
-    _details[key] = future;
-    future.then<void>((_) {}, onError: (Object error, StackTrace stack) {
-      if (identical(_details[key], future)) _details.remove(key);
-    });
-  }
-
-  void updateCandidates() {
-    candidates.clear();
-    matchedCandidates.clear();
-    var names = allNames;
-    for (var row in sources) {
-      if (!row.source.isEnabled) continue;
-      if (row.matched != null) matchedCandidates.add(row.matched!);
-      var seen = <String>{};
-      for (var comic in [
-        if (row.chosen != null) row.chosen!,
-        ...row.results.where(
-          (c) => row.exactIds.contains(c.id) ||
-              BangumiTitleMatch.match(names, c.title).matches,
-        ),
-      ]) {
-        if (seen.add(comic.id)) candidates.add(comic);
-      }
-    }
-    sourceUpdates.value++;
-  }
-
-  void select(Comic comic, {bool remember = true}) {
-    var row = sources.where((s) => s.source.key == comic.sourceKey).firstOrNull;
-    if (row != null) row.chosen = comic;
-    if (remember) {
-      manager.rememberSourceResult(widget.subjectId, comic);
-      var keyword = row?.resultKeywords[comic.id];
-      if (keyword != null) {
-        manager.rememberKeyword(widget.subjectId, comic.sourceKey, keyword);
-      }
-    }
-    updateCandidates();
-    var binding = manager.bindingOf(comic.sourceKey, comic.id);
-    if (remember || binding == null) {
-      manager.bind(
-        comic.sourceKey,
-        comic.id,
-        BangumiBinding.forSubject(binding, subject!),
-      );
-    }
-    if (remember) {
-      manager.chooseSource(widget.subjectId, comic.sourceKey, comic.id);
-      _preloadDetails(comic);
-    }
-    setState(() => current = comic);
-    _refreshCurrent();
-    sourceUpdates.value++;
-  }
-
-  String matchLabel(Comic comic) {
-    if (sources.any((row) => row.source.key == comic.sourceKey &&
-        row.exactIds.contains(comic.id))) {
-      return 'Exact match'.tl;
-    }
-    var match = BangumiTitleMatch.match(allNames, comic.title);
-    return switch (match.kind) {
-      BangumiMatchKind.exact => 'Exact match'.tl,
-      BangumiMatchKind.contains => 'Contains name'.tl,
-      BangumiMatchKind.fuzzy => 'Similar @rate%'.tlParams({
-        'rate': match.rate.toStringAsFixed(0),
-      }),
-      BangumiMatchKind.none => 'No match'.tl,
-    };
+    matcher.syncSources(enabled);
   }
 
   Widget resultTile(Comic comic, VoidCallback onTap) => Builder(
@@ -732,13 +313,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               ? context.colorScheme.primaryContainer
               : context.colorScheme.surfaceContainerLow,
         ),
-        child: Text(matchLabel(comic), style: ts.s12),
+        child: Text(matcher.matchLabel(comic), style: ts.s12),
       ),
       onTap: onTap,
     ),
   );
 
-  Future<void> searchAlias(_SourceResult row) async {
+  Future<void> searchAlias(SubjectSourceRow row) async {
     var keyword = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -752,10 +333,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         ],
       ),
     );
-    if (mounted && keyword != null) await search(row, keyword: keyword);
+    if (mounted && keyword != null) await matcher.searchRow(row, keyword: keyword);
   }
 
-  Future<void> searchCustom(_SourceResult row) async {
+  Future<void> searchCustom(SubjectSourceRow row) async {
     await showInputDialog(
       context: context,
       title: 'Custom search keyword'.tl,
@@ -766,7 +347,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           return 'Enter a search keyword'.tl;
         }
         manager.addCustomAlias(widget.subjectId, keyword);
-        search(row, keyword: keyword);
+        matcher.searchRow(row, keyword: keyword);
         return null;
       },
     );
@@ -780,7 +361,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     });
     var progress = manager.localProgress(widget.subjectId);
     var candidate = current!;
-    var refreshedDetails = _details[(candidate.sourceKey, candidate.id)];
+    var refreshedDetails = matcher.detailsOf(candidate);
     try {
       await openBangumiPlayer(
         context,
@@ -798,47 +379,20 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             : Duration.zero,
       );
     } catch (e) {
-      _SourceResult? row;
-      if (shouldRetryBangumiMatch(e, retryCached: retryCached) &&
-          e is BangumiSourceLoadException) {
-        row = sources.where((row) => row.source.key == e.candidate.sourceKey)
-            .firstOrNull;
-        if (row != null) {
-          var recovering = row.recovery != null && (row.loading ||
-              (refreshedDetails != null && candidate.sourceKey == e.candidate.sourceKey &&
-                  candidate.id == e.candidate.id));
-          var cachedItem = row.fromCache && (row.matched?.id == e.candidate.id ||
-              row.chosen?.id == e.candidate.id);
-          if (!recovering && !cachedItem) {
-            row = null;
-          }
-        }
-      }
-      if (mounted && row != null) {
-        await (row.recovery ?? search(row));
-        if (mounted && row.matched != null) {
-          select(row.matched!);
-          setState(() => playing = false);
-          await play(episode, retryCached: false);
-          return;
-        }
+      var recovered = await matcher.recover(candidate, e,
+        retryCached: retryCached, hadDetails: refreshedDetails != null);
+      if (mounted && recovered != null) {
+        setState(() => playing = false);
+        await play(episode, retryCached: false);
+        return;
       }
       if (mounted) setState(() => playError = e.toString());
     } finally {
       if (mounted) {
         setState(() {
           playing = false;
-          var choice = manager.sourceChoice(widget.subjectId);
-          current =
-              candidates
-                  .where(
-                    (c) =>
-                        c.sourceKey == choice?['sourceKey'] &&
-                        c.id == choice?['id'],
-                  )
-                  .firstOrNull ??
-              current;
         });
+        matcher.reselectChoice();
       }
     }
   }
@@ -874,7 +428,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           continueWatching();
         }
       });
-    } else if (!loading && sourcesReady && sources.every((row) => !row.loading)) {
+    } else if (!loading && sourcesReady && matcher.allSettled) {
       _autoContinuePending = false;
     }
   }
@@ -966,7 +520,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             valueListenable: sourceUpdates,
             builder: (context, _, _) => ListView(
               children: sourceList((comic) {
-                select(comic);
+                matcher.select(comic);
                 Navigator.pop(sheetContext);
               }),
             ),
@@ -985,7 +539,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
     ComicDetails details;
     try {
-      details = await (_details[(candidate.sourceKey, candidate.id)] ??
+      details = await (matcher.detailsOf(candidate) ??
           loadBangumiDetails(candidate));
     } catch (e) {
       if (mounted) context.showMessage(message: '$e');
@@ -1567,19 +1121,19 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
-  Widget sourceCard(_SourceResult row, void Function(Comic) onPick) {
+  Widget sourceCard(SubjectSourceRow row, void Function(Comic) onPick) {
     var chosen = row.chosen;
     return _PlaySourceCard(
       key: ValueKey(row.source.key),
       row: row,
       playing:
           current?.sourceKey == row.source.key && current?.id == chosen?.id,
-      match: chosen == null ? null : matchLabel(chosen),
+      match: chosen == null ? null : matcher.matchLabel(chosen),
       matches:
           chosen != null &&
           BangumiTitleMatch.match(allNames, chosen.title).matches,
       onSelect: chosen == null ? null : () => onPick(chosen),
-      onRetry: () => search(row),
+      onRetry: () => matcher.searchRow(row),
       details: () => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1594,7 +1148,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             spacing: 8,
             children: [
               TextButton.icon(
-                onPressed: () => search(row),
+                onPressed: () => matcher.searchRow(row),
                 icon: const Icon(Icons.refresh, size: 18),
                 label: Text('Retry'.tl),
               ),
@@ -1633,7 +1187,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           TextButton.icon(
             onPressed: () {
               for (var row in sources) {
-                search(row);
+                matcher.searchRow(row);
               }
             },
             icon: const Icon(Icons.refresh, size: 18),
@@ -1682,7 +1236,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Widget buildSources() {
-    return SliverToBoxAdapter(child: Column(children: sourceList(select)));
+    return SliverToBoxAdapter(child: Column(children: sourceList(matcher.select)));
   }
 }
 
@@ -1698,7 +1252,7 @@ class _PlaySourceCard extends StatefulWidget {
     required this.details,
   });
 
-  final _SourceResult row;
+  final SubjectSourceRow row;
   final bool playing, matches;
   final String? match;
   final VoidCallback? onSelect;

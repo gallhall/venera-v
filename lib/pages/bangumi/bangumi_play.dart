@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:venera/foundation/animeko/animeko_source.dart';
+import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
+import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
+
 import 'package:venera/foundation/animeko/rss_preferences.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
-import 'package:venera/network/network_error.dart';
 import 'package:venera/foundation/appdata.dart';
-import 'package:venera/foundation/res.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -15,66 +15,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/translations.dart';
 
-class BangumiEpisodeUnavailable implements Exception {
-  @override
-  String toString() =>
-      'This source has no matching episode. Try switching source.'.tl;
-}
-
-class BangumiSourceLoadException implements Exception {
-  BangumiSourceLoadException(this.candidate, this.error, {this.message});
-  final Comic candidate;
-  final Object error;
-  final String? message;
-  @override
-  String toString() => message ?? error.toString();
-}
-
-/// Only a stale item load warrants rematching. Missing episodes use fallback.
-bool shouldRetryBangumiMatch(Object error, {bool fromCache = true,
-    bool retryCached = true}) =>
-    fromCache && retryCached && error is BangumiSourceLoadException &&
-        error.error is! AnimekoEpisodesUnavailable && !isTransportError(error.error);
-
-ComicDetails bangumiDetailsResult(Comic candidate, Res<ComicDetails> result) {
-  if (result.error) {
-    if (result.errorCause is AnimekoEpisodesUnavailable) {
-      throw BangumiEpisodeUnavailable();
-    }
-    throw BangumiSourceLoadException(candidate,
-      result.errorCause ?? result.errorMessage!, message: result.errorMessage);
-  }
-  var details = result.data;
-  if (details.chapters != null && details.chapters!.allChapters.isEmpty) {
-    throw BangumiEpisodeUnavailable();
-  }
-  return details;
-}
-
-Future<ComicDetails> loadBangumiDetails(Comic candidate) async {
-  var source = ComicSource.find(candidate.sourceKey);
-  if (source?.loadComicInfo == null) {
-    throw Exception('Video source not found'.tl);
-  }
-  if (!source!.isEnabled) {
-    throw Exception('Source disabled'.tl);
-  }
-  try {
-    var result = await source.loadComicInfo!(candidate.id);
-    if (!source.isEnabled) {
-      throw Exception('Source disabled'.tl);
-    }
-    return bangumiDetailsResult(candidate, result);
-  } on BangumiSourceLoadException {
-    rethrow;
-  } on BangumiEpisodeUnavailable {
-    rethrow;
-  } on AnimekoEpisodesUnavailable {
-    throw BangumiEpisodeUnavailable();
-  } catch (e) {
-    throw BangumiSourceLoadException(candidate, e);
-  }
-}
+export 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 
 Future<VideoPlayerPage> bangumiPlayer(
   BangumiPlaybackContext context,
@@ -210,50 +151,20 @@ Future<BangumiPlaybackContext?> linkedBangumiContext(
   var episodes = await manager.api.episodes(subjectId);
   var cache = BangumiMatchCache(appdata.implicitData);
   var configured = appdata.settings['searchSources'] as List? ?? [];
-  var candidates = <Comic>[
-    Comic(title, '', id, null, null, '', sourceKey, null, null),
-  ];
-  var matched = <Comic>[];
-  bool add(Comic c) {
-    if (candidates.any((e) => e.sourceKey == c.sourceKey && e.id == c.id)) {
-      return false;
-    }
-    candidates.add(c);
-    return true;
-  }
-
-  for (var source in ComicSource.enabled()) {
-    if (!source.isVideoSource || !configured.contains(source.key)) continue;
-    var entry = cache.read(
-      subjectId,
-      source.key,
-      showRaw: AnimekoSource.isRssSource(source)
-          ? appdata.settings['btShowRaw'] == true
-          : null,
-    );
-    var choice = manager.manualSourceChoice(subjectId, source.key);
-    if (choice?['id'] is String) {
-      add(Comic(
-        choice!['title'] is String ? choice['title'] : subject.displayName,
-        choice['cover'] is String ? choice['cover'] : subject.image,
-        choice['id'],
-        null, null, '', source.key, null, null,
-      ));
-    }
-    var matchedId = entry?['matchedId'];
-    for (var c in entry?['candidates'] as List? ?? const []) {
-      if (c['id'] != matchedId) continue;
-      var comic = Comic(c['title'], c['cover'], c['id'], null, null, '',
-          source.key, null, null);
-      add(comic);
-      matched.add(comic);
-    }
-  }
+  var cached = SubjectSourceMatcher.cached(
+    subject: subject,
+    opened: Comic(title, '', id, null, null, '', sourceKey, null, null),
+    enabled: ComicSource.enabled().where((s) => configured.contains(s.key)).toList(),
+    search: ComicSourceSearch(),
+    memory: BangumiManagerMemory(manager),
+    cache: cache,
+    showRaw: appdata.settings['btShowRaw'] == true,
+  );
   return BangumiPlaybackContext(
     subject: subject,
     episodes: episodes,
-    candidates: candidates,
-    matchedCandidates: matched,
+    candidates: cached.candidates,
+    matchedCandidates: cached.matched,
     number: binding.subjectNumber(number),
   );
 }
