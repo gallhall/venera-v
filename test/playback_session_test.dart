@@ -98,22 +98,18 @@ class _Playback implements VideoPlayback {
 
 class _Engines implements PlaybackEngines {
   final media = _Playback();
-  final native = _Playback();
-  final picks = <(String, bool)>[];
-  bool nativeCapable = false;
+  final picks = <String>[];
   bool unavailable = false;
   @override
   String? get error => unavailable ? 'engine unavailable' : null;
   @override
-  bool isNative(VideoPlayback p) => identical(p, native);
-  @override
-  Future<VideoPlayback?> pick(VideoPlaySource source, VideoStreamRequest request,
-      {required bool allowNative}) async {
-    picks.add((source.name, allowNative));
+  Future<VideoPlayback?> pick(
+      VideoPlaySource source, VideoStreamRequest request) async {
+    picks.add(source.name);
     if (unavailable) {
       return null;
     }
-    return nativeCapable && allowNative ? native : media;
+    return media;
   }
 }
 
@@ -286,7 +282,6 @@ void main() {
   tearDown(() async {
     await session.dispose();
     await engines.media.dispose();
-    await engines.native.dispose();
   });
 
   test('load, open and progress emit Started synchronously', () async {
@@ -327,17 +322,6 @@ void main() {
     expect(session.error, 'load failed');
     expect(session.isLoading, isFalse);
     expect(engines.picks, isEmpty);
-  });
-
-  test('native failure uses media_kit for the same stream without Switched', () async {
-    create();
-    engines.nativeCapable = true;
-    await start();
-    engines.native.failures.add('native failed');
-    await _flush();
-    expect(engines.picks, [('A', true), ('A', false)]);
-    expect(session.active, same(engines.media));
-    expect(events.whereType<PlaybackSwitched>(), isEmpty);
   });
 
   test('HTTP retries once after one second, switches, then exhausts', () async {

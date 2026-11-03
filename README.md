@@ -27,7 +27,7 @@ It keeps everything venera does and adds video playback.
 - Import local videos and subtitles
 - Find streams by opening the web page of a video
 - Use [Kazumi](https://github.com/Predidit/Kazumi) anime rules as video sources, see [Kazumi Rules](doc/kazumi_rules.md)
-- On iOS, playback in the system player
+- Playback with media_kit on every platform
 
 ## Download
 Installers for Android, iOS, Windows, macOS and Linux (deb, Arch) are on the [Releases](https://github.com/gallhall/venera-v/releases) page.

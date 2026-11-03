@@ -20,7 +20,6 @@ import 'package:venera/foundation/video/auto_switch.dart';
 import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/foundation/video/watch_progress.dart';
 import 'package:venera/foundation/video/anime4k.dart';
-import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/play_info_source.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
@@ -90,21 +89,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   ComicSource? get source => ComicSource.find(sourceKey);
 
-  /// media_kit, on iOS only for streams the system player cannot play.
+  /// The media_kit player.
   PlayerService? player;
-
-  /// The iOS system player.
-  NativeVideoPlayer? native;
 
   PlaybackSession? session;
   StreamSubscription<PlaybackEvent>? sessionEvents;
-  VideoPlayback? listenedPlayer;
+  PlayerService? listenedPlayer;
   int listenerToken = 0;
   bool pageLoading = false;
   String? pageError;
   bool ignoringSession = false;
 
-  VideoPlayback? get active => ignoringSession ? null : session?.active;
+  PlayerService? get active =>
+      ignoringSession ? null : session?.active as PlayerService?;
   VideoPlayInfo? get playInfo => session?.playInfo;
   int get sourceIndex => session?.streamIndex ?? 0;
   bool get isLoading => pageLoading || session?.isLoading == true;
@@ -234,9 +231,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// While locked, touches on the player are ignored until it is unlocked.
   bool isLocked = false;
 
-  /// Whether the iOS fullscreen player covers the page.
-  bool nativeFullscreen = false;
-
   /// Whether the unlock button is visible while locked.
   bool showUnlock = false;
 
@@ -272,30 +266,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     danmaku.addListener(updateDanmakuControls);
     var savedRate = appdata.settings['videoPlaybackRate'];
     if (savedRate is num) rate = savedRate.toDouble();
-    if (NativeVideoPlayer.isAvailable) {
-      var n = native = NativeVideoPlayer();
-      subscriptions.addAll([
-        n.fullscreen.listen((v) => setState(() => nativeFullscreen = v)),
-        n.actions.listen((id) {
-          if (!identical(active, n)) return;
-          if (id == 'skip') skipCurrent();
-        }),
-        // Speeds picked in the system player are remembered as well.
-        n.pickedRate.listen((v) {
-          if (!identical(active, n)) return;
-          appdata.settings['videoPlaybackRate'] = v;
-          appdata.saveData();
-        }),
-      ]);
-      if (rate != 1.0) n.setRate(rate);
-    } else {
-      if (ensureMediaKit() == null) return;
+    if (ensureMediaKit() == null) {
+      return;
     }
     loadEpisode(current);
   }
 
-  /// The media_kit player, created on first use: on iOS only for streams
-  /// the system player cannot play.
+  /// The media_kit player, created on first use.
   PlayerService? ensureMediaKit() {
     if (player != null) return player;
     if (engineError != null) return null;
@@ -337,7 +314,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   /// Follows [p] while it is the [active] player.
-  void listenTo(VideoPlayback p) {
+  void listenTo(PlayerService p) {
     for (var subscription in playbackSubscriptions) {
       subscription.cancel();
     }
@@ -352,10 +329,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
 
     playbackSubscriptions.addAll([
-      if (p is PlayerService)
-        p.videoSize.listen(ifActive((size) {
-          setState(() => videoSize = size);
-        })),
+      p.videoSize.listen(ifActive((size) {
+        setState(() => videoSize = size);
+      })),
       p.duration.listen(
         ifActive((d) {
           duration = d;
@@ -394,12 +370,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     var p = active;
     var elapsed = DateTime.now().difference(event.openTime).inMilliseconds;
-    if (p is PlayerService) {
+    if (p != null) {
       unawaited(p.describeOutput().then((output) {
         Log.info('Video', 'Started after $elapsed ms: $output');
       }));
-    } else {
-      Log.info('Video', 'Started after $elapsed ms with the system player');
     }
     // The seek to the start position may not be applied yet.
     saveHistory(position: openedAt);
@@ -446,9 +420,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           moveEpisode(1);
         }
       case PlaybackExhausted():
-        if (playInfo == null) {
-          native?.close();
-        }
         autoSwitchAfterFailure(event.reason, event.position);
     }
   }
@@ -470,7 +441,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // Saved synchronously, so the details page sees it when it comes back.
     saveHistory(sync: true);
     player?.dispose();
-    native?.dispose();
     danmaku.removeListener(updateDanmakuControls);
     danmaku.dispose();
     controls.dispose();
@@ -571,18 +541,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         }),
       );
     }
-  }
-
-  /// Title and buttons of the system player.
-  void updateNativePlayer() {
-    var n = native;
-    if (n == null) return;
-    n.title = playerTitle;
-    var skip = currentSkip;
-    n.playerActions = [
-      if (skip != null)
-        NativePlayerAction('skip', skipLabel(skip), 'forward.end'),
-    ];
   }
 
   Future<void> autoSwitchAfterFailure(
@@ -701,12 +659,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void setFullscreen(bool value) {
-    // Keep Flutter's overlay and controls when showing danmaku on iOS.
-    var n = native;
-    if (value && n != null && identical(active, n) && !danmaku.enabled) {
-      n.enterFullscreen();
-      return;
-    }
     if (value == isFullscreen) return;
     setState(() {
       isFullscreen = value;
@@ -777,7 +729,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void setRate(double value) {
     player?.setRate(value);
-    native?.setRate(value);
     appdata.settings['videoPlaybackRate'] = value;
     appdata.saveData();
   }
@@ -838,10 +789,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     ],
                   ).paddingHorizontal(16),
                   const SizedBox(height: 8),
-                  if (active is PlayerService) ...[
+                  if (active != null) ...[
                     ValueListenableBuilder<Anime4kStatus>(
                       valueListenable:
-                          (active as PlayerService).anime4kStatus,
+                          active!.anime4kStatus,
                       builder: (context, status, _) => ListTile(
                         title: Text("Default Anime4K preset".tl),
                         subtitle: Text(
@@ -865,7 +816,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Anime4kStatusView(player: active as PlayerService),
+                      child: Anime4kStatusView(player: active!),
                     ),
                     if (App.isAndroid)
                       SwitchListTile(
@@ -875,7 +826,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                           appdata.settings['videoAnime4kHalfPrecision'] = value;
                           appdata.saveData();
                           setDialogState(() {});
-                          await (active as PlayerService).refreshAnime4kPrecision();
+                          await active!.refreshAnime4kPrecision();
                         },
                       ),
                     Text(
@@ -950,7 +901,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     VoidCallback? onChanged,
   }) async {
     var p = active;
-    if (p is! PlayerService) {
+    if (p == null) {
       return;
     }
     var selected = useDefault
@@ -983,7 +934,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return e.group == null ? e.title : '${e.group} · ${e.title}';
   }
 
-  String? get resolutionLabel => active is PlayerService
+  String? get resolutionLabel => active != null
       ? videoResolutionLabel(videoSize?.width, videoSize?.height)
       : null;
 
@@ -1281,7 +1232,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           }, rate);
           if (r != null) setRate(r);
         }),
-        if (active is PlayerService)
+        if (active != null)
           PlayerControlAction(
             Icons.auto_awesome_rounded,
             "Anime4K".tl,
@@ -1318,7 +1269,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (engineError != null && native == null) {
+    if (engineError != null) {
       return Scaffold(
         appBar: Appbar(title: Text(details.title)),
         body: Center(
@@ -1332,7 +1283,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       controls.value = buildControls();
-      if (identical(active, native)) updateNativePlayer();
     });
     return PopScope(
       // Back leaves fullscreen first.
@@ -1426,10 +1376,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildPlayer() {
-    var p = player;
-    var a = active;
+    var p = active;
     Widget view;
-    if (p != null && identical(a, p)) {
+    if (p != null) {
       view = LayoutBuilder(
         builder: (context, constraints) {
           p.updateVideoArea(
@@ -1441,27 +1390,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         },
       );
     } else {
-      p?.updateVideoArea(null, 1, fit);
-      view = native?.buildView() ?? const SizedBox();
+      player?.updateVideoArea(null, 1, fit);
+      view = const SizedBox();
     }
-    if (a != null) {
+    if (p != null) {
       view = Stack(
         fit: StackFit.expand,
         children: [
           view,
           VideoDanmakuOverlay(
-            key: ObjectKey(a),
+            key: ObjectKey(p),
             session: danmaku,
-            player: a,
+            player: p,
           ),
         ],
       );
       view = VideoControls(
-        // New controls for the other engine.
-        key: ObjectKey(a),
-        player: a,
+        key: ObjectKey(p),
+        player: p,
         controls: controls,
-        enabled: !nativeFullscreen,
         child: view,
       );
     }
@@ -1859,24 +1806,8 @@ class _PlaybackEngines implements PlaybackEngines {
   String? get error => page.engineError;
 
   @override
-  bool isNative(VideoPlayback p) => identical(p, page.native);
-
-  @override
-  Future<VideoPlayback?> pick(VideoPlaySource source, VideoStreamRequest request,
-      {required bool allowNative}) async {
-    var n = page.native;
-    if (n != null && allowNative && NativeVideoPlayer.supports(source, request)) {
-      await page.player?.pause();
-      if (page.isFullscreen && !page.danmaku.enabled) {
-        page.setFullscreen(false);
-      }
-      page.updateNativePlayer();
-      return n;
-    }
-    var next = page.ensureMediaKit();
-    if (n != null) {
-      await n.close();
-    }
-    return next;
+  Future<VideoPlayback?> pick(
+      VideoPlaySource source, VideoStreamRequest request) async {
+    return page.ensureMediaKit();
   }
 }

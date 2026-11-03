@@ -36,20 +36,15 @@ class VideoControls extends StatefulWidget {
     required this.player,
     required this.controls,
     required this.child,
-    this.enabled = true,
   });
 
-  /// media_kit, or the iOS system player.
+  /// Playback state and controls from media_kit.
   final VideoPlayback player;
 
   final ValueListenable<PlayerControls> controls;
 
   /// The video view, drawn under the controls.
   final Widget child;
-
-  /// False while the iOS fullscreen player covers the page: the controls
-  /// are hidden, take no touches and leave the volume keys to the system.
-  final bool enabled;
 
   @override
   State<VideoControls> createState() => _VideoControlsState();
@@ -82,8 +77,8 @@ class _VideoControlsState extends State<VideoControls> {
 
   /// Whether the volume keys show the controls' own indicator. Not on iOS:
   /// the plugin sets the app's audio session to mix with others while it
-  /// listens and deactivates it when it stops, which pauses the system
-  /// player. The volume is read when a swipe starts instead.
+  /// listens and deactivates it when it stops, which interrupts playback.
+  /// The volume is read when a swipe starts instead.
   final listensVolumeKeys = App.isAndroid;
 
   final focusNode = FocusNode();
@@ -190,7 +185,9 @@ class _VideoControlsState extends State<VideoControls> {
       volume = ((mediaKit?.currentVolume ?? 100) / 100).clamp(0.0, 1.0);
       return;
     }
-    if (widget.enabled && listensVolumeKeys) startVolumeListener();
+    if (listensVolumeKeys) {
+      startVolumeListener();
+    }
     ScreenBrightness.instance.application
         .then((v) {
           if (mounted && swipeLevel == null) brightness = v;
@@ -217,30 +214,6 @@ class _VideoControlsState extends State<VideoControls> {
       );
     }
     super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(VideoControls oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.enabled == oldWidget.enabled) return;
-    if (widget.enabled) {
-      if (listensVolumeKeys) startVolumeListener();
-      setVisible(true);
-      return;
-    }
-    // A gesture in progress ends without effect.
-    onLongPressEnd();
-    onHorizontalEnd(apply: false);
-    swipeLevel = null;
-    lastTapTime = null;
-    levelTimer?.cancel();
-    seekSideTimer?.cancel();
-    setState(() {
-      showLevel = false;
-      seekSide = 0;
-    });
-    setVisible(false);
-    if (listensVolumeKeys) stopVolumeListener();
   }
 
   /// The controls show their own indicator, also for the volume keys.
@@ -599,7 +572,7 @@ class _VideoControlsState extends State<VideoControls> {
           ],
         );
         if (!desktop) {
-          return IgnorePointer(ignoring: !widget.enabled, child: view);
+          return view;
         }
         return CallbackShortcuts(
           bindings: shortcuts,

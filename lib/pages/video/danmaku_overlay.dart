@@ -130,7 +130,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay> {
     if (pos == window.position) {
       return;
     }
-    // Also catch seeks performed by native controls or stream recovery.
+    // Also catch seeks performed by stream recovery.
     if (pos < window.position ||
         pos - window.position > elapsed.clamp(0.0, 1.0) * rate + 0.75) {
       controller?.clear();
