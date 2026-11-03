@@ -676,9 +676,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       manager.bind(
         comic.sourceKey,
         comic.id,
-        binding?.subjectId == widget.subjectId
-            ? binding!
-            : BangumiBinding.fromSubject(subject!),
+        BangumiBinding.forSubject(binding, subject!),
       );
     }
     if (remember) {

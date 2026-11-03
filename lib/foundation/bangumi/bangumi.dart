@@ -41,30 +41,29 @@ class BangumiProgress {
     return episodes;
   }
 
-  /// Records that episode [number] of the source of [binding] was watched,
-  /// or chapter [number] of a book read. Returns the number of the episode
+  /// Records that episode or chapter [number] on Bangumi of the subject of
+  /// [binding] was watched/read. Returns the number of the episode
   /// or chapter marked on Bangumi, null if there is none to mark.
   ///
   /// A subject not yet watched becomes one that is; once every episode of
   /// an anime is watched, it becomes watched.
   Future<int?> markFinished(BangumiBinding binding, int number) async {
-    var n = number + binding.offset;
-    if (n < 1) return null;
+    if (number < 1) return null;
     var subjectId = binding.subjectId;
     if (binding.isBook) {
       var collection = await api.collection(username, subjectId);
       var read = collection?.epStatus ?? 0;
       var start = _shouldStart(collection);
-      if (n <= read && !start) return null;
+      if (number <= read && !start) return null;
       await api.updateCollection(
         subjectId,
         type: start ? BangumiCollectionType.doing : null,
-        epStatus: math.max(n, read),
+        epStatus: math.max(number, read),
       );
-      return n;
+      return number;
     }
     var all = await episodes(subjectId);
-    var episode = BangumiEpisodeNumber.match(all, n);
+    var episode = BangumiEpisodeNumber.match(all, number);
     if (episode == null) return null;
     var collection = await api.collection(username, subjectId);
     if (_shouldStart(collection)) {
@@ -352,11 +351,11 @@ class BangumiManager with ChangeNotifier {
     if (!autoSync || !isLoggedIn) return;
     var binding = bindingOf(sourceKey, id);
     if (binding == null) return;
-    var number = BangumiEpisodeNumber.of(title, position);
+    var number = binding.subjectNumberOf(title, position);
     if (number == null) return;
     // The number on Bangumi, as sources linked to a subject may number it
     // differently.
-    var key = '${binding.subjectId}:${number + binding.offset}';
+    var key = '${binding.subjectId}:$number';
     if (!_marked.add(key)) return;
     try {
       var marked = await progress.markFinished(binding, number);

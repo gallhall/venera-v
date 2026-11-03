@@ -344,8 +344,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
     if (title == null) {
       return null;
     }
-    var number = BangumiEpisodeNumber.of(title, history.ep);
-    return number == null ? null : number + binding!.offset;
+    return binding!.subjectNumberOf(title, history.ep);
   }
 
   @override
