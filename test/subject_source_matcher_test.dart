@@ -79,11 +79,11 @@ class FakeSearch implements SubjectSourceSearch {
 
 class Memory implements SubjectSourceMemory {
   final keywords = <String, String>{};
-  final manual = <String, Map>{};
+  final manual = <String, BangumiManualChoice>{};
   final bindings = <(String, String), BangumiBinding>{};
   final writes = <String>[];
   final aliases = <String>[];
-  Map? choice;
+  BangumiSourceChoice? choice;
 
   @override
   String? sourceKeyword(int subjectId, String sourceKey) => keywords[sourceKey];
@@ -93,17 +93,18 @@ class Memory implements SubjectSourceMemory {
     writes.add('keyword:$sourceKey:$keyword');
   }
   @override
-  Map? manualSourceChoice(int subjectId, String sourceKey) => manual[sourceKey];
+  BangumiManualChoice? manualSourceChoice(int subjectId, String sourceKey) =>
+      manual[sourceKey];
   @override
-  Map? sourceChoice(int subjectId) => choice;
+  BangumiSourceChoice? sourceChoice(int subjectId) => choice;
   @override
   void rememberSourceResult(int subjectId, Comic comic) {
-    manual[comic.sourceKey] = {'id': comic.id, 'title': comic.title, 'cover': comic.cover};
+    manual[comic.sourceKey] = (id: comic.id, title: comic.title, cover: comic.cover);
     writes.add('result:${comic.sourceKey}:${comic.id}');
   }
   @override
   void chooseSource(int subjectId, String sourceKey, String id) {
-    choice = {'sourceKey': sourceKey, 'id': id};
+    choice = (sourceKey: sourceKey, id: id);
     writes.add('choice:$sourceKey:$id');
   }
   @override
@@ -424,8 +425,8 @@ void main() {
   });
 
   test('manual row choice beats match, preferred source beats previous and first', () async {
-    f.memory.choice = {'sourceKey': 'b', 'id': 'preferred'};
-    f.memory.manual['b'] = {'id': 'manual', 'title': 'Manual title'};
+    f.memory.choice = (sourceKey: 'b', id: 'preferred');
+    f.memory.manual['b'] = (id: 'manual', title: 'Manual title', cover: null);
     f.answer('a', subject.nameCn, [comic('a')]);
     f.answer('b', subject.nameCn, [comic('b')]);
     f.matcher.syncSources([source('a'), source('b')]);
@@ -451,7 +452,7 @@ void main() {
   });
 
   test('raw-only rows choose nothing even with a remembered manual pick', () async {
-    f.memory.manual['rss'] = {'id': 'manual'};
+    f.memory.manual['rss'] = (id: 'manual', title: null, cover: null);
     f.search.rss.add('rss');
     f.search.mergedResults['rss'] = (filtered) async {
       filtered(true);
@@ -491,7 +492,7 @@ void main() {
     expect(f.memory.writes, ['result:a:item', 'keyword:a:${subject.nameCn}',
       'bind:a:item', 'choice:a:item']);
     expect(f.matcher.detailsOf(selected), isNotNull);
-    f.memory.choice = {'sourceKey': 'a', 'id': selected.id};
+    f.memory.choice = (sourceKey: 'a', id: selected.id);
     f.matcher.choiceChanged();
     f.matcher.reselectChoice();
     expect(f.matcher.current, selected);
@@ -502,14 +503,14 @@ void main() {
     f.answer('b', subject.nameCn, [comic('b')]);
     f.matcher.syncSources([source('a'), source('b')]);
     await flush();
-    f.memory.choice = {'sourceKey': 'a', 'id': 'second'};
+    f.memory.choice = (sourceKey: 'a', id: 'second');
     f.matcher.choiceChanged();
     expect(f.matcher.current?.id, 'second');
     expect(f.matcher.rows.first.chosen?.id, 'second');
     f.matcher.select(comic('b'), remember: false);
     f.matcher.reselectChoice();
     expect(f.matcher.current?.id, 'second');
-    f.memory.choice = {'sourceKey': 'missing', 'id': 'unknown'};
+    f.memory.choice = (sourceKey: 'missing', id: 'unknown');
     f.matcher.choiceChanged();
     f.matcher.reselectChoice();
     expect(f.matcher.current?.id, 'second');
@@ -581,7 +582,7 @@ void main() {
     expect(recovered?.sourceKey, 'b');
     expect(recovered?.id, 'new');
     expect(f.search.calls, ['page:b:${subject.nameCn}']);
-    expect(f.memory.choice?['id'], 'new');
+    expect(f.memory.choice?.id, 'new');
   });
 
   test('recover awaits background rematch already running and does not search twice', () async {
@@ -631,13 +632,79 @@ void main() {
     expect(f.search.calls, ['page:a:${subject.nameCn}']);
   });
 
+  test('manager binding writes still save and notify, including absent unbind', () {
+    var saves = 0;
+    var notifications = 0;
+    var manager = BangumiManager.forTesting(
+      preferences: BangumiPreferences(<String, dynamic>{},
+        save: () { saves++; }),
+    );
+    manager.addListener(() { notifications++; });
+    manager.chooseSource(subject.id, 'a', 'item');
+    expect(notifications, 0);
+    manager.bind('a', 'item', BangumiBinding.fromSubject(subject));
+    expect(manager.bindingOf('a', 'item')?.subjectId, subject.id);
+    manager.unbind('a', 'item');
+    manager.unbind('a', 'missing');
+    expect(saves, 4);
+    expect(notifications, 3);
+    manager.dispose();
+  });
+
+  test('stored non-String manual title and cover keep cached subject fallbacks', () {
+    var settings = <String, dynamic>{
+      'bangumiManualSourceChoices': {
+        '${subject.id}@a': {'id': 'manual', 'title': 7, 'cover': false},
+        '${subject.id}@b': {'id': 7, 'title': 'Invalid'},
+      },
+    };
+    var manager = BangumiManager.forTesting(
+      preferences: BangumiPreferences(settings),
+    );
+    var cached = SubjectSourceMatcher.cached(
+      subject: subject, opened: comic('opened'),
+      enabled: [source('a'), source('b')], search: f.search,
+      memory: BangumiManagerMemory(manager), cache: f.cache, showRaw: false,
+    );
+    expect(identities(cached.candidates), ['opened:item', 'a:manual']);
+    expect(cached.candidates.last.title, subject.displayName);
+    expect(cached.candidates.last.cover, subject.image);
+    manager.dispose();
+  });
+
+  test('malformed manual choice is absent and allows source choice fallback', () async {
+    var settings = <String, dynamic>{
+      'bangumiSourceChoices': {
+        '${subject.id}': {'sourceKey': 'a', 'id': 'remembered'},
+      },
+      'bangumiManualSourceChoices': {
+        '${subject.id}@a': {'id': 7, 'title': 'Invalid'},
+      },
+    };
+    var manager = BangumiManager.forTesting(
+      preferences: BangumiPreferences(settings),
+    );
+    var matcher = SubjectSourceMatcher(
+      subjectId: subject.id, search: f.search,
+      memory: BangumiManagerMemory(manager), cache: f.cache,
+      loadDetails: (c) async => details(c), showRaw: () => false,
+    )..setSubject(subject);
+    f.answer('a', subject.nameCn, [comic('a')]);
+    matcher.syncSources([source('a')]);
+    await flush();
+    expect(matcher.current?.id, 'remembered');
+    expect(matcher.current?.title, subject.displayName);
+    matcher.dispose();
+    manager.dispose();
+  });
+
   test('cached lists keep opened first, per-source manual before matched and deduplicate', () {
     f.seed('a');
     f.seed('rss', showRaw: false);
     f.seed('b', id: 'unmatched', matchedId: null);
-    f.memory.manual['a'] = {'id': 'manual'};
-    f.memory.manual['rss'] = {'id': 'old', 'title': 'Saved title', 'cover': 'saved cover'};
-    f.memory.manual['b'] = {'id': 'manual-b'};
+    f.memory.manual['a'] = (id: 'manual', title: null, cover: null);
+    f.memory.manual['rss'] = (id: 'old', title: 'Saved title', cover: 'saved cover');
+    f.memory.manual['b'] = (id: 'manual-b', title: null, cover: null);
     var cached = SubjectSourceMatcher.cached(
       subject: subject, opened: comic('a', 'old'),
       enabled: [source('a'), source('rss'), source('b')],

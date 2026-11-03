@@ -11,10 +11,12 @@ import 'package:venera/foundation/history.dart';
 import 'bangumi_api.dart';
 import 'bangumi_models.dart';
 import 'bangumi_playback.dart';
+import 'bangumi_preferences.dart';
 
 export 'bangumi_api.dart';
 export 'bangumi_models.dart';
 export 'bangumi_playback.dart';
+export 'bangumi_preferences.dart';
 
 sealed class BangumiSyncResult {
   const BangumiSyncResult();
@@ -159,10 +161,20 @@ class BangumiProgress {
 class BangumiManager with ChangeNotifier {
   factory BangumiManager() => instance;
 
-  BangumiManager._();
+  BangumiManager._() : preferences = _defaultPreferences();
 
   @visibleForTesting
-  BangumiManager.forTesting();
+  BangumiManager.forTesting({BangumiPreferences? preferences})
+      : preferences = preferences ?? _defaultPreferences();
+
+  final BangumiPreferences preferences;
+
+  static BangumiPreferences _defaultPreferences() =>
+      BangumiPreferences.withAccessors(
+        (key) => appdata.settings[key],
+        (key, value) { appdata.settings[key] = value; },
+        save: appdata.saveData,
+      );
 
   static final instance = BangumiManager._();
 
@@ -200,91 +212,35 @@ class BangumiManager with ChangeNotifier {
     );
     if (history != null) return bangumiHistoryProgress(history);
     // Read the previous version's progress until playback creates history.
-    return BangumiLocalProgress.fromJson(
-      (appdata.settings['bangumiSubjectProgress'] as Map?)?['$subjectId'],
-    );
+    return preferences.localProgress(subjectId);
   }
 
-  void clearLegacyProgress(int subjectId) {
-    var old = appdata.settings['bangumiSubjectProgress'];
-    if (old is! Map || !old.containsKey('$subjectId')) return;
-    var values = Map<String, dynamic>.from(old)..remove('$subjectId');
-    appdata.settings['bangumiSubjectProgress'] = values;
-    appdata.saveData();
-  }
+  void clearLegacyProgress(int subjectId) =>
+      preferences.clearLegacyProgress(subjectId);
 
-  Map? sourceChoice(int subjectId) =>
-      (appdata.settings['bangumiSourceChoices'] as Map?)?['$subjectId'] as Map?;
+  BangumiSourceChoice? sourceChoice(int subjectId) =>
+      preferences.sourceChoice(subjectId);
 
-  void chooseSource(int subjectId, String sourceKey, String id) {
-    var all = Map<String, dynamic>.from(
-      appdata.settings['bangumiSourceChoices'] as Map? ?? {},
-    );
-    all.remove('$subjectId');
-    all['$subjectId'] = {'sourceKey': sourceKey, 'id': id};
-    while (all.length > 200) {
-      all.remove(all.keys.first);
-    }
-    appdata.settings['bangumiSourceChoices'] = all;
-    appdata.saveData();
-  }
+  void chooseSource(int subjectId, String sourceKey, String id) =>
+      preferences.chooseSource(subjectId, sourceKey, id);
 
-  List<String> customAliases(int subjectId) {
-    var value =
-        (appdata.settings['bangumiCustomAliases'] as Map?)?['$subjectId'];
-    return bangumiNames(value is List ? value.whereType<String>() : <String>[]);
-  }
+  List<String> customAliases(int subjectId) =>
+      preferences.customAliases(subjectId);
 
-  void _saveBounded(String setting, String key, Object value, int limit) {
-    var all = Map<String, dynamic>.from(
-      appdata.settings[setting] as Map? ?? {},
-    );
-    all.remove(key);
-    all[key] = value;
-    while (all.length > limit) {
-      all.remove(all.keys.first);
-    }
-    appdata.settings[setting] = all;
-    appdata.saveData();
-  }
+  void addCustomAlias(int subjectId, String alias) =>
+      preferences.addCustomAlias(subjectId, alias);
 
-  void addCustomAlias(int subjectId, String alias) {
-    var values = bangumiNames([
-      alias,
-      ...customAliases(subjectId),
-    ]).take(20).toList();
-    _saveBounded('bangumiCustomAliases', '$subjectId', values, 200);
-  }
+  String? sourceKeyword(int subjectId, String sourceKey) =>
+      preferences.sourceKeyword(subjectId, sourceKey);
 
-  String? sourceKeyword(int subjectId, String sourceKey) {
-    var value =
-        (appdata.settings['bangumiSourceKeywords']
-            as Map?)?['$subjectId@$sourceKey'];
-    return value is String ? value : null;
-  }
+  void rememberKeyword(int subjectId, String sourceKey, String keyword) =>
+      preferences.rememberKeyword(subjectId, sourceKey, keyword);
 
-  void rememberKeyword(int subjectId, String sourceKey, String keyword) {
-    _saveBounded(
-      'bangumiSourceKeywords',
-      '$subjectId@$sourceKey',
-      keyword,
-      500,
-    );
-  }
+  BangumiManualChoice? manualSourceChoice(int subjectId, String sourceKey) =>
+      preferences.manualSourceChoice(subjectId, sourceKey);
 
-  Map? manualSourceChoice(int subjectId, String sourceKey) =>
-      (appdata.settings['bangumiManualSourceChoices']
-              as Map?)?['$subjectId@$sourceKey']
-          as Map?;
-
-  void rememberSourceResult(int subjectId, Comic comic) {
-    _saveBounded(
-      'bangumiManualSourceChoices',
-      '$subjectId@${comic.sourceKey}',
-      {'id': comic.id, 'title': comic.title, 'cover': comic.cover},
-      500,
-    );
-  }
+  void rememberSourceResult(int subjectId, Comic comic) =>
+      preferences.rememberSourceResult(subjectId, comic);
 
   BangumiApi? _api;
 
@@ -326,33 +282,16 @@ class BangumiManager with ChangeNotifier {
     notifyListeners();
   }
 
-  static String _key(String sourceKey, String id) => '$id@$sourceKey';
-
-  Map<String, dynamic> get _bindings {
-    var bindings = appdata.settings['bangumiBindings'];
-    if (bindings is! Map<String, dynamic>) {
-      bindings = <String, dynamic>{
-        if (bindings is Map)
-          for (var e in bindings.entries) e.key.toString(): e.value,
-      };
-      appdata.settings['bangumiBindings'] = bindings;
-    }
-    return bindings;
-  }
-
-  BangumiBinding? bindingOf(String sourceKey, String id) {
-    return BangumiBinding.fromJson(_bindings[_key(sourceKey, id)]);
-  }
+  BangumiBinding? bindingOf(String sourceKey, String id) =>
+      preferences.bindingOf(sourceKey, id);
 
   void bind(String sourceKey, String id, BangumiBinding binding) {
-    _bindings[_key(sourceKey, id)] = binding.toJson();
-    appdata.saveData();
+    preferences.bind(sourceKey, id, binding);
     notifyListeners();
   }
 
   void unbind(String sourceKey, String id) {
-    _bindings.remove(_key(sourceKey, id));
-    appdata.saveData();
+    preferences.unbind(sourceKey, id);
     notifyListeners();
   }
 

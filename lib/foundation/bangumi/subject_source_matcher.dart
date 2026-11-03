@@ -87,8 +87,8 @@ class ComicSourceSearch implements SubjectSourceSearch {
 abstract interface class SubjectSourceMemory {
   String? sourceKeyword(int subjectId, String sourceKey);
   void rememberKeyword(int subjectId, String sourceKey, String keyword);
-  Map? manualSourceChoice(int subjectId, String sourceKey);
-  Map? sourceChoice(int subjectId);
+  BangumiManualChoice? manualSourceChoice(int subjectId, String sourceKey);
+  BangumiSourceChoice? sourceChoice(int subjectId);
   void rememberSourceResult(int subjectId, Comic comic);
   void chooseSource(int subjectId, String sourceKey, String id);
   BangumiBinding? bindingOf(String sourceKey, String id);
@@ -107,10 +107,11 @@ class BangumiManagerMemory implements SubjectSourceMemory {
   void rememberKeyword(int subjectId, String sourceKey, String keyword) =>
       manager.rememberKeyword(subjectId, sourceKey, keyword);
   @override
-  Map? manualSourceChoice(int subjectId, String sourceKey) =>
+  BangumiManualChoice? manualSourceChoice(int subjectId, String sourceKey) =>
       manager.manualSourceChoice(subjectId, sourceKey);
   @override
-  Map? sourceChoice(int subjectId) => manager.sourceChoice(subjectId);
+  BangumiSourceChoice? sourceChoice(int subjectId) =>
+      manager.sourceChoice(subjectId);
   @override
   void rememberSourceResult(int subjectId, Comic comic) =>
       manager.rememberSourceResult(subjectId, comic);
@@ -140,7 +141,7 @@ class SubjectSourceMatcher extends ChangeNotifier {
     this.saveCache,
   }) : _search = search, matchCache = cache, _loadDetails = loadDetails {
     var choice = memory.sourceChoice(subjectId);
-    _observedChoice = (choice?['sourceKey'], choice?['id']);
+    _observedChoice = (choice?.sourceKey, choice?.id);
   }
 
   final int subjectId;
@@ -151,7 +152,7 @@ class SubjectSourceMatcher extends ChangeNotifier {
   final bool Function() showRaw;
   final void Function()? saveCache;
   BangumiSubject? _subject;
-  late (Object?, Object?) _observedChoice;
+  late (String?, String?) _observedChoice;
   bool _disposed = false;
   final _rows = <SubjectSourceRow>[];
   final _candidates = <Comic>[];
@@ -206,11 +207,11 @@ class SubjectSourceMatcher extends ChangeNotifier {
   void choiceChanged() {
     if (_disposed) return;
     var choice = memory.sourceChoice(subjectId);
-    var identity = (choice?['sourceKey'], choice?['id']);
+    var identity = (choice?.sourceKey, choice?.id);
     if (identity != _observedChoice) {
       _observedChoice = identity;
       var selected = _candidates.where((c) =>
-        c.sourceKey == choice?['sourceKey'] && c.id == choice?['id']).firstOrNull;
+        c.sourceKey == choice?.sourceKey && c.id == choice?.id).firstOrNull;
       if (selected != null) {
         _current = selected;
         var row = _rows.where((s) => s.source.key == selected.sourceKey).firstOrNull;
@@ -225,7 +226,7 @@ class SubjectSourceMatcher extends ChangeNotifier {
     if (_disposed) return;
     var choice = memory.sourceChoice(subjectId);
     _current = _candidates.where((c) =>
-      c.sourceKey == choice?['sourceKey'] && c.id == choice?['id']).firstOrNull ??
+      c.sourceKey == choice?.sourceKey && c.id == choice?.id).firstOrNull ??
         _current;
     _notify();
   }
@@ -309,13 +310,15 @@ class SubjectSourceMatcher extends ChangeNotifier {
   Comic? _rememberedCandidate(SubjectSourceRow row) {
     var value = memory.manualSourceChoice(subjectId, row.source.key);
     var choice = memory.sourceChoice(subjectId);
-    if (value == null && choice?['sourceKey'] == row.source.key) value = choice;
-    var id = value?['id'];
-    if (id is! String) return null;
+    if (value == null && choice != null && choice.sourceKey == row.source.key) {
+      value = (id: choice.id, title: null, cover: null);
+    }
+    if (value == null) return null;
+    var id = value.id;
     return row._results.where((c) => c.id == id).firstOrNull ??
         Comic(
-          value?['title'] is String ? value!['title'] : _subject!.displayName,
-          value?['cover'] is String ? value!['cover'] : _subject!.image,
+          value.title ?? _subject!.displayName,
+          value.cover ?? _subject!.image,
           id,
           null,
           null,
@@ -538,7 +541,7 @@ class SubjectSourceMatcher extends ChangeNotifier {
           if (source._chosen != null) source._chosen!,
       ];
       var preferred = chosen
-          .where((c) => c.sourceKey == choice?['sourceKey'])
+          .where((c) => c.sourceKey == choice?.sourceKey)
           .firstOrNull;
       var previous = chosen
           .where(
@@ -572,7 +575,7 @@ class SubjectSourceMatcher extends ChangeNotifier {
     // Wait only for rows that can still change the current pick: its own and
     // the chosen source's. A slow, uncached source elsewhere (several gated
     // RSS pages) must not hold up the refresh.
-    var choice = memory.sourceChoice(subjectId)?['sourceKey'];
+    var choice = memory.sourceChoice(subjectId)?.sourceKey;
     var choiceLoading = choice != comic.sourceKey &&
         _rows.any((row) => row.source.key == choice && row._loading);
     var key = (comic.sourceKey, comic.id);
@@ -709,11 +712,11 @@ class SubjectSourceMatcher extends ChangeNotifier {
             : null,
       );
       var choice = memory.manualSourceChoice(subjectId, source.key);
-      if (choice?['id'] is String) {
+      if (choice != null) {
         add(Comic(
-          choice!['title'] is String ? choice['title'] : subject.displayName,
-          choice['cover'] is String ? choice['cover'] : subject.image,
-          choice['id'],
+          choice.title ?? subject.displayName,
+          choice.cover ?? subject.image,
+          choice.id,
           null, null, '', source.key, null, null,
         ));
       }
