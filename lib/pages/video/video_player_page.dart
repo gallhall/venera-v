@@ -737,144 +737,120 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          backgroundColor: context.colorScheme.surfaceContainerLow,
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text("Player Settings".tl, style: ts.s18),
-                        ),
-                        IconButton(
-                          tooltip: "Close".tl,
-                          icon: const Icon(Icons.close_rounded),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    ),
+        builder: (context, setDialogState) => ContentDialog(
+          title: "Player Settings".tl,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Text("Video fit".tl, style: ts.s14).paddingHorizontal(16),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (var (value, label) in const [
+                  (BoxFit.contain, "Fit"),
+                  (BoxFit.cover, "Crop"),
+                  (BoxFit.fill, "Stretch"),
+                ])
+                  ChoiceChip(
+                    shape: const StadiumBorder(),
+                    showCheckmark: false,
+                    selectedColor: context.colorScheme.secondaryContainer,
+                    label: Text(label.tl),
+                    selected: fit == value,
+                    onSelected: (_) {
+                      setFit(value);
+                      setDialogState(() {});
+                    },
                   ),
-                  Text("Video fit".tl, style: ts.s14).paddingHorizontal(16),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (var (value, label) in const [
-                        (BoxFit.contain, "Fit"),
-                        (BoxFit.cover, "Crop"),
-                        (BoxFit.fill, "Stretch"),
-                      ])
-                        ChoiceChip(
-                          shape: const StadiumBorder(),
-                          showCheckmark: false,
-                          selectedColor: context.colorScheme.secondaryContainer,
-                          label: Text(label.tl),
-                          selected: fit == value,
-                          onSelected: (_) {
-                            setFit(value);
-                            setDialogState(() {});
-                          },
-                        ),
-                    ],
-                  ).paddingHorizontal(16),
-                  const SizedBox(height: 8),
-                  if (active != null) ...[
-                    ValueListenableBuilder<Anime4kStatus>(
-                      valueListenable:
-                          active!.anime4kStatus,
-                      builder: (context, status, _) => ListTile(
-                        title: Text("Default Anime4K preset".tl),
-                        subtitle: Text(
-                          Anime4kPreset.fromSetting(
-                            appdata.settings['videoAnime4k'],
-                          ).label.tl,
-                        ),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: () async {
-                          await pickAnime4k(
-                            context,
-                            useDefault: true,
-                            onChanged: () {
-                              if (context.mounted) {
-                                setDialogState(() {});
-                              }
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Anime4kStatusView(player: active!),
-                    ),
-                    if (App.isAndroid)
-                      SwitchListTile(
-                        title: Text("Half precision acceleration (faster, almost identical quality)".tl),
-                        value: appdata.settings['videoAnime4kHalfPrecision'] != false,
-                        onChanged: (value) async {
-                          appdata.settings['videoAnime4kHalfPrecision'] = value;
-                          appdata.saveData();
+              ],
+            ).paddingHorizontal(16),
+            const SizedBox(height: 8),
+            if (active != null) ...[
+              ValueListenableBuilder<Anime4kStatus>(
+                valueListenable:
+                    active!.anime4kStatus,
+                builder: (context, status, _) => ListTile(
+                  title: Text("Default Anime4K preset".tl),
+                  subtitle: Text(
+                    Anime4kPreset.fromSetting(
+                      appdata.settings['videoAnime4k'],
+                    ).label.tl,
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () async {
+                    await pickAnime4k(
+                      context,
+                      useDefault: true,
+                      onChanged: () {
+                        if (context.mounted) {
                           setDialogState(() {});
-                          await active!.refreshAnime4kPrecision();
-                        },
-                      ),
-                    Text(
-                      "Phones should start with Fast; higher presets need "
-                      "a stronger GPU and more battery".tl,
-                      style: ts.s12,
-                    ).paddingHorizontal(16),
-                    const SizedBox(height: 8),
-                  ],
-                  SwitchListTile(
-                    title: Text("Auto switch source on failure".tl),
-                    value: autoSwitch,
-                    onChanged: (v) {
-                      appdata.settings['videoAutoSwitch'] = v;
-                      appdata.saveData();
-                      if (!v) {
-                        session?.cancelStartupWatch();
-                      }
-                      setDialogState(() {});
-                    },
-                  ),
-                  InlineSelectTile<int>(
-                    title: Text("Playback start timeout".tl),
-                    options: {
-                      for (var seconds in const [10, 20, 30, 60])
-                        seconds: "@n seconds".tlParams({'n': seconds}),
-                    },
-                    selected:
-                        appdata.settings['videoAutoSwitchTimeout'] as int? ?? 20,
-                    onChanged: (v) {
-                      appdata.settings['videoAutoSwitchTimeout'] = v;
-                      appdata.saveData();
-                      setDialogState(() {});
-                    },
-                  ),
-                  SwitchListTile(
-                    title: Text("Skip intro and outro automatically".tl),
-                    subtitle: Text("Only when the video source marks them".tl),
-                    value: appdata.settings['videoAutoSkip'] == true,
-                    onChanged: (v) {
-                      appdata.settings['videoAutoSkip'] = v;
-                      appdata.saveData();
-                      setDialogState(() {});
-                    },
-                  ),
-                ],
+                        }
+                      },
+                    );
+                  },
+                ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Anime4kStatusView(player: active!),
+              ),
+              if (App.isAndroid)
+                SwitchListTile(
+                  title: Text("Half precision acceleration (faster, almost identical quality)".tl),
+                  value: appdata.settings['videoAnime4kHalfPrecision'] != false,
+                  onChanged: (value) async {
+                    appdata.settings['videoAnime4kHalfPrecision'] = value;
+                    appdata.saveData();
+                    setDialogState(() {});
+                    await active!.refreshAnime4kPrecision();
+                  },
+                ),
+              Text(
+                "Phones should start with Fast; higher presets need "
+                "a stronger GPU and more battery".tl,
+                style: ts.s12,
+              ).paddingHorizontal(16),
+              const SizedBox(height: 8),
+            ],
+            SwitchListTile(
+              title: Text("Auto switch source on failure".tl),
+              value: autoSwitch,
+              onChanged: (v) {
+                appdata.settings['videoAutoSwitch'] = v;
+                appdata.saveData();
+                if (!v) {
+                  session?.cancelStartupWatch();
+                }
+                setDialogState(() {});
+              },
             ),
+            InlineSelectTile<int>(
+              title: Text("Playback start timeout".tl),
+              options: {
+                for (var seconds in const [10, 20, 30, 60])
+                  seconds: "@n seconds".tlParams({'n': seconds}),
+              },
+              selected:
+                  appdata.settings['videoAutoSwitchTimeout'] as int? ?? 20,
+              onChanged: (v) {
+                appdata.settings['videoAutoSwitchTimeout'] = v;
+                appdata.saveData();
+                setDialogState(() {});
+              },
+            ),
+            SwitchListTile(
+              title: Text("Skip intro and outro automatically".tl),
+              subtitle: Text("Only when the video source marks them".tl),
+              value: appdata.settings['videoAutoSkip'] == true,
+              onChanged: (v) {
+                appdata.settings['videoAutoSkip'] = v;
+                appdata.saveData();
+                setDialogState(() {});
+              },
+            ),
+            ],
           ),
         ),
       ),

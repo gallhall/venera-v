@@ -23,14 +23,8 @@ class PopUpWidget<T> extends PopupRoute<T> {
       child: Container(
         decoration: showPopUp
             ? BoxDecoration(
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-                boxShadow: context.brightness == ui.Brightness.dark ? [
-                  BoxShadow(
-                    color: Colors.white.withAlpha(50),
-                    blurRadius: 10,
-                    offset: Offset(0, 2),
-                  ),
-                ] : null,
+                borderRadius: BorderRadius.all(Radius.circular(28)),
+                color: context.colorScheme.surfaceContainerLow,
               )
             : null,
         clipBehavior: showPopUp ? Clip.antiAlias : Clip.none,
@@ -115,6 +109,9 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
   @override
   Widget build(BuildContext context) {
     return Material(
+      color: context.width > 500
+          ? context.colorScheme.surfaceContainerLow
+          : context.colorScheme.surface,
       child: Column(
         children: [
           Container(
@@ -124,7 +121,7 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
             decoration: BoxDecoration(
               color: top
                   ? null
-                  : Theme.of(context).colorScheme.surfaceTint.withAlpha(20),
+                  : context.colorScheme.surfaceContainerLow,
             ),
             child: Row(
               children: [
@@ -132,9 +129,9 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
                   width: 8,
                 ),
                 Tooltip(
-                  message: "Back".tl,
+                  message: context.canPop() ? "Back".tl : "Close".tl,
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_back_sharp),
+                    icon: Icon(context.canPop() ? Icons.arrow_back : Icons.close),
                     onPressed: () =>
                         context.canPop() ? context.pop() : App.pop(),
                   ),
@@ -144,8 +141,7 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
                 ),
                 Text(
                   widget.title,
-                  style: const TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w500),
+                  style: ts.s18.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
                 if (widget.tailing != null) ...widget.tailing!,

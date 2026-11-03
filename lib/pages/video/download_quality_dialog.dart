@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -34,54 +33,33 @@ Future<String?> selectDownloadQuality(
   } finally {
     loading.close();
   }
-  if (canceled) return null;
-  if (levels.length < 2) return 'highest';
+  if (canceled) {
+    return null;
+  }
+  if (levels.length < 2) {
+    return 'highest';
+  }
 
   // Preselect the last choice, or the closest one below it.
   var last = int.tryParse(appdata.settings['videoDownloadQuality'].toString());
   var selected = last == null
       ? levels.first
       : levels.firstWhere((l) => l.height <= last, orElse: () => levels.last);
-  var confirmed = false;
-  await showDialog(
-    context: App.rootContext,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return ContentDialog(
-            title: "Download Quality".tl,
-            content: RadioGroup<VideoQualityLevel>(
-              groupValue: selected,
-              onChanged: (v) => setState(() => selected = v ?? selected),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var level in levels)
-                    RadioListTile<VideoQualityLevel>(
-                      value: level,
-                      title: Text("${level.height}P"),
-                      subtitle: level.resolution == null
-                          ? null
-                          : Text(level.resolution!),
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              Button.filled(
-                onPressed: () {
-                  confirmed = true;
-                  context.pop();
-                },
-                child: Text("Download".tl),
-              ),
-            ],
-          );
-        },
-      );
+  final choice = await showOptionsSheet<VideoQualityLevel>(
+    App.rootContext,
+    title: "Download Quality".tl,
+    options: {
+      for (final level in levels)
+        level: level.resolution == null
+            ? "${level.height}P"
+            : "${level.height}P (${level.resolution})",
     },
+    selected: selected,
   );
-  if (!confirmed) return null;
+  if (choice == null) {
+    return null;
+  }
+  selected = choice;
   appdata.settings['videoDownloadQuality'] = selected.value;
   appdata.saveData();
   return selected.value;

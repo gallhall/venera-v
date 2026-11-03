@@ -548,7 +548,7 @@ class _FavoriteFolder extends StatelessWidget {
       leadingSliver: SliverAppbar(
         title: Text(title),
         actions: [
-          _FavoriteMenuButton(entries: [
+          _FavoriteMenuButton(title: title, entries: [
             MenuEntry(
               icon: Icons.sync,
               text: "Convert to local".tl,

@@ -26,7 +26,7 @@ class SideBarRoute<T> extends PopupRoute<T> {
   bool _barrierSawPointerDown = false;
 
   @override
-  Color? get barrierColor => showBarrier ? Colors.black54 : Colors.transparent;
+  Color? get barrierColor => showBarrier ? Colors.black54 : null;
 
   @override
   bool get barrierDismissible => dismissible;
@@ -92,22 +92,20 @@ class SideBarRoute<T> extends PopupRoute<T> {
     body = Container(
       decoration: BoxDecoration(
         borderRadius: showSideBar
-            ? const BorderRadius.horizontal(left: Radius.circular(16))
+            ? const BorderRadius.horizontal(left: Radius.circular(28))
             : null,
-        color: Theme.of(context).colorScheme.surfaceTint,
-        boxShadow: context.brightness == ui.Brightness.dark ? [
-          BoxShadow(
-            color: Colors.white.withAlpha(50),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
-        ] : null,
+        color: showSideBar
+            ? context.colorScheme.surfaceContainerLow
+            : context.colorScheme.surface,
       ),
       clipBehavior: Clip.antiAlias,
       constraints: BoxConstraints(maxWidth: sideBarWidth),
       height: MediaQuery.of(context).size.height,
       child: GestureDetector(
         child: Material(
+          color: showSideBar
+              ? context.colorScheme.surfaceContainerLow
+              : context.colorScheme.surface,
           child: ClipRect(
             clipBehavior: Clip.antiAlias,
             child: Container(
@@ -119,9 +117,6 @@ class SideBarRoute<T> extends PopupRoute<T> {
                       ? MediaQuery.of(context).padding.bottom +
                           MediaQuery.of(context).viewInsets.bottom
                       : 0),
-              color: useSurfaceTintColor
-                  ? Theme.of(context).colorScheme.surfaceTint.withAlpha(20)
-                  : null,
               child: body,
             ),
           ),

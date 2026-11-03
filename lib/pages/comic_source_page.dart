@@ -447,19 +447,20 @@ class _BodyState extends State<_Body> {
         await Process.run("code", [source.filePath], runInShell: true);
         await showDialog(
           context: App.rootContext,
-          builder: (context) => AlertDialog(
-            title: const Text("Reload Configs"),
+          builder: (context) => ContentDialog(
+            title: "Reload Configs".tl,
+            content: const SizedBox.shrink(),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("cancel"),
+                child: Text("Cancel".tl),
               ),
-              TextButton(
+              FilledButton(
                 onPressed: () async {
                   await ComicSourceManager().reload();
                   App.forceRebuild();
                 },
-                child: const Text("continue"),
+                child: Text("Continue".tl),
               ),
             ],
           ),
@@ -1203,69 +1204,19 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
                         onChanged: (value) => source.isEnabled = value,
                       ),
                     ),
-                    PopupMenuButton<String>(
+                    MenuButton(
                       tooltip: 'More'.tl,
-                      icon: Icon(
-                        Icons.more_horiz,
-                        color: hasUpdate ? context.colorScheme.primary : null,
-                      ),
-                      onSelected: (action) {
-                        switch (action) {
-                          case 'edit':
-                            widget.edit(source);
-                            break;
-                          case 'update':
-                            widget.update(source);
-                            break;
-                          case 'delete':
-                            widget.delete(source);
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              const Icon(Icons.edit_note),
-                              const SizedBox(width: 12),
-                              Text('Edit'.tl),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'update',
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.update,
-                                color: hasUpdate
-                                    ? context.colorScheme.primary
-                                    : null,
-                              ),
-                              const SizedBox(width: 12),
-                              Text('Update'.tl),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.delete_outline,
-                                color: context.colorScheme.error,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Delete'.tl,
-                                style: TextStyle(
-                                  color: context.colorScheme.error,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      color: hasUpdate ? context.colorScheme.primary
+                          : context.colorScheme.onSurfaceVariant,
+                      entries: [
+                        MenuEntry(text: 'Edit'.tl, icon: Icons.edit_note,
+                          onClick: () => widget.edit(source)),
+                        MenuEntry(text: 'Update'.tl, icon: Icons.update,
+                          color: hasUpdate ? context.colorScheme.primary : null,
+                          onClick: () => widget.update(source)),
+                        MenuEntry(text: 'Delete'.tl, icon: Icons.delete_outline,
+                          color: context.colorScheme.error,
+                          onClick: () => widget.delete(source)),
                       ],
                     ),
                   ],

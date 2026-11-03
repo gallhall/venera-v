@@ -468,88 +468,57 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
     sources.removeWhere((e) {
       return !enabled.contains(e.key);
     });
-    return Dialog(
-      backgroundColor: context.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 600,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.8,
-        ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 24, right: 8),
-                child: Row(
-                  children: [
-                    Expanded(child: Text("Settings".tl, style: ts.s18)),
-                    IconButton(
-                      tooltip: "Close".tl,
-                      onPressed: () => context.pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              SectionCard(
-                icon: Icons.manage_search,
-                title: "Search in".tl,
-                body: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: sources.map((e) {
-                    return ChoiceChip(
-                      label: Text(e.name.tl),
-                      selected: searchTarget == e.key,
-                      showCheckmark: false,
-                      shape: const StadiumBorder(),
-                      side: BorderSide.none,
-                      backgroundColor: context.colorScheme.surfaceContainerHigh,
-                      selectedColor: context.colorScheme.secondaryContainer,
-                      labelStyle: TextStyle(
-                        color: searchTarget == e.key
-                            ? context.colorScheme.onSecondaryContainer
-                            : context.colorScheme.onSurfaceVariant,
-                      ),
-                      onSelected: (_) {
-                        setState(() {
-                          searchTarget = e.key;
-                          options.clear();
-                          final searchOptions =
-                              ComicSource.find(
-                                searchTarget,
-                              )!.searchPageData!.searchOptions ??
-                              <SearchOptions>[];
-                          options = searchOptions
-                              .map((e) => e.defaultValue)
-                              .toList();
-                          onChanged();
-                        });
-                      },
-                    );
-                  }).toList(),
-                ).fixWidth(double.infinity).paddingHorizontal(16),
-              ),
-              buildSearchOptions(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: () => context.pop(),
-                    child: Text("Confirm".tl),
+    return ContentDialog(
+      title: "Settings".tl,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionCard(
+            icon: Icons.manage_search,
+            title: "Search in".tl,
+            body: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: sources.map((e) {
+                return ChoiceChip(
+                  label: Text(e.name.tl),
+                  selected: searchTarget == e.key,
+                  showCheckmark: false,
+                  shape: const StadiumBorder(),
+                  side: BorderSide.none,
+                  backgroundColor: context.colorScheme.surfaceContainerHigh,
+                  selectedColor: context.colorScheme.secondaryContainer,
+                  labelStyle: TextStyle(
+                    color: searchTarget == e.key
+                        ? context.colorScheme.onSecondaryContainer
+                        : context.colorScheme.onSurfaceVariant,
                   ),
-                ),
-              ),
-            ],
+                  onSelected: (_) {
+                    setState(() {
+                      searchTarget = e.key;
+                      options.clear();
+                      final searchOptions =
+                          ComicSource.find(
+                            searchTarget,
+                          )!.searchPageData!.searchOptions ??
+                          <SearchOptions>[];
+                      options = searchOptions
+                          .map((e) => e.defaultValue)
+                          .toList();
+                      onChanged();
+                    });
+                  },
+                );
+              }).toList(),
+            ).fixWidth(double.infinity).paddingHorizontal(16),
           ),
-        ),
+          buildSearchOptions(),
+        ],
       ),
+      actions: [
+        FilledButton(onPressed: context.pop, child: Text("Confirm".tl)),
+      ],
     );
   }
 

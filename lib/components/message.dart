@@ -148,20 +148,35 @@ Future<void> showConfirmDialog({
   required void Function() onConfirm,
   String confirmText = "Confirm",
   Color? btnColor,
+  Widget? contentWidget,
+  String? alternativeText,
+  VoidCallback? onAlternative,
 }) {
   return showDialog(
     context: context,
     builder: (context) => ContentDialog(
       title: title,
-      content: Text(content).paddingHorizontal(16).paddingVertical(8),
+      content: contentWidget ??
+          Text(content).paddingHorizontal(24).paddingVertical(8),
       actions: [
+        TextButton(onPressed: context.pop, child: Text('Cancel'.tl)),
+        if (alternativeText != null && onAlternative != null)
+          TextButton(
+            onPressed: () {
+              context.pop();
+              onAlternative();
+            },
+            child: Text(alternativeText),
+          ),
         FilledButton(
           onPressed: () {
             context.pop();
             onConfirm();
           },
           style: FilledButton.styleFrom(
-            backgroundColor: btnColor,
+            backgroundColor: btnColor ??
+                (confirmText == 'Delete' || confirmText == 'Clear'
+                    ? context.colorScheme.error : null),
           ),
           child: Text(confirmText.tl),
         ),
@@ -293,51 +308,61 @@ class ContentDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var content = SingleChildScrollView(
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          title != null
-              ? Appbar(
-            leading: IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: dismissible ? context.pop : null,
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title!,
+                      style: ts.s18.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close'.tl,
+                    onPressed: dismissible ? context.pop : null,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
             ),
-            title: Text(title!),
-            backgroundColor: Colors.transparent,
-          )
-              : const SizedBox.shrink(),
           this.content,
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: actions,
-          ).paddingRight(12),
-          const SizedBox(height: 16),
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: actions,
+              ),
+            ),
         ],
       ),
     );
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: context.brightness == Brightness.dark
-            ? BorderSide(color: context.colorScheme.outlineVariant)
-            : BorderSide.none,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       insetPadding: context.width < 400
           ? const EdgeInsets.symmetric(horizontal: 4)
           : const EdgeInsets.symmetric(horizontal: 16),
-      elevation: 2,
-      shadowColor: context.colorScheme.shadow,
-      backgroundColor: context.colorScheme.surface,
+      elevation: 0,
+      backgroundColor: context.colorScheme.surfaceContainerLow,
       child: AnimatedSize(
         duration: const Duration(milliseconds: 200),
         alignment: Alignment.topCenter,
         child: IntrinsicWidth(
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: 600,
+              maxWidth: 560,
               minWidth: math.min(400, context.width - 16),
             ),
             child: MediaQuery.removePadding(
@@ -399,12 +424,15 @@ Future<void> showInputDialog({
               ],
             ),
             actions: [
-              Button.filled(
-                isLoading: isLoading,
-                onPressed: () async {
+              TextButton(
+                onPressed: isLoading ? null : context.pop,
+                child: Text(cancelText.tl),
+              ),
+              FilledButton(
+                onPressed: isLoading ? null : () async {
                   if (inputValidator != null &&
                       !inputValidator.hasMatch(controller.text)) {
-                    setState(() => error = "Invalid input");
+                    setState(() => error = "Invalid input".tl);
                     return;
                   }
                   var futureOr = onConfirm(controller.text);
@@ -422,7 +450,16 @@ Future<void> showInputDialog({
                     setState(() => error = result.toString());
                   }
                 },
-                child: Text(confirmText.tl),
+                child: isLoading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: context.colorScheme.onPrimary,
+                        ),
+                      )
+                    : Text(confirmText.tl),
               ),
             ],
           );
@@ -445,7 +482,7 @@ void showInfoDialog({
         title: title,
         content: Text(content).paddingHorizontal(16).paddingVertical(8),
         actions: [
-          Button.filled(
+          FilledButton(
             onPressed: context.pop,
             child: Text(confirmText.tl),
           ),

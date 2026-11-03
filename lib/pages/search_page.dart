@@ -711,33 +711,18 @@ class _SearchHistoryState extends State<_SearchHistory> {
         icon: Icons.history,
         title: "Search History".tl,
         actions: [
-          Flyout(
-            flyoutBuilder: (context) {
-              return FlyoutContent(
-                title: "Clear Search History".tl,
-                actions: [
-                  FilledButton(
-                    child: Text("Clear".tl),
-                    onPressed: () {
-                      appdata.clearSearchHistory();
-                      context.pop();
-                      setState(() {});
-                    },
-                  ),
-                ],
-              );
-            },
-            child: Builder(
-              builder: (context) {
-                return Tooltip(
-                  message: "Clear".tl,
-                  child: IconButton(
-                    icon: const Icon(Icons.clear_all),
-                    onPressed: () {
-                      context.findAncestorStateOfType<FlyoutState>()!.show();
-                    },
-                  ),
-                );
+          IconButton(
+            tooltip: "Clear".tl,
+            icon: const Icon(Icons.clear_all),
+            onPressed: () => showConfirmDialog(
+              context: context,
+              title: "Clear Search History".tl,
+              content: "Clear Search History".tl,
+              confirmText: "Clear",
+              btnColor: context.colorScheme.error,
+              onConfirm: () {
+                appdata.clearSearchHistory();
+                setState(() {});
               },
             ),
           ),
@@ -777,7 +762,7 @@ class _SearchHistoryState extends State<_SearchHistory> {
             setState(() {});
           },
         ),
-      ]);
+      ], title: appdata.searchHistory[index]);
     }
 
     return Builder(

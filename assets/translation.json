@@ -1,5 +1,11 @@
 {
   "zh_CN": {
+    "Invalid input": "输入无效",
+    "Rating": "评分",
+    "all": "全部",
+    "info": "信息",
+    "warning": "警告",
+    "error": "错误",
     "Network connection failed": "网络连接失败",
     "Check your network or proxy settings": "请检查网络或代理设置",
     "Request timed out": "请求超时",
@@ -841,6 +847,12 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Invalid input": "輸入無效",
+    "Rating": "評分",
+    "all": "全部",
+    "info": "資訊",
+    "warning": "警告",
+    "error": "錯誤",
     "Network connection failed": "網路連線失敗",
     "Check your network or proxy settings": "請檢查網路或代理設定",
     "Request timed out": "請求逾時",

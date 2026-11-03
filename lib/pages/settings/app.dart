@@ -11,8 +11,8 @@ class _AppSettingsState extends State<AppSettings> {
   Future<void> editBtGroups() async {
     var draft = appdata.settings['btPreferredGroups'] as String;
     var value = await showDialog<String>(context: context, builder: (context) =>
-      AlertDialog(
-        title: Text('BT preferred release groups'.tl),
+      ContentDialog(
+        title: 'BT preferred release groups'.tl,
         content: TextFormField(
           initialValue: draft,
           onChanged: (value) => draft = value,
@@ -25,7 +25,7 @@ class _AppSettingsState extends State<AppSettings> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context),
             child: Text('Cancel'.tl)),
-          TextButton(onPressed: () => Navigator.pop(context, draft),
+          FilledButton(onPressed: () => Navigator.pop(context, draft),
             child: Text('Confirm'.tl)),
         ],
       ));
@@ -456,66 +456,31 @@ class _LogsPageState extends State<LogsPage> {
         actions: [
           IconButton(
               onPressed: () => setState(() {
-                    final RelativeRect position = RelativeRect.fromLTRB(
-                      MediaQuery.of(context).size.width,
-                      MediaQuery.of(context).padding.top + kToolbarHeight,
-                      0.0,
-                      0.0,
-                    );
-                    showMenu(context: context, position: position, items: [
-                      PopupMenuItem(
-                          child: Text("all"),
-                          onTap: () => setState(() => logLevelToShow = "all")
-                      ),
-                      PopupMenuItem(
-                          child: Text("info"),
-                          onTap: () => setState(() => logLevelToShow = "info")
-                      ),
-                      PopupMenuItem(
-                          child: Text("warning"),
-                          onTap: () => setState(() => logLevelToShow = "warning")
-                      ),
-                      PopupMenuItem(
-                          child: Text("error"),
-                          onTap: () => setState(() => logLevelToShow = "error")
-                      ),
-                    ]);
+                    showMenuX(context,
+                      Offset(context.width, context.padding.top + kToolbarHeight), [
+                        for (final level in ['all', 'info', 'warning', 'error'])
+                          MenuEntry(text: level.tl,
+                            onClick: () => setState(() => logLevelToShow = level)),
+                      ]);
               }),
               icon: const Icon(Icons.filter_list_outlined)
           ),
           IconButton(
               onPressed: () => setState(() {
-                    final RelativeRect position = RelativeRect.fromLTRB(
-                      MediaQuery.of(context).size.width,
-                      MediaQuery.of(context).padding.top + kToolbarHeight,
-                      0.0,
-                      0.0,
-                    );
-                    showMenu(context: context, position: position, items: [
-                      PopupMenuItem(
-                        child: Text("Clear".tl),
-                        onTap: () => setState(() => Log.clear()),
-                      ),
-                      PopupMenuItem(
-                        child: Text("Disable Length Limitation".tl),
-                        onTap: () {
-                          Log.ignoreLimitation = true;
-                          context.showMessage(
-                              message: "Only valid for this run".tl);
-                        },
-                      ),
-                      PopupMenuItem(
-                        child: Text("Export".tl),
-                        onTap: () => saveLog(Log().toString()),
-                      ),
-                      PopupMenuItem(
-                        child: Text("Previous Run".tl),
-                        // Once the menu is closed.
-                        onTap: () => Future.microtask(
-                          () => context.to(() => const _PreviousRunLogPage()),
-                        ),
-                      ),
-                    ]);
+                    showMenuX(context,
+                      Offset(context.width, context.padding.top + kToolbarHeight), [
+                        MenuEntry(text: "Clear".tl,
+                          onClick: () => setState(() => Log.clear())),
+                        MenuEntry(text: "Disable Length Limitation".tl,
+                          onClick: () {
+                            Log.ignoreLimitation = true;
+                            context.showMessage(message: "Only valid for this run".tl);
+                          }),
+                        MenuEntry(text: "Export".tl,
+                          onClick: () => saveLog(Log().toString())),
+                        MenuEntry(text: "Previous Run".tl,
+                          onClick: () => context.to(() => const _PreviousRunLogPage())),
+                      ]);
                   }),
               icon: const Icon(Icons.more_horiz))
         ],
@@ -748,8 +713,8 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                   onPressed: () {
                     showDialog(
                       context: context,
-                      builder: (_) => AlertDialog(
-                        title: Text("Skip Setting Fields".tl),
+                      builder: (_) => ContentDialog(
+                        title: "Skip Setting Fields".tl,
                         content: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,

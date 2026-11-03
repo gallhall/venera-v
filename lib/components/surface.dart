@@ -220,6 +220,8 @@ Future<T?> showOptionsSheet<T>(
   String? title,
   required Map<T, String> options,
   T? selected,
+  // Each icon may be IconData or a custom Widget.
+  Map<T, Object>? icons,
   Widget? content,
   bool forceBottomSheet = false,
 }) {
@@ -242,7 +244,8 @@ Future<T?> showOptionsSheet<T>(
               ),
             Flexible(
               child: content ??
-                  _PickerOptions<T>(options: options, selected: selected),
+                  _PickerOptions<T>(
+                    options: options, selected: selected, icons: icons),
             ),
           ],
         ),
@@ -256,6 +259,7 @@ Future<T?> showOptionsSheet<T>(
       useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
+      elevation: 0,
       backgroundColor: colors.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -265,18 +269,115 @@ Future<T?> showOptionsSheet<T>(
   }
   return showDialog<T>(
     context: context,
-    builder: (context) => Dialog(
-      backgroundColor: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      child: SizedBox(
-        width: 400,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
-          child: buildContent(context),
+    builder: (context) => ContentDialog(
+      title: title,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: screen.height * 0.7),
+        child: content ?? _PickerOptions<T>(
+          options: options, selected: selected, icons: icons),
+      ),
+    ),
+  );
+}
+
+/// Actions always use a bottom sheet on mobile, including tablets.
+Future<void> showActionSheet(
+  BuildContext context,
+  List<MenuEntry> entries, {
+  String? title,
+}) async {
+  final colors = context.colorScheme;
+  MenuEntry? chosen;
+  await showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    showDragHandle: true,
+    isScrollControlled: true,
+    elevation: 0,
+    backgroundColor: colors.surfaceContainerLow,
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+    ),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (context) => SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.s16.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final entry in entries)
+                      InkWell(
+                        onTap: () {
+                          if (chosen != null) {
+                            return;
+                          }
+                          chosen = entry;
+                          Navigator.of(context).pop();
+                        },
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 12),
+                            child: Row(
+                              children: [
+                                if (entry.icon != null) ...[
+                                  Icon(
+                                    entry.icon,
+                                    size: 22,
+                                    color: entry.color ?? colors.onSurface,
+                                  ),
+                                  const SizedBox(width: 16),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    entry.text,
+                                    style: ts.s16.copyWith(
+                                      color: entry.color ?? colors.onSurface),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     ),
   );
+  // The sheet has popped before an action can push another route.
+  if (chosen != null) {
+    await Future<void>.microtask(chosen!.onClick);
+  }
 }
 
 /// Player options use a side panel even on narrow landscape screens.
@@ -285,6 +386,8 @@ Future<T?> showSidePicker<T>(
   required String title,
   required Map<T, String> options,
   T? selected,
+  // Each icon may be IconData or a custom Widget.
+  Map<T, Object>? icons,
   Widget? content,
 }) {
   final media = MediaQuery.of(context);
@@ -294,6 +397,7 @@ Future<T?> showSidePicker<T>(
       title: title,
       options: options,
       selected: selected,
+      icons: icons,
       content: content,
     );
   }
@@ -301,11 +405,12 @@ Future<T?> showSidePicker<T>(
     context: context,
     useSafeArea: false,
     builder: (context) => Dialog(
+      elevation: 0,
       alignment: Alignment.centerRight,
       insetPadding: EdgeInsets.zero,
       constraints: const BoxConstraints(maxWidth: 360),
       backgroundColor: context.colorScheme.surfaceContainerLow,
-      surfaceTintColor: Colors.transparent,
+      surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(left: Radius.circular(28)),
       ),
@@ -323,7 +428,8 @@ Future<T?> showSidePicker<T>(
               ),
               Expanded(
                 child: content ??
-                    _PickerOptions<T>(options: options, selected: selected),
+                    _PickerOptions<T>(
+                    options: options, selected: selected, icons: icons),
               ),
             ],
           ),
@@ -334,10 +440,11 @@ Future<T?> showSidePicker<T>(
 }
 
 class _PickerOptions<T> extends StatefulWidget {
-  const _PickerOptions({required this.options, this.selected});
+  const _PickerOptions({required this.options, this.selected, this.icons});
 
   final Map<T, String> options;
   final T? selected;
+  final Map<T, Object>? icons;
 
   @override
   State<_PickerOptions<T>> createState() => _PickerOptionsState<T>();
@@ -368,6 +475,7 @@ class _PickerOptionsState<T> extends State<_PickerOptions<T>> {
           for (final option in widget.options.entries)
             OptionRow(
               key: option.key == widget.selected ? selectedKey : null,
+              icon: widget.icons?[option.key],
               text: option.value,
               selected: option.key == widget.selected,
               onTap: () => Navigator.of(context).pop(option.key),
@@ -385,12 +493,16 @@ class OptionRow extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.leftPadding = 24,
-  });
+    this.icon,
+  }) : assert(icon == null || icon is IconData || icon is Widget);
 
   final String text;
   final bool selected;
   final VoidCallback onTap;
   final double leftPadding;
+
+  /// IconData, or a custom widget for player actions.
+  final Object? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -409,6 +521,13 @@ class OptionRow extends StatelessWidget {
               size: 20,
             ),
             const SizedBox(width: 16),
+            if (icon != null) ...[
+              IconTheme(
+                data: IconThemeData(size: 20, color: colors.onSurfaceVariant),
+                child: icon is IconData ? Icon(icon as IconData) : icon as Widget,
+              ),
+              const SizedBox(width: 16),
+            ],
             Expanded(
               child: Text(
                 text,
@@ -1589,67 +1708,6 @@ class AppContentWidth extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: SizedBox(width: double.infinity, child: child),
-      ),
-    );
-  }
-}
-
-/// A compact, scrollable dialog for secondary page forms.
-class AppSurfaceDialog extends StatelessWidget {
-  const AppSurfaceDialog({
-    super.key,
-    this.title,
-    required this.content,
-    this.actions = const [],
-  });
-
-  final String? title;
-  final Widget content;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: context.colorScheme.surfaceContainerLow,
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (title != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(title!, style: ts.s18)),
-                      IconButton(
-                        tooltip: 'Close'.tl,
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                ),
-              content,
-              if (actions.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: actions,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }

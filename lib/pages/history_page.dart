@@ -42,7 +42,6 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   var comics = HistoryManager().getAll();
-  var controller = FlyoutController();
 
   bool multiSelectMode = false;
   Map<History, bool> selectedComics = {};
@@ -234,40 +233,18 @@ class _HistoryPageState extends State<HistoryPage> {
           });
         },
       ),
-      Tooltip(
-        message: 'Clear History'.tl,
-        child: Flyout(
-          controller: controller,
-          flyoutBuilder: (context) {
-            return FlyoutContent(
-              title: 'Clear History'.tl,
-              content: Text('Are you sure you want to clear your history?'.tl),
-              actions: [
-                Button.outlined(
-                  onPressed: () {
-                    HistoryManager().clearUnfavoritedHistory();
-                    context.pop();
-                  },
-                  child: Text('Clear Unfavorited'.tl),
-                ),
-                const SizedBox(width: 4),
-                Button.filled(
-                  color: context.colorScheme.error,
-                  onPressed: () {
-                    HistoryManager().clearHistory();
-                    context.pop();
-                  },
-                  child: Text('Clear'.tl),
-                ),
-              ],
-            );
-          },
-          child: IconButton(
-            icon: const Icon(Icons.clear_all),
-            onPressed: () {
-              controller.show();
-            },
-          ),
+      IconButton(
+        tooltip: 'Clear History'.tl,
+        icon: const Icon(Icons.clear_all),
+        onPressed: () => showConfirmDialog(
+          context: context,
+          title: 'Clear History'.tl,
+          content: 'Are you sure you want to clear your history?'.tl,
+          confirmText: 'Clear',
+          btnColor: context.colorScheme.error,
+          onConfirm: () => HistoryManager().clearHistory(),
+          alternativeText: 'Clear Unfavorited'.tl,
+          onAlternative: () => HistoryManager().clearUnfavoritedHistory(),
         ),
       ),
     ];

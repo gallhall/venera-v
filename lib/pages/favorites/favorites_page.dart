@@ -242,9 +242,10 @@ class _FavoriteFolderTitle extends StatelessWidget {
 }
 
 class _FavoriteMenuButton extends StatelessWidget {
-  const _FavoriteMenuButton({required this.entries});
+  const _FavoriteMenuButton({required this.entries, this.title});
 
   final List<MenuEntry> entries;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +254,7 @@ class _FavoriteMenuButton extends StatelessWidget {
       icon: const Icon(Icons.more_horiz),
       onPressed: () {
         final box = context.findRenderObject() as RenderBox;
-        showMenuX(context, box.localToGlobal(Offset.zero), entries);
+        showMenuX(context, box.localToGlobal(Offset.zero), entries, title: title);
       },
     );
   }

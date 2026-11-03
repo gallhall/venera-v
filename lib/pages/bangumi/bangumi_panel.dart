@@ -73,7 +73,7 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AppSurfaceDialog(
+    return ContentDialog(
       title: "Bangumi",
       content: Column(
         mainAxisSize: MainAxisSize.min,

@@ -1,7 +1,12 @@
 part of "components.dart";
 
-void showMenuX(BuildContext context, Offset location, List<MenuEntry> entries) {
-  Navigator.of(context, rootNavigator: true).push(_MenuRoute(entries, location));
+void showMenuX(BuildContext context, Offset location, List<MenuEntry> entries,
+    {String? title}) {
+  if (App.isDesktop) {
+    Navigator.of(context, rootNavigator: true).push(_MenuRoute(entries, location));
+  } else {
+    showActionSheet(context, entries, title: title);
+  }
 }
 
 class _MenuRoute<T> extends PopupRoute<T> {
@@ -12,7 +17,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
   _MenuRoute(this.entries, this.location);
 
   @override
-  Color? get barrierColor => Colors.transparent;
+  Color? get barrierColor => null;
 
   @override
   bool get barrierDismissible => true;
@@ -20,7 +25,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
   @override
   String? get barrierLabel => "menu";
 
-  double get entryHeight => App.isMobile ? 42 : 36;
+  double get entryHeight => 36;
 
   @override
   Widget buildPage(BuildContext context, Animation<double> animation,
@@ -44,35 +49,19 @@ class _MenuRoute<T> extends PopupRoute<T> {
         Positioned(
           left: left,
           top: top,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              border: context.brightness == Brightness.dark
-                  ? Border.all(color: context.colorScheme.outlineVariant)
-                  : null,
-              boxShadow: [
-                BoxShadow(
-                  color: context.colorScheme.shadow.toOpacity(0.2),
-                  blurRadius: 8,
-                  blurStyle: BlurStyle.outer,
-                ),
-              ],
-            ),
-            child: BlurEffect(
-              borderRadius: BorderRadius.circular(4),
-              child: Material(
-                color: context.colorScheme.surface.toOpacity(0.92),
-                borderRadius: BorderRadius.circular(4),
-                child: Container(
-                  width: width,
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children:
-                        entries.map((e) => buildEntry(e, context)).toList(),
-                  ),
-                ),
+          child: Material(
+            color: context.colorScheme.surfaceContainer,
+            elevation: 3,
+            shadowColor: context.colorScheme.shadow,
+            surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: Container(
+              width: width,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: entries.map((e) => buildEntry(e, context)).toList(),
               ),
             ),
           ),
@@ -83,7 +72,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
 
   Widget buildEntry(MenuEntry entry, BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(8),
       onTap: () {
         Navigator.of(context).pop();
         entry.onClick();
@@ -98,12 +87,13 @@ class _MenuRoute<T> extends PopupRoute<T> {
                 Icon(
                   entry.icon,
                   size: 18,
-                  color: entry.color
+                  color: entry.color ?? context.colorScheme.onSurface,
                 ),
               const SizedBox(width: 12),
               Text(
-                  entry.text,
-                  style: TextStyle(color: entry.color)
+                entry.text,
+                style: ts.s14.copyWith(
+                  color: entry.color ?? context.colorScheme.onSurface),
               ),
             ],
           ),

@@ -740,7 +740,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                     context.showMessage(message: "Copied".tl);
                   },
                 ),
-              ]);
+              ], title: comic.title);
             },
             child: Text(text, style: ts.s14).padding(padding),
           ),

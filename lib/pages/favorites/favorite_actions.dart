@@ -551,48 +551,7 @@ class _FavoriteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: context.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (title != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 12, 16),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(title!, style: ts.s18)),
-                      IconButton(
-                        tooltip: "Close".tl,
-                        onPressed: () => context.pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                ),
-              content,
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 4,
-                  runSpacing: 8,
-                  children: actions,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return ContentDialog(title: title, content: content, actions: actions);
   }
 }
 
