@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/danmaku/bilibili_danmaku_api.dart';
 import 'package:venera/foundation/danmaku/dandanplay_api.dart';
 import 'package:venera/foundation/danmaku/danmaku_models.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
@@ -81,6 +82,62 @@ class _FakeApi extends DanDanPlayApi {
     bool traditional = false,
   }) async => [];
 }
+
+/// Bilibili without network: no matches unless [results] say otherwise.
+class _FakeBilibili extends BilibiliDanmakuApi {
+  _FakeBilibili({
+    this.results = const {},
+    this.seasons = const {},
+    this.commentCount = 3,
+  }) : super(dio: Dio());
+
+  final Map<String, List<DanmakuAnime>> results;
+  final Map<int, DanmakuAnime> seasons;
+  final int commentCount;
+  final queries = <(String, bool)>[];
+  final loaded = <int>[];
+
+  @override
+  Future<List<DanmakuAnime>> search(String keyword, {
+    bool movies = false,
+  }) async {
+    queries.add((keyword, movies));
+    return movies ? const [] : results[keyword] ?? const [];
+  }
+
+  @override
+  Future<DanmakuAnime> season(int seasonId) async =>
+      seasons[seasonId] ?? (throw const DanmakuNoMatch());
+
+  @override
+  Future<List<DanmakuComment>> comments(DanmakuEpisode episode) async {
+    loaded.add(episode.id);
+    return [
+      for (var i = 0; i < commentCount; i++)
+        DanmakuComment(i.toDouble(), 1, 0xffffff, 'bili $i'),
+    ];
+  }
+}
+
+DanmakuAnime _biliSeason(int id, String title, int count, {
+  DateTime? date,
+  List<String> altTitles = const [],
+}) => DanmakuAnime(id, title, [
+  for (var n = 1; n <= count; n++)
+    DanmakuEpisode(id * 100 + n, 'Episode $n', '$n',
+        duration: const Duration(minutes: 24)),
+], type: 'tvseries', startDate: date, episodeCount: count,
+    source: DanmakuSource.bilibili, altTitles: altTitles);
+
+List<int> _varint(int value) => [
+  for (; value >= 0x80; value >>= 7) (value & 0x7f) | 0x80,
+  value,
+];
+
+List<int> _field(int number, Object value) => value is int
+    ? [..._varint(number << 3), ..._varint(value)]
+    : [..._varint(number << 3 | 2), ..._varint((value as List<int>).length),
+        ...value];
 
 Map<String, Object> _animeJson(int id, String title, int count, {
   String? date,
@@ -409,7 +466,7 @@ void main() {
     });
 
     Future<void> load(DanDanPlayApi api, DanmakuTarget target) async {
-      session = DanmakuSession(failures.add, api: api);
+      session = DanmakuSession(failures.add, bilibili: _FakeBilibili(), api: api);
       session.setTarget(target);
       await session.load();
     }
@@ -532,7 +589,7 @@ void main() {
         var api = DanDanPlayApi(dio: Dio(BaseOptions(
           baseUrl: 'https://api.dandanplay.net'))..httpClientAdapter = adapter,
           now: () => now);
-        session = DanmakuSession(failures.add, api: api, now: () => now);
+        session = DanmakuSession(failures.add, bilibili: _FakeBilibili(), api: api, now: () => now);
         session.setTarget(DanmakuTarget(key: 'empty', episodeKey: 'empty:1',
           title: _courTarget.title, names: _courTarget.names, ep: 1, index: 0));
         await session.load();
@@ -554,7 +611,7 @@ void main() {
       for (var tomorrow in [false, true]) {
         test('quota message local day ($language, tomorrow: $tomorrow)', () {
           var now = DateTime(2026, 10, 30, 1);
-          session = DanmakuSession(failures.add, now: () => now);
+          session = DanmakuSession(failures.add, bilibili: _FakeBilibili(), now: () => now);
           appdata.settings['language'] = language;
           var until = DateTime(2026, 10, tomorrow ? 31 : 30, 8);
           session.reportQuotaExceeded(DanmakuQuotaExceeded(until, group: 'search'));
@@ -735,7 +792,7 @@ void main() {
         'matched anime are not affected');
       expect(adapter.requests, hasLength(2));
       expect(appdata.implicitData.containsKey('danmakuNoMatch:quota'), isFalse);
-      var other = DanmakuSession(failures.add, api: api);
+      var other = DanmakuSession(failures.add, bilibili: _FakeBilibili(), api: api);
       other.setTarget(const DanmakuTarget(key: 'quota',
         episodeKey: '3', title: 'Anime', index: 2));
       await other.load();
@@ -1390,6 +1447,232 @@ void main() {
         baseUrl: 'https://api.dandanplay.net',
       ))..httpClientAdapter = adapter);
       await expectLater(api.byBangumi(584847), throwsA(isA<DanmakuNoMatch>()));
+    });
+  });
+
+  group('bilibili', () {
+    test('segments decode time, mode, color and text; advanced ones are skipped',
+        () {
+      List<int> elem(int? progress, int mode, int? color, String text) => [
+        ..._field(1, 123456789012),
+        if (progress != null) ..._field(2, progress),
+        ..._field(3, mode),
+        ..._field(4, 25),
+        if (color != null) ..._field(5, color),
+        ..._field(6, utf8.encode('c99d9422')),
+        ..._field(7, utf8.encode(text)),
+        ..._field(8, 1699283004),
+      ];
+      var bytes = [
+        for (var e in [
+          elem(2421, 1, 16777215, '终于……'),
+          elem(null, 5, null, ' 开头 '),
+          elem(600657, 4, 41194, 'bottom'),
+          elem(7000, 6, 255, 'reverse'),
+          elem(8000, 7, 255, '[0,0,"1-1",4.5,"positioned"]'),
+          elem(9000, 1, 255, '  '),
+        ])
+          ..._field(1, e),
+        // Other top-level fields are ignored.
+        ..._field(5, utf8.encode('ai flag')),
+      ];
+      var comments = parseBilibiliSegment(bytes);
+      expect([for (var c in comments) (c.time, c.mode, c.color, c.text)], [
+        (2.421, 1, 0xffffff, '终于……'),
+        (0.0, 5, 0, '开头'),
+        (600.657, 4, 41194, 'bottom'),
+        (7.0, 1, 255, 'reverse'),
+      ]);
+      expect(() => parseBilibiliSegment([0x0a, 0x05, 0x10]),
+          throwsFormatException);
+    });
+
+    test('WBI signing matches the documented example', () {
+      var key = wbiMixinKey('7cd084941338484aae1ad9425b84077c'
+          '4932caff0ff746eab6f01bf08b70ac45');
+      expect(key, 'ea1db124af3c7062474693fa704f4ff8');
+      expect(signWbi({'foo': '114', 'bar': '514', 'zab': 1919810}, key,
+          DateTime.fromMillisecondsSinceEpoch(1702204169000)),
+          'bar=514&foo=114&wts=1702204169&zab=1919810'
+          '&w_rid=8f6f2b5b3d485fe1886cec6a0be8c5d4');
+    });
+
+    test('search titles lose highlight tags and entities', () {
+      expect(bilibiliPlainText('<em class="keyword">间谍过家家</em> 第二季 &amp; '
+          'SPY&#39;s'), "间谍过家家 第二季 & SPY's");
+    });
+
+    group('session', () {
+      late Directory dir;
+      late Map<String, dynamic> oldImplicit;
+      late Object? oldSource;
+      late DanmakuSession session;
+      late List<String> failures;
+      final target = DanmakuTarget(
+        key: 'bangumi:400602', episodeKey: 'bangumi:400602:2',
+        title: '葬送的芙莉莲', names: const ['葬送のフリーレン'],
+        airDate: DateTime(2023, 9, 29), subjectId: 400602,
+        ep: 2, sort: 2, index: 1, episodeCount: 28,
+      );
+      final frieren = _biliSeason(46089, '葬送的芙莉莲', 28,
+          date: DateTime(2023, 9, 29), altTitles: ['葬送のフリーレン']);
+
+      setUp(() async {
+        dir = await Directory.systemTemp.createTemp('venera_danmaku_bili');
+        App.dataPath = dir.path;
+        App.cachePath = dir.path;
+        DanmakuSession.resetQuotaWarning();
+        DanDanPlayApi.resetQuotaState();
+        DanDanPlayApi.clearCommentCache();
+        oldImplicit = appdata.implicitData;
+        appdata.implicitData = {};
+        oldSource = appdata.settings['danmakuSource'];
+        appdata.settings['danmakuSource'] = 'bilibili';
+        appdata.settings['dandanplayAppId'] = 'test-app';
+        appdata.settings['dandanplayAppSecret'] = 'test-secret';
+        failures = [];
+      });
+
+      tearDown(() async {
+        session.dispose();
+        // Several sessions here queue implicit-data writes; let them land.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        appdata.implicitData = oldImplicit;
+        appdata.settings['danmakuSource'] = oldSource;
+        appdata.settings['dandanplayAppId'] = '';
+        appdata.settings['dandanplayAppSecret'] = '';
+        await dir.delete(recursive: true);
+      });
+
+      _FakeApi dandanplay() => _FakeApi({}, {
+        7: _animeJson(7, '葬送的芙莉莲', 28),
+      }, bangumi: _animeJson(7, '葬送的芙莉莲', 28));
+
+      test('bilibili comes first, skipping dubbed copies, and is remembered',
+          () async {
+        var dubbed = _biliSeason(102261, '葬送的芙莉莲 中配版', 28,
+            date: DateTime(2023, 9, 29));
+        var bili = _FakeBilibili(
+          results: {'葬送的芙莉莲': [dubbed, frieren]},
+          seasons: {46089: frieren, 102261: dubbed},
+        );
+        var dd = dandanplay();
+        session = DanmakuSession(failures.add, api: dd, bilibili: bili);
+        session.setTarget(target);
+        await session.load();
+        expect(failures, isEmpty);
+        expect(session.anime?.source, DanmakuSource.bilibili);
+        expect(session.anime?.id, 46089);
+        expect(session.episode?.number, '2');
+        expect(session.comments.first.text, 'bili 0');
+        expect(dd.bangumiRequests, 0);
+        expect(appdata.implicitData['danmakuBili:bangumi:400602'], 46089);
+
+        // The next episode reuses the season without searching.
+        bili.queries.clear();
+        session.setTarget(DanmakuTarget(key: target.key,
+          episodeKey: '${target.key}:3', title: target.title,
+          ep: 3, index: 2));
+        await session.load();
+        expect(bili.queries, isEmpty);
+        expect(session.episode?.number, '3');
+      });
+
+      test('no bilibili match, episode or comments falls back to DanDanPlay',
+          () async {
+        for (var bili in [
+          _FakeBilibili(),
+          _FakeBilibili(results: {'葬送的芙莉莲': [frieren]},
+              seasons: {46089: _biliSeason(46089, '葬送的芙莉莲', 1,
+                  date: DateTime(2023, 9, 29))}),
+          _FakeBilibili(results: {'葬送的芙莉莲': [frieren]},
+              seasons: {46089: frieren}, commentCount: 0),
+        ]) {
+          appdata.implicitData = {};
+          var dd = dandanplay();
+          session = DanmakuSession(failures.add, api: dd, bilibili: bili);
+          session.setTarget(target);
+          await session.load();
+          expect(failures, isEmpty);
+          expect(session.anime?.source, DanmakuSource.dandanplay);
+          expect(session.anime?.id, 7);
+          expect(session.episode?.number, '2');
+          session.dispose();
+        }
+        session = DanmakuSession(failures.add, bilibili: _FakeBilibili());
+      });
+
+      test('a recent bilibili no-match skips the search for a day', () async {
+        var bili = _FakeBilibili();
+        session = DanmakuSession(failures.add, api: dandanplay(), bilibili: bili);
+        session.setTarget(target);
+        await session.load();
+        expect(bili.queries, isNotEmpty);
+        expect(appdata.implicitData['danmakuBiliNoMatch:bangumi:400602'], isA<int>());
+        bili.queries.clear();
+        await session.load();
+        expect(bili.queries, isEmpty);
+        expect(session.anime?.id, 7);
+      });
+
+      test('DanDanPlay first when preferred', () async {
+        appdata.settings['danmakuSource'] = 'dandanplay';
+        var bili = _FakeBilibili(results: {'葬送的芙莉莲': [frieren]},
+            seasons: {46089: frieren});
+        session = DanmakuSession(failures.add, api: dandanplay(), bilibili: bili);
+        session.setTarget(target);
+        await session.load();
+        expect(session.anime?.source, DanmakuSource.dandanplay);
+        expect(bili.queries, isEmpty);
+      });
+
+      test('without DanDanPlay credentials bilibili still works', () async {
+        appdata.settings['danmakuSource'] = 'dandanplay';
+        appdata.settings['dandanplayAppId'] = '';
+        appdata.settings['dandanplayAppSecret'] = '';
+        if (DanDanPlayApi.hasBuiltInCredentials) {
+          markTestSkipped('this build has DanDanPlay credentials');
+          session = DanmakuSession(failures.add, bilibili: _FakeBilibili());
+          return;
+        }
+        session = DanmakuSession(failures.add, api: dandanplay(),
+          bilibili: _FakeBilibili(results: {'葬送的芙莉莲': [frieren]},
+              seasons: {46089: frieren}));
+        session.setTarget(target);
+        await session.load();
+        expect(failures, isEmpty);
+        expect(session.anime?.source, DanmakuSource.bilibili);
+
+        session.dispose();
+        session = DanmakuSession(failures.add, api: dandanplay(),
+          bilibili: _FakeBilibili());
+        session.setTarget(DanmakuTarget(key: 'other', episodeKey: 'other:1',
+          title: 'Other', index: 0));
+        await session.load();
+        expect(failures, ['Danmaku credentials needed']);
+      });
+
+      test('a manual match keeps its source, even against the preference',
+          () async {
+        var bili = _FakeBilibili(results: {'葬送的芙莉莲': [frieren]},
+            seasons: {46089: frieren});
+        var dd = dandanplay();
+        session = DanmakuSession(failures.add, api: dd, bilibili: bili);
+        session.setTarget(target);
+        var chosen = DanmakuAnime.fromJson(_animeJson(7, '葬送的芙莉莲', 28));
+        await session.load(chosen: chosen, selected: chosen.episodes[1]);
+        expect(session.anime?.source, DanmakuSource.dandanplay);
+        expect(appdata.implicitData['danmakuManual:bangumi:400602'],
+            'dandanplay');
+        await session.load();
+        expect(session.anime?.source, DanmakuSource.dandanplay);
+        expect(bili.queries, isEmpty);
+
+        await session.load(chosen: frieren, selected: frieren.episodes[1]);
+        expect(session.anime?.source, DanmakuSource.bilibili);
+        expect(appdata.implicitData['danmakuManual:bangumi:400602'],
+            'bilibili');
+      });
     });
   });
 }

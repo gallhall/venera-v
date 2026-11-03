@@ -1,9 +1,42 @@
+import 'package:venera/foundation/appdata.dart';
+
+enum DanmakuSource {
+  bilibili('Bilibili'),
+  dandanplay('DanDanPlay');
+
+  const DanmakuSource(this.label);
+
+  final String label;
+
+  /// The preferred source first; the other one is the fallback.
+  static List<DanmakuSource> get order => [
+    preferred,
+    for (var s in values) if (s != preferred) s,
+  ];
+
+  static DanmakuSource get preferred =>
+      appdata.settings['danmakuSource'] == 'dandanplay'
+          ? dandanplay : bilibili;
+
+  static DanmakuSource? parse(Object? name) {
+    for (var s in values) {
+      if (s.name == name) {
+        return s;
+      }
+    }
+    return null;
+  }
+}
+
 class DanmakuEpisode {
   final int id;
   final String title;
   final String number;
 
-  const DanmakuEpisode(this.id, this.title, this.number);
+  /// Bilibili only: the length, which gives the number of comment segments.
+  final Duration? duration;
+
+  const DanmakuEpisode(this.id, this.title, this.number, {this.duration});
 
   factory DanmakuEpisode.fromJson(Map json) => DanmakuEpisode(
     (json['episodeId'] as num).toInt(),
@@ -19,11 +52,17 @@ class DanmakuAnime {
   final String? type;
   final DateTime? startDate;
   final int? episodeCount;
+  final DanmakuSource source;
+
+  /// Other names that count for matching, such as Bilibili's original title.
+  final List<String> altTitles;
 
   const DanmakuAnime(this.id, this.title, this.episodes, {
     this.type,
     this.startDate,
     this.episodeCount,
+    this.source = DanmakuSource.dandanplay,
+    this.altTitles = const [],
   });
 
   factory DanmakuAnime.fromJson(Map json) {

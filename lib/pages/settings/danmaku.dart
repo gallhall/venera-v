@@ -27,6 +27,16 @@ class _DanmakuSettingsState extends State<DanmakuSettings> {
     return SmoothCustomScrollView(slivers: [
       SliverAppbar(title: Text('Danmaku'.tl)),
       _SettingsGroup(children: [
+        SelectSetting(
+          title: 'Preferred danmaku source'.tl,
+          settingKey: 'danmakuSource',
+          optionTranslation: {
+            'bilibili': 'Bilibili first, DanDanPlay as fallback'.tl,
+            'dandanplay': 'DanDanPlay first, Bilibili as fallback'.tl,
+          },
+        ),
+      ]),
+      _SettingsGroup(children: [
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

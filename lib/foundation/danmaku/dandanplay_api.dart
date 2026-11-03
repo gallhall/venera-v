@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
 
+import 'danmaku_cache.dart';
 import 'danmaku_models.dart';
 
 String dandanplaySignature(
@@ -287,76 +287,21 @@ class DanDanPlayApi {
     ];
   }
 
-  // Bounded, with separate simplified/traditional variants.
-  static final _comments = <(int, bool), List<DanmakuComment>>{};
-
   @visibleForTesting
   static void clearCommentCache() {
-    _comments.clear();
+    DanmakuCommentCache.clear();
   }
 
-  Future<List<DanmakuComment>?> _readComments(File file) async {
-    try {
-      if (!await file.exists() ||
-          _now().difference(await file.lastModified()) >=
-              const Duration(hours: 12)) {
-        return null;
-      }
-      var data = jsonDecode(await file.readAsString());
-      if (data is! List) {
-        throw const FormatException('Invalid cached comments');
-      }
-      return [
-        for (var item in data)
-          DanmakuComment.parse(item) ??
-              (throw const FormatException('Invalid cached comment')),
-      ];
-    } catch (_) {
-      try {
-        await file.delete();
-      } on FileSystemException {
-        // Cache failures must not prevent loading comments.
-      }
-      return null;
-    }
-  }
-
-  Future<void> _writeComments(File file, List<DanmakuComment> comments) async {
-    try {
-      await file.parent.create(recursive: true);
-      await file.writeAsString(jsonEncode([
-        for (var c in comments)
-          {'p': '${c.time},${c.mode},${c.color},', 'm': c.text},
-      ]));
-      var files = <(File, DateTime)>[];
-      await for (var entry in file.parent.list()) {
-        if (entry is File && RegExp(r'[/\\]\d+-[st]\.json$').hasMatch(entry.path)) {
-          files.add((entry, await entry.lastModified()));
-        }
-      }
-      files.sort((a, b) => a.$2.compareTo(b.$2));
-      for (var i = 0; i < files.length - 100; i++) {
-        await files[i].$1.delete();
-      }
-    } on FileSystemException {
-      // Disk caching is best effort.
-    }
-  }
-
+  // Separate simplified/traditional variants.
   Future<List<DanmakuComment>> comments(
     int episodeId, {
     bool traditional = false,
   }) async {
-    var key = (episodeId, traditional);
-    var cached = _comments[key];
+    var cache = DanmakuCommentCache(_now);
+    var name = '$episodeId-${traditional ? 't' : 's'}';
+    var cached = await cache.read(name);
     if (cached != null) {
       return cached;
-    }
-    var file = File('${App.cachePath}/danmaku/'
-        '$episodeId-${traditional ? 't' : 's'}.json');
-    var disk = await _readComments(file);
-    if (disk != null) {
-      return _rememberComments(key, disk);
     }
     var data = await _get('/api/v2/comment/$episodeId', {
       'withRelated': true,
@@ -366,17 +311,6 @@ class DanDanPlayApi {
       for (var c in data['comments'] as List? ?? const [])
         if (DanmakuComment.parse(c) case final comment?) comment,
     ]..sort((a, b) => a.time.compareTo(b.time));
-    await _writeComments(file, comments);
-    return _rememberComments(key, comments);
-  }
-
-  List<DanmakuComment> _rememberComments(
-    (int, bool) key, List<DanmakuComment> comments,
-  ) {
-    if (_comments.length >= 24) {
-      _comments.remove(_comments.keys.first);
-    }
-    _comments[key] = List.unmodifiable(comments);
-    return _comments[key]!;
+    return cache.write(name, comments);
   }
 }
