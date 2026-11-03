@@ -4,6 +4,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_matching.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'bilibili_danmaku_api.dart';
 import 'dandanplay_api.dart';
 import 'danmaku_models.dart';
 
@@ -100,7 +101,9 @@ DanmakuAnime? chooseDanmakuAnime(
         dateMatch = 1;
       }
     }
-    var titleMatch = _danmakuTitleScore(candidate.title, names);
+    var titleMatch = [candidate.title, ...candidate.altTitles]
+        .map((t) => _danmakuTitleScore(t, names))
+        .reduce((a, b) => a > b ? a : b);
     if (titleMatch == 0) {
       continue;
     }
@@ -132,11 +135,16 @@ DanmakuAnime? chooseDanmakuAnime(
 }
 
 class DanmakuSession extends ChangeNotifier {
-  DanmakuSession(this.onFailure, {DanDanPlayApi? api, DateTime Function()? now})
-    : api = api ?? DanDanPlayApi(),
-      _now = now ?? DateTime.now;
+  DanmakuSession(this.onFailure, {
+    DanDanPlayApi? api,
+    BilibiliDanmakuApi? bilibili,
+    DateTime Function()? now,
+  }) : api = api ?? DanDanPlayApi(),
+       bilibili = bilibili ?? BilibiliDanmakuApi(),
+       _now = now ?? DateTime.now;
 
   final DanDanPlayApi api;
+  final BilibiliDanmakuApi bilibili;
   final DateTime Function() _now;
   // Receives localized messages, including parameterized quota warnings.
   final void Function(String) onFailure;
@@ -230,10 +238,6 @@ class DanmakuSession extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
-    if (!enabled && !DanDanPlayApi.hasCredentials) {
-      reportFailure('Danmaku credentials needed');
-      return;
-    }
     setting('danmakuEnabled', !enabled);
     if (enabled && !_loaded && !loading) {
       await load();
@@ -260,7 +264,7 @@ class DanmakuSession extends ChangeNotifier {
     }
     var chosen = chooseDanmakuAnime(candidates.values, target);
     if (chosen == null) {
-      _rememberNoMatch(target.key);
+      _rememberNoMatch('danmakuNoMatch:${target.key}');
       throw const DanmakuNoMatch();
     }
     return api.anime(chosen.id);
@@ -319,95 +323,176 @@ class DanmakuSession extends ChangeNotifier {
     throw quota;
   }
 
+  static final _dubbed = RegExp(r'[中粤国日]配版|配音版|dubbing',
+      caseSensitive: false);
+
+  Future<DanmakuAnime> _bilibiliByName(DanmakuTarget target) async {
+    var candidates = <int, DanmakuAnime>{};
+    for (var query in danmakuTitleVariants(target.searchNames).take(4)) {
+      for (var movies in [false, if (target.episodeCount == 1) true]) {
+        for (var candidate in await bilibili.search(query, movies: movies)) {
+          // Dubbed copies have their own, much smaller, comment pools.
+          if (!_dubbed.hasMatch(candidate.title)) {
+            candidates[candidate.id] = candidate;
+          }
+        }
+      }
+      var chosen = chooseDanmakuAnime(candidates.values, target, early: true);
+      if (chosen != null) {
+        return bilibili.season(chosen.id);
+      }
+    }
+    var chosen = chooseDanmakuAnime(candidates.values, target);
+    if (chosen == null) {
+      _rememberNoMatch('danmakuBiliNoMatch:${target.key}');
+      throw const DanmakuNoMatch();
+    }
+    return bilibili.season(chosen.id);
+  }
+
   void _rememberNoMatch(String key) {
     var now = DateTime.now().millisecondsSinceEpoch;
     appdata.implicitData.removeWhere((key, value) =>
-      key.startsWith('danmakuNoMatch:') && value is int &&
+      (key.startsWith('danmakuNoMatch:') ||
+          key.startsWith('danmakuBiliNoMatch:')) &&
+      value is int &&
       now - value > const Duration(days: 7).inMilliseconds);
-    appdata.implicitData['danmakuNoMatch:$key'] = now;
+    appdata.implicitData[key] = now;
     appdata.writeImplicitData();
   }
 
+  static bool _recentNoMatch(String key) {
+    var noMatch = appdata.implicitData[key];
+    return noMatch is int &&
+        DateTime.now().millisecondsSinceEpoch - noMatch <
+            const Duration(hours: 24).inMilliseconds;
+  }
+
+  Future<_Match> _fromBilibili(DanmakuTarget t, DanmakuAnime? chosen,
+      DanmakuEpisode? selected) async {
+    var a = chosen;
+    if (a == null) {
+      var saved = appdata.implicitData['danmakuBili:${t.key}'];
+      if (saved is int) {
+        a = await bilibili.season(saved);
+      } else if (_recentNoMatch('danmakuBiliNoMatch:${t.key}')) {
+        throw const DanmakuNoMatch();
+      } else {
+        a = await _bilibiliByName(t);
+      }
+    }
+    var e = selected ?? matchDanmakuEpisode(a.episodes,
+        ep: t.ep, sort: t.sort, index: t.index);
+    if (e == null) {
+      throw const DanmakuNoMatch();
+    }
+    var data = await bilibili.comments(e);
+    // An episode without comments is better served by the fallback.
+    if (data.isEmpty && chosen == null) {
+      throw const DanmakuNoMatch();
+    }
+    return _Match(a, e, data);
+  }
+
+  Future<_Match> _fromDanDanPlay(DanmakuTarget t, DanmakuAnime? chosen,
+      DanmakuEpisode? selected) async {
+    if (!DanDanPlayApi.hasCredentials) {
+      throw const _NoCredentials();
+    }
+    DanmakuAnime a;
+    var byName = chosen != null;
+    if (chosen != null) {
+      a = chosen;
+    } else {
+      var saved = appdata.implicitData['danmakuAnime:${t.key}'];
+      if (saved is! int && _recentNoMatch('danmakuNoMatch:${t.key}')) {
+        throw const DanmakuNoMatch();
+      }
+      if (saved is int) {
+        a = await api.anime(saved);
+        byName = appdata.implicitData['danmakuByName:${t.key}'] == true;
+      } else if (t.subjectId != null) {
+        try {
+          a = await api.byBangumi(t.subjectId!);
+          if (a.episodes.isEmpty) {
+            throw const DanmakuNoMatch();
+          }
+        } on DanmakuNoMatch {
+          a = await _byName(t);
+          byName = true;
+        }
+      } else {
+        a = await _byName(t);
+        byName = true;
+      }
+    }
+    var e = selected ?? matchDanmakuEpisode(a.episodes,
+        ep: t.ep, sort: t.sort, index: t.index, preferSort: byName);
+    if (e == null) {
+      throw const FormatException('No episode');
+    }
+    var data = await api.comments(e.id,
+        traditional: App.locale.countryCode == 'TW');
+    return _Match(a, e, data, byName: byName);
+  }
+
+  /// Without a manual match, the preferred source is tried first and the
+  /// other one when it has no match, no comments or fails.
   Future<void> load({DanmakuAnime? chosen, DanmakuEpisode? selected}) async {
     var t = target;
     if (t == null || _disposed) {
       return;
     }
     var request = ++_request;
-    if (!DanDanPlayApi.hasCredentials) {
-      loading = false;
-      notifyListeners();
-      reportFailure('Danmaku credentials needed');
-      return;
-    }
     loading = true;
     notifyListeners();
+    var manual = chosen?.source ??
+        DanmakuSource.parse(appdata.implicitData['danmakuManual:${t.key}']);
+    var errors = <Object>[];
     try {
-      DanmakuAnime a;
-      var byName = chosen != null;
-      if (chosen != null) {
-        a = chosen;
-      } else {
-        var saved = appdata.implicitData['danmakuAnime:${t.key}'];
-        var noMatch = appdata.implicitData['danmakuNoMatch:${t.key}'];
-        if (saved is! int && noMatch is int &&
-            DateTime.now().millisecondsSinceEpoch - noMatch <
-                const Duration(hours: 24).inMilliseconds) {
-          reportFailure('Could not load danmaku. Try matching manually.');
+      for (var source in manual != null ? [manual] : DanmakuSource.order) {
+        _Match match;
+        try {
+          match = source == DanmakuSource.bilibili
+              ? await _fromBilibili(t, chosen, selected)
+              : await _fromDanDanPlay(t, chosen, selected);
+        } catch (error) {
+          errors.add(error);
+          continue;
+        }
+        if (_disposed || request != _request) {
           return;
         }
-        if (saved is int) {
-          a = await api.anime(saved);
-          byName = appdata.implicitData['danmakuByName:${t.key}'] == true;
-        } else if (t.subjectId != null) {
-          try {
-            a = await api.byBangumi(t.subjectId!);
-            if (a.episodes.isEmpty) {
-              throw const DanmakuNoMatch();
-            }
-          } on DanmakuNoMatch {
-            a = await _byName(t);
-            byName = true;
-          }
+        var a = match.anime;
+        if (source == DanmakuSource.bilibili) {
+          appdata.implicitData['danmakuBili:${t.key}'] = a.id;
         } else {
-          a = await _byName(t);
-          byName = true;
+          appdata.implicitData['danmakuAnime:${t.key}'] = a.id;
+          appdata.implicitData['danmakuByName:${t.key}'] = match.byName;
         }
-      }
-      var e = selected ?? matchDanmakuEpisode(a.episodes,
-          ep: t.ep, sort: t.sort, index: t.index, preferSort: byName);
-      if (e == null) {
-        throw const FormatException('No episode');
+        if (chosen != null) {
+          appdata.implicitData.remove('danmakuNoMatch:${t.key}');
+          appdata.implicitData.remove('danmakuBiliNoMatch:${t.key}');
+          appdata.implicitData['danmakuManual:${t.key}'] = source.name;
+        }
+        appdata.writeImplicitData();
+        anime = a;
+        episode = match.episode;
+        comments = match.comments;
+        _loaded = true;
+        revision++;
+        return;
       }
       if (_disposed || request != _request) {
         return;
       }
-      if (chosen != null) {
-        appdata.implicitData.remove('danmakuNoMatch:${t.key}');
-      }
-      appdata.implicitData['danmakuAnime:${t.key}'] = a.id;
-      appdata.implicitData['danmakuByName:${t.key}'] = byName;
-      appdata.writeImplicitData();
-      anime = a;
-      episode = e;
-      comments = const [];
-      _loaded = false;
-      revision++;
-      notifyListeners();
-      var data = await api.comments(e.id,
-          traditional: App.locale.countryCode == 'TW');
-      if (_disposed || request != _request) {
-        return;
-      }
-      comments = data;
-      _loaded = true;
-      revision++;
-    } on DanmakuQuotaExceeded catch (error) {
-      if (!_disposed && request == _request) {
-        reportQuotaExceeded(error);
-      }
-    } catch (_) {
-      if (!_disposed && request == _request) {
+      if (errors.whereType<DanmakuQuotaExceeded>().firstOrNull
+          case final quota?) {
+        reportQuotaExceeded(quota);
+      } else if (errors.any((e) => e is _NoCredentials) &&
+          errors.every((e) => e is _NoCredentials || e is DanmakuNoMatch)) {
+        reportFailure('Danmaku credentials needed');
+      } else {
         reportFailure('Could not load danmaku. Try matching manually.');
       }
     } finally {
@@ -424,4 +509,17 @@ class DanmakuSession extends ChangeNotifier {
     _request++;
     super.dispose();
   }
+}
+
+class _Match {
+  const _Match(this.anime, this.episode, this.comments, {this.byName = false});
+
+  final DanmakuAnime anime;
+  final DanmakuEpisode episode;
+  final List<DanmakuComment> comments;
+  final bool byName;
+}
+
+class _NoCredentials implements Exception {
+  const _NoCredentials();
 }

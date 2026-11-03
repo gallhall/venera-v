@@ -11,7 +11,6 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
-import 'package:venera/foundation/danmaku/dandanplay_api.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
@@ -1678,11 +1677,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       danmakuEnabled: danmaku.enabled,
       onSeek: danmaku.seek,
       onToggleDanmaku: (context) async {
-        if (!danmaku.enabled && !DanDanPlayApi.hasCredentials) {
-          danmaku.reportFailure('Danmaku credentials needed');
-          await showDanmakuSheet(context, danmaku);
-          return;
-        }
         await danmaku.toggle();
       },
       // Always shown, so the buttons keep their place around play/pause.

@@ -284,6 +284,7 @@ class Settings with ChangeNotifier {
     'dandanplayAppId': '',
     'dandanplayAppSecret': '',
     'danmakuEnabled': false,
+    'danmakuSource': 'bilibili',
     'danmakuOpacity': 0.8,
     'danmakuFontSize': 24.0,
     'danmakuArea': 0.5,
