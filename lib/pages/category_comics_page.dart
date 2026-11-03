@@ -34,6 +34,8 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
   late String sourceKey;
   String? error;
 
+  Object? errorCause;
+
   void findData() {
     for (final source in ComicSource.all()) {
       if (source.categoryData?.key == widget.categoryKey) {
@@ -92,6 +94,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     if (res.error) {
       setState(() {
         error = res.errorMessage;
+        errorCause = res.errorCause;
       });
     } else {
       setState(() {
@@ -122,8 +125,10 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     if (options == null) {
       body = Center(child: CircularProgressIndicator());
     } else if (error != null) {
-      body = NetworkError(
+      body = AppErrorView(
+        withAppbar: true,
         message: error!,
+        cause: errorCause,
         retry: () {
           setState(() {
             error = null;

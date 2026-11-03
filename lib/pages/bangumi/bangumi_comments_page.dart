@@ -79,11 +79,11 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
   Widget build(BuildContext context) {
     Widget body;
     if (comments.isEmpty && isLoading) {
-      body = const Center(child: CircularProgressIndicator());
+      body = const AppLoadingView();
     } else if (comments.isEmpty && error != null) {
-      body = NetworkError(message: error!, retry: load, withAppbar: false);
+      body = AppErrorView(message: error!, retry: load, withAppbar: false);
     } else if (comments.isEmpty && !hasMore) {
-      body = SectionEmptyState("No comments yet".tl);
+      body = AppEmptyView(text: "No comments yet".tl);
     } else {
       body = ListView.builder(
         controller: controller,
@@ -94,15 +94,10 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
             return buildComment(comments[index]);
           }
           if (error != null) {
-            return Column(
-              children: [
-                Text(error!, textAlign: TextAlign.center),
-                TextButton(onPressed: load, child: Text("Retry".tl)),
-              ],
-            ).paddingAll(16);
+            return AppErrorView.inline(message: error!, retry: load);
           }
           return isLoading
-              ? const Center(child: CircularProgressIndicator()).paddingAll(16)
+              ? const AppLoadingView().paddingAll(16)
               : const SizedBox();
         },
       );

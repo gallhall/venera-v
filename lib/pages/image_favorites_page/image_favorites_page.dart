@@ -348,7 +348,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
           ),
         if (comics.isEmpty)
           SliverToBoxAdapter(
-            child: SectionEmptyState(
+            child: AppEmptyView.inline(
               searchMode ? 'No results'.tl : 'No image favorites'.tl,
             ),
           ),

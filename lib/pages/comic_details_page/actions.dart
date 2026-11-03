@@ -212,7 +212,7 @@ abstract mixin class _ComicPageActions {
                         },
                         children: [
                           if (archives == null)
-                            const ListLoadingIndicator().toCenter()
+                            const ListFooter.loading().toCenter()
                           else
                             for (int i = 0; i < archives!.length; i++)
                               RadioListTile<int>(

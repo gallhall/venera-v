@@ -170,13 +170,13 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
     Widget body;
     var calendar = this.calendar;
     if (error != null) {
-      body = NetworkError(
+      body = AppErrorView(
         message: error!,
         retry: () => load(refresh: true),
         withAppbar: false,
       );
     } else if (calendar == null) {
-      body = const Center(child: CircularProgressIndicator());
+      body = const AppLoadingView();
     } else {
       body = Column(
         children: [
@@ -236,7 +236,7 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
 
   Widget buildDay(List<BangumiSubject> day) {
     if (day.isEmpty) {
-      return SectionEmptyState("Nothing airing".tl);
+      return AppEmptyView.inline("Nothing airing".tl);
     }
     return GridView.builder(
       padding: EdgeInsets.fromLTRB(16, 8, 16, context.padding.bottom + 8),
@@ -384,29 +384,17 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (error != null)
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      error!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: ts.s12,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() => error = null);
-                      load();
-                    },
-                    child: Text("Retry".tl),
-                  ),
-                ],
-              ).paddingHorizontal(16).paddingBottom(8)
+              AppErrorView.inline(
+                message: error!,
+                retry: () {
+                  setState(() => error = null);
+                  load();
+                },
+              )
             else if (today == null)
               const SizedBox(
                 height: 168,
-                child: Center(child: CircularProgressIndicator()),
+                child: AppLoadingView(),
               )
             else if (today.isNotEmpty)
               SizedBox(
@@ -429,7 +417,7 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
                 ),
               ).paddingBottom(12)
             else
-              SectionEmptyState('Nothing airing'.tl),
+              AppEmptyView.inline('Nothing airing'.tl),
           ],
         ),
       ),

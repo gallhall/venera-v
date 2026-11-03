@@ -86,7 +86,7 @@ class _FollowUpdatesWidgetState
         ],
         bodyPadding: EdgeInsets.zero,
         body: _count == 0
-            ? SectionEmptyState(
+            ? AppEmptyView.inline(
                 folder != null && LocalFavoritesManager().count(folder!) > 0
                     ? 'No updates'.tl
                     : 'Nothing to follow yet'.tl,
@@ -321,7 +321,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         if (updatedComics.isNotEmpty)
           SliverGridComics(comics: updatedComics)
         else
-          SliverToBoxAdapter(child: SectionEmptyState('No updates found'.tl)),
+          SliverToBoxAdapter(child: AppEmptyView.inline('No updates found'.tl)),
       ],
     );
   }
@@ -347,7 +347,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         ),
         if (allComics.isEmpty)
           SliverToBoxAdapter(
-            child: SectionEmptyState('Nothing to follow yet'.tl),
+            child: AppEmptyView.inline('Nothing to follow yet'.tl),
           )
         else
           SliverGridComics(comics: allComics),

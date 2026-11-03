@@ -171,7 +171,7 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                 onChanged: onChanged,
               ),
             ),
-            if (loading) const LinearProgressIndicator(minHeight: 2),
+            if (loading) const SizedBox(height: 56, child: AppLoadingView(size: 24)),
             Expanded(
               child: SmoothCustomScrollView(
                 controller: scrollController,
@@ -263,29 +263,14 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                       ),
                     ),
                     if (error != null)
-                      SliverToBoxAdapter(
-                        child: Card(
-                          margin: const EdgeInsets.all(16),
-                          elevation: 0,
-                          color: context.colorScheme.errorContainer,
-                          child: ListTile(
-                            leading: Icon(
-                              Icons.error_outline,
-                              color: context.colorScheme.onErrorContainer,
-                            ),
-                            title: Text(
-                              error!,
-                              style: TextStyle(
-                                color: context.colorScheme.onErrorContainer,
-                              ),
-                            ),
-                            trailing: TextButton(
-                              onPressed: () => search(next: results.isNotEmpty),
-                              child: Text('Retry'.tl),
-                            ),
-                          ),
-                        ),
-                      ),
+                      results.isEmpty
+                          ? SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: AppErrorView(message: error!,
+                                  retry: () => search()),
+                            )
+                          : SliverListFooter.error(
+                              message: error!, retry: () => search(next: true)),
                     if (!loading && results.isEmpty && error == null)
                       buildEmpty(
                         keyword.isEmpty ? 'Search Bangumi'.tl : 'No results'.tl,
@@ -294,10 +279,10 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                       const SliverToBoxAdapter(
                         child: Padding(
                           padding: EdgeInsets.all(48),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: AppLoadingView(),
                         ),
                       ),
-                    if (more && !loading)
+                    if (more && !loading && error == null)
                       SliverToBoxAdapter(
                         child: Center(
                           child: TextButton.icon(
@@ -323,7 +308,7 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
   }
 
   Widget buildEmpty(String message) =>
-      SliverToBoxAdapter(child: SectionEmptyState(message));
+      SliverToBoxAdapter(child: AppEmptyView.inline(message));
 }
 
 class _AnimeSearchCard extends StatefulWidget {

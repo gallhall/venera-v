@@ -4,6 +4,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/source_repo.dart';
+import 'package:venera/network/network_error.dart';
 import 'package:venera/utils/translations.dart';
 
 export 'package:venera/foundation/source_repo.dart';
@@ -88,7 +89,9 @@ class _SourceRepoPageState extends State<SourceRepoPage> {
       await perform(entry);
     } catch (e) {
       if (mounted) {
-        context.showMessage(message: e.toString());
+        context.showMessage(
+          message: friendlyError(e.toString(), cause: e).summary,
+        );
       }
     } finally {
       if (mounted) {
@@ -155,13 +158,14 @@ class _SourceRepoPageState extends State<SourceRepoPage> {
             if (index == 0) {
               return buildHeader(canInstall, canUpdate);
             }
+            if (widget.error != null && entries == null) {
+              return const SizedBox();
+            }
             if (entries == null) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              ).paddingAll(24);
+              return const AppLoadingView().paddingAll(24);
             }
             if (entries.isEmpty) {
-              return Center(child: Text('No sources found'.tl)).paddingAll(24);
+              return AppEmptyView(text: 'No sources found'.tl);
             }
             return buildEntry(entries[index - 1]);
           },
@@ -192,10 +196,7 @@ class _SourceRepoPageState extends State<SourceRepoPage> {
               .paddingHorizontal(16)
               .paddingTop(8),
           if (widget.error != null)
-            Text(
-              widget.error!,
-              style: TextStyle(color: context.colorScheme.error),
-            ).paddingHorizontal(16).paddingTop(8),
+            AppErrorView.inline(message: widget.error!, retry: widget.load),
           Wrap(
             spacing: 8,
             runSpacing: 8,

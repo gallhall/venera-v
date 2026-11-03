@@ -37,6 +37,7 @@ class _CommentsPageState extends State<CommentsPage> {
   bool _loading = true;
   List<Comment>? _comments;
   String? _error;
+  Object? _errorCause;
   int _page = 1;
   int? maxPage;
   var controller = TextEditingController();
@@ -52,6 +53,7 @@ class _CommentsPageState extends State<CommentsPage> {
     if (res.error) {
       setState(() {
         _error = res.errorMessage;
+        _errorCause = res.errorCause;
         _loading = false;
       });
     } else if (mounted) {
@@ -103,8 +105,9 @@ class _CommentsPageState extends State<CommentsPage> {
       firstLoad();
       return const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
-      return NetworkError(
+      return AppErrorView(
         message: _error!,
+        cause: _errorCause,
         retry: () {
           setState(() {
             _loading = true;
@@ -171,7 +174,7 @@ class _CommentsPageState extends State<CommentsPage> {
                         );
                       } else {
                         return _comments!.isEmpty
-                            ? SectionEmptyState('No comments yet'.tl)
+                            ? AppEmptyView.inline('No comments yet'.tl)
                             : const SizedBox();
                       }
                     }
@@ -180,7 +183,7 @@ class _CommentsPageState extends State<CommentsPage> {
                     if (index == _comments!.length) {
                       if (_page < (maxPage ?? _page + 1)) {
                         loadMore();
-                        return const ListLoadingIndicator();
+                        return const ListFooter.loading();
                       } else {
                         return const SizedBox();
                       }

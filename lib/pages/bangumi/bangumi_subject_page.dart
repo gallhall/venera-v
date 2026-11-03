@@ -19,6 +19,7 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/network/cloudflare.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
+import 'package:venera/network/network_error.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
@@ -542,7 +543,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       details = await (matcher.detailsOf(candidate) ??
           loadBangumiDetails(candidate));
     } catch (e) {
-      if (mounted) context.showMessage(message: '$e');
+      if (mounted) {
+        context.showMessage(
+            message: friendlyError(e.toString(), cause: e).summary);
+      }
       return;
     } finally {
       dialog.close();
@@ -630,29 +634,19 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 SliverAppbar(title: appbarTitle, actions: appbarActions),
               if (subject != null) buildTitle(subject, context),
               if (error != null)
-                SliverToBoxAdapter(
-                  child: ListTile(
-                    title: Text(error!),
-                    trailing: TextButton(
-                      onPressed: load,
-                      child: Text('Retry'.tl),
-                    ),
-                  ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppErrorView(message: error!, retry: load),
                 ),
               if (subject != null) ...[
                 buildActions(context),
                 if (collectionError != null)
                   SliverToBoxAdapter(
-                    child: ListTile(
-                      title: Text(collectionError!),
-                      trailing: TextButton(
-                        onPressed: loadCollection,
-                        child: Text('Retry'.tl),
-                      ),
-                    ),
+                    child: AppErrorView.inline(message: collectionError!,
+                        retry: loadCollection),
                   ),
                 if (loading)
-                  const SliverToBoxAdapter(child: DetailsLoadingIndicator())
+                  const SliverToBoxAdapter(child: AppLoadingView())
                 else ...[
                   buildDescription(subject),
                   buildInfo(subject, context),
@@ -888,13 +882,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               ),
             ).toAlign(Alignment.centerLeft),
           if (playError != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                '$playError\n${'Try another playback source'.tl}',
-                style: TextStyle(color: context.colorScheme.error),
-              ),
-            ),
+            AppErrorView.inline(message: playError!),
           if (playError != null)
             TextButton.icon(
               onPressed: pickSource,
@@ -1056,7 +1044,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               : null,
           slivers: [
             if (episodes.isEmpty && !loading && error == null)
-              SliverToBoxAdapter(child: ListTile(title: Text('No results'.tl))),
+              SliverToBoxAdapter(child: AppEmptyView.inline('No results'.tl)),
             SliverPadding(
               padding: EdgeInsets.zero,
               sliver: SliverGrid(
@@ -1169,7 +1157,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
           ).paddingHorizontal(16),
           if (row.results.isEmpty)
-            ListTile(title: Text((row.loading ? 'Loading' : 'No results').tl)),
+            row.loading
+                ? const AppLoadingView()
+                : AppEmptyView.inline('No results'.tl),
           for (var comic in row.results) resultTile(comic, () => onPick(comic)),
         ],
       ),

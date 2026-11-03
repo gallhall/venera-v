@@ -221,6 +221,7 @@ Future<T?> showOptionsSheet<T>(
   required Map<T, String> options,
   T? selected,
   Widget? content,
+  bool forceBottomSheet = false,
 }) {
   final colors = context.colorScheme;
   final screen = MediaQuery.sizeOf(context);
@@ -249,7 +250,7 @@ Future<T?> showOptionsSheet<T>(
     );
   }
 
-  if (screen.width < 600) {
+  if (screen.width < 600 || forceBottomSheet) {
     return showModalBottomSheet<T>(
       context: context,
       useRootNavigator: true,
@@ -1379,32 +1380,6 @@ class CoverButton extends StatelessWidget {
                 mouseCursor: SystemMouseCursors.click,
                 child: Semantics(label: label, child: const SizedBox.expand()),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SectionEmptyState extends StatelessWidget {
-  const SectionEmptyState(this.text, {super.key});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Icon(Icons.inbox_outlined, size: 18, color: colors.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: ts.s14.copyWith(color: colors.onSurfaceVariant),
             ),
           ),
         ],

@@ -370,10 +370,8 @@ class _BangumiPanelState extends State<BangumiPanel> {
     if (error == null) {
       return const SizedBox();
     }
-    return Text(
-      error!,
-      style: TextStyle(color: context.colorScheme.error),
-    ).paddingHorizontal(16).paddingVertical(8);
+    return AppErrorView.inline(
+        message: error!, retry: isSearching ? search : load);
   }
 
   Widget buildSearch() {
@@ -415,12 +413,12 @@ class _BangumiPanelState extends State<BangumiPanel> {
             ),
           ).paddingHorizontal(8),
         buildError(),
-        if (isLoading) const LinearProgressIndicator().paddingVertical(8),
+        if (isLoading) const AppLoadingView().paddingVertical(8),
         Expanded(
           child: results == null
               ? const SizedBox()
               : results.isEmpty
-              ? SectionEmptyState("No results".tl)
+              ? AppEmptyView.inline("No results".tl)
               : ListView.builder(
                   padding: EdgeInsets.only(
                     top: 8,
@@ -458,7 +456,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
                 image: binding.image,
               ),
         ),
-        if (isLoading) const LinearProgressIndicator().paddingVertical(8),
+        if (isLoading) const AppLoadingView().paddingVertical(8),
         buildError(),
         if (subject != null && subject.summary.trim().isNotEmpty)
           Text(

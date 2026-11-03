@@ -76,7 +76,8 @@ class _ReaderImagesState extends State<_ReaderImages> {
           context.readerScaffold.openOrClose();
         },
         child: SizedBox.expand(
-          child: NetworkError(
+          child: AppErrorView(
+            withAppbar: true,
             message: error!,
             retry: () {
               setState(() {
@@ -314,7 +315,12 @@ class _GalleryModeState extends State<_GalleryMode>
                 ),
                 fit: BoxFit.contain,
                 errorBuilder: (_, error, s, retry) {
-                  return NetworkError(message: error.toString(), retry: retry);
+                  return AppErrorView(
+                    message: error.toString(),
+                    cause: error,
+                    retry: retry,
+                    withAppbar: true,
+                  );
                 },
               );
             }

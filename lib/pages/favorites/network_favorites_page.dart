@@ -93,6 +93,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
   @override
   Widget build(BuildContext context) {
     return ComicList(
+      emptyText: "This folder is empty".tl,
       key: comicListKey,
       leadingSliver: SliverAppbar(
         style:
@@ -191,6 +192,8 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
 
   String? _errorMessage;
 
+  Object? _errorCause;
+
   Map<String, String>? folders;
 
   void showFolders() {
@@ -205,6 +208,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
     if (res.error) {
       setState(() {
         _errorMessage = res.errorMessage;
+        _errorCause = res.errorCause;
       });
     } else {
       setState(() {
@@ -266,8 +270,9 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
         children: [
           appBar,
           Expanded(
-            child: NetworkError(
+            child: AppErrorView(
               message: _errorMessage!,
+              cause: _errorCause,
               withAppbar: false,
               retry: () {
                 setState(() {
@@ -537,6 +542,7 @@ class _FavoriteFolder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ComicList(
+      emptyText: "This folder is empty".tl,
       key: comicListKey,
       enablePageStorage: true,
       leadingSliver: SliverAppbar(

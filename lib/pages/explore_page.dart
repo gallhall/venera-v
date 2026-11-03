@@ -5,6 +5,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/pages/bangumi/bangumi_trending_page.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/global_state.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
@@ -357,9 +358,7 @@ class _SingleExplorePageState extends AutomaticGlobalState<_SingleExplorePage>
         },
       );
     } else {
-      return const Center(
-        child: Text("Empty Page"),
-      );
+      return AppEmptyView(text: "Nothing here".tl);
     }
   }
 
@@ -441,7 +440,7 @@ class _MixedExplorePageState
       controller: widget.controller,
       slivers: [
         ...buildSlivers(context, data),
-        const SliverListLoadingIndicator(),
+        buildListFooter(context),
       ],
     );
   }
@@ -454,7 +453,8 @@ class _MixedExplorePageState
     }
     for (var element in res.data) {
       if (element is! ExplorePagePart && element is! List<Comic>) {
-        return const Res.error("function loadMixed return invalid data");
+        Log.error("Explore", "function loadMixed return invalid data");
+        return Res.error("The source returned invalid data".tl);
       }
     }
     return res;
@@ -531,9 +531,12 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
 
   String? message;
 
+  Object? errorCause;
+
   Map<String, dynamic> get state => {
         "loading": loading,
         "message": message,
+        "errorCause": errorCause,
         "parts": parts,
       };
 
@@ -541,6 +544,7 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
     if (state == null) return;
     loading = state["loading"];
     message = state["message"];
+    errorCause = state["errorCause"];
     parts = state["parts"];
   }
 
@@ -577,6 +581,7 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
       setState(() {
         if (res.error) {
           message = res.errorMessage;
+          errorCause = res.errorCause;
         } else {
           parts = res.data;
         }
@@ -593,8 +598,9 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
         child: CircularProgressIndicator(),
       );
     } else if (message != null) {
-      return NetworkError(
+      return AppErrorView(
         message: message!,
+        cause: errorCause,
         retry: () {
           setState(() {
             loading = true;

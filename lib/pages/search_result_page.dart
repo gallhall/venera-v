@@ -31,6 +31,8 @@ class SearchResultPage extends StatefulWidget {
 class _SearchResultPageState extends State<SearchResultPage> {
   late SearchBarController controller;
 
+  final searchFocusNode = FocusNode();
+
   late String sourceKey;
 
   late List<String> options;
@@ -88,6 +90,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   @override
   void dispose() {
+    searchFocusNode.dispose();
     Future.microtask(() {
       suggestionsController.remove();
     });
@@ -148,6 +151,11 @@ class _SearchResultPageState extends State<SearchResultPage> {
   Widget build(BuildContext context) {
     var source = ComicSource.find(sourceKey);
     return ComicList(
+      emptyText: "No results found".tl,
+      emptyAction: TextButton(
+        onPressed: searchFocusNode.requestFocus,
+        child: Text("Change keyword".tl),
+      ),
       key: Key(text + options.toString() + sourceKey),
       errorLeading: AppSearchBar(
         controller: controller,
@@ -155,6 +163,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
       ),
       leadingSliver: SliverSearchBar(
         controller: controller,
+        focusNode: searchFocusNode,
         onChanged: onChanged,
         action: buildAction(),
       ),

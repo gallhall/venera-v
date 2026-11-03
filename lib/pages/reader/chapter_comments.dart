@@ -119,7 +119,7 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
       firstLoad();
       return const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
-      return NetworkError(
+      return AppErrorView(
         message: _error!,
         retry: () {
           setState(() {
@@ -188,7 +188,7 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
                         );
                       } else {
                         return _comments!.isEmpty
-                            ? SectionEmptyState('No comments yet'.tl)
+                            ? AppEmptyView.inline('No comments yet'.tl)
                             : const SizedBox();
                       }
                     }
@@ -197,7 +197,7 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
                     if (index == _comments!.length) {
                       if (_page < (maxPage ?? _page + 1)) {
                         loadMore();
-                        return const ListLoadingIndicator();
+                        return const ListFooter.loading();
                       } else {
                         return const SizedBox();
                       }
@@ -767,7 +767,7 @@ class _EmbeddedChapterCommentsPageState
       firstLoad();
       return const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
-      return NetworkError(
+      return AppErrorView(
         message: _error!,
         retry: () {
           setState(() {
@@ -778,7 +778,7 @@ class _EmbeddedChapterCommentsPageState
         withAppbar: false,
       );
     } else if (_comments == null || _comments!.isEmpty) {
-      return SectionEmptyState("No comments yet".tl);
+      return AppEmptyView.inline("No comments yet".tl);
     } else {
       var showAvatar = _comments!.any((e) => e.avatar != null);
       return _buildCommentsList(showAvatar);
@@ -806,7 +806,7 @@ class _EmbeddedChapterCommentsPageState
           if (index == _comments!.length) {
             if (_page < (maxPage ?? _page + 1)) {
               loadMore();
-              return const ListLoadingIndicator();
+              return const ListFooter.loading();
             } else {
               return const SizedBox();
             }

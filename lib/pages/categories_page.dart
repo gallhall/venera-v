@@ -90,11 +90,11 @@ class _CategoriesPageState extends State<CategoriesPage>
       msg += "Please check your settings".tl;
       onTap = addPage;
     }
-    return NetworkError(
+    return AppErrorView(
       message: msg,
       retry: onTap,
       withAppbar: false,
-      buttonText: "Manage".tl,
+      retryText: "Manage".tl,
     );
   }
 

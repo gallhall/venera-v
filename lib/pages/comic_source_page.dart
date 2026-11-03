@@ -18,6 +18,7 @@ import 'package:venera/pages/webview.dart';
 import 'package:venera/pages/source_repo_page.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/network/network_error.dart';
 import 'package:venera/utils/translations.dart';
 
 class ComicSourcePage extends StatelessWidget {
@@ -84,7 +85,9 @@ class ComicSourcePage extends StatelessWidget {
           return;
         }
         if (showLoading) {
-          App.rootContext.showMessage(message: e.toString());
+          App.rootContext.showMessage(
+            message: friendlyError(e.toString(), cause: e).summary,
+          );
         } else {
           rethrow;
         }
@@ -593,7 +596,9 @@ class _BodyState extends State<_Body> {
       var content = utf8.decode(bytes);
       await addSource(content, fileName);
     } catch (e, s) {
-      App.rootContext.showMessage(message: e.toString());
+      App.rootContext.showMessage(
+        message: friendlyError(e.toString(), cause: e).summary,
+      );
       Log.error("Add comic source", "$e\n$s");
     }
   }
@@ -630,7 +635,9 @@ class _BodyState extends State<_Body> {
       await addSource(res.data!, fileName, url);
     } catch (e, s) {
       if (cancel) return;
-      context.showMessage(message: e.toString());
+      context.showMessage(
+        message: friendlyError(e.toString(), cause: e).summary,
+      );
       Log.error("Add comic source", "$e\n$s");
     }
   }
@@ -658,7 +665,9 @@ class _BodyState extends State<_Body> {
           ComicSourcePage.onSourceAdded(await AnimekoSource.install(entry, subscription));
         } catch (e, s) {
           Log.error('Animeko', 'Failed to import ${entry.name}: $e\n$s');
-          App.rootContext.showMessage(message: e.toString());
+          App.rootContext.showMessage(
+            message: friendlyError(e.toString(), cause: e).summary,
+          );
         }
       }
       return;
@@ -1004,7 +1013,9 @@ class _CheckUpdatesButtonState extends State<_CheckUpdatesButton> {
           loadingController.setProgress(current / total);
         }
       } catch (e) {
-        context.showMessage(message: e.toString());
+        context.showMessage(
+          message: friendlyError(e.toString(), cause: e).summary,
+        );
       }
       loadingController.close();
     }
@@ -1405,7 +1416,9 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
             final List account = source.data["account"];
             var res = await source.account!.login!(account[0], account[1]);
             if (res.error) {
-              context.showMessage(message: res.errorMessage!);
+              context.showMessage(
+                message: friendlyError(res.errorMessage!, cause: res.errorCause).summary,
+              );
             } else {
               context.showMessage(message: "Success".tl);
             }
@@ -1571,7 +1584,9 @@ class _LoginPageState extends State<_LoginPage> {
       });
       widget.config.login!(username, password).then((value) {
         if (value.error) {
-          context.showMessage(message: value.errorMessage!);
+          context.showMessage(
+            message: friendlyError(value.errorMessage!, cause: value.errorCause).summary,
+          );
           setState(() {
             loading = false;
           });
