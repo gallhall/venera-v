@@ -23,6 +23,7 @@ import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
 import 'package:venera/foundation/video/stream_lease.dart';
+import 'package:venera/foundation/video/playback_session.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
@@ -161,11 +162,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// The iOS system player.
   NativeVideoPlayer? native;
 
-  /// The player of the current stream.
-  VideoPlayback? active;
+  PlaybackSession? session;
+  StreamSubscription<PlaybackEvent>? sessionEvents;
+  VideoPlayback? listenedPlayer;
+  int listenerToken = 0;
+  bool pageLoading = false;
+  String? pageError;
+  bool ignoringSession = false;
 
-  /// Sources of [playInfo] the system player failed to open.
-  final nativeFailedSources = <int>{};
+  VideoPlayback? get active => ignoringSession ? null : session?.active;
+  VideoPlayInfo? get playInfo => session?.playInfo;
+  int get sourceIndex => session?.streamIndex ?? 0;
+  bool get isLoading => pageLoading || session?.isLoading == true;
+  String? get error => pageError ?? (ignoringSession ? null : session?.error);
+  bool get started => !ignoringSession && session?.started == true;
+  Duration get openedAt => session?.openedAt ?? Duration.zero;
+  StreamLease? get lease => session?.lease;
 
   String? engineError;
 
@@ -173,25 +185,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   late int current;
 
-  VideoPlayInfo? playInfo;
-
-  int sourceIndex = 0;
-
-  /// Sources of [playInfo] that failed to open.
-  final failedSources = <int>{};
-
-  /// Sources of [playInfo] already opened again after a failure.
-  final retriedSources = <int>{};
-
   final triedLines = <String?>{};
   final triedCandidates = <AutoSwitchCandidate>{};
   int? fallbackNumber;
   int fallbackPosition = 1;
   bool allSourcesFailed = false;
-  StreamStartupWatch? startupWatch;
-  // Both engines report a seek before playing. Require progress beyond
-  // the requested start, rather than duration/playing metadata alone.
-  bool playbackAdvanced = false;
   final playbackSubscriptions = <StreamSubscription>[];
 
   bool get autoSwitch => appdata.settings['videoAutoSwitch'] != false;
@@ -206,21 +204,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     fallbackNumber = BangumiEpisodeNumber.of(episode.title, fallbackPosition);
   }
 
-  bool isLoading = false;
-
-  String? error;
-
-  /// Whether the current stream has loaded. Errors after that are not
-  /// fatal, e.g. a subtitle that fails to load.
-  bool started = false;
-
-  /// Increased on every episode load, to drop stale results.
+  /// Increased for page-level episode and Bangumi target lookups.
   int loadToken = 0;
-
-  /// Increased on every stream open; an error is handled once per open.
-  int openToken = 0;
-
-  int errorHandledFor = -1;
 
   double rate = 1.0;
 
@@ -334,9 +319,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Skip ranges of the current episode already handled, by index.
   final handledSkips = <int>{};
 
-  /// Set while playback is brought back after the stream broke off.
-  _Recovery? recovery;
-
   /// Whether the stream played to its end and was not played on since:
   /// saved as finished, not at the position, which stops short of the
   /// duration.
@@ -378,7 +360,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (rate != 1.0) n.setRate(rate);
     } else {
       if (ensureMediaKit() == null) return;
-      active = player;
     }
     loadEpisode(current);
   }
@@ -431,10 +412,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       subscription.cancel();
     }
     playbackSubscriptions.clear();
-    var token = openToken;
+    var token = ++listenerToken;
     void Function(T) ifActive<T>(void Function(T) f) {
       return (v) {
-        if (mounted && token == openToken && identical(active, p)) {
+        if (mounted && token == listenerToken && identical(active, p)) {
           f(v);
         }
       };
@@ -445,14 +426,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         p.videoSize.listen(ifActive((size) {
           setState(() => videoSize = size);
         })),
-      p.errors.listen(ifActive(onPlayerError)),
-      p.interrupted.listen(ifActive(onInterrupted)),
       p.duration.listen(
         ifActive((d) {
           duration = d;
-          if (d > Duration.zero && !started && !autoSwitch) {
-            markStarted();
-          }
         }),
       ),
       p.playing.listen(
@@ -469,60 +445,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           }
         }),
       ),
-      p.completed.listen(
-        ifActive((completed) {
-          // A stream opened near its end may finish before its position
-          // is seen to advance; with a known duration it did play.
-          if (completed && !playbackAdvanced && duration > Duration.zero) {
-            playbackAdvanced = true;
-            startupWatch?.cancel();
-            markStarted();
-          }
-          if (!completed || !started || isLoading) return;
-          recovery = null;
-          playedToEnd = true;
-          saveHistory();
-          checkWatched(duration);
-          if (hasNext) moveEpisode(1);
-        }),
-      ),
       p.rate.listen(ifActive((v) => setState(() => rate = v))),
       p.position.listen(
         ifActive((position) {
-          if (!playbackAdvanced &&
-              p.isPlaying && !p.isBuffering && position > openedAt) {
-            playbackAdvanced = true;
-            startupWatch?.cancel();
-            markStarted();
-          }
           checkSkip(position);
           checkWatched(position);
-          // Played on well past where it broke off: a new break is another
-          // one, which starts over from the same stream.
-          var r = recovery;
-          if (r != null && r.restored && position > r.position + _recovered) {
-            recovery = null;
-          }
         }),
       ),
     ]);
   }
 
-  /// When the stream opened last was handed to the engine, for the log.
-  DateTime openTime = DateTime.now();
-
-  void markStarted() {
-    if (started) {
-      return;
-    }
-    started = true;
+  void onStarted(PlaybackStarted event) {
+    duration = event.duration;
     if (source?.animekoSource?.factoryId == 'rss' && episode.group != null) {
       RssLineMemory.remember(appdata.implicitData, sourceKey, details.id,
         rssLineGroup(episode.group)!);
       appdata.writeImplicitData();
     }
     var p = active;
-    var elapsed = DateTime.now().difference(openTime).inMilliseconds;
+    var elapsed = DateTime.now().difference(event.openTime).inMilliseconds;
     if (p is PlayerService) {
       unawaited(p.describeOutput().then((output) {
         Log.info('Video', 'Started after $elapsed ms: $output');
@@ -532,106 +473,60 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     // The seek to the start position may not be applied yet.
     saveHistory(position: openedAt);
-    var r = recovery;
-    if (r != null && !r.restored) {
-      setState(() => r.restored = true);
-      context.showMessage(message: "Playback resumed".tl);
-    }
   }
 
-  /// How far playback goes on after it was brought back for that to be
-  /// done.
-  static const _recovered = Duration(seconds: 10);
-
-  /// The stream broke off while it played: it is opened again where it
-  /// stopped, rather than taken as played to the end.
-  void onInterrupted(String reason) {
-    Log.warning('Video', 'Playback interrupted: $reason');
-    var p = active;
-    if (!mounted || p == null || playInfo == null || isLoading) return;
-    // It never played: it failed to open.
-    if (!started) return onPlayerError(reason);
-    var position = p.currentPosition;
-    saveHistory(position: position);
-    var r = recovery;
-    // Broke off again right after it came back: the attempts go on.
-    if (r == null || position > r.position + _recovered) {
-      recovery = _Recovery(position, reason);
-    }
-    recover();
-  }
-
-  /// The next attempt to play on where the stream broke off: the same
-  /// stream again, as the connection may only have dropped; then the links
-  /// loaded again from the source, as links expire; then the other
-  /// sources. Shows the error once none plays.
-  Future<void> recover() async {
-    var r = recovery;
-    var info = playInfo;
-    if (r == null || info == null) return;
-    var start = r.position == Duration.zero ? null : r.position;
-    var attempt = r.attempts++;
-    setState(() => r.restored = false);
-    if (attempt == 0) return openSource(sourceIndex, start: start);
-    // Not for a downloaded episode, which has no links.
-    if (attempt == 1 &&
-        localPlayInfo(current) == null &&
-        source?.loadVideoPlayInfo != null) {
-      var token = loadToken;
-      var opening = openToken;
-      var name = info.sources[sourceIndex].name;
-      Res<VideoPlayInfo> res;
-      try {
-        res = await source!.loadVideoPlayInfo!(details.id, episode.id);
-      } catch (e) {
-        res = Res.error('$e');
-      }
-      if (!mounted ||
-          token != loadToken ||
-          opening != openToken ||
-          recovery != r) {
-        return;
-      }
-      if (!res.error && res.data.sources.isNotEmpty) {
-        var sources = res.data.sources;
-        var index = sources.indexWhere((s) => s.name == name);
-        setState(() {
-          playInfo = res.data;
-          failedSources.clear();
-          nativeFailedSources.clear();
-          retriedSources.clear();
-        });
-        return openSource(index < 0 ? 0 : index, start: start);
-      }
-      Log.warning(
-        'Video',
-        'Could not load the links again: ${res.errorMessage}',
-      );
-      info = playInfo!;
-    }
-    failedSources.add(sourceIndex);
-    if (info.isTorrent) {
-      // The magnet fallback is the same release and swarm.
-      failedSources.addAll(Iterable.generate(info.sources.length));
-    }
-    var next = Iterable.generate(
-      info.sources.length,
-    ).where((i) => !failedSources.contains(i)).firstOrNull;
-    if (next == null) {
-      await autoSwitchAfterFailure(r.reason, r.position);
+  void sessionChanged() {
+    if (!mounted || ignoringSession) {
       return;
     }
-    context.showMessage(
-      message: "Switched to @s".tlParams({"s": info.sources[next].name}),
-    );
-    return openSource(next, start: start);
+    var p = active;
+    if (!identical(listenedPlayer, p)) {
+      listenedPlayer = p;
+      videoSize = null;
+      playedToEnd = false;
+      if (p != null) {
+        listenTo(p);
+        danmaku.seek(openedAt);
+      }
+    }
+    setState(() {});
+  }
+
+  void onSessionEvent(PlaybackEvent event) {
+    if (!mounted || ignoringSession) {
+      return;
+    }
+    switch (event) {
+      case PlaybackStarted():
+        onStarted(event);
+      case PlaybackSwitched():
+        context.showMessage(
+          message: "Switched to @s".tlParams({'s': event.name}));
+      case PlaybackResumed():
+        context.showMessage(message: "Playback resumed".tl);
+      case PlaybackInterrupted():
+        saveHistory(position: event.position);
+      case PlaybackEnded():
+        playedToEnd = true;
+        saveHistory();
+        checkWatched(duration);
+        if (hasNext) {
+          moveEpisode(1);
+        }
+      case PlaybackExhausted():
+        if (playInfo == null) {
+          native?.close();
+        }
+        autoSwitchAfterFailure(event.reason, event.position);
+    }
   }
 
   @override
   void dispose() {
-    unawaited(releaseLease());
+    sessionEvents?.cancel();
+    session?.removeListener(sessionChanged);
+    unawaited(session?.dispose());
     historyTimer?.cancel();
-    startupWatch?.cancel();
     for (var s in playbackSubscriptions) {
       s.cancel();
     }
@@ -750,212 +645,65 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     triedLines.add(episode.group);
     triedCandidates.add(candidateKey);
-    startupWatch?.cancel();
-    openToken++;
-    var start = position ?? resumePosition(index);
-    openedAt = start ?? Duration.zero;
-    // Nothing is saved until the new stream loads.
-    started = false;
+    ignoringSession = false;
     var token = ++loadToken;
-    ++openToken;
-    var releasing = releaseLease();
+    var start = position ?? resumePosition(index);
+    var previous = session;
+    sessionEvents?.cancel();
+    previous?.removeListener(sessionChanged);
+    var oldActive = previous?.active;
+    var releasing = previous?.dispose();
+    session = null;
+    listenedPlayer = null;
     setState(() {
-      current = index;
-      isLoading = true;
-      error = null;
-      playInfo = null;
+      pageLoading = true;
+      pageError = null;
       videoSize = null;
       currentSkip = null;
       handledSkips.clear();
-      recovery = null;
       markedWatched = false;
     });
     loadDanmaku();
-    var previous = active;
-    active = null;
-    await previous?.pause();
+    await oldActive?.pause();
     await releasing;
     if (!mounted || token != loadToken) {
       return;
     }
-    // A downloaded episode plays from its files, without the source.
     var local = localPlayInfo(index);
-    Res<VideoPlayInfo> res;
-    if (local != null) {
-      res = Res(local);
-    } else if (source?.loadVideoPlayInfo == null) {
-      res = Res.error("Video source not found".tl);
-    } else {
-      try {
-        res = await source!.loadVideoPlayInfo!(details.id, episode.id);
-      } catch (e) {
-        res = Res.error('$e');
-      }
-    }
-    if (!mounted || token != loadToken) {
-      return;
-    }
-    if (res.error || res.data.sources.isEmpty) {
-      // The error is shown on the page, under the system player.
-      native?.close();
-      setState(() {
-        isLoading = false;
-        error = res.error ? res.errorMessage! : "Playback failed".tl;
-      });
-      await autoSwitchAfterFailure(error!, openedAt);
-      return;
-    }
-    setState(() {
-      isLoading = false;
-      playInfo = res.data;
-      failedSources.clear();
-      nativeFailedSources.clear();
-      retriedSources.clear();
-    });
-    openSource(0, start: start);
-    if (start != null) {
+    var load = source?.loadVideoPlayInfo;
+    var id = details.id;
+    var episodeId = episode.id;
+    var next = PlaybackSession(
+      loader: _PlayInfoLoader(() async {
+        if (local != null) {
+          return Res(local);
+        }
+        if (load == null) {
+          return Res.error("Video source not found".tl);
+        }
+        return load(id, episodeId);
+      }, canReload: local == null && load != null),
+      engines: _PlaybackEngines(this),
+      initialDuration: duration,
+      autoSwitch: () => autoSwitch,
+      startupLimit: () {
+        var seconds = appdata.settings['videoAutoSwitchTimeout'];
+        return Duration(seconds: seconds is int ? seconds : 20);
+      },
+    );
+    session = next;
+    next.addListener(sessionChanged);
+    sessionEvents = next.events.listen(onSessionEvent);
+    pageLoading = false;
+    // start initiates opening before this message, as the inline flow did.
+    var starting = next.start(at: start);
+    await starting;
+    if (mounted && token == loadToken && next.playInfo != null && start != null) {
       context.showMessage(
         message: "Resumed from @t".tlParams({
           "t": History.formatSeconds(start.inSeconds),
         }),
       );
-    }
-  }
-
-  /// Start position of the stream opened last.
-  Duration openedAt = Duration.zero;
-
-  final opener = StreamOpener();
-  StreamLease? lease;
-  (String, int?)? leaseInput;
-
-  Future<void> releaseLease() async {
-    var previous = lease;
-    lease = null;
-    leaseInput = null;
-    await previous?.release();
-  }
-
-  Future<void> openSource(int index, {Duration? start}) async {
-    openedAt = start ?? Duration.zero;
-    playedToEnd = false;
-    var info = playInfo;
-    if (info == null) {
-      return;
-    }
-    setState(() {
-      sourceIndex = index;
-      videoSize = null;
-      error = null;
-      started = false;
-    });
-    var token = ++openToken;
-    startupWatch?.cancel();
-    playbackAdvanced = false;
-    active = null;
-    // A torrent stays open across retries; an HTTP stream is prepared again.
-    var input = (info.sources[index].url, info.torrentEpisode);
-    if (lease == null || !info.isTorrent || leaseInput != input) {
-      var previous = lease;
-      var next = opener.open(info, index);
-      lease = next;
-      leaseInput = input;
-      setState(() {});
-      await previous?.release();
-      if (!mounted || token != openToken) {
-        return;
-      }
-    }
-    var opening = lease!;
-    var seconds = appdata.settings['videoAutoSwitchTimeout'];
-    if (autoSwitch) {
-      var limit = seconds is int ? seconds : 20;
-      void timedOut() {
-        if (mounted && token == openToken && !playbackAdvanced) {
-          started = false;
-          onPlayerError("Playback start timed out".tl);
-        }
-      }
-
-      startupWatch = opening.watchStartup(Duration(seconds: limit), timedOut);
-    }
-    VideoStreamRequest request;
-    try {
-      request = await opening.ready;
-      if (!mounted || token != openToken) {
-        return;
-      }
-      setState(() {});
-    } catch (e) {
-      if (identical(lease, opening)) {
-        unawaited(releaseLease());
-      }
-      if (mounted && token == openToken) {
-        // A torrent file that failed to download may still work as a
-        // magnet. Otherwise retrying the same release would wait as long
-        // again, so go on to the next line or source.
-        failedSources.add(index);
-        var next = Iterable.generate(info.sources.length)
-            .where((i) => !failedSources.contains(i))
-            .firstOrNull;
-        if (next != null) {
-          Log.warning('Video', 'Torrent failed, trying $next: $e');
-          unawaited(openSource(next, start: start));
-        } else {
-          await autoSwitchAfterFailure('$e', openedAt);
-        }
-      }
-      return;
-    }
-    try {
-      if (!mounted || token != openToken) {
-        return;
-      }
-      VideoPlayback? next;
-      var n = native;
-      if (n != null &&
-          !nativeFailedSources.contains(index) &&
-          NativeVideoPlayer.supports(info.sources[index], request)) {
-        await player?.pause();
-        next = n;
-        if (isFullscreen && !danmaku.enabled) {
-          setFullscreen(false);
-        }
-        updateNativePlayer();
-      } else {
-        next = ensureMediaKit();
-        // Stop the system player before media_kit plays.
-        if (n != null && (active == null || identical(active, n))) {
-          await n.close();
-        }
-      }
-      if (!mounted || token != openToken) {
-        return;
-      }
-      if (next == null) {
-        startupWatch?.cancel();
-        unawaited(releaseLease());
-        setState(() {
-          active = null;
-          error = "${"Failed to load the video engine".tl}\n$engineError";
-        });
-        return;
-      }
-      setState(() => active = next);
-      listenTo(next);
-      danmaku.seek(openedAt);
-      // Scheme and host only: query strings carry tokens.
-      var uri = Uri.tryParse(request.url);
-      Log.info('Video', 'Opening source ${index + 1}/${info.sources.length} '
-          'with ${identical(next, n) ? 'the system player' : 'media_kit'}: '
-          '${uri == null ? '?' : uri.isScheme('file') || uri.scheme.isEmpty
-              ? 'local file' : '${uri.scheme}://${uri.host}'}');
-      openTime = DateTime.now();
-      await next.open(request, start: start);
-    } catch (e) {
-      if (mounted && token == openToken) {
-        onPlayerError(e.toString());
-      }
     }
   }
 
@@ -971,63 +719,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ];
   }
 
-  void onPlayerError(String message) {
-    Log.warning('Video', message);
-    var info = playInfo;
-    if (!mounted || info == null || started || isLoading) return;
-    if (errorHandledFor == openToken) return;
-    errorHandledFor = openToken;
-    startupWatch?.cancel();
-    if (active != null && identical(active, native)) {
-      // Try the same stream with media_kit, which plays more formats.
-      Log.info('Video', 'The system player failed, using media_kit');
-      nativeFailedSources.add(sourceIndex);
-      openSource(
-        sourceIndex,
-        start: openedAt == Duration.zero ? null : openedAt,
-      );
-      return;
-    }
-    // Playback is being brought back: the attempts go on there.
-    if (recovery != null) {
-      recover();
-      return;
-    }
-    // Opening a stream takes several requests (a DASH stream fetches every
-    // quality's init segment), so a single dropped one fails it: try the
-    // same source again once first. A local BT stream has no such requests,
-    // and opening it again would wait as long again.
-    if (!info.isTorrent && retriedSources.add(sourceIndex)) {
-      var token = ++openToken;
-      var index = sourceIndex;
-      active?.pause();
-      active = null;
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted && token == openToken && !isLoading) {
-          openSource(index, start: openedAt == Duration.zero ? null : openedAt);
-        }
-      });
-      return;
-    }
-    failedSources.add(sourceIndex);
-    if (info.isTorrent) {
-      // The magnet fallback is the same release and swarm: it is only for
-      // a torrent file that could not be downloaded.
-      failedSources.addAll(Iterable.generate(info.sources.length));
-    }
-    var next = Iterable.generate(
-      info.sources.length,
-    ).where((i) => !failedSources.contains(i)).firstOrNull;
-    if (next != null) {
-      context.showMessage(
-        message: "Switched to @s".tlParams({"s": info.sources[next].name}),
-      );
-      openSource(next, start: openedAt);
-    } else {
-      autoSwitchAfterFailure(message, openedAt);
-    }
-  }
-
   Future<void> autoSwitchAfterFailure(
     String message,
     Duration position,
@@ -1036,19 +727,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     Log.warning('Video', 'Playback failed: $message');
-    startupWatch?.cancel();
+    session?.cancelStartupWatch();
     if (!autoSwitch) {
-      unawaited(releaseLease());
-      setState(() => error = message);
+      unawaited(session?.finishFailure(message));
+      setState(() => pageError = message);
       return;
     }
-    // Invalidate callbacks and delayed retries from the abandoned stream.
-    var token = ++openToken;
-    var previous = active;
-    active = null;
-    started = false;
-    await previous?.pause();
-    if (!mounted || token != openToken) {
+    var token = ++loadToken;
+    await session?.pause();
+    if (!mounted || token != loadToken) {
       return;
     }
     triedLines.add(episode.group);
@@ -1099,11 +786,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return;
       }
     }
-    unawaited(releaseLease());
+    unawaited(session?.finishFailure(message));
     setState(() {
-      isLoading = false;
+      pageLoading = false;
       allSourcesFailed = true;
-      error = message;
+      pageError = message;
     });
   }
 
@@ -1116,13 +803,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     loadToken++;
-    isLoading = false;
-    failedSources.remove(index);
-    // Picked by hand: no more attempts of its own.
-    recovery = null;
-    // Before the stream plays, e.g. after it failed, where it was to start.
-    var start = started ? active!.currentPosition : openedAt;
-    openSource(index, start: start == Duration.zero ? null : start);
+    pageLoading = false;
+    pageError = null;
+    ignoringSession = false;
+    session?.resume();
+    session?.pickStream(index);
   }
 
   /// Applies fullscreen to the window or the system UI.
@@ -1341,7 +1026,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       appdata.settings['videoAutoSwitch'] = v;
                       appdata.saveData();
                       if (!v) {
-                        startupWatch?.cancel();
+                        session?.cancelStartupWatch();
                       }
                       setDialogState(() {});
                     },
@@ -1458,26 +1143,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!automatic) {
       resetAutoSwitch();
     }
-    changingBangumi = true;
-    startupWatch?.cancel();
-    String? automaticError;
     saveHistory();
     var oldActive = active;
+    changingBangumi = true;
+    ignoringSession = true;
+    session?.cancelStartupWatch();
+    String? automaticError;
     var wasPlaying = oldActive?.isPlaying == true;
-    var wasStarted = started;
-    var oldError = error;
-    started = false;
-    // Ignore late events from the old stream until the target is installed.
-    active = null;
+    var oldError = pageError;
     setState(() {
-      isLoading = true;
-      error = null;
+      pageLoading = true;
+      pageError = null;
       loadToken++;
-      openToken++;
     });
     var token = loadToken;
     try {
-      await oldActive?.pause();
+      await session?.pause();
       if (!mounted || token != loadToken) {
         return;
       }
@@ -1520,10 +1201,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         episodes = VideoEpisode.fromDetails(details);
         bangumi = playback;
         initialPosition = position ?? Duration.zero;
-        nativeFailedSources.clear();
-        failedSources.clear();
-        retriedSources.clear();
-        playInfo = null;
         current = episodes.fromHistory(target.ep, target.group) ?? 0;
       });
       if (automatic) {
@@ -1545,12 +1222,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       } else if (mounted && token == loadToken) {
         // The old stream plays on; the failure is only shown as a message.
         setState(() {
-          active = oldActive;
-          started = wasStarted;
-          isLoading = false;
-          error = oldError;
+          ignoringSession = false;
+          pageLoading = false;
+          pageError = oldError;
         });
+        session?.resume();
         if (oldActive != null) {
+          listenedPlayer = oldActive;
           listenTo(oldActive);
         }
         if (wasPlaying) {
@@ -1931,7 +1609,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             const Center(child: CircularProgressIndicator(color: Colors.white)),
           if (lease?.status != null && error == null)
             buildTorrentStatus(),
-          if (recovery != null && !started && error == null)
+          if (session?.recovering == true && error == null)
             buildReconnecting(),
           if (currentSkip != null && !isLocked)
             Positioned(
@@ -2043,12 +1721,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildError() {
-    var info = playInfo;
-    var untried = info == null
-        ? null
-        : Iterable.generate(
-            info.sources.length,
-          ).where((i) => !failedSources.contains(i)).firstOrNull;
+    var untried = session?.nextUntriedStream;
     return Container(
       // Opaque: the buffering indicator of the player would show through.
       color: Colors.black,
@@ -2069,7 +1742,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        (recovery != null
+                        (session?.hasRecovery == true
                                 ? "Playback interrupted"
                                 : "Playback failed")
                             .tl,
@@ -2309,20 +1982,41 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 }
 
-/// Bringing back playback after the stream broke off at [position].
-class _Recovery {
-  _Recovery(this.position, this.reason);
+class _PlayInfoLoader implements PlayInfoLoader {
+  _PlayInfoLoader(this._load, {required this.canReload});
+  final Future<Res<VideoPlayInfo>> Function() _load;
+  @override
+  final bool canReload;
+  @override
+  Future<Res<VideoPlayInfo>> load() => _load();
+}
 
-  /// Where the stream broke off, where it is opened again.
-  final Duration position;
+class _PlaybackEngines implements PlaybackEngines {
+  _PlaybackEngines(this.page);
+  final _VideoPlayerPageState page;
 
-  /// What the engine reported when the stream broke off, shown if playback
-  /// cannot be brought back: why the attempts failed tells less.
-  final String reason;
+  @override
+  String? get error => page.engineError;
 
-  /// Attempts made, see [_VideoPlayerPageState.recover].
-  int attempts = 0;
+  @override
+  bool isNative(VideoPlayback p) => identical(p, page.native);
 
-  /// Whether the stream opened again plays.
-  bool restored = false;
+  @override
+  Future<VideoPlayback?> pick(VideoPlaySource source, VideoStreamRequest request,
+      {required bool allowNative}) async {
+    var n = page.native;
+    if (n != null && allowNative && NativeVideoPlayer.supports(source, request)) {
+      await page.player?.pause();
+      if (page.isFullscreen && !page.danmaku.enabled) {
+        page.setFullscreen(false);
+      }
+      page.updateNativePlayer();
+      return n;
+    }
+    var next = page.ensureMediaKit();
+    if (n != null) {
+      await n.close();
+    }
+    return next;
+  }
 }
