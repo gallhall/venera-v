@@ -10,6 +10,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:volume_controller/volume_controller.dart';
 
@@ -685,11 +686,10 @@ class _VideoControlsState extends State<VideoControls> {
     return [
       for (var a in shown)
         Builder(
-          builder: (context) => button(
-            a.icon,
+          builder: (context) => widgetButton(
+            a.buildIcon(iconSize),
             () => a.onPressed(context),
             tooltip: a.label,
-            size: iconSize,
           ),
         ),
       if (more.isNotEmpty)
@@ -707,7 +707,7 @@ class _VideoControlsState extends State<VideoControls> {
                 value: i,
                 child: Row(
                   children: [
-                    Icon(more[i].icon, size: 20),
+                    more[i].buildIcon(20),
                     const SizedBox(width: 12),
                     Text(more[i].label),
                   ],
@@ -724,8 +724,16 @@ class _VideoControlsState extends State<VideoControls> {
     String? tooltip,
     double size = 24,
   }) {
+    return widgetButton(Icon(icon, size: size), onPressed, tooltip: tooltip);
+  }
+
+  Widget widgetButton(
+    Widget icon,
+    VoidCallback onPressed, {
+    String? tooltip,
+  }) {
     return IconButton(
-      icon: Icon(icon, size: size),
+      icon: icon,
       color: Colors.white,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
@@ -852,9 +860,8 @@ class _VideoControlsState extends State<VideoControls> {
                     style: _timeStyle,
                   ),
                   if (c.onToggleDanmaku != null)
-                    button(
-                      c.danmakuEnabled
-                          ? Icons.subtitles : Icons.subtitles_outlined,
+                    widgetButton(
+                      DanmakuIcon(enabled: c.danmakuEnabled),
                       () => c.onToggleDanmaku!(context),
                       tooltip: 'Danmaku'.tl,
                     ),
@@ -913,9 +920,8 @@ class _VideoControlsState extends State<VideoControls> {
                       ),
                       const Spacer(),
                       if (c.onToggleDanmaku != null)
-                        button(
-                          c.danmakuEnabled
-                              ? Icons.subtitles : Icons.subtitles_outlined,
+                        widgetButton(
+                          DanmakuIcon(enabled: c.danmakuEnabled),
                           () => c.onToggleDanmaku!(context),
                           tooltip: 'Danmaku'.tl,
                         ),

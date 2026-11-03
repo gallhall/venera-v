@@ -24,6 +24,7 @@ import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
 import 'package:venera/network/download.dart';
+import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
 import 'package:venera/pages/video/danmaku_sheet.dart';
 import 'package:venera/pages/video/video_controls.dart';
@@ -1691,8 +1692,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             : context.showMessage(message: "Already the last episode".tl);
       },
       actions: [
-        PlayerControlAction(
-          Icons.subtitles_outlined,
+        PlayerControlAction.custom(
+          (size) => DanmakuIcon(settings: true, size: size),
           'Danmaku settings'.tl,
           (context) => showDanmakuSheet(context, danmaku),
         ),
@@ -1745,7 +1746,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (id != null) p.selectAudioTrack(id);
           }),
         if (p != null && tracks.subtitle.length > 2)
-          PlayerControlAction(Icons.subtitles_rounded, "Subtitle".tl, (
+          PlayerControlAction(Icons.closed_caption_rounded, "Subtitle".tl, (
             context,
           ) async {
             var id = await pick(context, "Subtitle".tl, {
