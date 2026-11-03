@@ -15,11 +15,9 @@ abstract interface class PlayInfoLoader {
 }
 
 abstract interface class PlaybackEngines {
-  Future<VideoPlayback?> pick(VideoPlaySource source, VideoStreamRequest request,
-      {required bool allowNative});
+  Future<VideoPlayback?> pick(VideoPlaySource source, VideoStreamRequest request);
   /// Why no engine could be loaded, if [pick] returned null.
   String? get error;
-  bool isNative(VideoPlayback p);
 }
 
 sealed class PlaybackEvent {}
@@ -104,13 +102,12 @@ class PlaybackSession extends ChangeNotifier {
 
   final _failedSources = <int>{};
   final _retriedSources = <int>{};
-  final _nativeFailedSources = <int>{};
   final _playbackSubscriptions = <StreamSubscription>[];
   StreamStartupWatch? _startupWatch;
   Timer? _retryTimer;
   (String, int?)? _leaseInput;
   _Recovery? _recovery;
-  // Both engines report a seek before playing. Require progress beyond
+  // The player reports a seek before playing. Require progress beyond
   // the requested start, rather than duration/playing metadata alone.
   bool _playbackAdvanced = false;
   Duration _duration;
@@ -182,7 +179,6 @@ class PlaybackSession extends ChangeNotifier {
     }
     _playInfo = res.data;
     _failedSources.clear();
-    _nativeFailedSources.clear();
     _retriedSources.clear();
     unawaited(_openSource(0, start: at));
   }
@@ -334,8 +330,7 @@ class PlaybackSession extends ChangeNotifier {
       if (_disposed || token != _openToken) {
         return;
       }
-      var next = await engines.pick(info.sources[index], request,
-        allowNative: !_nativeFailedSources.contains(index));
+      var next = await engines.pick(info.sources[index], request);
       if (_disposed || token != _openToken) {
         return;
       }
@@ -357,7 +352,7 @@ class PlaybackSession extends ChangeNotifier {
       // Scheme and host only: query strings carry tokens.
       var uri = Uri.tryParse(request.url);
       Log.info('Video', 'Opening source ${index + 1}/${info.sources.length} '
-          'with ${engines.isNative(next) ? 'the system player' : 'media_kit'}: '
+          'with media_kit: '
           '${uri == null ? '?' : uri.isScheme('file') || uri.scheme.isEmpty
               ? 'local file' : '${uri.scheme}://${uri.host}'}');
       _openTime = DateTime.now();
@@ -376,16 +371,6 @@ class PlaybackSession extends ChangeNotifier {
     if (_errorHandledFor == _openToken) return;
     _errorHandledFor = _openToken;
     _startupWatch?.cancel();
-    if (_active != null && engines.isNative(_active!)) {
-      // Try the same stream with media_kit, which plays more formats.
-      Log.info('Video', 'The system player failed, using media_kit');
-      _nativeFailedSources.add(_streamIndex);
-      _openSource(
-        _streamIndex,
-        start: _openedAt == Duration.zero ? null : _openedAt,
-      );
-      return;
-    }
     // Playback is being brought back: the attempts go on there.
     if (_recovery != null) {
       _recover();
@@ -489,7 +474,6 @@ class PlaybackSession extends ChangeNotifier {
         _change(() {
           _playInfo = res.data;
           _failedSources.clear();
-          _nativeFailedSources.clear();
           _retriedSources.clear();
         });
         return _openSource(index < 0 ? 0 : index, start: start);

@@ -27,7 +27,7 @@ venera-v 保留了 venera 的全部功能，并增加了视频播放。
 - 导入本地视频和字幕
 - 打开视频网页来查找视频流
 - 把 [Kazumi](https://github.com/Predidit/Kazumi) 的动漫规则用作视频源，见 [Kazumi Rules](doc/kazumi_rules.md)
-- iOS 上使用系统播放器播放
+- 所有平台均使用 media_kit 播放
 
 ## 下载
 Android、iOS、Windows、macOS 和 Linux（deb、Arch）的安装包在 [Releases](https://github.com/gallhall/venera-v/releases) 页面。

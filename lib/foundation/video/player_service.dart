@@ -151,8 +151,7 @@ class PlayerControls {
   });
 }
 
-/// What the video page needs from a player: implemented by [PlayerService]
-/// and by the iOS system player (`NativeVideoPlayer`).
+/// Playback operations and state provided by [PlayerService] to the video page.
 abstract interface class VideoPlayback {
   Stream<Duration> get position;
 
