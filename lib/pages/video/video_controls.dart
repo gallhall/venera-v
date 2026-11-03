@@ -755,9 +755,8 @@ class _VideoControlsState extends State<VideoControls> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               // Room next to the back button and the title.
-              var room = constraints.maxWidth - 96 -
-                  (c.onBack != null ? 40 : 0) -
-                  (c.resolutionLabel != null ? 48 : 0);
+              var room =
+                  constraints.maxWidth - 96 - (c.onBack != null ? 40 : 0);
               return Row(
                 children: [
                   if (c.onBack != null)
@@ -776,16 +775,6 @@ class _VideoControlsState extends State<VideoControls> {
                       ),
                     ),
                   ),
-                  if (c.resolutionLabel != null) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      c.resolutionLabel!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
                   ...buildActions(context, actions, room),
                 ],
               );
