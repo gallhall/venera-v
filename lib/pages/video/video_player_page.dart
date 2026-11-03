@@ -30,7 +30,7 @@ import 'package:venera/pages/video/danmaku_sheet.dart';
 import 'package:venera/pages/video/video_controls.dart';
 import 'package:venera/pages/video/anime4k_picker.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
-import 'package:venera/utils/io.dart';
+import 'package:venera/pages/bangumi/bangumi_subject_page.dart';import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -1612,6 +1612,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (target != null) await changeBangumi(b.at(target.number));
   }
 
+  /// Whether the video is linked to Bangumi though opened without its
+  /// context, as a downloaded video is: its sources can be switched too.
+  bool get linkedToBangumi =>
+      bangumi == null &&
+      BangumiManager().bindingOf(sourceKey, details.id)?.isBook == false;
+
+  /// Switches the source of a video opened without its Bangumi context,
+  /// which is loaded first. With no other source matched yet, the subject
+  /// page is opened to find them.
+  Future<void> pickLinkedSource() async {
+    var position = active?.currentPosition ?? Duration.zero;
+    var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
+    BangumiPlaybackContext? playback;
+    try {
+      playback = await linkedBangumiContext(
+        sourceKey,
+        details.id,
+        details.title,
+        BangumiEpisodeNumber.of(
+              episode.id == null ? '' : episode.title,
+              episodes.toHistory(current).ep,
+            ) ??
+            episodes.toHistory(current).ep,
+      );
+    } catch (e) {
+      if (mounted) context.showMessage(message: '$e');
+      return;
+    } finally {
+      dialog.close();
+    }
+    if (!mounted || playback == null) return;
+    if (playback.candidates.length < 2) {
+      App.rootContext.to(
+        () => BangumiSubjectPage(subjectId: playback!.subject.id),
+      );
+      return;
+    }
+    await pickBangumiSource(position: position, playback: playback);
+  }
+
   Future<void> pickBangumiSource({
     Duration? position,
     BangumiPlaybackContext? playback,
@@ -1691,6 +1731,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             Icons.swap_horiz_rounded,
             'Switch source'.tl,
             (_) => pickBangumiSource(),
+          )
+        else if (linkedToBangumi)
+          PlayerControlAction(
+            Icons.swap_horiz_rounded,
+            'Switch source'.tl,
+            (_) => pickLinkedSource(),
           ),
         if (bangumi == null && episodes.length > 1)
           PlayerControlAction(Icons.format_list_numbered_rounded, "Episodes".tl, (
@@ -2172,6 +2218,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   selected: sourceIndex == i,
                   onSelected: (_) => switchSource(i),
                 ),
+            ],
+          ),
+        ),
+      if (bangumi == null && linkedToBangumi)
+        AppCard(
+          onTap: pickLinkedSource,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const AppIconBox(Icons.live_tv_outlined, size: 36),
+              const SizedBox(width: 12),
+              Expanded(child: Text(playingSource, style: ts.s14)),
+              Text(
+                'Switch source'.tl,
+                style: ts.s12.copyWith(
+                  color: context.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),

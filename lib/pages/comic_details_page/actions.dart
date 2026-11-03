@@ -311,53 +311,7 @@ abstract mixin class _ComicPageActions {
   }
 
   Future<void> downloadVideo() async {
-    if (LocalManager().isDownloading(comic.id, comic.comicType)) {
-      App.rootContext.showMessage(message: "The video is downloading".tl);
-      return;
-    }
-    var chapters = comic.chapters;
-    List<String>? episodes;
-    if (chapters == null || chapters.length == 0) {
-      if (LocalManager().isDownloaded(comic.id, comic.comicType, 0)) {
-        App.rootContext.showMessage(message: "The video is downloaded".tl);
-        return;
-      }
-    } else {
-      var local = LocalManager().find(comic.id, comic.comicType);
-      var ids = chapters.ids.toList();
-      var downloaded = [
-        for (int i = 0; i < ids.length; i++)
-          if (local?.downloadedChapters.contains(ids[i]) ?? false) i,
-      ];
-      List<int>? selected;
-      await showSideBar(
-        App.rootContext,
-        _SelectDownloadChapter(
-          chapters.titles.toList(),
-          (v) => selected = v,
-          downloaded,
-        ),
-      );
-      if (selected == null) return;
-      episodes = selected!.map((i) => ids[i]).toList();
-    }
-    var quality = await selectDownloadQuality(
-      comicSource,
-      comic.id,
-      episodes?.firstOrNull,
-    );
-    if (quality == null) return;
-    LocalManager().addTask(
-      VideoDownloadTask(
-        source: comicSource,
-        videoId: comic.id,
-        comic: comic,
-        episodes: episodes,
-        quality: quality,
-      ),
-    );
-    App.rootContext.showMessage(message: "Download started".tl);
-    update();
+    if (await downloadVideoEpisodes(comicSource, comic)) update();
   }
 
   void onTapTag(String tag, String namespace) {

@@ -964,6 +964,43 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
+  /// Downloads episodes of the current source, picked with their quality.
+  /// With no source matched yet, the sources are shown to pick one.
+  Future<void> download() async {
+    var candidate = current;
+    var source = ComicSource.find(candidate?.sourceKey ?? '');
+    if (candidate == null || source == null) return pickSource();
+    var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
+    ComicDetails details;
+    try {
+      details = await (_details[(candidate.sourceKey, candidate.id)] ??
+          loadBangumiDetails(candidate));
+    } catch (e) {
+      if (mounted) context.showMessage(message: '$e');
+      return;
+    } finally {
+      dialog.close();
+    }
+    if (!mounted) return;
+    // Rule sources often give no cover, or a relative one, which the
+    // download cannot load: the search result's or Bangumi's is used.
+    bool usable(String url) => Uri.tryParse(url)?.hasScheme == true;
+    if (!usable(details.cover)) {
+      var cover = [candidate.cover, subject?.image ?? '']
+          .where(usable)
+          .firstOrNull;
+      if (cover != null) {
+        details = ComicDetails.fromJson({
+          ...details.toJson(),
+          'subtitle': details.subTitle,
+          'cover': cover,
+          'chapters': details.chapters?.toJson(),
+        });
+      }
+    }
+    await downloadVideoEpisodes(source, details);
+  }
+
   @override
   Widget build(BuildContext context) {
     _updateCoverTint(Theme.of(context).brightness);
@@ -1236,8 +1273,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       fixedSize: const Size.fromHeight(48),
                       shape: const StadiumBorder(),
                     ),
-                    onPressed: pickSource,
-                    child: Text('Playback sources'.tl),
+                    onPressed: download,
+                    child: Text('Download'.tl),
                   ),
                 ),
                 const SizedBox(width: 16),
