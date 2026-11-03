@@ -15,16 +15,15 @@ import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
-import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/foundation/video/auto_switch.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/native_player.dart';
+import 'package:venera/foundation/video/play_info_source.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
 import 'package:venera/foundation/video/stream_lease.dart';
 import 'package:venera/foundation/video/playback_session.dart';
-import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
 import 'package:venera/pages/video/danmaku_sheet.dart';
@@ -614,20 +613,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ComicType.fromKey(sourceKey),
   );
 
-  bool isDownloaded(int index, LocalComic? local) {
-    if (local == null) return false;
-    var ep = episodes[index].id;
-    return ep == null || local.downloadedChapters.contains(ep);
-  }
-
-  VideoPlayInfo? localPlayInfo(int index) {
-    var local = localVideo;
-    if (local == null || !isDownloaded(index, local)) return null;
-    return DownloadedEpisode.load(
-      VideoDownloadTask.episodeDirectory(local.baseDir, episodes[index].id),
-    );
-  }
-
   Future<void> loadEpisode(
     int index, {
     bool automatic = false,
@@ -669,20 +654,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || token != loadToken) {
       return;
     }
-    var local = localPlayInfo(index);
-    var load = source?.loadVideoPlayInfo;
-    var id = details.id;
-    var episodeId = episode.id;
     var next = PlaybackSession(
-      loader: _PlayInfoLoader(() async {
-        if (local != null) {
-          return Res(local);
-        }
-        if (load == null) {
-          return Res.error("Video source not found".tl);
-        }
-        return load(id, episodeId);
-      }, canReload: local == null && load != null),
+      loader: episodePlayInfo(
+        video: localVideo,
+        source: source,
+        videoId: details.id,
+        episodeId: episode.id,
+      ),
       engines: _PlaybackEngines(this),
       initialDuration: duration,
       autoSwitch: () => autoSwitch,
@@ -1954,7 +1932,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                           watched: history.readEpisode.contains(
                             episodes.historyKey(i),
                           ),
-                          downloaded: isDownloaded(i, local),
+                          downloaded: DownloadedPlayInfo.isDownloaded(
+                            local,
+                            episodes[i].id,
+                          ),
                           onTap: () => loadEpisode(i),
                         ),
                   ],
@@ -1980,15 +1961,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       body: body,
     );
   }
-}
-
-class _PlayInfoLoader implements PlayInfoLoader {
-  _PlayInfoLoader(this._load, {required this.canReload});
-  final Future<Res<VideoPlayInfo>> Function() _load;
-  @override
-  final bool canReload;
-  @override
-  Future<Res<VideoPlayInfo>> load() => _load();
 }
 
 class _PlaybackEngines implements PlaybackEngines {
