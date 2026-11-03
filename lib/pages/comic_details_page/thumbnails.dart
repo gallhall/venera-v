@@ -175,7 +175,7 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                     ),
                   )
                 else if (isLoading)
-                  const SliverListLoadingIndicator(),
+                  const SliverListFooter.loading(),
               ],
             );
           },

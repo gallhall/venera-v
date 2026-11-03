@@ -288,7 +288,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
               ),
             )
           : comics == null || comics!.isEmpty
-          ? SectionEmptyState("No search results found".tl)
+          ? AppEmptyView.inline("No search results found".tl)
           : SizedBox(
               height: _kComicHeight,
               child: HorizontalCoverList(

@@ -743,7 +743,7 @@ class _SearchHistoryState extends State<_SearchHistory> {
           ),
         ],
         body: appdata.searchHistory.isEmpty
-            ? SectionEmptyState("No search history".tl)
+            ? AppEmptyView.inline("No search history".tl)
             : Wrap(
                 spacing: 6,
                 runSpacing: 6,

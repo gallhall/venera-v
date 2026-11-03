@@ -231,7 +231,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         },
       );
     }
-    return NetworkError(message: error!, retry: retry, action: action);
+    return AppErrorView(
+      message: error!,
+      cause: errorCause,
+      retry: retry,
+      action: action,
+      withAppbar: true,
+    );
   }
 
   @override

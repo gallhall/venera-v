@@ -634,7 +634,7 @@ class _HistoryState extends State<_History> {
         body: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (history.isEmpty) SectionEmptyState('No history yet'.tl),
+            if (history.isEmpty) AppEmptyView.inline('No history yet'.tl),
             if (history.isNotEmpty)
               SizedBox(
                 height: 136,
@@ -1065,7 +1065,7 @@ class _ImageFavoritesState extends State<ImageFavorites> {
         body: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!hasData) SectionEmptyState('No image favorites'.tl),
+            if (!hasData) AppEmptyView.inline('No image favorites'.tl),
             if (hasData) const SizedBox(height: 8),
             if (hasData)
               Row(

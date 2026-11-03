@@ -121,24 +121,31 @@ class BangumiTrendingPageState extends State<BangumiTrendingPage>
                 }, childCount: subjects.length),
               ),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    if (loading) const CircularProgressIndicator(),
-                    if (error != null) Text(error!),
-                    if (!loading && (more || error != null))
-                      TextButton(
-                        onPressed: load,
-                        child: Text((error == null ? 'Load more' : 'Retry').tl),
-                      ),
-                    if (!loading && error == null && subjects.isEmpty)
-                      SectionEmptyState('No results'.tl),
-                  ],
+            if (subjects.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: loading
+                    ? const AppLoadingView()
+                    : error != null
+                    ? AppErrorView(message: error!, retry: load)
+                    : AppEmptyView(text: 'No results'.tl),
+              )
+            else if (loading)
+              const SliverListFooter.loading()
+            else if (error != null)
+              SliverListFooter.error(message: error!, retry: load)
+            else if (more)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: TextButton(
+                      onPressed: load,
+                      child: Text('Load more'.tl),
+                    ),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

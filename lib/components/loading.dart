@@ -1,127 +1,5 @@
 part of 'components.dart';
 
-class NetworkError extends StatelessWidget {
-  const NetworkError({
-    super.key,
-    required this.message,
-    this.retry,
-    this.withAppbar = true,
-    this.buttonText,
-    this.action,
-  });
-
-  final String message;
-
-  final void Function()? retry;
-
-  final bool withAppbar;
-
-  final String? buttonText;
-
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    var cfe = CloudflareException.fromString(message);
-    Widget body = Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 28,
-                  color: context.colorScheme.error,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  "Error".tl,
-                  style: ts.withColor(context.colorScheme.error).s16,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            cfe == null ? message : "Cloudflare verification required".tl,
-            textAlign: TextAlign.center,
-            maxLines: 3,
-          ),
-          TextButton(
-            onPressed: () {
-              saveFile(
-                data: utf8.encode(Log().toString()),
-                filename: 'log.txt',
-              );
-            },
-            child: Text("Export logs".tl),
-          ),
-          const SizedBox(height: 8),
-          if (retry != null)
-            if (cfe != null)
-              FilledButton(
-                onPressed: () => passCloudflare(
-                  CloudflareException.fromString(message)!,
-                  retry!,
-                ),
-                child: Text('Verify'.tl),
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (action != null)
-                    action!.paddingRight(8),
-                  FilledButton(
-                    onPressed: retry,
-                    child: Text(buttonText ?? 'Retry'.tl),
-                  ),
-                ],
-              ),
-        ],
-      ),
-    );
-    if (withAppbar) {
-      body = Column(
-        children: [
-          const Appbar(title: Text("")),
-          Expanded(child: body),
-        ],
-      );
-    }
-    return Material(child: body);
-  }
-}
-
-class ListLoadingIndicator extends StatelessWidget {
-  const ListLoadingIndicator({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: double.infinity,
-      height: 80,
-      child: Center(child: FiveDotLoadingAnimation()),
-    );
-  }
-}
-
-class SliverListLoadingIndicator extends StatelessWidget {
-  const SliverListLoadingIndicator({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // SliverToBoxAdapter can not been lazy loaded.
-    // Use SliverList to make sure the animation can be lazy loaded.
-    return SliverList.list(
-      children: const [SizedBox(), ListLoadingIndicator()],
-    );
-  }
-}
-
 abstract class LoadingState<T extends StatefulWidget, S extends Object>
     extends State<T> {
   bool isLoading = false;
@@ -129,6 +7,8 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
   S? data;
 
   String? error;
+
+  Object? errorCause;
 
   Future<Res<S>> loadData();
 
@@ -156,17 +36,14 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
   Widget? buildFrame(BuildContext context, Widget child) => null;
 
   Widget buildLoading() {
-    return Center(
-      child: const CircularProgressIndicator(
-        strokeWidth: 2,
-      ).fixWidth(32).fixHeight(32),
-    );
+    return const AppLoadingView();
   }
 
   void retry() {
     setState(() {
       isLoading = true;
       error = null;
+      errorCause = null;
     });
     loadDataWithRetry().then((value) async {
       if (value.success) {
@@ -179,13 +56,19 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
         setState(() {
           isLoading = false;
           error = value.errorMessage!;
+          errorCause = value.errorCause;
         });
       }
     });
   }
 
   Widget buildError() {
-    return NetworkError(message: error!, retry: retry);
+    return AppErrorView(
+      message: error!,
+      cause: errorCause,
+      retry: retry,
+      withAppbar: true,
+    );
   }
 
   @override
@@ -205,6 +88,7 @@ abstract class LoadingState<T extends StatefulWidget, S extends Object>
           setState(() {
             isLoading = false;
             error = value.errorMessage!;
+            errorCause = value.errorCause;
           });
         }
       });
@@ -238,6 +122,12 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
 
   String? _error;
 
+  Object? _errorCause;
+
+  String? _nextPageError;
+
+  Object? _nextPageCause;
+
   int _page = 1;
 
   int? _maxPage;
@@ -255,29 +145,50 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
   bool get haveNextPage => _maxPage == null || _page <= _maxPage!;
 
   void nextPage() {
-    if (_maxPage != null && _page > _maxPage!) return;
-    if (_isLoading) return;
+    if (!haveNextPage || _isLoading || _nextPageError != null) {
+      return;
+    }
     _isLoading = true;
     loadData(_page).then((value) {
       _isLoading = false;
-      if (mounted) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
         if (value.success) {
           _page++;
           if (value.subData is int) {
             _maxPage = value.subData as int;
           }
-          setState(() {
-            data!.addAll(value.data);
-          });
-        } else {
-          var message = value.errorMessage ?? "Network Error";
-          if (message.length > 20) {
-            message = "${message.substring(0, 20)}...";
+          if (value.data.isEmpty) {
+            _maxPage = _page - 1;
           }
-          context.showMessage(message: message);
+          data!.addAll(value.data);
+        } else {
+          _nextPageError = value.errorMessage ?? "Failed to load".tl;
+          _nextPageCause = value.errorCause;
         }
-      }
+      });
     });
+  }
+
+  void retryNextPage() {
+    setState(() {
+      _nextPageError = null;
+      _nextPageCause = null;
+    });
+    nextPage();
+  }
+
+  Widget buildListFooter(BuildContext context) {
+    if (_nextPageError != null) {
+      return SliverListFooter.error(message: _nextPageError!,
+          cause: _nextPageCause, retry: retryNextPage);
+    }
+    if (haveNextPage) {
+      return const SliverListFooter.loading();
+    }
+    return const SliverToBoxAdapter(child: SizedBox());
   }
 
   void reset() {
@@ -286,6 +197,10 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
       _isLoading = false;
       data = null;
       _error = null;
+      _errorCause = null;
+      _nextPageError = null;
+      _nextPageCause = null;
+      _maxPage = null;
       _page = 1;
     });
     firstLoad();
@@ -300,6 +215,9 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
           if (value.subData is int) {
             _maxPage = value.subData as int;
           }
+          if (value.data.isEmpty) {
+            _maxPage = _page - 1;
+          }
           setState(() {
             _isFirstLoading = false;
             data = value.data;
@@ -308,6 +226,7 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
           setState(() {
             _isFirstLoading = false;
             _error = value.errorMessage!;
+            _errorCause = value.errorCause;
           });
         }
       });
@@ -321,13 +240,11 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
   }
 
   Widget buildLoading(BuildContext context) {
-    return Center(
-      child: const CircularProgressIndicator().fixWidth(32).fixHeight(32),
-    );
+    return const AppLoadingView();
   }
 
   Widget buildError(BuildContext context, String error) {
-    return NetworkError(withAppbar: false, message: error, retry: reset);
+    return AppErrorView(message: error, cause: _errorCause, retry: reset);
   }
 
   @override
@@ -352,81 +269,5 @@ abstract class MultiPageLoadingState<T extends StatefulWidget, S extends Object>
     }
 
     return buildFrame(context, child) ?? child;
-  }
-}
-
-class FiveDotLoadingAnimation extends StatefulWidget {
-  const FiveDotLoadingAnimation({super.key});
-
-  @override
-  State<FiveDotLoadingAnimation> createState() =>
-      _FiveDotLoadingAnimationState();
-}
-
-class _FiveDotLoadingAnimationState extends State<FiveDotLoadingAnimation>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-      upperBound: 6,
-    )..repeat(min: 0, max: 5.2, period: const Duration(milliseconds: 1200));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  static const _colors = [
-    Colors.red,
-    Colors.green,
-    Colors.blue,
-    Colors.yellow,
-    Colors.purple,
-  ];
-
-  static const _padding = 12.0;
-
-  static const _dotSize = 12.0;
-
-  static const _height = 24.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return SizedBox(
-          width: _dotSize * 5 + _padding * 6,
-          height: _height,
-          child: Stack(children: List.generate(5, (index) => buildDot(index))),
-        );
-      },
-    );
-  }
-
-  Widget buildDot(int index) {
-    var value = _controller.value;
-    var startValue = index * 0.8;
-    return Positioned(
-      left: index * _dotSize + (index + 1) * _padding,
-      bottom:
-          (math.sin(math.pi / 2 * (value - startValue).clamp(0, 2))) *
-          (_height - _dotSize),
-      child: Container(
-        width: _dotSize,
-        height: _dotSize,
-        decoration: BoxDecoration(
-          color: _colors[index],
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
   }
 }
