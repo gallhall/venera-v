@@ -1,11 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
-import 'package:venera/utils/translations.dart';
 
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
@@ -17,6 +15,27 @@ import 'bangumi_playback.dart';
 export 'bangumi_api.dart';
 export 'bangumi_models.dart';
 export 'bangumi_playback.dart';
+
+sealed class BangumiSyncResult {
+  const BangumiSyncResult();
+}
+
+class BangumiSyncMarked extends BangumiSyncResult {
+  const BangumiSyncMarked(this.number, this.isBook);
+
+  final int number;
+  final bool isBook;
+}
+
+class BangumiSyncSkipped extends BangumiSyncResult {
+  const BangumiSyncSkipped();
+}
+
+class BangumiSyncFailed extends BangumiSyncResult {
+  const BangumiSyncFailed(this.error);
+
+  final Object error;
+}
 
 /// Marks episodes and chapters as watched or read in the Bangumi
 /// collection of a user.
@@ -141,6 +160,9 @@ class BangumiManager with ChangeNotifier {
   factory BangumiManager() => instance;
 
   BangumiManager._();
+
+  @visibleForTesting
+  BangumiManager.forTesting();
 
   static final instance = BangumiManager._();
 
@@ -342,21 +364,23 @@ class BangumiManager with ChangeNotifier {
   /// finished on Bangumi if the comic or video is linked to a subject.
   /// [position] is its position in its group, from 1, used if the title
   /// has no number.
-  Future<void> onFinished({
+  Future<BangumiSyncResult> onFinished({
     required String sourceKey,
     required String id,
     required String title,
     required int position,
   }) async {
-    if (!autoSync || !isLoggedIn) return;
+    if (!autoSync || !isLoggedIn) {
+      return const BangumiSyncSkipped();
+    }
     var binding = bindingOf(sourceKey, id);
-    if (binding == null) return;
+    if (binding == null) return const BangumiSyncSkipped();
     var number = binding.subjectNumberOf(title, position);
-    if (number == null) return;
+    if (number == null) return const BangumiSyncSkipped();
     // The number on Bangumi, as sources linked to a subject may number it
     // differently.
     var key = '${binding.subjectId}:$number';
-    if (!_marked.add(key)) return;
+    if (!_marked.add(key)) return const BangumiSyncSkipped();
     try {
       var marked = await progress.markFinished(binding, number);
       if (marked == null) {
@@ -364,28 +388,15 @@ class BangumiManager with ChangeNotifier {
         // No such episode: tried again, e.g. once the offset is fixed. A
         // chapter already read stays done.
         if (!binding.isBook) _marked.remove(key);
-        return;
+        return const BangumiSyncSkipped();
       }
       Log.info('Bangumi', 'Marked $marked of ${binding.subjectId}');
-      _showMessage(
-        (binding.isBook
-                ? 'Marked chapter @n on Bangumi'
-                : 'Marked episode @n on Bangumi')
-            .tlParams({'n': marked}),
-      );
+      return BangumiSyncMarked(marked, binding.isBook);
     } catch (e, s) {
       // Tried again the next time it is finished.
       _marked.remove(key);
       Log.error('Bangumi', 'Failed to mark $key: $e', s);
-      _showMessage('${'Failed to sync with Bangumi'.tl}: $e');
-    }
-  }
-
-  void _showMessage(String message) {
-    try {
-      App.rootContext.showMessage(message: message);
-    } catch (_) {
-      // No app, e.g. in tests.
+      return BangumiSyncFailed(e);
     }
   }
 

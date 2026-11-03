@@ -48,6 +48,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
+import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
 import 'reader_chain.dart';
 
 part 'scaffold.dart';
@@ -424,7 +425,7 @@ class _ReaderState extends State<Reader>
           id: cid,
           title: widget.chapters?.titles.elementAtOrNull(chapter - 1) ?? '',
           position: history!.ep,
-        );
+        ).then(showBangumiSyncResult);
       }
       history!.time = DateTime.now();
       _updateHistoryTimer?.cancel();

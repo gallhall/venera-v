@@ -17,6 +17,8 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/foundation/video/auto_switch.dart';
+import 'package:venera/foundation/video/video_episode.dart';
+import 'package:venera/foundation/video/watch_progress.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/play_info_source.dart';
@@ -32,77 +34,10 @@ import 'package:venera/pages/video/anime4k_picker.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
 import 'package:window_manager/window_manager.dart';
 
-class VideoEpisode {
-  /// null for a video without episodes.
-  final String? id;
-
-  final String title;
-
-  final String? group;
-
-  const VideoEpisode(this.id, this.title, this.group);
-
-  static List<VideoEpisode> fromDetails(ComicDetails details) {
-    var chapters = details.chapters;
-    if (chapters == null || chapters.length == 0) {
-      return [VideoEpisode(null, details.title, null)];
-    }
-    if (!chapters.isGrouped) {
-      return [
-        for (var e in chapters.allChapters.entries)
-          VideoEpisode(e.key, e.value, null),
-      ];
-    }
-    return [
-      for (var group in chapters.groups)
-        for (var e in chapters.getGroup(group).entries)
-          VideoEpisode(e.key, e.value, group),
-    ];
-  }
-}
-
-/// Converts between an index into a flat episode list and the position
-/// [History] stores, the same way the comic reader does: a 1-based `ep`,
-/// counted within its group when the episodes are grouped, and the
-/// 1-based `group`.
-extension VideoEpisodeList on List<VideoEpisode> {
-  List<String> get _groups => <String>{
-    for (var e in this)
-      if (e.group != null) e.group!,
-  }.toList();
-
-  ({int ep, int? group}) toHistory(int index) {
-    var group = this[index].group;
-    if (group == null) return (ep: index + 1, group: null);
-    var first = indexWhere((e) => e.group == group);
-    return (ep: index - first + 1, group: _groups.indexOf(group) + 1);
-  }
-
-  /// Key of the episode in [History.readEpisode].
-  String historyKey(int index) {
-    var h = toHistory(index);
-    return h.group == null ? "${h.ep}" : "${h.group}-${h.ep}";
-  }
-
-  /// The index for [ep] and [group], null if out of range. Without a
-  /// group, [ep] counts over all episodes.
-  int? fromHistory(int ep, int? group) {
-    int index;
-    if (group == null) {
-      index = ep - 1;
-    } else {
-      var groups = _groups;
-      if (group < 1 || group > groups.length) return null;
-      var first = indexWhere((e) => e.group == groups[group - 1]);
-      var count = where((e) => e.group == groups[group - 1]).length;
-      if (ep < 1 || ep > count) return null;
-      index = first + ep - 1;
-    }
-    return index >= 0 && index < length ? index : null;
-  }
-}
+export 'package:venera/foundation/video/video_episode.dart';
 
 /// Plays the episodes of a video source.
 class VideoPlayerPage extends StatefulWidget {
@@ -272,17 +207,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Whether the page has no app bar, set on each build.
   bool showPlayerBack = false;
 
-  late final History history = bangumi != null
-      ? bangumiSubjectHistory(
-          bangumi!.subject,
-          BangumiManager().localProgress(bangumi!.subject.id),
-        )
-      : widget.history ??
-            HistoryManager().find(
-              details.id,
-              ComicType.fromKey(sourceKey),
-            ) ??
-            History.fromModel(model: details, ep: 0, page: 0);
+  late final WatchProgress watchProgress = BangumiWatchProgress(
+    sourceKey: () => sourceKey,
+    details: () => details,
+    episodes: () => episodes,
+    current: () => current,
+    initialHistory: widget.history,
+    bangumi: () => bangumi,
+    initialPosition: () => initialPosition,
+    onSync: showBangumiSyncResult,
+  );
+
+  History get history => watchProgress.history;
 
   /// Saves the progress while playing.
   Timer? historyTimer;
@@ -317,11 +253,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// Skip ranges of the current episode already handled, by index.
   final handledSkips = <int>{};
-
-  /// Whether the stream played to its end and was not played on since:
-  /// saved as finished, not at the position, which stops short of the
-  /// duration.
-  bool playedToEnd = false;
 
   @override
   void initState() {
@@ -434,7 +365,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ifActive((playing) {
           historyTimer?.cancel();
           if (playing) {
-            playedToEnd = false;
+            watchProgress.playing();
             historyTimer = Timer.periodic(
               const Duration(seconds: 15),
               (_) => saveHistory(),
@@ -482,7 +413,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!identical(listenedPlayer, p)) {
       listenedPlayer = p;
       videoSize = null;
-      playedToEnd = false;
+      watchProgress.playing();
       if (p != null) {
         listenTo(p);
         danmaku.seek(openedAt);
@@ -506,9 +437,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       case PlaybackInterrupted():
         saveHistory(position: event.position);
       case PlaybackEnded():
-        playedToEnd = true;
-        saveHistory();
-        checkWatched(duration);
+        watchProgress.ended(
+          duration,
+          started: started,
+          canSave: active != null,
+        );
         if (hasNext) {
           moveEpisode(1);
         }
@@ -544,68 +477,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     super.dispose();
   }
 
-  /// Records the current episode and position. Only once the stream has
-  /// loaded, so an episode that fails to play is not marked as watched.
   void saveHistory({Duration? position, bool sync = false}) {
-    var p = active;
-    if (p == null || !started) return;
-    var h = episodes.toHistory(current);
-    history
-      ..ep = h.ep
-      ..group = h.group
-      ..page =
-          (position ?? (playedToEnd ? duration : p.currentPosition)).inSeconds
-      ..maxPage = duration.inSeconds
-      ..time = DateTime.now();
-    var b = bangumi;
-    if (b != null) {
-      history
-        ..ep = b.number
-        ..group = null;
-      if (markedWatched || playedToEnd) history.readEpisode.add('${b.number}');
-      BangumiManager().clearLegacyProgress(b.subject.id);
-    } else {
-      history.readEpisode.add(episodes.historyKey(current));
-    }
-    if (sync || b != null) {
-      // Defer notifications from dispose, while listeners cannot rebuild.
-      HistoryManager().addHistory(history, notifyLater: sync);
-    } else {
-      HistoryManager().addHistoryAsync(history);
-    }
-  }
-
-  /// Whether the current episode was marked as watched on Bangumi.
-  bool markedWatched = false;
-
-  /// Marks the current episode as watched on Bangumi once most of it has
-  /// played, as the ending is often skipped.
-  void checkWatched(Duration position) {
-    if (markedWatched || !started || duration <= Duration.zero) return;
-    if (position < duration * 0.85) return;
-    markedWatched = true;
-    if (bangumi != null) saveHistory(position: position);
-    BangumiManager().onFinished(
-      sourceKey: sourceKey,
-      id: details.id,
-      // A video without episodes is the first one.
-      title: episode.id == null ? '' : episode.title,
-      position: episodes.toHistory(current).ep,
+    watchProgress.save(
+      position: position,
+      currentPosition: active?.currentPosition,
+      duration: duration,
+      started: started,
+      sync: sync,
     );
   }
 
-  /// Where to start episode [index]: the saved position if it is the
-  /// episode in the history and it was not finished.
-  Duration? resumePosition(int index) {
-    if (bangumi != null) return initialPosition;
-    var h = episodes.toHistory(index);
-    if (h.ep != history.ep || h.group != history.group) return null;
-    var position = Duration(seconds: history.page);
-    var total = Duration(seconds: history.maxPage ?? 0);
-    if (position <= Duration.zero) return null;
-    // Played to the end (saved on completion): start over.
-    if (total > Duration.zero && position >= total) return null;
-    return position;
+  void checkWatched(Duration position) {
+    watchProgress.update(
+      position,
+      duration,
+      started: started,
+      canSave: active != null,
+    );
   }
 
   LocalComic? get localVideo => LocalManager().find(
@@ -632,7 +520,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     triedCandidates.add(candidateKey);
     ignoringSession = false;
     var token = ++loadToken;
-    var start = position ?? resumePosition(index);
+    var start = position ?? watchProgress.resumeAt(index);
     var previous = session;
     sessionEvents?.cancel();
     previous?.removeListener(sessionChanged);
@@ -646,7 +534,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       videoSize = null;
       currentSkip = null;
       handledSkips.clear();
-      markedWatched = false;
+      watchProgress.begin();
     });
     loadDanmaku();
     await oldActive?.pause();
@@ -1901,7 +1789,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 EpisodeGridItem(
                   label: '${e.number}',
                   selected: e.number == bangumi!.number,
-                  watched: history.readEpisode.contains('${e.number}'),
+                  watched: watchProgress.isWatched('${e.number}'),
                   onTap: () => changeBangumi(bangumi!.at(e.number)),
                 ),
             ],
@@ -1929,7 +1817,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         EpisodeGridItem(
                           label: episodes[i].title,
                           selected: current == i,
-                          watched: history.readEpisode.contains(
+                          watched: watchProgress.isWatched(
                             episodes.historyKey(i),
                           ),
                           downloaded: DownloadedPlayInfo.isDownloaded(
