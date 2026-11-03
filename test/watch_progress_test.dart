@@ -6,10 +6,10 @@ import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/foundation/video/watch_progress.dart';
 
 class _Details with HistoryMixin {
-  _Details([this.id = 'video']);
+  _Details();
 
   @override
-  final String id;
+  String get id => 'video';
   @override
   String get title => 'Video';
   @override
