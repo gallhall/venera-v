@@ -1,7 +1,8 @@
 import 'dart:async';
 
+import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/animeko/rss_preferences.dart';
-import 'package:venera/foundation/animeko/episode_unavailable.dart';
+import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/network/network_error.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/res.dart';
@@ -192,6 +193,72 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
     details: details,
     ep: h.ep,
     group: h.group,
+  );
+}
+
+/// The playback context of video [id] of [sourceKey] at episode [number] of
+/// the source, for a player opened without one (a downloaded video, or one
+/// opened from its details page). Null if the video is not linked to
+/// Bangumi. The other sources are those matched before on the subject page.
+Future<BangumiPlaybackContext?> linkedBangumiContext(
+  String sourceKey,
+  String id,
+  String title,
+  int number,
+) async {
+  var manager = BangumiManager();
+  var binding = manager.bindingOf(sourceKey, id);
+  if (binding == null || binding.isBook) return null;
+  var subjectId = binding.subjectId;
+  var subject = await manager.api.subject(subjectId);
+  var episodes = await manager.api.episodes(subjectId);
+  var cache = BangumiMatchCache(appdata.implicitData);
+  var configured = appdata.settings['searchSources'] as List? ?? [];
+  var candidates = <Comic>[
+    Comic(title, '', id, null, null, '', sourceKey, null, null),
+  ];
+  var matched = <Comic>[];
+  bool add(Comic c) {
+    if (candidates.any((e) => e.sourceKey == c.sourceKey && e.id == c.id)) {
+      return false;
+    }
+    candidates.add(c);
+    return true;
+  }
+
+  for (var source in ComicSource.enabled()) {
+    if (!source.isVideoSource || !configured.contains(source.key)) continue;
+    var entry = cache.read(
+      subjectId,
+      source.key,
+      showRaw: AnimekoSource.isRssSource(source)
+          ? appdata.settings['btShowRaw'] == true
+          : null,
+    );
+    var choice = manager.manualSourceChoice(subjectId, source.key);
+    if (choice?['id'] is String) {
+      add(Comic(
+        choice!['title'] is String ? choice['title'] : subject.displayName,
+        choice['cover'] is String ? choice['cover'] : subject.image,
+        choice['id'],
+        null, null, '', source.key, null, null,
+      ));
+    }
+    var matchedId = entry?['matchedId'];
+    for (var c in entry?['candidates'] as List? ?? const []) {
+      if (c['id'] != matchedId) continue;
+      var comic = Comic(c['title'], c['cover'], c['id'], null, null, '',
+          source.key, null, null);
+      add(comic);
+      matched.add(comic);
+    }
+  }
+  return BangumiPlaybackContext(
+    subject: subject,
+    episodes: episodes,
+    candidates: candidates,
+    matchedCandidates: matched,
+    number: number + binding.offset,
   );
 }
 
