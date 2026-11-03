@@ -17,12 +17,12 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
-import 'package:venera/foundation/video/ad_free_stream.dart';
 import 'package:venera/foundation/video/auto_switch.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/native_player.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
+import 'package:venera/foundation/video/stream_lease.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
@@ -188,7 +188,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   int? fallbackNumber;
   int fallbackPosition = 1;
   bool allSourcesFailed = false;
-  Timer? startupTimer;
+  StreamStartupWatch? startupWatch;
   // Both engines report a seek before playing. Require progress beyond
   // the requested start, rather than duration/playing metadata alone.
   bool playbackAdvanced = false;
@@ -475,7 +475,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           // is seen to advance; with a known duration it did play.
           if (completed && !playbackAdvanced && duration > Duration.zero) {
             playbackAdvanced = true;
-            startupTimer?.cancel();
+            startupWatch?.cancel();
             markStarted();
           }
           if (!completed || !started || isLoading) return;
@@ -492,7 +492,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (!playbackAdvanced &&
               p.isPlaying && !p.isBuffering && position > openedAt) {
             playbackAdvanced = true;
-            startupTimer?.cancel();
+            startupWatch?.cancel();
             markStarted();
           }
           checkSkip(position);
@@ -629,9 +629,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
-    unawaited(releaseTorrent());
+    unawaited(releaseLease());
     historyTimer?.cancel();
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     for (var s in playbackSubscriptions) {
       s.cancel();
     }
@@ -750,7 +750,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     triedLines.add(episode.group);
     triedCandidates.add(candidateKey);
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     openToken++;
     var start = position ?? resumePosition(index);
     openedAt = start ?? Duration.zero;
@@ -758,7 +758,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     started = false;
     var token = ++loadToken;
     ++openToken;
-    var releasing = releaseTorrent();
+    var releasing = releaseLease();
     setState(() {
       current = index;
       isLoading = true;
@@ -825,21 +825,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Start position of the stream opened last.
   Duration openedAt = Duration.zero;
 
-  String? torrentInput;
-  Future<String>? torrentOpening;
-  String? torrentUrl;
+  final opener = StreamOpener();
+  StreamLease? lease;
+  (String, int?)? leaseInput;
 
-  /// The episode of [torrentInput], for a batch torrent.
-  int? torrentEpisode;
-
-  Future<void> releaseTorrent() async {
-    var input = torrentInput;
-    torrentInput = null;
-    torrentOpening = null;
-    torrentUrl = null;
-    if (input != null) {
-      await TorrentStreamer.instance.release(input, episode: torrentEpisode);
-    }
+  Future<void> releaseLease() async {
+    var previous = lease;
+    lease = null;
+    leaseInput = null;
+    await previous?.release();
   }
 
   Future<void> openSource(int index, {Duration? start}) async {
@@ -856,62 +850,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       started = false;
     });
     var token = ++openToken;
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     playbackAdvanced = false;
     active = null;
-    var request = VideoStreamRequest.fromPlayInfo(info, index);
-    if (info.isTorrent) {
-      var input = info.sources[index].url;
-      try {
-        if (torrentInput != input) {
-          await releaseTorrent();
-          if (!mounted || token != openToken) {
-            return;
-          }
-          torrentInput = input;
-          torrentEpisode = info.torrentEpisode;
-          torrentOpening = TorrentStreamer.instance.open(
-            input, episode: info.torrentEpisode,
-          );
-          setState(() {});
-        }
-        var url = torrentUrl ?? await torrentOpening!;
-        if (!mounted || token != openToken) {
-          return;
-        }
-        setState(() {
-          torrentUrl = url;
-          torrentOpening = null;
-        });
-        request = VideoStreamRequest(url);
-      } catch (e) {
-        // Not opened, so not released: a download may share the stream.
-        if (torrentInput == input) {
-          torrentInput = null;
-          torrentOpening = null;
-          torrentUrl = null;
-        }
-        if (mounted && token == openToken) {
-          // A torrent file that failed to download may still work as a
-          // magnet. Otherwise retrying the same release would wait as long
-          // again, so go on to the next line or source.
-          failedSources.add(index);
-          var next = Iterable.generate(info.sources.length)
-              .where((i) => !failedSources.contains(i))
-              .firstOrNull;
-          if (next != null) {
-            Log.warning('Video', 'Torrent failed, trying $next: $e');
-            unawaited(openSource(next, start: start));
-          } else {
-            await autoSwitchAfterFailure('$e', openedAt);
-          }
-        }
+    // A torrent stays open across retries; an HTTP stream is prepared again.
+    var input = (info.sources[index].url, info.torrentEpisode);
+    if (lease == null || !info.isTorrent || leaseInput != input) {
+      var previous = lease;
+      var next = opener.open(info, index);
+      lease = next;
+      leaseInput = input;
+      setState(() {});
+      await previous?.release();
+      if (!mounted || token != openToken) {
         return;
       }
-    } else {
-      await releaseTorrent();
     }
-    if (!mounted || token != openToken) return;
+    var opening = lease!;
     var seconds = appdata.settings['videoAutoSwitchTimeout'];
     if (autoSwitch) {
       var limit = seconds is int ? seconds : 20;
@@ -922,33 +877,37 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         }
       }
 
-      if (info.isTorrent) {
-        // A slow swarm still gets there: a torrent times out only after
-        // three times the limit without any data, or after five minutes.
-        var idle = 0, elapsed = 0;
-        startupTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          var input = torrentInput;
-          var status = input == null
-              ? null
-              : TorrentStreamer.instance
-                  .status(input, episode: torrentEpisode)
-                  ?.value;
-          idle = (status?.bytesPerSecond ?? 0) > 0 ? 0 : idle + 1;
-          if (playbackAdvanced || token != openToken) {
-            timer.cancel();
-          } else if (idle >= limit * 3 || ++elapsed >= 300) {
-            timer.cancel();
-            timedOut();
-          }
-        });
-      } else {
-        startupTimer = Timer(Duration(seconds: limit), timedOut);
+      startupWatch = opening.watchStartup(Duration(seconds: limit), timedOut);
+    }
+    VideoStreamRequest request;
+    try {
+      request = await opening.ready;
+      if (!mounted || token != openToken) {
+        return;
       }
+      setState(() {});
+    } catch (e) {
+      if (identical(lease, opening)) {
+        unawaited(releaseLease());
+      }
+      if (mounted && token == openToken) {
+        // A torrent file that failed to download may still work as a
+        // magnet. Otherwise retrying the same release would wait as long
+        // again, so go on to the next line or source.
+        failedSources.add(index);
+        var next = Iterable.generate(info.sources.length)
+            .where((i) => !failedSources.contains(i))
+            .firstOrNull;
+        if (next != null) {
+          Log.warning('Video', 'Torrent failed, trying $next: $e');
+          unawaited(openSource(next, start: start));
+        } else {
+          await autoSwitchAfterFailure('$e', openedAt);
+        }
+      }
+      return;
     }
     try {
-      if (!info.isTorrent) {
-        request = await AdFreeStream.prepare(request);
-      }
       if (!mounted || token != openToken) {
         return;
       }
@@ -974,8 +933,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return;
       }
       if (next == null) {
-        startupTimer?.cancel();
-        unawaited(releaseTorrent());
+        startupWatch?.cancel();
+        unawaited(releaseLease());
         setState(() {
           active = null;
           error = "${"Failed to load the video engine".tl}\n$engineError";
@@ -1018,7 +977,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || info == null || started || isLoading) return;
     if (errorHandledFor == openToken) return;
     errorHandledFor = openToken;
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     if (active != null && identical(active, native)) {
       // Try the same stream with media_kit, which plays more formats.
       Log.info('Video', 'The system player failed, using media_kit');
@@ -1077,9 +1036,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     Log.warning('Video', 'Playback failed: $message');
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     if (!autoSwitch) {
-      unawaited(releaseTorrent());
+      unawaited(releaseLease());
       setState(() => error = message);
       return;
     }
@@ -1140,7 +1099,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return;
       }
     }
-    unawaited(releaseTorrent());
+    unawaited(releaseLease());
     setState(() {
       isLoading = false;
       allSourcesFailed = true;
@@ -1382,7 +1341,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       appdata.settings['videoAutoSwitch'] = v;
                       appdata.saveData();
                       if (!v) {
-                        startupTimer?.cancel();
+                        startupWatch?.cancel();
                       }
                       setDialogState(() {});
                     },
@@ -1500,7 +1459,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       resetAutoSwitch();
     }
     changingBangumi = true;
-    startupTimer?.cancel();
+    startupWatch?.cancel();
     String? automaticError;
     saveHistory();
     var oldActive = active;
@@ -1968,9 +1927,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         fit: StackFit.expand,
         children: [
           view,
-          if (isLoading || torrentOpening != null)
+          if (isLoading || lease?.isOpening == true)
             const Center(child: CircularProgressIndicator(color: Colors.white)),
-          if (torrentInput != null && error == null)
+          if (lease?.status != null && error == null)
             buildTorrentStatus(),
           if (recovery != null && !started && error == null)
             buildReconnecting(),
@@ -2049,17 +2008,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildTorrentStatus() {
-    var status = TorrentStreamer.instance.status(
-      torrentInput!,
-      episode: torrentEpisode,
-    );
-    if (status == null) {
-      return const SizedBox.shrink();
-    }
+    var status = lease!.status!;
     return ValueListenableBuilder<TorrentStatus>(
       valueListenable: status,
       builder: (context, value, _) {
-        if (torrentOpening == null && started &&
+        if (!lease!.isOpening && started &&
             active?.isBuffering != true) {
           return const SizedBox.shrink();
         }

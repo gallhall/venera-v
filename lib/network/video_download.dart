@@ -397,9 +397,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     Object? lastError;
     for (var source in info.sources) {
       if (!_isCurrent(run)) return;
-      var input = source.url;
-      // Released only if opened: the player may share the stream.
-      var opened = false;
+      StreamLease? lease;
       try {
         await _claimDirectory(
           dir,
@@ -407,12 +405,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         );
         _message = "${label}Connecting to peers...";
         notifyListeners();
-        var url = await TorrentStreamer.instance.open(
-          input,
-          episode: info.torrentEpisode,
-          download: true,
+        lease = StreamOpener().open(
+          info, info.sources.indexOf(source), download: true,
         );
-        opened = true;
+        var url = (await lease.ready).url;
         if (!_isCurrent(run)) return;
         var name = "video${_fileExtension(url, '.mkv')}";
         await _downloadFile(url, dir.joinFile(name), const {}, (p) {
@@ -428,12 +424,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         Log.warning("Download", "Torrent ${source.name} failed: $e");
         lastError = e;
       } finally {
-        if (opened) {
-          await TorrentStreamer.instance.release(
-            input,
-            episode: info.torrentEpisode,
-          );
-        }
+        await lease?.release();
       }
     }
     throw lastError ?? "No source to download";
