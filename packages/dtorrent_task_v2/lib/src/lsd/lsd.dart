@@ -34,7 +34,12 @@ class LSD with EventsEmittable<LSDEvent> {
 
   final String _peerId;
 
-  LSD(this._infoHashHex, this._peerId);
+  /// [send] replaces the socket's send, for tests: bytes sent, 0 if none.
+  LSD(this._infoHashHex, this._peerId,
+      {int Function(RawDatagramSocket socket, List<int> data)? send})
+      : _send = send;
+
+  final int Function(RawDatagramSocket socket, List<int> data)? _send;
 
   Timer? _timer;
 
@@ -97,16 +102,21 @@ class LSD with EventsEmittable<LSDEvent> {
     _timer = Timer(Duration(seconds: 5 * 60), () => _announce());
   }
 
-  Future<void> _sendMessage(String message, [Completer<void>? completer]) {
-    if (_socket == null) return Future<void>.value();
-    completer ??= Completer<void>();
-    var success = _socket?.send(message.codeUnits, lsdHost, lsdPort);
-    if (success != null && !(success > 0)) {
-      Timer.run(() => _sendMessage(message, completer));
-    } else {
-      completer.complete();
+  // venera-v: the send was retried until it succeeded, with no limit. Without
+  // a network the multicast send never does, so start() never returned and
+  // spun the CPU. LSD is optional: after a few tries the announce is skipped.
+  static const _sendAttempts = 20;
+
+  Future<void> _sendMessage(String message) async {
+    for (var attempt = 0; attempt < _sendAttempts; attempt++) {
+      var socket = _socket;
+      if (socket == null || _closed) return;
+      var sent = _send?.call(socket, message.codeUnits) ??
+          socket.send(message.codeUnits, lsdHost, lsdPort);
+      if (sent > 0) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
-    return completer.future;
+    _log.warning('LSD announce not sent: the network is unreachable');
   }
 
   /// BT-SEARCH * HTTP/1.1\r\n
