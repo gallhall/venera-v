@@ -330,10 +330,10 @@ class SubjectSourceMatcher extends ChangeNotifier {
     if (_disposed || !row.source.isEnabled || !_rows.contains(row)) {
       return;
     }
+    // Recorded with the results: the setting may change while searching.
+    var raw = _search.isRss(row.source) ? showRaw() : null;
     var cached = useCache && keyword == null
-        ? matchCache.read(subjectId, row.source.key,
-            showRaw: _search.isRss(row.source)
-                ? showRaw() : null) : null;
+        ? matchCache.read(subjectId, row.source.key, showRaw: raw) : null;
     row._fromCache = cached != null;
     row._recovery = null;
     _details.removeWhere((key, _) => key.$1 == row.source.key);
@@ -521,9 +521,11 @@ class SubjectSourceMatcher extends ChangeNotifier {
           matchedId: row._matched?.id, exactIds: row._exactIds.toList(),
           keyword: row._keyword, resultKeywords: Map.of(row._resultKeywords),
           onlyWithoutChineseSubtitles: row._onlyWithoutChineseSubtitles,
-          showRaw: _search.isRss(row.source)
-              ? showRaw() : null,
-          error: hadError ? row._error ?? 'Search failed' : null);
+          showRaw: raw,
+          // A match found despite an earlier failed query is kept; with
+          // none, the failure may have hidden it.
+          error: hadError && row._matched == null
+              ? row._error ?? 'Search failed' : null);
         saveCache?.call();
       }
       // Re-read after searching: a user may have picked a result in the meantime.

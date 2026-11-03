@@ -233,7 +233,7 @@ void main() {
     expect(identical(f.search.pageOptions.first, f.search.pageOptions.last), isTrue);
   });
 
-  test('search errors are reported while loop continues; any error prevents caching', () async {
+  test('search errors are reported while loop continues; a later match is cached', () async {
     var pending = Completer<Page>();
     f.search.pages[('a', subject.nameCn)] = () async =>
         (res: const Res<List<Comic>>.error('first failure'), onlyWithoutChineseSubtitles: false);
@@ -246,6 +246,16 @@ void main() {
     await flush();
     expect(f.matcher.rows.single.error, isNull);
     expect(f.matcher.current?.id, 'item');
+    expect(f.cache.read(subject.id, 'a')?['matchedId'], 'item');
+  });
+
+  test('a failed query with no match found is not cached', () async {
+    f.search.pages[('a', subject.nameCn)] = () async =>
+        (res: const Res<List<Comic>>.error('failure'), onlyWithoutChineseSubtitles: false);
+    f.answer('a', subject.name, [comic('a', 'other', 'Unrelated')]);
+    f.matcher.syncSources([source('a')]);
+    await flush();
+    expect(f.matcher.rows.single.matched, isNull);
     expect(f.cache.read(subject.id, 'a'), isNull);
   });
 
@@ -258,7 +268,20 @@ void main() {
     await flush();
     expect(f.matcher.current?.id, 'item');
     expect(f.search.calls.last, 'page:a:${subject.name}');
-    expect(f.cache.read(subject.id, 'a'), isNull);
+    expect(f.cache.read(subject.id, 'a')?['matchedId'], 'item');
+  });
+
+  test('raw setting changed during a search is not recorded with its results', () async {
+    var pending = Completer<List<Comic>>();
+    f.search.rss.add('rss');
+    f.search.mergedResults['rss'] = (_) => pending.future;
+    f.matcher.syncSources([source('rss')]);
+    await flush();
+    f.raw = true;
+    pending.complete([comic('rss')]);
+    await flush();
+    expect(f.cache.read(subject.id, 'rss', showRaw: true), isNull);
+    expect(f.cache.read(subject.id, 'rss', showRaw: false)?['matchedId'], 'item');
   });
 
   test('RSS cache with stale showRaw is skipped and new setting stored', () async {
