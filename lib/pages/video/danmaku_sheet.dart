@@ -93,48 +93,10 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
     }
     setState(() => matching = true);
     try {
-      var fileNameMatch = false;
-      // Both sources are searched; one failing still shows the other.
-      Future<List<DanmakuAnime>> bilibili() async {
-        var movies = target?.episodeCount == 1;
-        return [
-          for (var m in [false, if (movies) true])
-            ...await session.bilibili.search(query, movies: m),
-        ];
-      }
-      Future<List<DanmakuAnime>> dandanplay() async {
-        if (!DanDanPlayApi.hasCredentials) {
-          return const [];
-        }
-        try {
-          var results = await session.api.search(query);
-          var clean = cleanDanmakuTitle(query);
-          if (results.isEmpty && clean.length >= 2 &&
-              clean.toLowerCase() != query.toLowerCase()) {
-            results = await session.api.search(clean);
-          }
-          return results;
-        } on DanmakuQuotaExceeded catch (error) {
-          if (error.group != 'search') {
-            rethrow;
-          }
-          var number = (target?.ep ?? target?.sort ??
-                  (target?.index ?? 0) + 1)
-              .toInt().toString().padLeft(2, '0');
-          fileNameMatch = true;
-          return session.api.matchByName('$query $number');
-        }
-      }
-      var results = <DanmakuAnime>[];
-      Object? error;
-      for (var search in DanmakuSource.order.map((s) =>
-          s == DanmakuSource.bilibili ? bilibili() : dandanplay())) {
-        try {
-          results.addAll(await search);
-        } catch (e) {
-          error ??= e;
-        }
-      }
+      var found = await session.search(query);
+      var results = found.results;
+      var fileNameMatch = found.degraded;
+      var error = found.error;
       if (!mounted || session.target != target) {
         return;
       }
@@ -145,17 +107,6 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
         session.reportFailure('No danmaku match');
         return;
       }
-      int byDate(DanmakuAnime a, DanmakuAnime b) {
-        if (a.startDate == null) {
-          return b.startDate == null ? 0 : 1;
-        }
-        return b.startDate?.compareTo(a.startDate!) ?? -1;
-      }
-      // Sources stay in their preferred order; newest first within each.
-      var order = DanmakuSource.order;
-      results.sort((a, b) => a.source != b.source
-          ? order.indexOf(a.source).compareTo(order.indexOf(b.source))
-          : byDate(a, b));
       var chosen = await showSidePicker<DanmakuAnime>(
         context,
         title: fileNameMatch
@@ -175,9 +126,7 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
       if (!mounted || chosen == null || session.target != target) {
         return;
       }
-      var anime = chosen.source == DanmakuSource.bilibili
-          ? await session.bilibili.season(chosen.id)
-          : await session.api.anime(chosen.id);
+      var anime = await session.details(chosen);
       if (!mounted || session.target != target) {
         return;
       }
@@ -191,9 +140,7 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
         options: {
           for (var e in anime.episodes) e: '${e.number} · ${e.title}',
         },
-        selected: matchDanmakuEpisode(anime.episodes,
-          ep: target?.ep, sort: target?.sort, index: target?.index ?? 0,
-          preferSort: anime.source == DanmakuSource.dandanplay),
+        selected: session.manualEpisode(anime, target),
       );
       if (!mounted || episode == null || session.target != target) {
         return;
