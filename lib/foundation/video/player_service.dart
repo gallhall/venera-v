@@ -89,14 +89,27 @@ class PlayerTracks {
 /// A button added to the player controls. [onPressed] gets the context of
 /// the button, which is inside the fullscreen route while in fullscreen.
 class PlayerControlAction {
-  final IconData icon;
+  final IconData? icon;
+
+  /// Draws the icon at the given size instead of [icon].
+  final Widget Function(double size)? iconBuilder;
 
   /// Tooltip, and the menu entry when the button does not fit.
   final String label;
 
   final void Function(BuildContext context) onPressed;
 
-  const PlayerControlAction(this.icon, this.label, this.onPressed);
+  const PlayerControlAction(IconData this.icon, this.label, this.onPressed)
+      : iconBuilder = null;
+
+  const PlayerControlAction.custom(
+    Widget Function(double size) this.iconBuilder,
+    this.label,
+    this.onPressed,
+  ) : icon = null;
+
+  Widget buildIcon(double size) =>
+      iconBuilder?.call(size) ?? Icon(icon, size: size);
 }
 
 /// Additions to the player controls (`VideoControls`).
