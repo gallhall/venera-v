@@ -57,9 +57,17 @@ class TorrentStatus {
 abstract interface class TorrentStreamer {
   static final TorrentStreamer instance = DartTorrentStreamer();
 
-  Future<String> open(String magnetOrTorrentUrl, {int? episode});
-  ValueListenable<TorrentStatus>? status(String url);
-  Future<void> release(String url);
+  /// Opens episode [episode] of a torrent. Opened again while it is open (the
+  /// player and a download), the same stream is shared: each [open] is
+  /// matched by a [release] with the same arguments, and the last one
+  /// closes it.
+  ///
+  /// A [download] is not held to the cache limit: its file is copied out and
+  /// the cache freed when it ends.
+  Future<String> open(String magnetOrTorrentUrl,
+      {int? episode, bool download = false});
+  ValueListenable<TorrentStatus>? status(String url, {int? episode});
+  Future<void> release(String url, {int? episode});
 }
 
 class DartTorrentStreamer implements TorrentStreamer {
@@ -72,20 +80,37 @@ class DartTorrentStreamer implements TorrentStreamer {
       (int.tryParse('${appdata.settings['btMaxCacheGB']}') ?? 2) *
       1024 * 1024 * 1024;
 
-  @override
-  ValueListenable<TorrentStatus>? status(String url) => _sessions[url]?.status;
+  /// A batch torrent has several episodes, each streamed on its own.
+  static String _key(String url, int? episode) =>
+      episode == null ? url : '$url#$episode';
 
   @override
-  Future<String> open(String magnetOrTorrentUrl, {int? episode}) async {
-    if (_sessions.containsKey(magnetOrTorrentUrl)) {
-      await release(magnetOrTorrentUrl);
+  ValueListenable<TorrentStatus>? status(String url, {int? episode}) =>
+      _sessions[_key(url, episode)]?.status;
+
+  @override
+  Future<String> open(String magnetOrTorrentUrl,
+      {int? episode, bool download = false}) async {
+    var key = _key(magnetOrTorrentUrl, episode);
+    var open = _sessions[key];
+    if (open != null && !open.cancelled.isCompleted) {
+      open.users++;
+      await open.opened.future;
+      if (open.localUrl != null && !open.cancelled.isCompleted) {
+        return open.localUrl!;
+      }
+      // It failed: opened again below.
+      open.users--;
     }
-    var session = _TorrentSession();
-    _sessions[magnetOrTorrentUrl] = session;
+    if (_sessions.containsKey(key)) {
+      await _close(_sessions[key]!);
+    }
+    var session = _TorrentSession()..download = download;
+    _sessions[key] = session;
     try {
       await _cache.create(recursive: true);
       await _cacheOperation(() async {
-        await _trimCache(16 * 1024 * 1024);
+        await _trimCache(16 * 1024 * 1024, limited: !download);
         session.checkCancelled();
         var random = Random.secure();
         var token = List.generate(16,
@@ -163,7 +188,8 @@ class DartTorrentStreamer implements TorrentStreamer {
           '${peers.length} metadata peers)');
       var reservation = reservedBytes(model, file);
       await _cacheOperation(() async {
-        await _trimCache(reservation - session.reserved);
+        await _trimCache(reservation - session.reserved,
+            limited: !session.download);
         session.checkCancelled();
         session.reserved = reservation;
       });
@@ -413,11 +439,19 @@ class DartTorrentStreamer implements TorrentStreamer {
   }
 
   @override
-  Future<void> release(String url) async {
-    var session = _sessions[url];
+  Future<void> release(String url, {int? episode}) async {
+    var session = _sessions[_key(url, episode)];
     if (session == null) {
       return;
     }
+    // Still used by another (the player or a download).
+    if (--session.users > 0) {
+      return;
+    }
+    await _close(session);
+  }
+
+  Future<void> _close(_TorrentSession session) async {
     if (!session.cancelled.isCompleted) {
       session.cancelled.complete();
       session.cancelToken.cancel();
@@ -443,8 +477,9 @@ class DartTorrentStreamer implements TorrentStreamer {
         } finally {
           await _cacheOperation(() async {
             var directory = session.directory;
+            // A download's file is copied out: no need to keep it here.
             if (directory != null && await directory.exists() &&
-                (appdata.settings['btKeepFiles'] != true ||
+                (session.download || appdata.settings['btKeepFiles'] != true ||
                   session.cancelled.isCompleted && session.localUrl == null)) {
               await directory.delete(recursive: true);
             }
@@ -473,14 +508,18 @@ class DartTorrentStreamer implements TorrentStreamer {
     return size;
   }
 
-  Future<void> _trimCache(int needed) async {
+  /// Frees cache for [needed] bytes more. Throws if it does not fit, unless
+  /// not [limited] (a download).
+  Future<void> _trimCache(int needed, {bool limited = true}) async {
     if (!await _cache.exists()) {
       return;
     }
     var sessions = _sessions.values.toSet();
     var active = {for (var s in sessions)
       if (s.reserved > 0 && s.directory != null) s.directory!.path};
-    var used = sessions.fold<int>(0, (n, s) => n + s.reserved);
+    // Downloads are outside the limit, so they do not take from playback.
+    var used = sessions.fold<int>(
+        0, (n, s) => s.download ? n : n + s.reserved);
     var removable = <({FileSystemEntity entry, int size, DateTime time})>[];
     await for (var entry in _cache.list(followLinks: false)) {
       if (!active.contains(entry.path)) {
@@ -499,7 +538,7 @@ class DartTorrentStreamer implements TorrentStreamer {
       await item.entry.delete(recursive: true);
       used -= item.size;
     }
-    if (used + needed > _maxCache) {
+    if (limited && used + needed > _maxCache) {
       throw StateError('Torrent exceeds BT cache limit'.tl);
     }
   }
@@ -519,6 +558,12 @@ class _TorrentSession {
   int? downloadLimit;
   int reserved = 0;
   Future<void>? cleanup;
+
+  /// Callers that opened it and have not released it.
+  int users = 1;
+
+  /// Opened for a download, outside the cache limit.
+  bool download = false;
 
   void checkCancelled() {
     if (cancelled.isCompleted) {

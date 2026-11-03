@@ -435,7 +435,11 @@ class BangumiAdapter implements HttpClientAdapter {
           message: 'Too many redirects',
         );
       }
-      final target = options.uri.resolve(location);
+      var target = options.uri.resolve(location);
+      // An image sent to the dead mirror is fetched through a proxy instead.
+      if (isBangumiHost(host) && isDeadBangumiImageMirror(target.host)) {
+        target = Uri.parse(bangumiImageProxyUrl(options.uri.toString()));
+      }
       final headers = Map<String, dynamic>.from(options.headers);
       if (target.origin != options.uri.origin) {
         headers.removeWhere(

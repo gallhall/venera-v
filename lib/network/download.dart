@@ -12,6 +12,7 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/network/dash_manifest.dart';
