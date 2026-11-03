@@ -171,9 +171,7 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
           preferredIndices: [for (var i = 0; i < episodes.length; i++)
             if (remembered != null &&
                 rssLineGroup(episodes[i].group) == remembered) i],
-          offset: binding?.subjectId == context.subject.id
-              ? binding!.offset
-              : 0,
+          offset: binding?.offsetFor(context.subject.id) ?? 0,
         );
   if (index == null) {
     throw BangumiEpisodeUnavailable();
@@ -182,9 +180,7 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   manager.bind(
     candidate.sourceKey,
     candidate.id,
-    binding?.subjectId == context.subject.id
-        ? binding!
-        : BangumiBinding.fromSubject(context.subject),
+    BangumiBinding.forSubject(binding, context.subject),
   );
   manager.chooseSource(context.subject.id, candidate.sourceKey, candidate.id);
   var h = episodes.toHistory(index);
@@ -258,7 +254,7 @@ Future<BangumiPlaybackContext?> linkedBangumiContext(
     episodes: episodes,
     candidates: candidates,
     matchedCandidates: matched,
-    number: number + binding.offset,
+    number: binding.subjectNumber(number),
   );
 }
 

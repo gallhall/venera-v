@@ -372,6 +372,31 @@ class BangumiBinding {
     );
   }
 
+  /// [existing] if it is for [subject] (keeping its offset), else a new binding
+  /// to [subject].
+  static BangumiBinding forSubject(
+    BangumiBinding? existing,
+    BangumiSubject subject,
+  ) {
+    return existing?.subjectId == subject.id
+        ? existing!
+        : BangumiBinding.fromSubject(subject);
+  }
+
+  /// The number on Bangumi of episode or chapter [sourceNumber] of the source.
+  int subjectNumber(int sourceNumber) => sourceNumber + offset;
+
+  /// The number on Bangumi of the source's episode titled [title] at [position]
+  /// in its group, from 1; null if it has none.
+  int? subjectNumberOf(String title, int position) {
+    var number = BangumiEpisodeNumber.of(title, position);
+    return number == null ? null : subjectNumber(number);
+  }
+
+  /// The offset for subject [subjectId]: a binding to another subject says
+  /// nothing about its numbering.
+  int offsetFor(int subjectId) => subjectId == this.subjectId ? offset : 0;
+
   bool get isBook => type == BangumiSubjectType.book;
 
   String get displayName => nameCn.isNotEmpty ? nameCn : name;

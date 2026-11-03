@@ -711,6 +711,78 @@ void main() {
     expect(BangumiEpisodeNumber.match(episodes, 13), isNull);
   });
 
+  group('episode mapping', () {
+    const binding = BangumiBinding(
+      subjectId: 1,
+      type: BangumiSubjectType.anime,
+      name: 'a',
+    );
+
+    for (var offset in [-12, 0, 1]) {
+      test('maps source numbers and titles with offset $offset', () {
+        var linked = binding.copyWith(offset: offset);
+        expect(linked.subjectNumber(14), 14 + offset);
+        expect(linked.subjectNumberOf('EP14', 2), 14 + offset);
+        expect(linked.subjectNumberOf('The beginning', 14), 14 + offset);
+        expect(linked.subjectNumberOf('SP1', 14), isNull);
+        expect(linked.subjectNumberOf('EP12.5', 14), isNull);
+        expect(linked.subjectNumber(1), 1 + offset);
+        expect(linked.subjectNumberOf('EP1', 1), 1 + offset);
+        expect(linked.offsetFor(1), offset);
+        expect(linked.offsetFor(2), 0);
+      });
+
+      test('round trips source rows with offset $offset', () {
+        var linked = binding.copyWith(offset: offset);
+        var rows = [
+          (title: 'EP13', position: 1),
+          (title: 'EP14', position: 2),
+          (title: 'The ending', position: 15),
+        ];
+        for (var i = 0; i < rows.length; i++) {
+          var number = linked.subjectNumberOf(rows[i].title, rows[i].position)!;
+          expect(
+            bangumiSourceEpisode(
+              BangumiEpisode(id: 100 + i, ep: number, sort: number.toDouble()),
+              rows,
+              offset: linked.offsetFor(binding.subjectId),
+            ),
+            i,
+          );
+        }
+      });
+    }
+
+    test('keeps the binding and offset only for the same subject', () {
+      const subject = BangumiSubject(
+        id: 1,
+        type: BangumiSubjectType.anime,
+        name: 'updated',
+        nameCn: 'translated',
+        image: 'cover',
+      );
+      var linked = binding.copyWith(offset: -12);
+      expect(BangumiBinding.forSubject(linked, subject), same(linked));
+      for (var existing in [null, linked.copyWith(offset: 1)]) {
+        const other = BangumiSubject(
+          id: 2,
+          type: BangumiSubjectType.book,
+          name: 'b',
+          nameCn: 'translated b',
+          image: 'other cover',
+        );
+        var fresh = BangumiBinding.forSubject(existing, other);
+        expect(fresh, isNot(same(existing)));
+        expect(fresh.subjectId, other.id);
+        expect(fresh.type, other.type);
+        expect(fresh.name, other.name);
+        expect(fresh.nameCn, other.nameCn);
+        expect(fresh.image, other.image);
+        expect(fresh.offset, 0);
+      }
+    });
+  });
+
   group('json', () {
     test(
       'subject tags preserve names and counts without limiting API data',
@@ -1125,13 +1197,33 @@ void main() {
       expect(api.calls, ['episodes', 'episodes [101]=2']);
     });
 
-    test('the offset is added to the number of the source', () async {
+    test('uses the Bangumi number even with a source offset', () async {
       var api = _FakeApi(_season(12, firstSort: 13))
         ..collected = const BangumiCollection(type: 3);
       var progress = BangumiProgress(api, 'user');
-      expect(await progress.markFinished(anime.copyWith(offset: -12), 14), 2);
+      expect(await progress.markFinished(anime.copyWith(offset: -12), 2), 2);
       expect(api.calls.last, 'episodes [102]=2');
       expect(await progress.markFinished(anime, 40), isNull);
+    });
+
+    test('maps the title once before marking the episode', () async {
+      var api = _FakeApi(_season(12, firstSort: 13))
+        ..collected = const BangumiCollection(type: 3);
+      var progress = BangumiProgress(api, 'user');
+      var binding = anime.copyWith(offset: -12);
+      var number = binding.subjectNumberOf('EP14', 2);
+      expect(number, 2);
+      expect(await progress.markFinished(binding, number!), 2);
+      expect(api.calls, ['episodes', 'episodes [102]=2']);
+    });
+
+    test('ignores nonpositive Bangumi numbers before loading progress', () async {
+      var api = _FakeApi(_season(3));
+      var progress = BangumiProgress(api, 'user');
+      var binding = anime.copyWith(offset: 12);
+      expect(await progress.markFinished(binding, 0), isNull);
+      expect(await progress.markFinished(binding, -1), isNull);
+      expect(api.calls, isEmpty);
     });
 
     test('the anime is watched once every episode is', () async {
