@@ -54,9 +54,15 @@ class _FakeApi extends BangumiApi {
 
   final calls = <String>[];
 
+  Object? failure;
+
   @override
   Future<List<BangumiEpisode>> episodes(int subjectId) async {
     calls.add('episodes');
+    var error = failure;
+    if (error != null) {
+      throw error;
+    }
     return episodeList;
   }
 
@@ -95,6 +101,30 @@ class _FakeApi extends BangumiApi {
       statuses[id] = status;
     }
   }
+}
+
+class _TestManager extends BangumiManager {
+  _TestManager(this.testProgress, this.binding) : super.forTesting();
+
+  final BangumiProgress testProgress;
+  BangumiBinding? binding;
+  bool enabled = true;
+  bool loggedIn = true;
+
+  @override
+  bool get autoSync => enabled;
+
+  @override
+  bool get isLoggedIn => loggedIn;
+
+  @override
+  BangumiProgress get progress => testProgress;
+
+  @override
+  BangumiBinding? bindingOf(String sourceKey, String id) => binding;
+
+  Future<BangumiSyncResult> finish({int number = 1}) => onFinished(
+    sourceKey: 'source', id: 'video', title: '', position: number);
 }
 
 List<BangumiEpisode> _season(int count, {int firstSort = 1}) => [
@@ -1164,6 +1194,75 @@ void main() {
       expect(days[0].map((e) => e.id), [2, 3]);
       expect(days[6].map((e) => e.id), [1]);
       expect(days[3], isEmpty);
+    });
+  });
+
+  group('onFinished results', () {
+    const anime = BangumiBinding(
+      subjectId: 1, type: BangumiSubjectType.anime, name: 'a');
+    const book = BangumiBinding(
+      subjectId: 2, type: BangumiSubjectType.book, name: 'b');
+
+    test('returns marked anime and deduplicates by subject and number', () async {
+      var api = _FakeApi(_season(3));
+      var manager = _TestManager(BangumiProgress(api, 'user'), anime);
+      var result = await manager.finish(number: 2);
+      expect(result, isA<BangumiSyncMarked>()
+          .having((r) => r.number, 'number', 2)
+          .having((r) => r.isBook, 'isBook', isFalse));
+      var count = api.calls.length;
+      expect(await manager.finish(number: 2), isA<BangumiSyncSkipped>());
+      expect(api.calls.length, count);
+      expect(await manager.onFinished(
+        sourceKey: 'other', id: 'other', title: '', position: 2),
+        isA<BangumiSyncSkipped>());
+      expect(api.calls.length, count);
+    });
+
+    test('returns marked chapters and keeps already-read chapters deduped', () async {
+      var api = _FakeApi([]);
+      var manager = _TestManager(BangumiProgress(api, 'user'), book);
+      expect(await manager.finish(number: 5), isA<BangumiSyncMarked>()
+          .having((r) => r.number, 'number', 5)
+          .having((r) => r.isBook, 'isBook', isTrue));
+      expect(await manager.finish(number: 3), isA<BangumiSyncSkipped>());
+      api.collected = const BangumiCollection(type: 3, epStatus: 0);
+      expect(await manager.finish(number: 3), isA<BangumiSyncSkipped>());
+      expect(api.calls, ['collection type=3 ep=5']);
+    });
+
+    test('returns skipped before progress for disabled, unlinked or invalid', () async {
+      var api = _FakeApi(_season(3));
+      var manager = _TestManager(BangumiProgress(api, 'user'), anime);
+      manager.enabled = false;
+      expect(await manager.finish(), isA<BangumiSyncSkipped>());
+      manager.enabled = true;
+      manager.loggedIn = false;
+      expect(await manager.finish(), isA<BangumiSyncSkipped>());
+      manager.loggedIn = true;
+      manager.binding = null;
+      expect(await manager.finish(), isA<BangumiSyncSkipped>());
+      manager.binding = anime;
+      expect(await manager.finish(number: 0), isA<BangumiSyncSkipped>());
+      expect(api.calls, isEmpty);
+    });
+
+    test('nothing to mark on anime can be retried when an episode appears', () async {
+      var api = _FakeApi(_season(3));
+      var manager = _TestManager(BangumiProgress(api, 'user'), anime);
+      expect(await manager.finish(number: 4), isA<BangumiSyncSkipped>());
+      api.episodeList.add(const BangumiEpisode(id: 104, ep: 4, sort: 4));
+      expect(await manager.finish(number: 4), isA<BangumiSyncMarked>());
+    });
+
+    test('returns the failure and removes dedupe so it can be retried', () async {
+      var error = StateError('offline');
+      var api = _FakeApi(_season(3))..failure = error;
+      var manager = _TestManager(BangumiProgress(api, 'user'), anime);
+      expect(await manager.finish(), isA<BangumiSyncFailed>()
+          .having((r) => r.error, 'error', same(error)));
+      api.failure = null;
+      expect(await manager.finish(), isA<BangumiSyncMarked>());
     });
   });
 
