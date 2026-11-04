@@ -9,6 +9,8 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/utils/app_links.dart';
 import 'package:venera/utils/ext.dart';
 
+import 'bangumi_comment_html.dart';
+
 class _Tag {
   final String name;
   final Map<String, String> attributes;
@@ -106,11 +108,15 @@ class RichCommentContent extends StatefulWidget {
     super.key,
     required this.text,
     this.showImages = true,
+    this.bangumi = false,
   });
 
   final String text;
 
   final bool showImages;
+
+  /// Episode discussions contain BBCode rather than HTML.
+  final bool bangumi;
 
   @override
   State<RichCommentContent> createState() => _RichCommentContentState();
@@ -145,12 +151,20 @@ class _RichCommentContentState extends State<RichCommentContent> {
 
     void writeBuffer() {
       if (buffer.isEmpty) return;
-      var span = TextSpan(text: buffer.toString());
+      var value = buffer.toString();
+      if (widget.bangumi) {
+        value = value.replaceAll('&lt;', '<').replaceAll('&gt;', '>');
+      }
+      var span = TextSpan(text: value);
       for (var tag in s) {
         span = tag.merge(span, context);
       }
       textSpan.add(span);
       buffer.clear();
+    }
+
+    if (widget.bangumi) {
+      text = bangumiCommentHtml(text);
     }
 
     while (i < text.length) {
@@ -166,9 +180,10 @@ class _RichCommentContentState extends State<RichCommentContent> {
             var attributes = <String, String>{};
             for (var k = 1; k < splits.length; k++) {
               var attr = splits[k];
-              var attrSplits = attr.split('=');
-              if (attrSplits.length == 2) {
-                attributes[attrSplits[0]] = attrSplits[1].replaceAll('"', '');
+              var separator = attr.indexOf('=');
+              if (separator > 0) {
+                attributes[attr.substring(0, separator)] =
+                    attr.substring(separator + 1).replaceAll('"', '');
               }
             }
             const acceptedTags = [
@@ -273,16 +288,19 @@ class _RichCommentContentState extends State<RichCommentContent> {
             runSpacing: 4,
             spacing: 4,
             children: images.map((e) {
+              var size = widget.bangumi &&
+                      e.url.startsWith('https://bgm.tv/img/smiles/')
+                  ? 24.0 : 100.0;
               Widget image = Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   color: Theme.of(context).colorScheme.surfaceContainerLow,
                 ),
-                width: 100,
-                height: 100,
+                width: size,
+                height: size,
                 child: Image(
-                  width: 100,
-                  height: 100,
+                  width: size,
+                  height: size,
                   image: CachedImageProvider(e.url),
                 ),
               );

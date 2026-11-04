@@ -1025,6 +1025,8 @@ void main() {
       expect(adapter.requests.last.headers['User-Agent'], BangumiApi.userAgent);
       await api.comments(42);
       expect(adapter.requests.last.uri.path, '/next/p1/subjects/42/comments');
+      await api.episodeComments(123);
+      expect(adapter.requests.last.uri.path, '/next/p1/episodes/123/comments');
     });
 
     test('connection failures suggest proxy and API settings', () async {
@@ -1046,6 +1048,26 @@ void main() {
               ),
         ),
       );
+    });
+
+    test('loads public episode comments from the next API', () async {
+      var adapter = _Adapter((o) => (200, [
+        {'id': 2, 'content': 'Later'},
+        {'id': 1, 'content': 'First', 'replies': [
+          {'id': 3, 'content': 'Reply'},
+        ]},
+      ]));
+      var comments = await _api(adapter).episodeComments(123);
+      expect(comments.map((c) => c.id), [1, 2]);
+      expect(comments.first.replies.single.content, 'Reply');
+      var request = adapter.requests.single;
+      expect(request.method, 'GET');
+      expect(request.uri.host, 'next.bgm.tv');
+      expect(request.uri.path, '/p1/episodes/123/comments');
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      var failed = _Adapter((o) => (503, {'title': 'Unavailable'}));
+      expect(() => _api(failed).episodeComments(123),
+          throwsA(isA<BangumiException>()));
     });
 
     test('loads public comments with paging and no token', () async {
