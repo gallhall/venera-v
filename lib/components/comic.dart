@@ -129,7 +129,7 @@ class ComicTile extends StatelessWidget {
           },
         ),
         MenuEntry(
-          icon: Icons.copy,
+          icon: Icons.copy_outlined,
           text: 'Copy Title'.tl,
           onClick: () {
             Clipboard.setData(ClipboardData(text: comic.title));
@@ -145,7 +145,7 @@ class ComicTile extends StatelessWidget {
         ),
         if (!ComicType.fromKey(comic.sourceKey).isBangumi)
           MenuEntry(
-            icon: Icons.block,
+            icon: Icons.block_outlined,
             text: 'Block'.tl,
             onClick: () => block(context),
           ),
@@ -189,7 +189,7 @@ class ComicTile extends StatelessWidget {
           child: Container(
             height: 22,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             clipBehavior: Clip.antiAlias,
             child: Row(
@@ -200,7 +200,7 @@ class ComicTile extends StatelessWidget {
                     width: 22,
                     color: context.colorScheme.primary,
                     child: Icon(
-                      Icons.bookmark_rounded,
+                      Icons.bookmark,
                       size: 14,
                       color: context.colorScheme.onPrimary,
                     ),
@@ -250,7 +250,7 @@ class ComicTile extends StatelessWidget {
         height: double.infinity,
         decoration: BoxDecoration(
           color: context.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         clipBehavior: Clip.antiAlias,
         child: buildImage(context),
@@ -265,7 +265,7 @@ class ComicTile extends StatelessWidget {
 
       return InkWell(
         hoverColor: context.colorScheme.onSurface.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: _onTap,
         onLongPress: enableLongPressed ? () => _onLongPressed(context) : null,
         onSecondaryTapDown: (detail) => onSecondaryTap(detail, context),
@@ -308,7 +308,7 @@ class ComicTile extends StatelessWidget {
         Widget image = Container(
           decoration: BoxDecoration(
             color: context.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           clipBehavior: Clip.antiAlias,
           child: buildImage(context),
@@ -323,7 +323,7 @@ class ComicTile extends StatelessWidget {
 
         return InkWell(
           hoverColor: context.colorScheme.onSurface.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           onTap: _onTap,
           onLongPress: enableLongPressed ? () => _onLongPressed(context) : null,
           onSecondaryTapDown: (detail) => onSecondaryTap(detail, context),
@@ -378,7 +378,7 @@ class ComicTile extends StatelessWidget {
                                     ? const EdgeInsets.fromLTRB(4, 2, 4, 2)
                                     : const EdgeInsets.fromLTRB(5, 2, 5, 2),
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
                               gradient: LinearGradient(
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
@@ -624,7 +624,7 @@ class _ComicDescription extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: context.colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Center(
                           widthFactor: 1,
@@ -929,7 +929,7 @@ class _SliverGridComics extends StatelessWidget {
                               alpha: 0.35,
                             )
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: isSelected
                         ? Align(
@@ -1116,9 +1116,9 @@ class ComicListState extends State<ComicList> {
           child: Center(
             child: Material(
               color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
               child: InkWell(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
                 onTap: () {
                   String value = '';
                   showDialog(
@@ -1732,7 +1732,7 @@ class SimpleComicTile extends StatelessWidget {
       width: 98,
       height: 136,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         color: Theme.of(context).colorScheme.surfaceContainerHigh,
       ),
       clipBehavior: Clip.antiAlias,

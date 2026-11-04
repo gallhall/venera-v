@@ -99,7 +99,7 @@ class _AppbarState extends State<Appbar> {
           ),
           Expanded(
             child: DefaultTextStyle(
-              style: DefaultTextStyle.of(context).style.copyWith(fontSize: 20),
+              style: DefaultTextStyle.of(context).style.s20,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               child: widget.title,
@@ -213,7 +213,7 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
         ),
         Expanded(
           child: DefaultTextStyle(
-            style: DefaultTextStyle.of(context).style.copyWith(fontSize: 20),
+            style: DefaultTextStyle.of(context).style.s20,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             child: title,
@@ -456,7 +456,7 @@ class _AppTabBarState extends State<AppTabBar> {
                           indicatorSize: TabBarIndicatorSize.tab,
                           indicator: BoxDecoration(
                             color: colors.secondaryContainer,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
                           ),
                           dividerColor: Colors.transparent,
                           automaticIndicatorColorAdjustment: false,
@@ -466,7 +466,7 @@ class _AppTabBarState extends State<AppTabBar> {
                           unselectedLabelStyle: ts.s14.copyWith(
                             fontWeight: FontWeight.w500,
                           ),
-                          splashBorderRadius: BorderRadius.circular(20),
+                          splashBorderRadius: BorderRadius.circular(AppRadius.pill),
                           tabs: List.generate(widget.tabs.length, (i) => SizedBox(
                             key: keys[i],
                             height: 36,
@@ -788,20 +788,20 @@ class _RoundedSearchBar extends StatelessWidget {
                           vertical: 16,
                         ),
                         prefixIcon: Icon(
-                          Icons.search_rounded,
+                          Icons.search_outlined,
                           size: 22,
                           color: colors.onSurfaceVariant,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(AppRadius.xl),
                           borderSide: BorderSide.none,
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(AppRadius.xl),
                           borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(AppRadius.xl),
                           borderSide: BorderSide(color: colors.primary),
                         ),
                         suffixIcon: ListenableBuilder(
@@ -860,7 +860,7 @@ class _RoundedSearchBar extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: DefaultTextStyle.of(
                             context,
-                          ).style.copyWith(fontSize: 20),
+                          ).style.s20,
                         ),
                       ),
                     ],
@@ -893,7 +893,7 @@ class TabActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Container(
         height: _kTabHeight,
         padding: const EdgeInsets.symmetric(horizontal: 12),

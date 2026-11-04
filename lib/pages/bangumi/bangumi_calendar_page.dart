@@ -43,7 +43,7 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
   @override
   Widget build(BuildContext context) {
     return CoverButton(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       label: subject.displayName,
       onTap: () => context.to(
         () => BangumiSubjectPage(
@@ -60,7 +60,7 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
             child: Hero(
               tag: 'cover$heroID',
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 child: ColoredBox(
                   color: context.colorScheme.surfaceContainerHigh,
                   child: Stack(
@@ -191,7 +191,7 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
                     children: [
                       if (i == DateTime.now().weekday - 1) ...[
                         Icon(
-                          Icons.today,
+                          Icons.today_outlined,
                           size: 16,
                           color: context.colorScheme.primary,
                         ),
@@ -460,7 +460,7 @@ class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
             child: Hero(
               tag: 'cover$heroID',
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 child: ColoredBox(
                   color: context.colorScheme.surfaceContainerHigh,
                   child: Stack(

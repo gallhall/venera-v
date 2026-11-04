@@ -130,8 +130,7 @@ class _WindowFrameState extends State<WindowFrame> {
                           child: DragToMoveArea(
                             child: Text(
                               'Venera',
-                              style: TextStyle(
-                                fontSize: 13,
+                              style: ts.s12.copyWith(
                                 color: (useDarkTheme ||
                                         context.brightness == Brightness.dark)
                                     ? Colors.white

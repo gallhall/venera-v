@@ -136,13 +136,13 @@ class _AppWebviewState extends State<AppWebview> {
               Offset(context.width, context.padding.top),
               [
                 MenuEntry(
-                  icon: Icons.open_in_browser,
+                  icon: Icons.open_in_browser_outlined,
                   text: "Open in browser".tl,
                   onClick: () async =>
                       launchUrlString((await controller?.getUrl())!.toString()),
                 ),
                 MenuEntry(
-                  icon: Icons.copy,
+                  icon: Icons.copy_outlined,
                   text: "Copy link".tl,
                   onClick: () async => Clipboard.setData(ClipboardData(
                       text: (await controller?.getUrl())!.toString())),

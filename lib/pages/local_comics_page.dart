@@ -110,7 +110,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
       ),
       if (selectedComics.length == 1 && !App.isAndroid && !App.isIOS)
         MenuEntry(
-          icon: Icons.folder_open,
+          icon: Icons.folder_open_outlined,
           text: "Open Folder".tl,
           onClick: () {
             openComicFolder(selectedComics.keys.first);
@@ -130,17 +130,17 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
       if (selectedComics.isNotEmpty)
         ...exportActions(selectedComics.keys.toList()),
       MenuEntry(
-        icon: Icons.select_all,
+        icon: Icons.select_all_outlined,
         text: "Select All".tl,
         onClick: selectAll,
       ),
       MenuEntry(
-        icon: Icons.deselect,
+        icon: Icons.deselect_outlined,
         text: "Deselect".tl,
         onClick: deSelect,
       ),
       MenuEntry(
-        icon: Icons.flip,
+        icon: Icons.flip_outlined,
         text: "Invert Selection".tl,
         onClick: invertSelection,
       ),
@@ -202,7 +202,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
         child: IconButton(icon: const Icon(Icons.sort), onPressed: sort),
       ),
       MenuButton(
-        icon: Icons.download,
+        icon: Icons.download_outlined,
         tooltip: "Import and downloads".tl,
         entries: [
           MenuEntry(
@@ -216,7 +216,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
             onClick: () => importVideo(7),
           ),
           MenuEntry(
-            icon: Icons.download,
+            icon: Icons.download_outlined,
             text: "Downloading".tl,
             onClick: () {
               showPopUpWidget(context, const DownloadingPage());
@@ -327,15 +327,15 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
                                 vertical: 12,
                               ),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(28),
+                                borderRadius: BorderRadius.circular(AppRadius.xl),
                                 borderSide: BorderSide.none,
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(28),
+                                borderRadius: BorderRadius.circular(AppRadius.xl),
                                 borderSide: BorderSide.none,
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(28),
+                                borderRadius: BorderRadius.circular(AppRadius.xl),
                                 borderSide: BorderSide(
                                   color: context.colorScheme.primary,
                                 ),
@@ -417,14 +417,14 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
                 return [
                   if (!App.isAndroid && !App.isIOS)
                     MenuEntry(
-                      icon: Icons.folder_open,
+                      icon: Icons.folder_open_outlined,
                       text: "Open Folder".tl,
                       onClick: () {
                         openComicFolder(c as LocalComic);
                       },
                     ),
                   MenuEntry(
-                    icon: Icons.delete,
+                    icon: Icons.delete_outlined,
                     text: "Delete".tl,
                     onClick: () {
                       deleteComics([c as LocalComic]).then((value) {

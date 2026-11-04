@@ -78,14 +78,14 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
         },
       ),
       MenuEntry(
-        icon: Icons.copy,
+        icon: Icons.copy_outlined,
         text: 'Copy Title'.tl,
         onClick: () {
           copyTitle();
         },
       ),
       MenuEntry(
-        icon: Icons.select_all,
+        icon: Icons.select_all_outlined,
         text: 'Select All'.tl,
         onClick: () {
           for (var ele in widget.imageFavoritesComic.images) {
@@ -94,7 +94,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
         },
       ),
       MenuEntry(
-        icon: Icons.read_more,
+        icon: Icons.read_more_outlined,
         text: 'Photo View'.tl,
         onClick: () {
           goPhotoView(widget.imageFavoritesComic.images.first);
@@ -107,7 +107,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
   Widget build(BuildContext context) {
     return AppCard(
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onSecondaryTapDown: onSecondaryTap,
         onLongPress: onLongPress,
         onTap: () {
@@ -162,12 +162,12 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
       onLongPress: () {
         goPhotoView(image);
       },
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: Container(
         width: 98,
         height: 136 + MediaQuery.textScalerOf(context).scale(10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           color: isSelected
               ? Theme.of(context).colorScheme.primaryContainer
               : null,
@@ -178,7 +178,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
             Container(
               height: 128,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 color: context.colorScheme.surfaceContainerHigh,
               ),
               clipBehavior: Clip.antiAlias,
@@ -195,7 +195,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
             ),
             Text(
               pageText,
-              style: ts.s10,
+              style: ts.s12,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -213,7 +213,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: context.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Text(
               widget.imageFavoritesComic.title,
@@ -229,7 +229,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
             color: context.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Text(
             "${imageFavorites.length}/${widget.imageFavoritesComic.maxPageFromEp}",
@@ -265,7 +265,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.left,
-            style: const TextStyle(fontSize: 12.0),
+            style: ts.s12,
           ),
         ),
         const SizedBox(width: 8),
@@ -276,8 +276,7 @@ class _ImageFavoritesItemState extends State<_ImageFavoritesItem> {
                   .map((e) => enableTranslate ? e.translateTagsToCN : e)
                   .join(" "),
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 12.0,
+              style: ts.s12.copyWith(
                 overflow: TextOverflow.ellipsis,
               ),
               maxLines: 1,

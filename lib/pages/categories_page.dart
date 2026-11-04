@@ -248,7 +248,7 @@ class _CategoryPage extends StatelessWidget {
     return Builder(
       builder: (context) {
         final colors = context.colorScheme;
-        final radius = BorderRadius.circular(10);
+        final radius = BorderRadius.circular(AppRadius.sm);
         return Material(
           borderRadius: radius,
           color: highlighted

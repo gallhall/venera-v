@@ -309,7 +309,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           color: BangumiTitleMatch.match(allNames, comic.title).matches
               ? context.colorScheme.primaryContainer
               : context.colorScheme.surfaceContainerLow,
@@ -447,17 +447,17 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       Offset(context.width - 16, context.padding.top),
       [
         MenuEntry(
-          icon: Icons.copy,
+          icon: Icons.copy_outlined,
           text: 'Copy Title'.tl,
           onClick: () => copy(subject!.displayName),
         ),
         MenuEntry(
-          icon: Icons.copy_rounded,
+          icon: Icons.copy_outlined,
           text: 'Copy ID'.tl,
           onClick: () => copy('${widget.subjectId}'),
         ),
         MenuEntry(
-          icon: Icons.link,
+          icon: Icons.link_outlined,
           text: 'Copy URL'.tl,
           onClick: () => copy(subject!.url),
         ),
@@ -765,7 +765,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             children: [
               if (hasHistory && !mobile)
                 ActionPill(
-                  icon: const Icon(Icons.play_arrow),
+                  icon: const Icon(Icons.play_arrow_outlined),
                   text: playLabel,
                   onPressed: canPlay ? continueWatching : pickSource,
                   isLoading: playLoading,
@@ -796,7 +796,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 onPressed: openCollection,
               ),
               ActionPill(
-                icon: const Icon(Icons.comment),
+                icon: const Icon(Icons.comment_outlined),
                 text: 'Comments'.tl,
                 onPressed: showComments,
               ),
@@ -810,7 +810,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 onPressed: pickSource,
               ),
               ActionPill(
-                icon: const Icon(Icons.share),
+                icon: const Icon(Icons.share_outlined),
                 text: 'Share'.tl,
                 onPressed: () =>
                     Share.shareText('${subject.displayName}\n${subject.url}'),
@@ -865,7 +865,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const AppIconBox(Icons.history, size: 36),
+                  const AppIconBox(Icons.history_outlined, size: 36),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('${'Last Watched'.tl}: ${history.description}'),
@@ -879,7 +879,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
           if (playError != null)
             TextButton.icon(
               onPressed: pickSource,
-              icon: const Icon(Icons.swap_horiz),
+              icon: const Icon(Icons.swap_horiz_outlined),
               label: Text('Switch source'.tl),
             ),
         ],
@@ -893,7 +893,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     }
     return SliverLazyToBoxAdapter(
       child: SectionCard(
-        icon: Icons.notes,
+        icon: Icons.notes_outlined,
         title: 'Description'.tl,
         body: DescriptionBody(text: subject.summary),
       ),
@@ -907,7 +907,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         return count != 0 ? count : a.name.compareTo(b.name);
       });
     Widget tag(String text, {VoidCallback? onTap}) {
-      var radius = BorderRadius.circular(10);
+      var radius = BorderRadius.circular(AppRadius.sm);
       return Material(
         color: context.colorScheme.surfaceContainerHigh,
         borderRadius: radius,
@@ -919,12 +919,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               ? null
               : (details) => showMenuX(context, details.globalPosition, [
                   MenuEntry(
-                    icon: Icons.remove_red_eye,
+                    icon: Icons.remove_red_eye_outlined,
                     text: 'View'.tl,
                     onClick: onTap,
                   ),
                   MenuEntry(
-                    icon: Icons.copy,
+                    icon: Icons.copy_outlined,
                     text: 'Copy'.tl,
                     onClick: () => copy(text),
                   ),
@@ -991,7 +991,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             ? episodes.length
             : math.min(episodes.length, columns * 8);
         return SliverSectionCard(
-          icon: Icons.format_list_numbered,
+          icon: Icons.format_list_numbered_outlined,
           title: 'Episodes'.tl,
           collapseKey: 'chapters',
           leadingActions: [
@@ -1065,10 +1065,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       color: selected
                           ? context.colorScheme.primaryContainer
                           : context.colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: InkWell(
                         onTap: canPlay ? () => play(episode) : null,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Tooltip(
@@ -1135,7 +1135,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               ),
               TextButton.icon(
                 onPressed: () => searchAlias(row),
-                icon: const Icon(Icons.translate, size: 18),
+                icon: const Icon(Icons.translate_outlined, size: 18),
                 label: Text('Search with alias'.tl),
               ),
               TextButton.icon(
@@ -1275,7 +1275,7 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
                 children: [
                   if (chosen != null && chosen.cover.isNotEmpty)
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                       child: AnimatedImage(
                         image: CachedImageProvider(
                           chosen.cover,

@@ -763,7 +763,7 @@ class _VideoTestPageState extends State<VideoTestPage> {
           height: 220,
           decoration: BoxDecoration(
             border: Border.all(color: context.colorScheme.outlineVariant),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(AppRadius.xs),
           ),
           child: ListView.builder(
             padding: const EdgeInsets.all(8),

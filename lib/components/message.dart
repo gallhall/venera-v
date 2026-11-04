@@ -40,7 +40,7 @@ class _ToastOverlay extends StatelessWidget {
         alignment: Alignment.bottomCenter,
         child: Material(
           color: Theme.of(context).colorScheme.inverseSurface,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           elevation: 2,
           // From the theme, which sets the font: the overlay is above the
           // pages' default text style.
@@ -64,8 +64,8 @@ class _ToastOverlay extends StatelessWidget {
                     Expanded(
                       child: Text(
                         message,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w500),
+                        style: ts.s16.copyWith(
+                            fontWeight: FontWeight.w500),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -348,7 +348,7 @@ class ContentDialog extends StatelessWidget {
       ),
     );
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.xl)),
       clipBehavior: Clip.antiAlias,
       surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       insetPadding: context.width < 400

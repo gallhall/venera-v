@@ -261,7 +261,7 @@ abstract mixin class _ComicPageActions {
         ),
         [
           MenuEntry(
-            icon: Icons.copy,
+            icon: Icons.copy_outlined,
             text: "Copy Title".tl,
             onClick: () {
               Clipboard.setData(ClipboardData(text: comic.title));
@@ -269,7 +269,7 @@ abstract mixin class _ComicPageActions {
             },
           ),
           MenuEntry(
-            icon: Icons.copy_rounded,
+            icon: Icons.copy_outlined,
             text: "Copy ID".tl,
             onClick: () {
               Clipboard.setData(ClipboardData(text: comic.id));
@@ -278,7 +278,7 @@ abstract mixin class _ComicPageActions {
           ),
           if (comic.url != null)
             MenuEntry(
-              icon: Icons.link,
+              icon: Icons.link_outlined,
               text: "Copy URL".tl,
               onClick: () {
                 Clipboard.setData(ClipboardData(text: comic.url!));
@@ -287,7 +287,7 @@ abstract mixin class _ComicPageActions {
             ),
           if (comic.url != null)
             MenuEntry(
-              icon: Icons.open_in_browser,
+              icon: Icons.open_in_browser_outlined,
               text: "Open in Browser".tl,
               onClick: () {
                 launchUrlString(comic.url!);

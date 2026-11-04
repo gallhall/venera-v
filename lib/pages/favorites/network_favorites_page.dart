@@ -123,7 +123,7 @@ class _NormalFavoritePageState extends State<_NormalFavoritePage> {
           ),
           _FavoriteMenuButton(entries: [
             MenuEntry(
-              icon: Icons.sync,
+              icon: Icons.sync_outlined,
               text: "Convert to local".tl,
               onClick: () {
                 importNetworkFolder(widget.data.key, 9999999, null, null);
@@ -395,7 +395,7 @@ class _FolderTile extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                Icons.folder,
+                Icons.folder_outlined,
                 size: 28,
                 color: Theme.of(context).colorScheme.secondary,
               ),
@@ -407,8 +407,8 @@ class _FolderTile extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     name,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w500),
+                    style: ts.s16.copyWith(
+                        fontWeight: FontWeight.w500),
                   ),
                 ),
               ),
@@ -550,7 +550,7 @@ class _FavoriteFolder extends StatelessWidget {
         actions: [
           _FavoriteMenuButton(title: title, entries: [
             MenuEntry(
-              icon: Icons.sync,
+              icon: Icons.sync_outlined,
               text: "Convert to local".tl,
               onClick: () {
                 importNetworkFolder(data.key, 9999999, title, folderID);

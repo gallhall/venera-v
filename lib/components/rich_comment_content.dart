@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:venera/components/components.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -293,7 +294,7 @@ class _RichCommentContentState extends State<RichCommentContent> {
             children: images.map((e) {
               Widget image = Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   color: Theme.of(context).colorScheme.surfaceContainerLow,
                 ),
                 width: 100,

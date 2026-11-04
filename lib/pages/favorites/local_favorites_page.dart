@@ -302,7 +302,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               if (networkSource != null && !isAllFolder)
                 IconButton(
                   tooltip: "Sync".tl,
-                  icon: const Icon(Icons.sync),
+                  icon: const Icon(Icons.sync_outlined),
                   onPressed: () {
                     final key = GlobalKey<_SelectUpdatePageNumState>();
                     showConfirmDialog(
@@ -331,7 +331,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               Tooltip(
                 message: "Filter".tl,
                 child: IconButton(
-                  icon: const Icon(Icons.sort_rounded),
+                  icon: const Icon(Icons.sort_outlined),
                   color: readFilterSelect != readFilterList[0]
                       ? context.colorScheme.primaryContainer
                       : null,
@@ -395,7 +395,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       },
                     ),
                     MenuEntry(
-                      icon: Icons.reorder,
+                      icon: Icons.reorder_outlined,
                       text: "Reorder".tl,
                       onClick: () {
                         context.to(
@@ -417,7 +417,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       },
                     ),
                     MenuEntry(
-                      icon: Icons.upload_file,
+                      icon: Icons.upload_file_outlined,
                       text: "Export".tl,
                       onClick: () {
                         var json = LocalFavoritesManager().folderToJson(
@@ -430,7 +430,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       },
                     ),
                     MenuEntry(
-                      icon: Icons.update,
+                      icon: Icons.update_outlined,
                       text: "Update Comics Info".tl,
                       onClick: () {
                         updateComicsInfo(widget.folder).then((newComics) {
@@ -506,17 +506,17 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                 _FavoriteMenuButton(
                   entries: [
                     MenuEntry(
-                      icon: Icons.select_all,
+                      icon: Icons.select_all_outlined,
                       text: "Select All".tl,
                       onClick: selectAll,
                     ),
                     MenuEntry(
-                      icon: Icons.deselect,
+                      icon: Icons.deselect_outlined,
                       text: "Deselect".tl,
                       onClick: _cancel,
                     ),
                     MenuEntry(
-                      icon: Icons.flip,
+                      icon: Icons.flip_outlined,
                       text: "Invert Selection".tl,
                       onClick: invertSelection,
                     ),
@@ -543,13 +543,13 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       (c) => !ComicType.fromKey(c.sourceKey).isBangumi,
                     ))
                       MenuEntry(
-                        icon: Icons.download,
+                        icon: Icons.download_outlined,
                         text: "Download".tl,
                         onClick: downloadSelected,
                       ),
                     if (selectedComics.length == 1)
                       MenuEntry(
-                        icon: Icons.copy,
+                        icon: Icons.copy_outlined,
                         text: "Copy Title".tl,
                         onClick: () {
                           Clipboard.setData(
@@ -622,15 +622,15 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                   vertical: 12,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide(color: context.colorScheme.primary),
                 ),
               ),
@@ -658,7 +658,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               return [
                 if (!isAllFolder)
                   MenuEntry(
-                    icon: Icons.delete,
+                    icon: Icons.delete_outlined,
                     text: "Delete".tl,
                     onClick: () {
                       LocalFavoritesManager().deleteComicWithId(
@@ -688,7 +688,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                 ),
                 if (!ComicType.fromKey(c.sourceKey).isBangumi)
                   MenuEntry(
-                    icon: Icons.download,
+                    icon: Icons.download_outlined,
                     text: "Download".tl,
                     onClick: () {
                       downloadComic(c as FavoriteItem);
@@ -1073,7 +1073,7 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
           widget.onReorder(comics);
         },
         dragChildBoxDecoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           color: lightenColor(
             Theme.of(context).splashColor.withAlpha(255),
             0.2,

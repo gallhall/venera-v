@@ -120,11 +120,11 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                               child: InkWell(
                                 onTap: () => state.read(null, index + 1),
                                 borderRadius: const BorderRadius.all(
-                                  Radius.circular(8),
+                                  Radius.circular(AppRadius.sm),
                                 ),
                                 child: Container(
                                   foregroundDecoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
                                     border: Border.all(
                                       color: Theme.of(
                                         context,
@@ -132,7 +132,7 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                                     ),
                                   ),
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
                                   ),
                                   width: double.infinity,
                                   height: double.infinity,

@@ -39,7 +39,7 @@ class _AuthPageState extends State<AuthPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.security, size: 36),
+              const Icon(Icons.security_outlined, size: 36),
               const SizedBox(height: 16),
               Text("Authentication Required".tl),
               const SizedBox(height: 16),

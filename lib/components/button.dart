@@ -171,9 +171,8 @@ class _ButtonState extends State<Button> {
       ),
       // From the theme, which sets the font.
       child: DefaultTextStyle(
-        style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+        style: Theme.of(context).textTheme.bodyMedium!.s14.copyWith(
           color: textColor,
-          fontSize: 14,
         ),
         child: isLoading
             ? CircularProgressIndicator(
@@ -211,7 +210,7 @@ class _ButtonState extends State<Button> {
           ),
           decoration: BoxDecoration(
             color: buttonColor,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             boxShadow: (isHover && !isLoading && (widget.type == ButtonType.filled || widget.type == ButtonType.normal))
                 ? [
                     BoxShadow(

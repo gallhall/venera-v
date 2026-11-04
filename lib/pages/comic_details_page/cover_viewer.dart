@@ -94,12 +94,12 @@ class _CoverViewerState extends State<_CoverViewer> {
               Expanded(
                 child: Text(
                   widget.title,
-                  style: const TextStyle(fontSize: 18),
+                  style: ts.s18,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.save_alt),
+                icon: const Icon(Icons.save_alt_outlined),
                 onPressed: _saveCover,
               ),
               const SizedBox(width: 8),

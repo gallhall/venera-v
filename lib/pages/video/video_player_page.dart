@@ -1409,7 +1409,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   backgroundColor: Colors.black.withValues(alpha: 0.6),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                 ),
                 onPressed: skipCurrent,
@@ -1441,7 +1441,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 backgroundColor: Colors.black.withValues(alpha: 0.6),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               ),
               icon: const Icon(Icons.lock_open_rounded),
@@ -1463,11 +1463,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Text(
             "Playback interrupted, reconnecting...".tl,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: ts.s14.copyWith(color: Colors.white),
           ),
         ),
       ),
@@ -1501,7 +1501,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               color: Colors.black.withValues(alpha: 0.6),
               child: Text(text,
-                style: const TextStyle(color: Colors.white, fontSize: 12)),
+                style: ts.s12.copyWith(color: Colors.white)),
             ),
           ),
         );
@@ -1535,9 +1535,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                                 ? "Playback interrupted"
                                 : "Playback failed")
                             .tl,
-                        style: const TextStyle(
+                        style: ts.s16.copyWith(
                           color: Colors.white,
-                          fontSize: 16,
                         ),
                       ),
                       if (allSourcesFailed)
@@ -1551,9 +1550,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         maxLines: compact ? 2 : 4,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: ts.s12.copyWith(
                           color: Colors.white70,
-                          fontSize: 12,
                         ),
                       ),
                       SizedBox(height: compact ? 8 : 16),

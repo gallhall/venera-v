@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 
 /// patched slider.dart with RtL support
@@ -154,7 +155,7 @@ class _CustomSliderState extends State<CustomSlider> {
                             height: 4,
                             decoration: BoxDecoration(
                                 color: theme.inactiveTrackColor,
-                                borderRadius: const BorderRadius.all(Radius.circular(10))
+                                borderRadius: const BorderRadius.all(Radius.circular(AppRadius.sm))
                             ),
                           ),
                         ),
@@ -191,7 +192,7 @@ class _CustomSliderState extends State<CustomSlider> {
                               height: 4,
                               decoration: BoxDecoration(
                                   color: theme.activeTrackColor,
-                                  borderRadius: const BorderRadius.all(Radius.circular(10))
+                                  borderRadius: const BorderRadius.all(Radius.circular(AppRadius.sm))
                               ),
                             ),
                           )

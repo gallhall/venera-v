@@ -154,7 +154,7 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
                               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                               decoration: BoxDecoration(
                                 color: context.colorScheme.surfaceContainer,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(AppRadius.md),
                               ),
                               child: _ChapterCommentTile(
                                 comment: widget.replyComment!,
@@ -230,7 +230,7 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
       decoration: BoxDecoration(color: context.colorScheme.surfaceContainer),
       child: Material(
         color: context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         child: Row(
           children: [
             Expanded(
@@ -241,11 +241,11 @@ class _ChapterCommentsPageState extends State<ChapterCommentsPage> {
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainerHigh,
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide(color: context.colorScheme.primary),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
@@ -352,7 +352,7 @@ class _ChapterCommentTileState extends State<_ChapterCommentTile> {
               height: 36,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 color: context.colorScheme.surfaceContainerHigh,
               ),
               child: widget.comment.avatar == null
@@ -566,7 +566,7 @@ class _ChapterCommentTileState extends State<_ChapterCommentTile> {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         color: context.colorScheme.surfaceContainerHigh,
       ),
       child: Row(
@@ -832,7 +832,7 @@ class _EmbeddedChapterCommentsPageState
       decoration: BoxDecoration(color: context.colorScheme.surfaceContainer),
       child: Material(
         color: context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         child: Row(
           children: [
             Expanded(
@@ -843,11 +843,11 @@ class _EmbeddedChapterCommentsPageState
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainerHigh,
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide(color: context.colorScheme.primary),
                   ),
                   contentPadding: const EdgeInsets.symmetric(

@@ -23,7 +23,7 @@ class _AboutSettingsState extends State<AboutSettings> {
               child: Column(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                     child: const Image(
                       image: AssetImage('assets/app_icon.png'),
                       width: 72,
@@ -77,7 +77,7 @@ class _AboutSettingsState extends State<AboutSettings> {
                 settingKey: "checkUpdateOnStart",
               ),
               ListTile(
-                leading: const AppIconBox(Icons.code, size: 36),
+                leading: const AppIconBox(Icons.code_outlined, size: 36),
                 title: const Text("Github"),
                 trailing: const Icon(Icons.open_in_new),
                 onTap: () {

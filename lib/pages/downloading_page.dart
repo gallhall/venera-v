@@ -63,7 +63,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const AppIconBox(Icons.download_done_rounded, size: 56),
+                    const AppIconBox(Icons.download_done_outlined, size: 56),
                     const SizedBox(height: 16),
                     Text("No downloads".tl),
                   ],
@@ -97,10 +97,10 @@ class _DownloadingPageState extends State<DownloadingPage> {
         children: [
           AppIconBox(
             paused
-                ? Icons.pause
+                ? Icons.pause_outlined
                 : error
                 ? Icons.error_outline
-                : Icons.download_rounded,
+                : Icons.download_outlined,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -116,7 +116,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
           if (first != null)
             FilledButton.tonalIcon(
               icon: Icon(
-                paused || error ? Icons.play_arrow : Icons.pause,
+                paused || error ? Icons.play_arrow_outlined : Icons.pause_outlined,
                 size: 18,
               ),
               label: Text((paused || error ? "Start" : "Pause").tl),
@@ -185,7 +185,7 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
             width: 56,
             height: 78,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               color: colors.surfaceContainerHigh,
             ),
             clipBehavior: Clip.antiAlias,
@@ -219,7 +219,7 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
                 LinearProgressIndicator(
                   value: task.progress,
                   minHeight: 6,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadius.xs),
                   color: colors.primary,
                   backgroundColor: colors.surfaceContainerHighest,
                 ),
@@ -229,7 +229,7 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
                   children: [
                     IconButton(
                       tooltip: "Move To First".tl,
-                      icon: const Icon(Icons.vertical_align_top, size: 20),
+                      icon: const Icon(Icons.vertical_align_top_outlined, size: 20),
                       onPressed: () => LocalManager().moveToFirst(task),
                     ),
                     IconButton(

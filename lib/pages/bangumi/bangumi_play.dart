@@ -225,7 +225,7 @@ class BangumiCandidateCard extends StatelessWidget {
           children: [
             if (candidate.cover.isNotEmpty)
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 child: AnimatedImage(
                   image: CachedImageProvider(
                     candidate.cover,

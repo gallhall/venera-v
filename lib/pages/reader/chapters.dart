@@ -212,7 +212,7 @@ class _ChapterListTile extends StatelessWidget {
         color: isActive
             ? context.colorScheme.primaryContainer
             : context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,

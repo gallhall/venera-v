@@ -565,7 +565,7 @@ Future<void> _showFavoritePanel(BuildContext context, Widget child) async {
       showDragHandle: true,
       backgroundColor: context.colorScheme.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       clipBehavior: Clip.antiAlias,
       builder: (context) => SizedBox(height: height, child: child),
@@ -575,7 +575,7 @@ Future<void> _showFavoritePanel(BuildContext context, Widget child) async {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: context.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.xl)),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(width: 520, height: height, child: child),
       ),

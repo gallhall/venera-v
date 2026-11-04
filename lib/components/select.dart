@@ -25,7 +25,7 @@ class Select extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: context.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.xs),
       ),
       child: InkWell(
         onTap: () {
@@ -104,12 +104,12 @@ class _FilterChipFixedWidthState extends State<FilterChipFixedWidth> {
       textStyle: Theme.of(context).textTheme.labelLarge,
       child: InkWell(
         onTap: () => widget.onSelected(true),
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        borderRadius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
         child: AnimatedContainer(
           duration: _fastAnimationDuration,
           decoration: BoxDecoration(
             border: Border.all(color: Theme.of(context).colorScheme.outline),
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
+            borderRadius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
             color: selected
                 ? Theme.of(context).colorScheme.primaryContainer
                 : null,
@@ -257,12 +257,12 @@ class OptionChip extends StatelessWidget {
         border: isSelected
             ? Border.all(color: context.colorScheme.secondaryContainer)
             : Border.all(color: context.colorScheme.outline),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
