@@ -245,14 +245,19 @@ class _GalleryModeState extends State<_GalleryMode>
   Widget _buildChapterCommentsPage() {
     var source = ComicSource.find(reader.type.sourceKey);
     var chapters = reader.widget.chapters;
-    if (source == null || chapters == null) return const SizedBox();
+    if (source == null || chapters == null) {
+      return const SizedBox();
+    }
     var chapterIndex = reader.chapter - 1;
-    return _EmbeddedChapterCommentsPage(
-      comicId: reader.cid,
-      epId: chapters.ids.elementAt(chapterIndex),
-      source: source,
-      comicTitle: reader.widget.name,
-      chapterTitle: chapters.titles.elementAt(chapterIndex),
+    return CommentsView(
+      embedded: true,
+      target: CommentTarget.chapter(
+        comicId: reader.cid,
+        epId: chapters.ids.elementAt(chapterIndex),
+        source: source,
+        title: reader.widget.name,
+        chapterTitle: chapters.titles.elementAt(chapterIndex),
+      ),
     );
   }
 

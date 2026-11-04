@@ -33,7 +33,7 @@ class Comment {
         content = json["content"],
         time = parseTime(json["time"]),
         replyCount = json["replyCount"],
-        id = json["id"].toString(),
+        id = json["id"]?.toString(),
         score = json["score"],
         isLiked = json["isLiked"],
         voteStatus = json["voteStatus"];

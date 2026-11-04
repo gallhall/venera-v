@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/pages/comments/comments.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';

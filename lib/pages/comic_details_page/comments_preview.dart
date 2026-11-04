@@ -1,9 +1,15 @@
 part of 'comic_page.dart';
 
 class _CommentsPart extends StatefulWidget {
-  const _CommentsPart({required this.comments, required this.showMore});
+  const _CommentsPart({
+    required this.comments,
+    required this.showMore,
+    required this.target,
+  });
 
   final List<Comment> comments;
+
+  final CommentTarget target;
 
   final void Function() showMore;
 
@@ -18,7 +24,7 @@ class _CommentsPartState extends State<_CommentsPart> {
 
   @override
   void initState() {
-    comments = widget.comments.where((c) => !_shouldBlockComment(c)).toList();
+    comments = widget.comments.where((c) => !shouldBlockComment(c)).toList();
     super.initState();
   }
 
@@ -87,7 +93,10 @@ class _CommentsPartState extends State<_CommentsPart> {
                     scrollDirection: Axis.horizontal,
                     itemCount: comments.length,
                     itemBuilder: (context, index) {
-                      return _CommentWidget(comment: comments[index]);
+                      return _CommentWidget(
+                        comment: comments[index],
+                        target: widget.target,
+                      );
                     },
                   ),
                 ),
@@ -101,9 +110,11 @@ class _CommentsPartState extends State<_CommentsPart> {
 }
 
 class _CommentWidget extends StatelessWidget {
-  const _CommentWidget({required this.comment});
+  const _CommentWidget({required this.comment, required this.target});
 
   final Comment comment;
+
+  final CommentTarget target;
 
   @override
   Widget build(BuildContext context) {
@@ -111,59 +122,16 @@ class _CommentWidget extends StatelessWidget {
       width: 340,
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 8, 0, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: context.colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                if (comment.avatar != null)
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadius.lg),
-                      color: context.colorScheme.surfaceContainerHigh,
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: comment.avatar == null
-                        ? null
-                        : Image(
-                            image: CachedImageProvider(comment.avatar!),
-                            width: 36,
-                            height: 36,
-                            fit: BoxFit.cover,
-                          ),
-                  ).paddingRight(8),
-                Expanded(
-                  child: Text(
-                    comment.userName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: ts.s14.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Expanded(
-              child: RichCommentContent(
-                text: comment.content,
-                showImages: false,
-              ).fixWidth(324),
-            ),
-            const SizedBox(height: 4),
-            if (comment.time != null)
-              Text(
-                comment.time!,
-                style: ts.s12.copyWith(
-                  color: context.colorScheme.onSurfaceVariant,
-                ),
-              ).toAlign(Alignment.centerLeft),
-          ],
+        child: CommentTile(
+          comment: comment,
+          target: target,
+          compact: true,
+          showAvatar: comment.avatar != null,
+          showActions: false,
         ),
       ),
     );

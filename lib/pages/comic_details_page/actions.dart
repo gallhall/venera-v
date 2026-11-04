@@ -306,8 +306,12 @@ abstract mixin class _ComicPageActions {
     showSideBar(
       App.rootContext,
       CommentsPage(
-        data: comic,
-        source: comicSource,
+        target: CommentTarget.comic(
+          source: comicSource,
+          comicId: comic.comicId,
+          subId: comic.subId,
+          title: comic.title,
+        ),
       ),
     );
   }

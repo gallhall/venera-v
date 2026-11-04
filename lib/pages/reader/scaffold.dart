@@ -768,12 +768,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
     showSideBar(
       context,
-      ChapterCommentsPage(
-        comicId: context.reader.cid,
-        epId: epId,
-        source: source,
-        comicTitle: context.reader.widget.name,
-        chapterTitle: chapterTitle,
+      CommentsPage(
+        target: CommentTarget.chapter(
+          comicId: context.reader.cid,
+          epId: epId,
+          source: source,
+          title: context.reader.widget.name,
+          chapterTitle: chapterTitle,
+        ),
       ),
     );
   }
