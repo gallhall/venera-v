@@ -154,6 +154,68 @@ Map<int, EpisodeRelease?> matchReleaseLine({
   return result;
 }
 
+/// A matched source chapter, retaining the file number for batch playback.
+class EpisodeReleaseChapter {
+  final String chapterId;
+  final RssRelease release;
+  final int torrentEpisode;
+
+  const EpisodeReleaseChapter(this.chapterId, this.release, this.torrentEpisode);
+}
+
+/// UI-free chapter/episode mapping shared by the player and target lookup.
+/// Chapter IDs stay opaque here; the source recovers their release metadata.
+class ReleaseChapterMap {
+  final Map<String, RssRelease> chapters;
+  final List<BangumiEpisode> episodes;
+  late final List<ReleaseLine> lines = chapters.values
+      .map(ReleaseLine.of).toSet().toList();
+  final _matches = <ReleaseLine, Map<int, EpisodeReleaseChapter?>>{};
+
+  ReleaseChapterMap(Map<String, RssRelease> chapters,
+      Iterable<BangumiEpisode> episodes)
+      : chapters = Map.unmodifiable(chapters),
+        episodes = episodes.where((e) => e.type == 0).toList()
+          ..sort((a, b) => a.number.compareTo(b.number));
+
+  ReleaseLine? lineOf(String? chapterId) {
+    var release = chapters[chapterId];
+    return release == null ? null : ReleaseLine.of(release);
+  }
+
+  Map<int, EpisodeReleaseChapter?> forLine(ReleaseLine line) =>
+      _matches.putIfAbsent(line, () {
+        var ids = {for (var e in chapters.entries) e.value: e.key};
+        var matches = matchReleaseLine(releases: chapters.values,
+          episodes: episodes, line: line);
+        return Map.unmodifiable({
+          for (var e in matches.entries)
+            e.key: e.value == null ? null : EpisodeReleaseChapter(
+              ids[e.value!.release]!, e.value!.release, e.value!.torrentEpisode),
+        });
+      });
+
+  /// Prefer the selected line, then the remembered group, then source order.
+  EpisodeReleaseChapter? episode(int id, {ReleaseLine? preferredLine,
+      String? preferredGroup}) {
+    var ordered = <ReleaseLine>{
+      if (preferredLine != null && lines.contains(preferredLine)) preferredLine,
+      for (var line in lines)
+        if (preferredGroup != null &&
+            line.group.trim().toLowerCase() == preferredGroup.trim().toLowerCase())
+          line,
+      ...lines,
+    };
+    for (var line in ordered) {
+      var match = forLine(line)[id];
+      if (match != null) {
+        return match;
+      }
+    }
+    return null;
+  }
+}
+
 class ReleaseFilters {
   final Set<String> groups;
   final Set<String> resolutions;
