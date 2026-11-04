@@ -100,7 +100,10 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
-          ).fixHeight(MediaQuery.textScalerOf(context).scale(36)),
+            strutStyle: _coverTitleStrut,
+          ).fixHeight(
+            MediaQuery.textScalerOf(context).scale(_coverTitleHeight),
+          ),
         ],
       ),
     );
@@ -258,6 +261,16 @@ class _BangumiCalendarPageState extends State<BangumiCalendarPage>
 bool get isHomeBangumiCalendarShown =>
     appdata.settings['showBangumiCalendar'] != false &&
     ComicSource.enabled().any((s) => s.isVideoSource);
+
+/// Two lines of 12sp cover title. The strut fixes the line height: CJK
+/// fallback fonts are taller than Roboto, and a box sized for Roboto cut off
+/// the bottom of the second line.
+const _coverTitleStrut = StrutStyle(
+  fontSize: 12,
+  height: 1.4,
+  forceStrutHeight: true,
+);
+const _coverTitleHeight = 12 * 1.4 * 2;
 
 /// Today's anime on the home page, for users with video sources.
 class BangumiCalendarWidget extends StatefulWidget {
@@ -504,7 +517,10 @@ class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
-          ).fixHeight(MediaQuery.textScalerOf(context).scale(32)),
+            strutStyle: _coverTitleStrut,
+          ).fixHeight(
+            MediaQuery.textScalerOf(context).scale(_coverTitleHeight),
+          ),
         ],
       ),
     );
