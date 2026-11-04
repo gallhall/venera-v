@@ -29,8 +29,6 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
 
   late bool reverse;
 
-  bool showAll = false;
-
   late History? history;
 
   late ComicChapters chapters;
@@ -59,122 +57,47 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
 
   @override
   Widget build(BuildContext context) {
-    return SliverLayoutBuilder(
-      builder: (context, constrains) {
-        int length = chapters.length;
-        bool canShowAll = showAll;
-        if (!showAll) {
-          var width = constrains.crossAxisExtent - 16;
-          var crossItems = width ~/ 200;
-          if (width % 200 != 0) {
-            crossItems += 1;
-          }
-          length = math.min(length, crossItems * 8);
-          if (length == chapters.length) {
-            canShowAll = true;
-          }
-        }
-
-        return SliverSectionCard(
-          icon: Icons.format_list_numbered_outlined,
-          title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
-          collapseKey: 'chapters',
-          leadingActions: [
-            IconButton(
-              tooltip: "Order".tl,
-              iconSize: 20,
-              color: context.colorScheme.onSurfaceVariant,
-              visualDensity: VisualDensity.compact,
-              icon: Transform.flip(flipY: reverse, child: const Icon(Icons.sort)),
-              onPressed: () {
-                setState(() {
-                  reverse = !reverse;
-                });
-              },
-            ),
-          ],
-          footer: !canShowAll
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 8),
-                  child: Center(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: context.colorScheme.primary,
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: () => setState(() => showAll = true),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text("${"Show all".tl} (${chapters.length})"),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.expand_more, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              : null,
-          slivers: [
-            SliverGrid(
-              delegate: SliverChildBuilderDelegate(childCount: length, (
-                context,
-                i,
-              ) {
-                if (reverse) {
-                  i = chapters.length - i - 1;
-                }
-                var key = chapters.ids.elementAt(i);
-                var value = chapters[key]!;
-                bool visited = (history?.readEpisode ?? {}).contains(
-                  (i + 1).toString(),
-                );
-                final selected = history?.ep == i + 1;
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                  child: Material(
-                    color: selected
-                        ? context.colorScheme.primaryContainer
-                        : context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: InkWell(
-                      onTap: () => state.read(i + 1),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Center(
-                          child: Text(
-                            value,
-                            maxLines: 1,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: selected
-                                  ? context.colorScheme.onPrimaryContainer
-                                  : visited
-                                  ? context.colorScheme.outline
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              gridDelegate: const SliverGridDelegateWithFixedHeight(
-                maxCrossAxisExtent: 250,
-                itemHeight: 48,
-              ),
-            ),
-          ],
-        );
-      },
+    final selected = history?.ep;
+    final selectedIndex =
+        selected != null && selected > 0 && selected <= chapters.length
+        ? (reverse ? chapters.length - selected : selected - 1)
+        : null;
+    return SliverSectionCard(
+      icon: Icons.format_list_numbered_outlined,
+      title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
+      collapseKey: 'chapters',
+      leadingActions: [
+        IconButton(
+          tooltip: "Order".tl,
+          iconSize: 20,
+          color: context.colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+          icon: Transform.flip(flipY: reverse, child: const Icon(Icons.sort)),
+          onPressed: () {
+            setState(() {
+              reverse = !reverse;
+            });
+          },
+        ),
+      ],
+      slivers: [
+        SliverEpisodeGrid(
+          count: chapters.length,
+          allLabelsShort: chapters.length <= 2000 &&
+              chapters.titles.every((title) => title.length <= 4),
+          selectedIndex: selectedIndex,
+          itemBuilder: (index) {
+            final i = reverse ? chapters.length - index - 1 : index;
+            final key = chapters.ids.elementAt(i);
+            return EpisodeGridItem(
+              label: chapters[key]!,
+              selected: history?.ep == i + 1,
+              watched: (history?.readEpisode ?? {}).contains((i + 1).toString()),
+              onTap: () => state.read(i + 1),
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -193,8 +116,6 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
   late _ComicPageState state;
 
   late bool reverse;
-
-  bool showAll = false;
 
   late History? history;
 
@@ -261,145 +182,66 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
 
   @override
   Widget build(BuildContext context) {
-    return SliverLayoutBuilder(
-      builder: (context, constrains) {
-        var group = chapters.getGroupByIndex(index);
-        int length = group.length;
-        bool canShowAll = showAll;
-        if (!showAll) {
-          var width = constrains.crossAxisExtent - 16;
-          var crossItems = width ~/ 200;
-          if (width % 200 != 0) {
-            crossItems += 1;
-          }
-          length = math.min(length, crossItems * 8);
-          if (length == group.length) {
-            canShowAll = true;
-          }
-        }
-
-        return SliverSectionCard(
-          icon: Icons.format_list_numbered_outlined,
-          title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
-          collapseKey: 'chapters',
-          leadingActions: [
-            IconButton(
-              tooltip: "Order".tl,
-              iconSize: 20,
-              color: context.colorScheme.onSurfaceVariant,
-              visualDensity: VisualDensity.compact,
-              icon: Transform.flip(flipY: reverse, child: const Icon(Icons.sort)),
-              onPressed: () {
-                setState(() {
-                  reverse = !reverse;
-                });
-              },
-            ),
-          ],
-          footer: !canShowAll
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 8),
-                  child: Center(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: context.colorScheme.primary,
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: () => setState(() => showAll = true),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text("${"Show all".tl} (${group.length})"),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.expand_more, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              : null,
-          slivers: [
-            SliverToBoxAdapter(
-              child: AppTabBar(
-                withUnderLine: false,
-                controller: tabController,
-                tabs: chapters.groups.map((e) => Tab(text: e)).toList(),
-              ),
-            ),
-            SliverPadding(padding: const EdgeInsets.only(top: 8)),
-            SliverGrid(
-              delegate: SliverChildBuilderDelegate(childCount: length, (
-                context,
-                i,
-              ) {
-                if (reverse) {
-                  i = group.length - i - 1;
-                }
-                var key = group.keys.elementAt(i);
-                var value = group[key]!;
-                var chapterIndex = 0;
-                for (var j = 0; j < chapters.groupCount; j++) {
-                  if (j == index) {
-                    chapterIndex += i;
-                    break;
-                  }
-                  chapterIndex += chapters.getGroupByIndex(j).length;
-                }
-                String rawIndex = (chapterIndex + 1).toString();
-                String groupedIndex = "${index + 1}-${i + 1}";
-                bool visited = false;
-                if (history != null) {
-                  visited =
-                      history!.readEpisode.contains(groupedIndex) ||
-                      history!.readEpisode.contains(rawIndex);
-                }
-                final selected =
-                    history?.group == index + 1 && history?.ep == i + 1;
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                  child: Material(
-                    color: selected
-                        ? context.colorScheme.primaryContainer
-                        : context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: InkWell(
-                      onTap: () => state.read(chapterIndex + 1),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Center(
-                          child: Text(
-                            value,
-                            maxLines: 1,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: selected
-                                  ? context.colorScheme.onPrimaryContainer
-                                  : visited
-                                  ? context.colorScheme.outline
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }),
-              gridDelegate: const SliverGridDelegateWithFixedHeight(
-                maxCrossAxisExtent: 250,
-                itemHeight: 48,
-              ),
-            ),
-          ],
-        );
-      },
+    final group = chapters.getGroupByIndex(index);
+    final selected = history?.group == index + 1 ? history?.ep : null;
+    final selectedIndex =
+        selected != null && selected > 0 && selected <= group.length
+        ? (reverse ? group.length - selected : selected - 1)
+        : null;
+    var groupOffset = 0;
+    for (var i = 0; i < index; i++) {
+      groupOffset += chapters.getGroupByIndex(i).length;
+    }
+    return SliverSectionCard(
+      icon: Icons.format_list_numbered_outlined,
+      title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
+      collapseKey: 'chapters',
+      leadingActions: [
+        IconButton(
+          tooltip: "Order".tl,
+          iconSize: 20,
+          color: context.colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+          icon: Transform.flip(flipY: reverse, child: const Icon(Icons.sort)),
+          onPressed: () {
+            setState(() {
+              reverse = !reverse;
+            });
+          },
+        ),
+      ],
+      slivers: [
+        SliverToBoxAdapter(
+          child: AppTabBar(
+            withUnderLine: false,
+            controller: tabController,
+            tabs: chapters.groups.map((e) => Tab(text: e)).toList(),
+          ),
+        ),
+        const SliverPadding(padding: EdgeInsets.only(top: AppSpacing.sm)),
+        SliverEpisodeGrid(
+          key: ValueKey(index),
+          count: group.length,
+          allLabelsShort: group.length <= 2000 &&
+              group.values.every((title) => title.length <= 4),
+          selectedIndex: selectedIndex,
+          itemBuilder: (tileIndex) {
+            final i = reverse ? group.length - tileIndex - 1 : tileIndex;
+            final chapterIndex = groupOffset + i;
+            final rawIndex = (chapterIndex + 1).toString();
+            final groupedIndex = "${index + 1}-${i + 1}";
+            final visited = history != null &&
+                (history!.readEpisode.contains(groupedIndex) ||
+                    history!.readEpisode.contains(rawIndex));
+            return EpisodeGridItem(
+              label: group.values.elementAt(i),
+              selected: history?.group == index + 1 && history?.ep == i + 1,
+              watched: visited,
+              onTap: () => state.read(chapterIndex + 1),
+            );
+          },
+        ),
+      ],
     );
   }
 }

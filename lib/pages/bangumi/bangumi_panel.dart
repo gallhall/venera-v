@@ -617,7 +617,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
                   label: '$i',
                   selected: i == done,
                   watched: i <= done,
-                  onTap: () => setProgress(i),
+                  onTap: i == done ? null : () => setProgress(i),
                 ),
             ],
           ),

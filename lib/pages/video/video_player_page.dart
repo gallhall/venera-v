@@ -1711,7 +1711,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   label: '${e.number}',
                   selected: e.number == bangumi!.number,
                   watched: watchProgress.isWatched('${e.number}'),
-                  onTap: () => changeBangumi(bangumi!.at(e.number)),
+                  onTap: e.number == bangumi!.number
+                      ? null
+                      : () => changeBangumi(bangumi!.at(e.number)),
                 ),
             ],
           ),
@@ -1745,7 +1747,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                             local,
                             episodes[i].id,
                           ),
-                          onTap: () => loadEpisode(i),
+                          onTap: current == i ? null : () => loadEpisode(i),
                         ),
                   ],
                 ),

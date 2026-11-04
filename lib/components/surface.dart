@@ -1554,15 +1554,76 @@ class EpisodeGridItem {
   });
 
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool selected;
   final bool watched;
   final bool downloaded;
 }
 
-/// Equal-width episode tiles: narrow ones for numbers, wider ones for titles.
-/// Long lists show a few rows and "Show all", always including the selected
-/// episode.
+/// Shared sizing and collapse rules for box and lazy sliver episode grids.
+class _EpisodeGridLayout {
+  _EpisodeGridLayout({
+    required double maxWidth,
+    required bool allLabelsShort,
+    required int count,
+    required int maxRows,
+    required bool showAll,
+    int? selectedIndex,
+  }) {
+    final minWidth = allLabelsShort ? 64.0 : 160.0;
+    columns = math.max(
+      1,
+      ((maxWidth + AppSpacing.sm) / (minWidth + AppSpacing.sm)).floor(),
+    );
+    tileWidth = (maxWidth - AppSpacing.sm * (columns - 1)) / columns;
+    var limit = columns * maxRows;
+    if (selectedIndex != null && selectedIndex >= limit && selectedIndex < count) {
+      limit = (selectedIndex ~/ columns + 1) * columns;
+    }
+    visibleCount = showAll ? count : math.min(count, limit);
+  }
+
+  late final int columns;
+  late final double tileWidth;
+  late final int visibleCount;
+}
+
+class _EpisodeShowAll extends StatelessWidget {
+  const _EpisodeShowAll({required this.count, required this.onPressed});
+
+  final int count;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Center(
+        child: TextButton(
+          style: TextButton.styleFrom(
+            minimumSize: Size.zero,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: onPressed,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("${"Show all".tl} ($count)"),
+              const SizedBox(width: AppSpacing.xs),
+              const Icon(Icons.expand_more_outlined, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Equal-width tiles, collapsed to a few rows including the selected episode.
 class EpisodeGrid extends StatefulWidget {
   const EpisodeGrid({super.key, required this.items, this.maxRows = 4});
 
@@ -1579,61 +1640,37 @@ class _EpisodeGridState extends State<EpisodeGrid> {
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
-    final numeric = items.every((e) => e.label.length <= 4);
-    final minWidth = numeric ? 64.0 : 160.0;
-    const spacing = 8.0;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = math.max(
-          1,
-          ((constraints.maxWidth + spacing) / (minWidth + spacing)).floor(),
+        final layout = _EpisodeGridLayout(
+          maxWidth: constraints.maxWidth,
+          allLabelsShort: items.every((e) => e.label.length <= 4),
+          count: items.length,
+          maxRows: widget.maxRows,
+          showAll: showAll,
+          selectedIndex: items.indexWhere((e) => e.selected),
         );
-        final width =
-            (constraints.maxWidth - spacing * (columns - 1)) / columns;
-        var count = items.length;
-        if (!showAll) {
-          var limit = columns * widget.maxRows;
-          final selected = items.indexWhere((e) => e.selected);
-          if (selected >= limit) {
-            limit = (selected ~/ columns + 1) * columns;
-          }
-          count = math.min(count, limit);
-        }
         return Column(
           children: [
-            // Full width so that a short last row (or a single episode)
-            // starts at the left instead of being centered.
             SizedBox(
               width: double.infinity,
               child: Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
                 children: [
-                  for (var i = 0; i < count; i++)
-                    SizedBox(width: width, child: _EpisodeTile(items[i])),
+                  for (var i = 0; i < layout.visibleCount; i++)
+                    SizedBox(
+                      width: layout.tileWidth,
+                      child: EpisodeTile(items[i]),
+                    ),
                 ],
               ),
             ),
-            if (count < items.length)
-              TextButton(
-                style: TextButton.styleFrom(
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+            if (layout.visibleCount < items.length)
+              _EpisodeShowAll(
+                count: items.length,
                 onPressed: () => setState(() => showAll = true),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("${"Show all".tl} (${items.length})"),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.expand_more, size: 18),
-                  ],
-                ),
-              ).paddingTop(8),
+              ),
           ],
         );
       },
@@ -1641,56 +1678,144 @@ class _EpisodeGridState extends State<EpisodeGrid> {
   }
 }
 
-class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile(this.item);
+/// A lazy chapter grid. Selection is supplied without evaluating hidden items.
+class SliverEpisodeGrid extends StatefulWidget {
+  const SliverEpisodeGrid({
+    super.key,
+    required this.count,
+    required this.itemBuilder,
+    required this.allLabelsShort,
+    this.selectedIndex,
+    this.maxRows = 8,
+    this.expandedByDefault = false,
+  });
+
+  final int count;
+  final EpisodeGridItem Function(int index) itemBuilder;
+  final bool allLabelsShort;
+  final int? selectedIndex;
+  final int maxRows;
+  final bool expandedByDefault;
+
+  @override
+  State<SliverEpisodeGrid> createState() => _SliverEpisodeGridState();
+}
+
+class _SliverEpisodeGridState extends State<SliverEpisodeGrid> {
+  late bool showAll = widget.expandedByDefault;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final layout = _EpisodeGridLayout(
+          maxWidth: constraints.crossAxisExtent,
+          allLabelsShort: widget.allLabelsShort,
+          count: widget.count,
+          maxRows: widget.maxRows,
+          showAll: showAll,
+          selectedIndex: widget.selectedIndex,
+        );
+        return SliverMainAxisGroup(
+          slivers: [
+            SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: layout.columns,
+                mainAxisExtent: 48,
+                crossAxisSpacing: AppSpacing.sm,
+                mainAxisSpacing: AppSpacing.sm,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => EpisodeTile(widget.itemBuilder(index)),
+                childCount: layout.visibleCount,
+              ),
+            ),
+            if (layout.visibleCount < widget.count)
+              SliverToBoxAdapter(
+                child: _EpisodeShowAll(
+                  count: widget.count,
+                  onPressed: () => setState(() => showAll = true),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class EpisodeTile extends StatelessWidget {
+  const EpisodeTile(this.item, {super.key, this.expand = false});
 
   final EpisodeGridItem item;
+  final bool expand;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
-    return Material(
-      color: item.selected
-          ? colors.secondaryContainer
-          : colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      child: InkWell(
+    var labelColor = item.selected
+        ? colors.onSecondaryContainer
+        : item.watched
+        ? colors.outline
+        : colors.onSurface;
+    // The current episode is often not tappable, but must not look disabled.
+    if (item.onTap == null && !item.selected) {
+      labelColor = labelColor.withValues(alpha: 0.38);
+    }
+    Widget tile = Semantics(
+      selected: item.selected,
+      button: true,
+      enabled: item.onTap != null,
+      child: Material(
+        color: item.selected
+            ? colors.secondaryContainer
+            : colors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        onTap: item.selected ? null : item.onTap,
-        child: SizedBox(
-          height: 44,
-          child: Stack(
-            children: [
-              Center(
-                child: Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ts.s14.copyWith(
-                    fontWeight: item.selected ? FontWeight.w600 : null,
-                    color: item.selected
-                        ? colors.onSecondaryContainer
-                        : item.watched
-                        ? colors.outline
-                        : colors.onSurface,
-                  ),
-                ).paddingHorizontal(8),
-              ),
-              if (item.downloaded)
-                Positioned(
-                  right: 6,
-                  top: 4,
-                  child: Icon(
-                    Icons.download_done_outlined,
-                    size: 12,
-                    color: colors.primary,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: item.onTap,
+          child: SizedBox(
+            height: 48,
+            child: Stack(
+              children: [
+                Align(
+                  alignment: expand ? Alignment.centerLeft : Alignment.center,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: expand ? AppSpacing.lg : AppSpacing.sm,
+                    ),
+                    child: Text(
+                      item.label,
+                      maxLines: 1,
+                      textAlign: expand ? TextAlign.left : TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: ts.s14.copyWith(
+                        fontWeight: item.selected ? FontWeight.w600 : null,
+                        color: labelColor,
+                      ),
+                    ),
                   ),
                 ),
-            ],
+                if (item.downloaded)
+                  Positioned(
+                    right: 6,
+                    top: AppSpacing.xs,
+                    child: Icon(
+                      Icons.download_done_outlined,
+                      size: 12,
+                      color: colors.primary,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
+    if (item.label.length > 4) {
+      tile = Tooltip(message: item.label, child: tile);
+    }
+    return tile;
   }
 }
 

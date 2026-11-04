@@ -20,8 +20,10 @@ class _ChaptersViewState extends State<_ChaptersView> {
   void initState() {
     super.initState();
     int epIndex = widget.reader.chapter - 2;
+    // Each row is a 48dp EpisodeTile plus 4dp above and below; leave one
+    // chapter above the current one.
     _scrollController = ScrollController(
-      initialScrollOffset: (epIndex * 48.0 + 52).clamp(0, double.infinity),
+      initialScrollOffset: (epIndex * 56.0 + 52).clamp(0, double.infinity),
     );
     var local = LocalManager().find(widget.reader.cid, widget.reader.type);
     if (local != null) {
@@ -65,15 +67,24 @@ class _ChaptersViewState extends State<_ChaptersView> {
                   index = chapters.length - 1 - index;
                 }
                 var chapter = chapters.titles.elementAt(index);
-                return _ChapterListTile(
-                  onTap: () {
-                    widget.reader.toChapter(index + 1);
-                    Navigator.of(context).pop();
-                  },
-                  title: chapter,
-                  isActive: current == index,
-                  isDownloaded:
-                      downloaded.contains(chapters.ids.elementAt(index)),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: EpisodeTile(
+                    EpisodeGridItem(
+                      label: chapter,
+                      selected: current == index,
+                      downloaded:
+                          downloaded.contains(chapters.ids.elementAt(index)),
+                      onTap: () {
+                        widget.reader.toChapter(index + 1);
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    expand: true,
+                  ),
                 );
               },
               childCount: chapters.length,
@@ -126,7 +137,8 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
       epIndexAtGroup -= chapters.getGroupByIndex(i).length;
     }
     _scrollController = ScrollController(
-      initialScrollOffset: (epIndexAtGroup * 48.0).clamp(0, double.infinity),
+      // The group header is outside this scroll view. Leave one row above.
+      initialScrollOffset: ((epIndexAtGroup - 1) * 56.0).clamp(0, double.infinity),
     );
     var local = LocalManager().find(widget.reader.cid, widget.reader.type);
     if (local != null) {
@@ -170,77 +182,29 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
                 i += chapters.getGroup(g).length;
               }
               i += index + 1;
-              return _ChapterListTile(
-                onTap: () {
-                  widget.reader.toChapter(i);
-                  context.pop();
-                },
-                title: name,
-                isActive: widget.reader.chapter == i,
-                isDownloaded: downloaded.contains(group.keys.elementAt(index)),
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs,
+                  ),
+                child: EpisodeTile(
+                  EpisodeGridItem(
+                    label: name,
+                    selected: widget.reader.chapter == i,
+                    downloaded: downloaded.contains(group.keys.elementAt(index)),
+                    onTap: () {
+                      widget.reader.toChapter(i);
+                      context.pop();
+                    },
+                  ),
+                  expand: true,
+                ),
               );
             },
             childCount: group.length,
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ChapterListTile extends StatelessWidget {
-  const _ChapterListTile({
-    required this.title,
-    required this.isActive,
-    required this.isDownloaded,
-    required this.onTap,
-  });
-
-  final String title;
-
-  final bool isActive;
-
-  final bool isDownloaded;
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Material(
-        color: isActive
-            ? context.colorScheme.primaryContainer
-            : context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: isActive
-                        ? ts.withColor(context.colorScheme.primary).bold.s16
-                        : ts.s16,
-                  ),
-                ),
-                if (isDownloaded)
-                  Icon(
-                    Icons.download_done_rounded,
-                    color: context.colorScheme.secondary,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
