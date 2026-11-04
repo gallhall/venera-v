@@ -4,6 +4,7 @@ import 'dart:io';
 ///
 /// Exports the main torrent task, metadata, peer, queue, filtering, and
 /// utility modules used by package consumers.
+export 'src/file/selected_file_storage.dart';
 export 'src/torrent_task_base.dart';
 export 'src/file/file_base.dart';
 export 'src/piece/piece_base.dart';
@@ -86,3 +87,4 @@ Future<String?> getTorrentTaskVersion() async {
   }
   return null;
 }
+

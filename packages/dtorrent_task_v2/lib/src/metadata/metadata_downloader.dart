@@ -347,6 +347,12 @@ class MetadataDownloader
     }
   }
 
+  /// Request fresh peers without discarding downloaded metadata blocks.
+  void retryPeerDiscovery() {
+    _tracker?.retryNow();
+    _dht.requestPeers(String.fromCharCodes(_infoHashBuffer));
+  }
+
   Future<void> stop() async {
     _generation++;
     _running = false;

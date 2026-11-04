@@ -273,6 +273,20 @@ class TorrentAnnounceTracker with EventsEmittable<TorrentAnnounceEvent> {
     _announceRetryTimers[tracker] = (timer: timer, retryTimes: retryTimes);
   }
 
+  /// Explicit retry bypasses the scheduled backoff without replacing peers or
+  /// any download state. runTracker also reuses the existing tracker client.
+  void retryNow() {
+    for (var record in _announceRetryTimers.values) {
+      record.timer.cancel();
+    }
+    _announceRetryTimers.clear();
+    for (var tracker in _trackers.values.toList()) {
+      if (!tracker.isDisposed) {
+        unawaited(tracker.restart().catchError((Object _) => false));
+      }
+    }
+  }
+
   Tracker? _createTracker(Uri announce, Uint8List infohash) {
     if (trackerGenerator == null) return null;
     if (infohash.length != 20) return null;

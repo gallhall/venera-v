@@ -35,3 +35,9 @@ class StateFileUpdated implements DownloadFileManagerEvent, TaskEvent {}
 
 /// Emitted when every file in the task is complete.
 class AllComplete implements TaskEvent {}
+
+/// A disk write failed. The caller decides how to present/retry the failure.
+class TaskStorageFailed implements TaskEvent {
+  final Object error;
+  TaskStorageFailed(this.error);
+}

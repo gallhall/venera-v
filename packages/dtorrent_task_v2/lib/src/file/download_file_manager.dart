@@ -14,6 +14,7 @@ import 'download_file.dart';
 import 'file_validator.dart';
 import 'state_file.dart';
 import 'state_file_v2.dart';
+import 'selected_file_storage.dart';
 import '../torrent/file_tree.dart';
 import '../torrent/torrent_version.dart';
 
@@ -32,6 +33,7 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
   final Map<String, List<Piece>> _file2pieceMap = {};
   final Object _stateFile; // Can be StateFile or StateFileV2
   String? _baseDirectory;
+  SelectedFileStorage? _selectedStorage;
 
   /// TODO: File read caching
   DownloadFileManager(
@@ -44,8 +46,10 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
 
   static Future<DownloadFileManager> createFileManager(TorrentModel metainfo,
       String localDirectory, Object stateFile, List<Piece> pieces,
-      {bool validateOnResume = false}) async {
-    final manager = DownloadFileManager(metainfo, stateFile, pieces);
+      {bool validateOnResume = false,
+      SelectedFileStorage? selectedStorage}) async {
+    final manager = DownloadFileManager(metainfo, stateFile, pieces)
+      .._selectedStorage = selectedStorage;
     await manager._init(localDirectory);
 
     // Validate files on resume if requested
@@ -106,6 +110,11 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
     }
     _baseDirectory = directory;
     _initFileMap(directory);
+    if (_selectedStorage != null) {
+      // Selected storage owns paths and durability; do not materialize skipped
+      // files through attribute restoration or moved-file detection.
+      return this;
+    }
     await detectMovedFiles();
     await _restoreFileAttributes();
     return this;
@@ -147,6 +156,9 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
   /// remove the file's corresponding piece index from the _file2pieceMap. When
   /// all the pieces have been removed, a File Complete event will be triggered.
   Future<bool> flushFiles(Set<int> pieceIndices) async {
+    if (_selectedStorage != null) {
+      return true; // Every selective write is already flushed before its bit.
+    }
     final d = _downloadedFromState;
     final flushed = <String>{};
     for (final pieceIndex in pieceIndices) {
@@ -463,6 +475,10 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
   }
 
   Future<List<int>?> readFile(int pieceIndex, int begin, int length) async {
+    if (_selectedStorage != null) {
+      var bytes = await _selectedStorage!.readPiece(pieceIndex);
+      return bytes?.sublist(begin, begin + length);
+    }
     final piece = _pieces[pieceIndex];
 
     final files = _piece2fileMap?[pieceIndex];
@@ -495,6 +511,13 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
   /// The Sub Piece is from the Piece corresponding to [pieceIndex], and the content is [block] starting from [begin].
   /// This class does not validate if the written Sub Piece is a duplicate; it simply overwrites the previous content.
   Future<bool> writeFile(int pieceIndex, int begin, List<int> block) async {
+    if (_selectedStorage != null) {
+      if (begin != 0) {
+        throw StateError('Selective storage requires a verified whole piece');
+      }
+      await _selectedStorage!.writePiece(pieceIndex, block);
+      return true;
+    }
     final tempFiles = _piece2fileMap?[pieceIndex];
     // TODO: Does this work for last piece?
     // this is the start position relative to  start of the entire torrent block
@@ -525,6 +548,7 @@ class DownloadFileManager with EventsEmittable<DownloadFileManagerEvent> {
   }
 
   Future<void> close() async {
+    await _selectedStorage?.close();
     events.dispose();
     await _closeStateFile();
     for (final file in _files) {

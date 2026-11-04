@@ -78,6 +78,51 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// Progress of the current episode, 0-1.
   double _episodeProgress = 0;
 
+  final _torrentHandles = <String, TorrentDownloadHandle>{};
+  final _torrentStatuses = <String, TorrentDownloadStatus>{};
+  Future<void> _btClosing = Future.value();
+
+  /// Per-episode state for the cache UI; session counters are shared by batch
+  /// episodes, so aggregate each info hash only once for speed/peer counts.
+  Map<String, TorrentDownloadStatus> get torrentStatuses =>
+      Map.unmodifiable(_torrentStatuses);
+
+  TorrentDownloadStatus? get torrentStatus {
+    if (_torrentStatuses.isEmpty) {
+      return null;
+    }
+    var states = _torrentStatuses.values.toList();
+    var active = states.where((s) => s.phase != TorrentDownloadPhase.done).toList();
+    var representative = active.firstWhere(
+      (s) => s.failure != null || s.noPeersHint ||
+        s.phase == TorrentDownloadPhase.waitingForWifi,
+      orElse: () => active.isEmpty ? states.last : active.first);
+    var sessions = <String?, TorrentDownloadStatus>{
+      for (var s in active) s.session: s,
+    }.values;
+    return TorrentDownloadStatus(phase: representative.phase,
+      progress: progress, failure: representative.failure,
+      noPeersHint: representative.noPeersHint,
+      bytesPerSecond: sessions.fold<double>(0, (n, s) => n + s.bytesPerSecond),
+      peers: sessions.fold<int>(0, (n, s) => n + s.peers),
+      seeders: sessions.fold<int>(0, (n, s) => n + s.seeders));
+  }
+
+  /// Ask the existing sessions for peers; do not reopen files or clear pieces.
+  void retryTorrentPeers() {
+    for (var handle in _torrentHandles.values) {
+      handle.retry();
+    }
+  }
+
+  Future<void> _closeTorrents() {
+    var handles = _torrentHandles.values.toList();
+    _torrentHandles.clear();
+    return _btClosing = _btClosing.then((_) async {
+      await Future.wait(handles.map((h) => h.cancel()));
+    });
+  }
+
   @override
   String get message => _message;
 
@@ -88,7 +133,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   bool get isPaused => !_isRunning;
 
   @override
-  int get speed => currentSpeed;
+  int get speed => currentSpeed + (torrentStatus?.bytesPerSecond.round() ?? 0);
 
   /// Episode ids to download; `[null]` for a video without episodes.
   List<String?> get _targets {
@@ -101,7 +146,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   double get progress {
     if (comic == null) return 0;
     var total = _targets.length;
-    return ((_completed.length + _episodeProgress) / total).clamp(0.0, 1.0);
+    var btProgress = _torrentStatuses.entries.where((e) =>
+      !_completed.contains(e.key)).fold<double>(0, (n, e) => n + e.value.progress);
+    return ((_completed.length + _episodeProgress + btProgress) / total)
+      .clamp(0.0, 1.0);
   }
 
   late final Dio _dio = () {
@@ -141,6 +189,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   void pause() {
     if (isPaused) return;
     _isRunning = false;
+    unawaited(_closeTorrents());
     _message = "Paused";
     stopRecorder();
     _closeClient();
@@ -148,8 +197,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   }
 
   @override
-  void cancel() {
+  void cancel() async {
     _isRunning = false;
+    await _closeTorrents();
     stopRecorder();
     _closeClient();
     LocalManager().removeTask(this);
@@ -172,6 +222,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     Log.error("Download", message);
     _isRunning = false;
     _isError = true;
+    unawaited(_closeTorrents());
     _message = message;
     stopRecorder();
     _closeClient();
@@ -193,6 +244,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _message = "Resuming...";
     notifyListeners();
     runRecorder();
+    await _btClosing;
+    if (!_isCurrent(run)) {
+      return;
+    }
+    _torrentStatuses.clear();
     await _openClient();
 
     if (comic == null) {
@@ -255,22 +311,70 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
 
     var targets = _targets;
-    for (int i = 0; i < targets.length; i++) {
-      var ep = targets[i];
-      if (_completed.contains(ep ?? '')) continue;
-      _episodeProgress = 0;
-      var label = targets.length > 1 ? "${i + 1}/${targets.length} " : "";
-      try {
-        await _downloadEpisode(ep, label, run);
-      } catch (e, s) {
-        if (!_isCurrent(run)) return;
-        Log.error("Download", "$e", s);
-        return _setError("Error: $e");
+    var pending = <Future<void>>[];
+    Future<void> saveTail = Future.value();
+    Future<void> finish(String? ep, String label, VideoPlayInfo info) async {
+      await _downloadEpisode(ep, label, run, info);
+      if (!_isCurrent(run)) {
+        return;
       }
-      if (!_isCurrent(run)) return;
       _completed.add(ep ?? '');
-      _episodeProgress = 0;
-      await LocalManager().saveCurrentDownloadingTasks();
+      if (!info.isTorrent) {
+        _episodeProgress = 0;
+      }
+      saveTail = saveTail.then((_) => LocalManager().saveCurrentDownloadingTasks());
+      await saveTail;
+    }
+    try {
+      for (int i = 0; i < targets.length; i++) {
+        if (!_isCurrent(run)) {
+          break;
+        }
+        var ep = targets[i];
+        if (_completed.contains(ep ?? '')) {
+          continue;
+        }
+        var dir = Directory(episodeDirectory(path!, ep));
+        if (await dir.joinFile(manifestName).exists()) {
+          _completed.add(ep ?? '');
+          continue;
+        }
+        var result = await _runWithRetry(() async {
+          var r = await source.loadVideoPlayInfo!(videoId, ep);
+          return r.error ? throw r.errorMessage! : r.data;
+        });
+        if (!_isCurrent(run)) {
+          break;
+        }
+        if (result.error) {
+          throw result.errorMessage!;
+        }
+        var info = result.data;
+        var label = targets.length > 1 ? "${i + 1}/${targets.length} " : "";
+        if (info.isTorrent) {
+          // Submit batch episodes together. The downloader deduplicates torrent
+          // sessions and queues torrents, rather than serializing episodes.
+          pending.add(finish(ep, label, info).catchError((Object e, StackTrace s) {
+            if (_isCurrent(run)) {
+              Log.error("Download", "$e", s);
+              _setError(e.toString());
+            }
+          }));
+        } else {
+          await finish(ep, label, info);
+        }
+      }
+      await Future.wait(pending);
+    } catch (e, s) {
+      if (_isCurrent(run)) {
+        Log.error("Download", "$e", s);
+        _setError(e.toString());
+      }
+      await Future.wait(pending);
+      return;
+    }
+    if (!_isCurrent(run)) {
+      return;
     }
 
     stopRecorder();
@@ -278,20 +382,18 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     LocalManager().completeTask(this);
   }
 
-  Future<void> _downloadEpisode(String? ep, String label, int run) async {
+  Future<void> _downloadEpisode(String? ep, String label, int run,
+      VideoPlayInfo info) async {
     var dir = Directory(episodeDirectory(path!, ep));
     if (await dir.joinFile(manifestName).exists()) return;
     await dir.create(recursive: true);
 
-    _message = "${label}Fetching play info...";
-    notifyListeners();
-    var res = await _runWithRetry(() async {
-      var r = await source.loadVideoPlayInfo!(videoId, ep);
-      return r.error ? throw r.errorMessage! : r.data;
-    });
-    if (res.error) throw res.errorMessage!;
-    var info = res.data;
-    if (info.isTorrent) return _downloadTorrent(dir, info, label, run);
+    if (!_isCurrent(run)) {
+      return;
+    }
+    if (info.isTorrent) {
+      return _downloadTorrent(dir, info, label, run, ep ?? '');
+    }
 
     // Use the first source that can be downloaded, trying the ones named
     // after the quality setting (e.g. "720P") first. Without a limit the
@@ -384,50 +486,68 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     throw lastError ?? "No source to download";
   }
 
-  /// Downloads a BT episode through the streamer the player uses: the file
-  /// it serves on the loopback server is copied, its pieces fetched as
-  /// they are read. The sources are the same release (torrent, then
-  /// magnet), tried in turn.
+  /// Downloads verified pieces directly into the episode directory. Playback
+  /// leases and the loopback server are never involved in offline downloads.
   Future<void> _downloadTorrent(
     Directory dir,
     VideoPlayInfo info,
     String label,
     int run,
+    String episodeKey,
   ) async {
     Object? lastError;
     for (var source in info.sources) {
-      if (!_isCurrent(run)) return;
-      StreamLease? lease;
-      try {
-        await _claimDirectory(
-          dir,
-          "${info.sources.indexOf(source)}:${source.name}",
-        );
-        _message = "${label}Connecting to peers...";
+      if (!_isCurrent(run)) {
+        return;
+      }
+      TorrentDownloadHandle? handle;
+      void update() {
+        if (!_isCurrent(run) || handle == null) {
+          return;
+        }
+        _torrentStatuses[episodeKey] = handle.value;
+        _message = '$label${torrentStatus!.message}';
         notifyListeners();
-        lease = StreamOpener().open(
-          info, info.sources.indexOf(source), download: true,
-        );
-        var url = (await lease.ready).url;
-        if (!_isCurrent(run)) return;
-        var name = "video${_fileExtension(url, '.mkv')}";
-        await _downloadFile(url, dir.joinFile(name), const {}, (p) {
-          _episodeProgress = p;
-          _message = "$label${(p * 100).toStringAsFixed(1)}%";
-        }, run, stallTimeout: const Duration(minutes: 5));
-        if (!_isCurrent(run)) return;
-        await _writeManifest(dir, info, source, const {}, name, null, run);
+      }
+      try {
+        await _claimDirectory(dir,
+          "${info.sources.indexOf(source)}:${source.name}");
+        if (!_isCurrent(run)) {
+          return;
+        }
+        handle = TorrentDownloader.instance.download(source.url,
+          TorrentDownloadFile(episode: info.torrentEpisode, directory: dir,
+            sessionDirectory: Directory(path!)));
+        _torrentHandles[episodeKey] = handle;
+        handle.addListener(update);
+        update();
+        var name = await handle.done;
+        if (!_isCurrent(run)) {
+          return;
+        }
+        await _writeManifest(dir, info, source, _headers(info.headersFor(source)),
+          name, null, run);
+        if (!_isCurrent(run)) {
+          return;
+        }
         await dir.joinFile(_sourceMarkerName).deleteIgnoreError();
         return;
       } catch (e) {
-        if (!_isCurrent(run)) return;
+        if (!_isCurrent(run)) {
+          return;
+        }
         Log.warning("Download", "Torrent ${source.name} failed: $e");
         lastError = e;
       } finally {
-        await lease?.release();
+        handle?.removeListener(update);
+        if (identical(_torrentHandles[episodeKey], handle)) {
+          _torrentHandles.remove(episodeKey);
+        }
+        await handle?.cancel();
+        handle?.dispose();
       }
     }
-    throw lastError ?? "No source to download";
+    throw lastError ?? 'Torrent download failed'.tl;
   }
 
   /// Names the source the files of an unfinished episode come from.
@@ -821,7 +941,6 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     var raf = await part.open(mode: start > 0 ? FileMode.append : FileMode.write);
     var received = start;
     try {
-      // A torrent waits for peers far longer than a server.
       await for (var chunk in response.data!.stream.timeout(stallTimeout)) {
         if (!_isCurrent(run)) return;
         await raf.writeFrom(chunk);

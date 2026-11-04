@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.NetworkCapabilities
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
@@ -143,6 +144,19 @@ class MainActivity : FlutterFragmentActivity() {
         ).setMethodCallHandler { call, res ->
             when (call.method) {
                 "getProxy" -> res.success(getProxy())
+                "isActiveNetworkWifi" -> {
+                    val connectivity = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+                        res.success(capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true &&
+                            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val network = connectivity.activeNetworkInfo
+                        @Suppress("DEPRECATION")
+                        res.success(network?.isConnected == true && network.type == ConnectivityManager.TYPE_WIFI)
+                    }
+                }
                 "isActiveNetworkMetered" -> {
                     val connectivity = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
                     res.success(connectivity.isActiveNetworkMetered)
