@@ -10,7 +10,7 @@ Future<String?> newFolder() async {
         String? error;
 
         return StatefulBuilder(builder: (context, setState) {
-          return _FavoriteDialog(
+          return ContentDialog(
             title: "New Folder".tl,
             content: Column(
               children: [
@@ -98,7 +98,7 @@ void addFavorite(List<Comic> comics) {
       String? selectedFolder = appdata.settings['quickFavorite'];
 
       return StatefulBuilder(builder: (context, setState) {
-        return _FavoriteDialog(
+        return ContentDialog(
           title: "Select a folder".tl,
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -224,7 +224,7 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
         valueListenable: finished,
         builder: (context, value, child) {
           var isFinished = value == comics.length;
-          return _FavoriteDialog(
+          return ContentDialog(
             title: isFinished ? "Finished".tl : "Updating".tl,
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -241,12 +241,12 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
               ],
             ).paddingHorizontal(16),
             actions: [
-              Button.filled(
-                color: isFinished ? null : context.colorScheme.error,
+              FilledButton(
                 onPressed: () {
                   isCanceled = true;
                   context.pop();
                 },
+                style: FilledButton.styleFrom(backgroundColor: isFinished ? null : context.colorScheme.error, foregroundColor: context.colorScheme.onError),
                 child: isFinished ? Text("OK".tl) : Text("Cancel".tl),
               ),
             ],
@@ -286,44 +286,51 @@ Future<List<FavoriteItem>> updateComicsInfo(String folder) async {
 Future<void> sortFolders() async {
   var folders = LocalFavoritesManager().folderNames;
 
-  await _showFavoritePanel(
+  await showSidePanel<void>(
     App.rootContext,
-    StatefulBuilder(builder: (context, setState) {
-      return _FavoritePanel(
-        title: "Sort".tl,
-        tailing: [
-          Tooltip(
-            message: "Help".tl,
-            child: IconButton(
-              icon: const Icon(Icons.help_outline),
-              onPressed: () {
-                showInfoDialog(
-                  context: context,
-                  title: "Reorder".tl,
-                  content: "Long press and drag to reorder.".tl,
+    title: "Sort".tl,
+    heightFactor: 0.85,
+    showCloseButton: true,
+    builder: (context) => StatefulBuilder(builder: (context, setState) {
+      return Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                tooltip: "Help".tl,
+                icon: const Icon(Icons.help_outline),
+                onPressed: () {
+                  showInfoDialog(
+                    context: context,
+                    title: "Reorder".tl,
+                    content: "Long press and drag to reorder.".tl,
+                  );
+                },
+              ),
+            ],
+          ),
+          Expanded(
+            child: ReorderableListView.builder(
+              onReorder: (oldIndex, newIndex) {
+                if (oldIndex < newIndex) {
+                  newIndex--;
+                }
+                setState(() {
+                  var item = folders.removeAt(oldIndex);
+                  folders.insert(newIndex, item);
+                });
+              },
+              itemCount: folders.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  key: ValueKey(folders[index]),
+                  title: Text(folders[index]),
                 );
               },
             ),
-          )
+          ),
         ],
-        body: ReorderableListView.builder(
-          onReorder: (oldIndex, newIndex) {
-            if (oldIndex < newIndex) {
-              newIndex--;
-            }
-            setState(() {
-              var item = folders.removeAt(oldIndex);
-              folders.insert(newIndex, item);
-            });
-          },
-          itemCount: folders.length,
-          itemBuilder: (context, index) {
-            return ListTile(
-              key: ValueKey(folders[index]),
-              title: Text(folders[index]),
-            );
-          },
-        ),
       );
     }),
   );
@@ -464,7 +471,7 @@ Future<void> importNetworkFolder(
         builder: (context, setState) {
           updateDialog = () => setState(() {});
           closeDialog = () => Navigator.pop(context);
-          return _FavoriteDialog(
+          return ContentDialog(
             title: isFinished
                 ? "Finished".tl
                 : isErrored()
@@ -490,14 +497,14 @@ Future<void> importNetworkFolder(
               ],
             ).paddingHorizontal(16),
             actions: [
-              Button.filled(
-                color: (isFinished || isErrored())
-                    ? null
-                    : context.colorScheme.error,
+              FilledButton(
                 onPressed: () {
                   isCanceled = true;
                   context.pop();
                 },
+                style: FilledButton.styleFrom(backgroundColor: (isFinished || isErrored())
+                    ? null
+                    : context.colorScheme.error, foregroundColor: context.colorScheme.onError),
                 child: (isFinished || isErrored())
                     ? Text("OK".tl)
                     : Text("Cancel".tl),
@@ -537,89 +544,6 @@ Future<void> importNetworkFolder(
   }
 }
 
-/// Keep complex favorites forms bounded on desktop and on a tonal surface.
-class _FavoriteDialog extends StatelessWidget {
-  const _FavoriteDialog({
-    this.title,
-    required this.content,
-    this.actions = const [],
-  });
-
-  final String? title;
-  final Widget content;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    return ContentDialog(title: title, content: content, actions: actions);
-  }
-}
-
-Future<void> _showFavoritePanel(BuildContext context, Widget child) async {
-  final height = MediaQuery.sizeOf(context).height * 0.85;
-  if (MediaQuery.sizeOf(context).width < 600) {
-    await showModalBottomSheet<void>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: context.colorScheme.surfaceContainerLow,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      builder: (context) => SizedBox(height: height, child: child),
-    );
-  } else {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: context.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.xl)),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(width: 520, height: height, child: child),
-      ),
-    );
-  }
-}
-
-class _FavoritePanel extends StatelessWidget {
-  const _FavoritePanel({required this.title, required this.body, this.tailing});
-
-  final String title;
-  final Widget body;
-  final List<Widget>? tailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: context.colorScheme.surfaceContainerLow,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: "Close".tl,
-                    onPressed: () => context.pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(title, style: ts.s18)),
-                  ...?tailing,
-                ],
-              ),
-            ),
-            Expanded(child: body),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 Future<void> _showFavoriteConfirmDialog({
   required BuildContext context,
   required String title,
@@ -629,7 +553,7 @@ Future<void> _showFavoriteConfirmDialog({
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _FavoriteDialog(
+    builder: (context) => ContentDialog(
       title: title,
       content: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),

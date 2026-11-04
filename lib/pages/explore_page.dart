@@ -594,9 +594,7 @@ class _MultiPartExplorePageState extends State<_MultiPartExplorePage> {
   Widget build(BuildContext context) {
     if (loading) {
       load();
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const AppLoadingView();
     } else if (message != null) {
       return AppErrorView(
         message: message!,

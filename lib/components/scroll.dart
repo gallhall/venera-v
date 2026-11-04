@@ -125,7 +125,7 @@ class _SmoothScrollProviderState extends State<SmoothScrollProvider> {
           var afterOffset = (_futurePosition! - currentLocation).abs();
           if (_futurePosition == old) return;
           var target = _futurePosition!;
-          var duration = _fastAnimationDuration;
+          var duration = AppDuration.fast;
           if (afterOffset < beforeOffset) {
             duration = duration * (afterOffset / beforeOffset);
             if (duration < Duration(milliseconds: 10)) {

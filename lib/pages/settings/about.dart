@@ -55,10 +55,8 @@ class _AboutSettingsState extends State<AboutSettings> {
             children: [
               ListTile(
                 title: Text("Check for updates".tl),
-                trailing: Button.filled(
-                  isLoading: isCheckingUpdate,
-                  child: Text("Check".tl),
-                  onPressed: () {
+                trailing: FilledButton(
+                  onPressed: isCheckingUpdate ? null : () {
                     setState(() {
                       isCheckingUpdate = true;
                     });
@@ -70,6 +68,11 @@ class _AboutSettingsState extends State<AboutSettings> {
                       }
                     });
                   },
+                  child: LoadingButtonChild(
+                    isLoading: isCheckingUpdate,
+                    color: context.colorScheme.onPrimary,
+                    child: Text("Check".tl),
+                  ),
                 ).minimumHeight(32),
               ),
               _SwitchSetting(
@@ -130,7 +133,7 @@ Future<void> checkUpdateUi([
               "A new version is available. Do you want to update now?".tl,
             ).paddingHorizontal(16),
             actions: [
-              Button.text(
+              TextButton(
                 onPressed: () {
                   Navigator.pop(context);
                   launchUrlString(

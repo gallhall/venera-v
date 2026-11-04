@@ -123,7 +123,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     Widget body;
 
     if (options == null) {
-      body = Center(child: CircularProgressIndicator());
+      body = AppLoadingView();
     } else if (error != null) {
       body = AppErrorView(
         withAppbar: true,

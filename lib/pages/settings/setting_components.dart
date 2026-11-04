@@ -125,8 +125,7 @@ class _SelectSettingState extends State<SelectSetting> {
           Flexible(child: Text(widget.title)),
           const SizedBox(width: 4),
           if (widget.help != null)
-            Button.icon(
-              size: 18,
+            IconButton(
               icon: const Icon(Icons.help_outline),
               onPressed: () {
                 showDialog(
@@ -138,7 +137,7 @@ class _SelectSettingState extends State<SelectSetting> {
                         widget.help!,
                       ).paddingHorizontal(16).fixWidth(double.infinity),
                       actions: [
-                        Button.filled(
+                        FilledButton(
                           onPressed: context.pop,
                           child: Text("OK".tl),
                         ),
@@ -147,6 +146,8 @@ class _SelectSettingState extends State<SelectSetting> {
                   },
                 );
               },
+              iconSize: 18,
+              tooltip: "Help".tl,
             ),
         ],
       ),
@@ -518,7 +519,7 @@ class _CallbackSetting extends StatelessWidget {
     return ListTile(
       title: Text(title),
       subtitle: subtitle == null ? null : Text(subtitle!),
-      trailing: Button.normal(
+      trailing: FilledButton.tonal(
         onPressed: callback,
         child: Text(actionTitle),
       ).minimumHeight(28),

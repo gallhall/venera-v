@@ -503,12 +503,14 @@ class ComicTile extends StatelessWidget {
                   spacing: 8,
                   children: [
                     for (var word in all)
-                      OptionChip(
-                        text: (comic.tags?.contains(word) ?? false)
-                            ? word.translateTagIfNeed
-                            : word,
-                        isSelected: words.contains(word),
-                        onTap: () {
+                      FilterChip(
+                        label: Text(
+                          (comic.tags?.contains(word) ?? false)
+                              ? word.translateTagIfNeed
+                              : word,
+                        ),
+                        selected: words.contains(word),
+                        onSelected: (_) {
                           setState(() {
                             if (!words.contains(word)) {
                               words.add(word);
@@ -523,7 +525,7 @@ class ComicTile extends StatelessWidget {
               ).paddingHorizontal(16),
             ),
             actions: [
-              Button.filled(
+              FilledButton(
                 onPressed: () {
                   context.pop();
                   for (var word in words) {
@@ -1141,7 +1143,7 @@ class ComicListState extends State<ComicList> {
                           },
                         ).paddingHorizontal(16),
                         actions: [
-                          Button.filled(
+                          FilledButton(
                             onPressed: () {
                               Navigator.of(context).pop();
                               var page = int.tryParse(value);
@@ -1748,22 +1750,25 @@ class SimpleComicTile extends StatelessWidget {
       );
     }
 
-    child = AnimatedTapRegion(
-      borderRadius: 10,
-      onTap: onTap ??
-          () {
-            context.to(
-              () => ComicPage(
-                id: comic.id,
-                sourceKey: comic.sourceKey,
-                cover: comic.cover,
-                coverProvider: _findImageProvider(comic),
-                title: comic.title,
-                heroID: heroID,
-              ),
-            );
-          },
-      child: child,
+    child = Material(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap ??
+            () {
+              context.to(
+                () => ComicPage(
+                  id: comic.id,
+                  sourceKey: comic.sourceKey,
+                  cover: comic.cover,
+                  coverProvider: _findImageProvider(comic),
+                  title: comic.title,
+                  heroID: heroID,
+                ),
+              );
+            },
+        child: child,
+      ),
     );
 
     if (withTitle) {

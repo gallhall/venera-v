@@ -490,51 +490,6 @@ class _AppTabBarState extends State<AppTabBar> {
   }
 }
 
-class TabViewBody extends StatefulWidget {
-  /// Create a tab view body, which will show the child at the current tab index.
-  const TabViewBody({super.key, required this.children, this.controller});
-
-  final List<Widget> children;
-
-  final TabController? controller;
-
-  @override
-  State<TabViewBody> createState() => _TabViewBodyState();
-}
-
-class _TabViewBodyState extends State<TabViewBody> {
-  late TabController _controller;
-
-  int _currentIndex = 0;
-
-  void updateIndex() {
-    if (_controller.index != _currentIndex) {
-      setState(() {
-        _currentIndex = _controller.index;
-      });
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _controller = widget.controller ?? DefaultTabController.of(context);
-    _currentIndex = _controller.index;
-    _controller.addListener(updateIndex);
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    _controller.removeListener(updateIndex);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.children[_currentIndex];
-  }
-}
-
 class SearchBarController {
   _SearchBarMixin? _state;
 

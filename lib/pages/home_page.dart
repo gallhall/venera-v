@@ -232,10 +232,10 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
                   InkWell(
                     borderRadius: BorderRadius.circular(AppRadius.lg),
                     onTap: () {
-                      showDialogMessage(
-                        App.rootContext,
-                        "Error".tl,
-                        DataSync().lastError!,
+                      showInfoDialog(
+                        context: App.rootContext,
+                        title: "Error".tl,
+                        content: DataSync().lastError!,
                       );
                     },
                     child: Container(
@@ -916,28 +916,21 @@ class ImportComicsWidgetState extends State<ImportComicsWidget> {
               ),
           ),
       actions: [
-        Button.text(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.help_outline,
-                size: 18,
-                color: context.colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Flexible(child: Text("help".tl)),
-            ],
-          ),
+        TextButton.icon(
+          icon: const Icon(Icons.help_outline, size: 18),
+          label: Text("help".tl),
           onPressed: () {
             launchUrlString(
                 "https://github.com/gallhall/venera-v/blob/master/doc/import_comic.md");
           },
         ).paddingRight(8),
-        Button.filled(
-          isLoading: loading,
-          onPressed: selectAndImport,
-          child: Text("Select".tl),
+        FilledButton(
+          onPressed: loading ? null : selectAndImport,
+          child: LoadingButtonChild(
+            isLoading: loading,
+            color: context.colorScheme.onPrimary,
+            child: Text("Select".tl),
+          ),
         )
       ],
     );
@@ -1064,16 +1057,15 @@ class _ImageFavoritesState extends State<ImageFavorites> {
             if (!hasData) AppEmptyView.inline('No image favorites'.tl),
             if (hasData) const SizedBox(height: 8),
             if (hasData)
-              Row(
-                children: [
-                  const Spacer(),
-                  buildTypeButton(0, "Tags".tl),
-                  const Spacer(),
-                  buildTypeButton(1, "Authors".tl),
-                  const Spacer(),
-                  buildTypeButton(2, "Comics".tl),
-                  const Spacer(),
+              SegmentedButton<int>(
+                segments: [
+                  ButtonSegment(value: 0, label: Text("Tags".tl)),
+                  ButtonSegment(value: 1, label: Text("Authors".tl)),
+                  ButtonSegment(value: 2, label: Text("Comics".tl)),
                 ],
+                selected: {displayType},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) => selectType(selection.single),
               ),
             if (hasData) const SizedBox(height: 8),
             if (hasData)
@@ -1088,38 +1080,19 @@ class _ImageFavoritesState extends State<ImageFavorites> {
       ),
     );
   }
-  Widget buildTypeButton(int type, String text) {
-    const radius = 24.0;
-    return InkWell(
-      borderRadius: BorderRadius.circular(radius),
-      onTap: () async {
-        setState(() {
-          displayType = type;
-        });
-        await Future.delayed(const Duration(milliseconds: 20));
-        var scrollController = ScrollState.of(context).controller;
-        scrollController.animateTo(
-          scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.ease,
-        );
-      },
-      child: AnimatedContainer(
-        width: 96,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: displayType == type
-              ? context.colorScheme.primaryContainer
-              : null,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-            width: 0.6,
-          ),
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        duration: const Duration(milliseconds: 200),
-        child: Center(child: Text(text, style: ts.s16)),
-      ),
+  Future<void> selectType(int type) async {
+    setState(() {
+      displayType = type;
+    });
+    await Future.delayed(const Duration(milliseconds: 20));
+    if (!mounted) {
+      return;
+    }
+    var scrollController = ScrollState.of(context).controller;
+    scrollController.animateTo(
+      scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.ease,
     );
   }
 

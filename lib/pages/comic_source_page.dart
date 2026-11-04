@@ -484,17 +484,8 @@ class _BodyState extends State<_Body> {
 
   Widget buildCard(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Card(
-        margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        elevation: 0,
-        color: context.colorScheme.surfaceContainerLow,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          side: BorderSide(
-            color: context.colorScheme.outlineVariant,
-            width: 0.5,
-          ),
-        ),
+      child: AppCard(
+        margin: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1079,10 +1070,13 @@ class _CallbackSettingState extends State<_CallbackSetting> {
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(title.ts(widget.sourceKey)),
-      trailing: Button.normal(
-        onPressed: onClick,
-        isLoading: isLoading,
-        child: Text(buttonText.ts(widget.sourceKey)),
+      trailing: FilledButton.tonal(
+        onPressed: isLoading ? null : onClick,
+        child: LoadingButtonChild(
+          isLoading: isLoading,
+          color: context.colorScheme.onPrimaryContainer,
+          child: Text(buttonText.ts(widget.sourceKey)),
+        ),
       ).minimumHeight(32),
     );
   }
@@ -1482,10 +1476,13 @@ class _LoginPageState extends State<_LoginPage> {
                     ],
                   )
                 else
-                  Button.filled(
-                    isLoading: loading,
-                    onPressed: login,
-                    child: Text("Continue".tl),
+                  FilledButton(
+                    onPressed: loading ? null : login,
+                    child: LoadingButtonChild(
+                      isLoading: loading,
+                      color: context.colorScheme.onPrimary,
+                      child: Text("Continue".tl),
+                    ),
                   ),
                 const SizedBox(height: 24),
                 if (widget.config.loginWebsite != null)

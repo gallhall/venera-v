@@ -9,25 +9,6 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/utils/app_links.dart';
 import 'package:venera/utils/ext.dart';
 
-/// A widget that displays comment content with support for rich text formatting.
-///
-/// This widget intelligently decides whether to use simple text or rich formatting
-/// based on the content. It supports HTML tags and auto-linking of URLs.
-class CommentContent extends StatelessWidget {
-  const CommentContent({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!text.contains('<') && !text.contains('http')) {
-      return SelectableText(text);
-    } else {
-      return RichCommentContent(text: text);
-    }
-  }
-}
-
 class _Tag {
   final String name;
   final Map<String, String> attributes;

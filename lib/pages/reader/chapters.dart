@@ -156,9 +156,12 @@ class _GroupedChaptersViewState extends State<_GroupedChaptersView>
           tabs: chapters.groups.map((e) => Tab(text: e)).toList(),
         ),
         Expanded(
-          child: TabViewBody(
-            controller: tabController,
-            children: chapters.groups.map(buildGroup).toList(),
+          child: ListenableBuilder(
+            listenable: tabController,
+            builder: (context, child) => IndexedStack(
+              index: tabController.index,
+              children: chapters.groups.map(buildGroup).toList(),
+            ),
           ),
         ),
       ],
