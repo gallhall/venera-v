@@ -42,8 +42,7 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
 
   @override
   Widget build(BuildContext context) {
-    return CoverButton(
-      borderRadius: BorderRadius.circular(AppRadius.md),
+    return CoverButton.captioned(
       label: subject.displayName,
       onTap: () => context.to(
         () => BangumiSubjectPage(
@@ -458,7 +457,7 @@ class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
 
   @override
   Widget build(BuildContext context) {
-    return CoverButton(
+    return CoverButton.captioned(
       label: subject.displayName,
       onTap: () => context.to(
         () => BangumiSubjectPage(

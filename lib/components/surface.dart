@@ -1525,7 +1525,19 @@ class CoverButton extends StatelessWidget {
     required this.label,
     this.onLongPress,
     this.borderRadius = const BorderRadius.all(Radius.circular(AppRadius.sm)),
+    this.clipChild = true,
   });
+
+  /// A cover with a caption under it: the cover clips its own corners, only
+  /// the press highlight is rounded, and the caption is never cut.
+  const CoverButton.captioned({
+    super.key,
+    required this.onTap,
+    required this.child,
+    required this.label,
+    this.onLongPress,
+  }) : borderRadius = const BorderRadius.all(Radius.circular(AppRadius.xs)),
+       clipChild = false;
 
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
@@ -1533,30 +1545,36 @@ class CoverButton extends StatelessWidget {
   final String label;
   final BorderRadius borderRadius;
 
+  /// Round the child's corners too. Off when the child holds text that
+  /// reaches the corners, which the rounding would cut.
+  final bool clipChild;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: Stack(
-        fit: StackFit.passthrough,
-        children: [
-          ExcludeSemantics(
-            child: ExcludeFocus(child: IgnorePointer(child: child)),
-          ),
-          Positioned.fill(
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: onTap,
-                onLongPress: onLongPress,
-                mouseCursor: SystemMouseCursors.click,
-                child: Semantics(label: label, child: const SizedBox.expand()),
-              ),
+    final button = Stack(
+      fit: StackFit.passthrough,
+      children: [
+        ExcludeSemantics(
+          child: ExcludeFocus(child: IgnorePointer(child: child)),
+        ),
+        Positioned.fill(
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: onLongPress,
+              borderRadius: borderRadius,
+              mouseCursor: SystemMouseCursors.click,
+              child: Semantics(label: label, child: const SizedBox.expand()),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
+    if (!clipChild) {
+      return button;
+    }
+    return ClipRRect(borderRadius: borderRadius, child: button);
   }
 }
 

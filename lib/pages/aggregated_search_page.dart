@@ -193,7 +193,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
   }
 
   Widget buildComic(Comic c) {
-    return CoverButton(
+    return CoverButton.captioned(
       label: c.title,
       onTap: () => context.to(
         () => ComicPage(
