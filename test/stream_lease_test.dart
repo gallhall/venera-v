@@ -15,6 +15,12 @@ class _Torrents implements TorrentStreamer {
   final downloads = <bool>[];
   final userCounts = <int>[];
   Completer<String>? opening;
+  final peerRetries = <(String, int?)>[];
+
+  @override
+  Future<void> retryPeers(String url, {int? episode}) async {
+    peerRetries.add((url, episode));
+  }
 
   @override
   Future<String> open(String url, {int? episode, bool download = false}) {
@@ -35,9 +41,9 @@ class _Torrents implements TorrentStreamer {
   ValueListenable<TorrentStatus>? status(String url, {int? episode}) =>
       statuses[(url, episode)];
 
-  void speed(double value) {
+  void speed(double value, {int peers = 0}) {
     for (var status in statuses.values) {
-      status.value = TorrentStatus(bytesPerSecond: value);
+      status.value = TorrentStatus(bytesPerSecond: value, peers: peers);
     }
   }
 
@@ -172,34 +178,46 @@ void main() {
     expect(torrents.releases, {_key: 2});
   });
 
-  test('torrent startup waits for ready, then allows three idle limits', () async {
+  test('torrent startup counts metadata discovery in the deadline', () async {
     torrents.opening = Completer<String>();
     var lease = opener.open(_info, 0);
     var calls = 0;
-    lease.watchStartup(const Duration(seconds: 2), () => calls++);
-    clock.elapse(400);
-    expect(calls, 0);
-    torrents.opening!.complete('http://localhost/video.mkv');
-    await lease.ready;
-    clock.elapse(5);
+    lease.watchStartup(const Duration(seconds: 45), () => calls++);
+    clock.elapse(44);
     expect(calls, 0);
     clock.elapse(1);
     expect(calls, 1);
+    torrents.opening!.complete('http://localhost/video.mkv');
+    await lease.ready;
     clock.elapse(400);
     expect(calls, 1);
     await lease.release();
   });
 
-  test('traffic resets torrent startup idle time', () async {
+  test('a connected torrent gets three idle limits, not the deadline', () async {
     var lease = opener.open(_info, 0);
     var calls = 0;
-    lease.watchStartup(const Duration(seconds: 2), () => calls++);
+    lease.watchStartup(const Duration(seconds: 45), () => calls++);
     await lease.ready;
-    clock.elapse(5);
-    torrents.speed(100);
+    torrents.speed(0, peers: 3);
+    clock.elapse(134);
+    expect(calls, 0);
     clock.elapse(1);
-    torrents.speed(0);
-    clock.elapse(5);
+    expect(calls, 1);
+    await lease.release();
+  });
+
+  test('traffic resets the idle time of a connected torrent', () async {
+    var lease = opener.open(_info, 0);
+    var calls = 0;
+    lease.watchStartup(const Duration(seconds: 45), () => calls++);
+    await lease.ready;
+    torrents.speed(0, peers: 3);
+    clock.elapse(100);
+    torrents.speed(100, peers: 3);
+    clock.elapse(1);
+    torrents.speed(0, peers: 3);
+    clock.elapse(134);
     expect(calls, 0);
     clock.elapse(1);
     expect(calls, 1);
@@ -211,7 +229,7 @@ void main() {
     var calls = 0;
     lease.watchStartup(const Duration(seconds: 200), () => calls++);
     await lease.ready;
-    torrents.speed(100);
+    torrents.speed(100, peers: 3);
     clock.elapse(299);
     expect(calls, 0);
     clock.elapse(1);
@@ -219,10 +237,23 @@ void main() {
     await lease.release();
   });
 
+  test('torrent retry delegates without opening or releasing the lease', () async {
+    var lease = opener.open(_info, 0);
+    expect(lease.isTorrent, isTrue);
+    await lease.retryPeers();
+    expect(torrents.peerRetries, [_key]);
+    expect(torrents.opens, {_key: 1});
+    expect(torrents.releases, isEmpty);
+    await lease.ready;
+    await lease.release();
+    await lease.retryPeers();
+    expect(torrents.peerRetries, [_key]);
+  });
+
   test('cancelling a torrent watch leaves the lease open', () async {
     var lease = opener.open(_info, 0);
     var calls = 0;
-    var watch = lease.watchStartup(const Duration(seconds: 1), () => calls++);
+    var watch = lease.watchStartup(const Duration(seconds: 3), () => calls++);
     await lease.ready;
     clock.elapse(2);
     watch.cancel();

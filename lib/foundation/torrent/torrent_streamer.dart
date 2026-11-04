@@ -48,6 +48,8 @@ abstract interface class TorrentStreamer {
   Future<String> open(String magnetOrTorrentUrl,
       {int? episode, bool download = false});
   ValueListenable<TorrentStatus>? status(String url, {int? episode});
+  /// Request tracker and DHT peers again, preserving the current task and cache.
+  Future<void> retryPeers(String url, {int? episode});
   Future<void> release(String url, {int? episode});
 }
 
@@ -68,6 +70,14 @@ class DartTorrentStreamer implements TorrentStreamer {
   @override
   ValueListenable<TorrentStatus>? status(String url, {int? episode}) =>
       _sessions[_key(url, episode)]?.status;
+
+  @override
+  Future<void> retryPeers(String url, {int? episode}) async {
+    var session = _sessions[_key(url, episode)];
+    if (session != null && !session.cancelled.isCompleted) {
+      session.retryPeers?.call();
+    }
+  }
 
   @override
   Future<String> open(String magnetOrTorrentUrl,
@@ -104,13 +114,23 @@ class DartTorrentStreamer implements TorrentStreamer {
       MetadataDownloader.setCacheDirectory(
         '${session.directory!.path}/metadata');
       await Directory('${session.directory!.path}/metadata').create();
-      var metadata = await loadTorrentMetadata(magnetOrTorrentUrl,
-        TorrentMetadataOperation(cancelled: session.cancelled.future,
+      // No deadline here: the player's startup watch decides when to give
+      // up, and with auto switch off the search goes on until it is left.
+      var operation = TorrentMetadataOperation(
+          cancelled: session.cancelled.future,
           cancelToken: session.cancelToken, checkCancelled: session.checkCancelled,
+          timeout: const Duration(days: 365),
           onStatus: (value) {
             session.status.value = TorrentStatus(progress: value.progress,
               peers: value.peers);
-          }));
+          });
+      session.retryPeers = operation.retry;
+      TorrentMetadata metadata;
+      try {
+        metadata = await loadTorrentMetadata(magnetOrTorrentUrl, operation);
+      } finally {
+        session.retryPeers = null;
+      }
       var model = metadata.model;
       var magnet = metadata.magnet;
       var peers = metadata.peers;
@@ -167,10 +187,17 @@ class DartTorrentStreamer implements TorrentStreamer {
       for (var peer in peers) {
         task.addPeer(peer, PeerSource.manual, type: PeerType.tcp);
       }
-      for (var tracker in {
+      var trackers = {
         ...model.announces, ...?magnet?.trackers,
         ...publicTorrentTrackers.map(Uri.parse),
-      }) {
+      };
+      session.retryPeers = () {
+        for (var tracker in trackers) {
+          task.startAnnounceUrl(tracker, model.infoHashBuffer, force: true);
+        }
+        task.requestPeersFromDHT();
+      };
+      for (var tracker in trackers) {
         task.startAnnounceUrl(tracker, model.infoHashBuffer);
       }
       task.requestPeersFromDHT();
@@ -409,6 +436,7 @@ class _TorrentSession {
   final opened = Completer<void>();
   final cancelToken = CancelToken();
   TorrentTask? task;
+  void Function()? retryPeers;
   Directory? directory;
   String? localUrl;
   Timer? timer;

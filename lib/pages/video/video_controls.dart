@@ -37,6 +37,7 @@ class VideoControls extends StatefulWidget {
     required this.player,
     required this.controls,
     required this.child,
+    this.loadingOverlay,
   });
 
   /// Playback state and controls from media_kit.
@@ -46,6 +47,9 @@ class VideoControls extends StatefulWidget {
 
   /// The video view, drawn under the controls.
   final Widget child;
+
+  /// Drawn below the navigation bars so loading never blocks their actions.
+  final Widget? loadingOverlay;
 
   @override
   State<VideoControls> createState() => _VideoControlsState();
@@ -547,12 +551,14 @@ class _VideoControlsState extends State<VideoControls> {
           children: [
             widget.child,
             gestures,
-            if (buffering && swipeSeekTarget == null)
+            if (buffering && swipeSeekTarget == null &&
+                widget.loadingOverlay == null)
               const IgnorePointer(
                 child: Center(
                   child: CircularProgressIndicator(color: MediaOverlayColors.content),
                 ),
               ),
+            if (widget.loadingOverlay != null) widget.loadingOverlay!,
             IgnorePointer(
               ignoring: !visible,
               child: AnimatedOpacity(
@@ -627,7 +633,7 @@ class _VideoControlsState extends State<VideoControls> {
           right: 0,
           child: buildTopBar(context, c, actions: c.actions),
         ),
-        Center(child: buildCenter(c)),
+        if (widget.loadingOverlay == null) Center(child: buildCenter(c)),
         Positioned(left: 0, right: 0, bottom: 0, child: buildBottomBar(c)),
       ],
     );

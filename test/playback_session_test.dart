@@ -134,6 +134,12 @@ class _Torrents implements TorrentStreamer {
   final downloads = <bool>[];
   final userCounts = <int>[];
   Completer<String>? opening;
+  final peerRetries = <(String, int?)>[];
+
+  @override
+  Future<void> retryPeers(String url, {int? episode}) async {
+    peerRetries.add((url, episode));
+  }
 
   @override
   Future<String> open(String url, {int? episode, bool download = false}) {
@@ -248,13 +254,14 @@ void main() {
   bool automatic = true;
 
   void create({VideoPlayInfo info = _http, bool canReload = true,
-      List<Res<VideoPlayInfo>>? results}) {
+      List<Res<VideoPlayInfo>>? results,
+      Duration limit = const Duration(seconds: 2)}) {
     loader = _Loader(results ?? [Res(info)], canReload: canReload);
     session = PlaybackSession(
       loader: loader,
       engines: engines,
       autoSwitch: () => automatic,
-      startupLimit: () => const Duration(seconds: 2),
+      startupLimit: () => limit,
       opener: StreamOpener(torrents: torrents, timerFactory: clock.timer),
       timers: clock.timer,
     );
@@ -397,6 +404,137 @@ void main() {
     await _flush();
     expect(events.whereType<PlaybackExhausted>().single.reason,
       'Playback start timed out');
+  });
+
+  test('web startup keeps the configured 20 second limit', () async {
+    create(limit: const Duration(seconds: 20));
+    await start();
+    expect(session.lease!.isTorrent, isFalse);
+    clock.elapse(19);
+    expect(session.active, isNotNull);
+    expect(session.peerHint, PeerHint.none);
+    clock.elapse(1);
+    await _flush();
+    expect(session.active, isNull);
+    clock.elapse(1);
+    await _flush();
+    expect(engines.media.opens.length, 2);
+  });
+
+  for (var metadataPending in [true, false]) {
+    test('BT startup is 45 seconds, metadataPending=$metadataPending', () async {
+      create(info: _torrent, limit: const Duration(seconds: 20));
+      if (metadataPending) {
+        torrents.opening = Completer<String>();
+      }
+      await start();
+      expect(session.lease!.isTorrent, isTrue);
+      clock.elapse(29);
+      expect(session.peerHint, PeerHint.none);
+      clock.elapse(1);
+      expect(session.peerHint, PeerHint.searching);
+      clock.elapse(14);
+      expect(events.whereType<PlaybackExhausted>(), isEmpty);
+      clock.elapse(1);
+      await _flush();
+      expect(session.peerHint, PeerHint.switching);
+      expect(events.whereType<PlaybackExhausted>().single.reason,
+        'Playback start timed out');
+      if (metadataPending) {
+        torrents.opening!.complete('http://localhost/video.mkv');
+        await _flush();
+        expect(engines.media.opens, isEmpty);
+      }
+    });
+  }
+
+  test('BT searches indefinitely with auto switch off and retries in place', () async {
+    automatic = false;
+    create(info: _torrent);
+    torrents.opening = Completer<String>();
+    await start();
+    var lease = session.lease;
+    clock.elapse(30);
+    expect(session.peerHint, PeerHint.searching);
+    await session.retryPeers();
+    expect(torrents.peerRetries, [(_torrent.sources.first.url, 3)]);
+    expect(torrents.opens, {(_torrent.sources.first.url, 3): 1});
+    expect(torrents.releases, isEmpty);
+    expect(session.lease, same(lease));
+    clock.elapse(600);
+    await _flush();
+    expect(session.peerHint, PeerHint.searching);
+    expect(session.error, isNull);
+    expect(events, isEmpty);
+    torrents.opening!.complete('http://localhost/video.mkv');
+    await _flush();
+    expect(engines.media.opens.length, 1);
+  });
+
+  test('BT hint clears immediately when peers connect', () async {
+    automatic = false;
+    create(info: _torrent);
+    await start();
+    clock.elapse(30);
+    expect(session.peerHint, PeerHint.searching);
+    var status = torrents.statuses.values.single;
+    status.value = const TorrentStatus(peers: 1);
+    expect(session.peerHint, PeerHint.none);
+    clock.elapse(400);
+    expect(session.peerHint, PeerHint.none);
+    status.value = const TorrentStatus();
+    expect(session.peerHint, PeerHint.searching);
+    engines.media.advance(1);
+    expect(session.peerHint, PeerHint.none);
+    status.value = const TorrentStatus();
+    expect(session.peerHint, PeerHint.none);
+  });
+
+  test('BT with peers before 30 seconds has no searching hint', () async {
+    create(info: _torrent);
+    await start();
+    torrents.statuses.values.single.value = const TorrentStatus(peers: 2);
+    clock.elapse(30);
+    expect(session.peerHint, PeerHint.none);
+  });
+
+  test('peers also clear the BT switching hint', () async {
+    create(info: _torrent);
+    await start();
+    clock.elapse(45);
+    await _flush();
+    expect(session.peerHint, PeerHint.switching);
+    torrents.statuses.values.single.value = const TorrentStatus(peers: 1);
+    expect(session.peerHint, PeerHint.none);
+  });
+
+  test('turning auto switch off cancels the BT failure deadline', () async {
+    create(info: _torrent);
+    await start();
+    automatic = false;
+    session.cancelStartupWatch();
+    clock.elapse(600);
+    await _flush();
+    expect(events.whereType<PlaybackExhausted>(), isEmpty);
+    expect(session.peerHint, PeerHint.searching);
+    expect(engines.media.opens.length, 1);
+  });
+
+  test('changing BT leases detaches the previous hint listener', () async {
+    automatic = false;
+    create(info: _torrent);
+    await start();
+    var oldStatus = torrents.statuses.values.single;
+    clock.elapse(30);
+    session.pickStream(1);
+    await _flush();
+    expect(session.peerHint, PeerHint.none);
+    clock.elapse(30);
+    expect(session.peerHint, PeerHint.searching);
+    oldStatus.value = const TorrentStatus(peers: 1);
+    expect(session.peerHint, PeerHint.searching);
+    torrents.statuses.values.last.value = const TorrentStatus(peers: 1);
+    expect(session.peerHint, PeerHint.none);
   });
 
   test('autoSwitch off has no timeout and duration marks Started', () async {

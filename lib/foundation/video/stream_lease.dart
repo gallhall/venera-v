@@ -35,6 +35,9 @@ class StreamOpener {
 abstract interface class StreamLease {
   Future<VideoStreamRequest> get ready;
   bool get isOpening;
+  bool get isTorrent;
+  Future<void> retryPeers();
+  /// Includes the current connection count, including metadata discovery.
   ValueListenable<TorrentStatus>? get status;
   StreamStartupWatch watchStartup(Duration limit, void Function() onStalled);
   Future<void> release();
@@ -106,6 +109,12 @@ class _HttpLease extends _Lease {
       : super(AdFreeStream.prepare(request), timerFactory);
 
   @override
+  bool get isTorrent => false;
+
+  @override
+  Future<void> retryPeers() async {}
+
+  @override
   ValueListenable<TorrentStatus>? get status => null;
 
   @override
@@ -135,28 +144,41 @@ class _TorrentLease extends _Lease {
   Future<void>? _releasing;
 
   @override
+  bool get isTorrent => true;
+
+  @override
+  Future<void> retryPeers() async {
+    if (!released) {
+      await torrents.retryPeers(url, episode: episode);
+    }
+  }
+
+  @override
   ValueListenable<TorrentStatus>? get status =>
       torrents.status(url, episode: episode);
 
   @override
   StreamStartupWatch watchStartup(Duration limit, void Function() onStalled) {
     var result = watch(onStalled);
-    ready.then<void>((_) {
-      if (result._cancelled) {
-        return;
-      }
-      // A slow swarm gets three times the limit without data, or five minutes.
+    if (!result._cancelled) {
+      // Metadata discovery counts as startup too. Within [limit] the
+      // torrent must reach a peer; a swarm that does is slow, not dead,
+      // and gets three times the limit without data, or five minutes.
       var idle = 0, elapsed = 0;
       result._timer = timerFactory(const Duration(seconds: 1), () {
+        var peers = status?.value.peers ?? 0;
         idle = (status?.value.bytesPerSecond ?? 0) > 0 ? 0 : idle + 1;
-        if (Duration(seconds: idle) >= limit * 3 ||
-            ++elapsed >= 300) {
+        elapsed++;
+        if (peers == 0 && Duration(seconds: elapsed) >= limit ||
+            Duration(seconds: idle) >= limit * 3 ||
+            elapsed >= 300) {
           result._fire();
         }
       }, periodic: true);
-    }, onError: (Object _, StackTrace __) {
-      result.cancel();
-    });
+      ready.then<void>((_) {}, onError: (Object _, StackTrace __) {
+        result.cancel();
+      });
+    }
     return result;
   }
 

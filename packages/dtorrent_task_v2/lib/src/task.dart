@@ -116,7 +116,7 @@ abstract class TorrentTask with EventsEmittable<TaskEvent> {
   void useSelectedFileStorage(SelectedFileStorage storage);
   Future<void> verifySelectedFiles(Set<int> fileIndices);
   void retryPeerDiscovery();
-  void startAnnounceUrl(Uri url, Uint8List infoHash);
+  void startAnnounceUrl(Uri url, Uint8List infoHash, {bool force = false});
   TorrentModel get metaInfo;
 
   // The name of the torrent
@@ -2217,7 +2217,10 @@ class _TorrentTask
   }
 
   @override
-  void startAnnounceUrl(Uri url, Uint8List infoHash) {
+  void startAnnounceUrl(Uri url, Uint8List infoHash, {bool force = false}) {
+    if (force && (_tracker?.restartTracker(url) ?? false)) {
+      return;
+    }
     _tracker?.runTracker(url, infoHash);
   }
 
