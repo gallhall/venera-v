@@ -171,7 +171,6 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                 onChanged: onChanged,
               ),
             ),
-            if (loading) const SizedBox(height: 56, child: AppLoadingView(size: 24)),
             Expanded(
               child: SmoothCustomScrollView(
                 controller: scrollController,
@@ -282,6 +281,8 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                           child: AppLoadingView(),
                         ),
                       ),
+                    if (loading && results.isNotEmpty)
+                      const SliverListFooter.loading(),
                     if (more && !loading && error == null)
                       SliverToBoxAdapter(
                         child: Center(
