@@ -679,7 +679,7 @@ class FloatingDetailsAppBar extends StatelessWidget {
         builder: (context, value, child) {
           final foreground = Color.lerp(Colors.white, colors.onSurface, value)!;
           return SizedBox(
-            height: topPadding + 56,
+            height: topPadding + MediaQuery.textScalerOf(context).scale(56),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -713,7 +713,11 @@ class FloatingDetailsAppBar extends StatelessWidget {
                         ),
                       ),
                       child: Padding(
-                        padding: EdgeInsets.only(top: topPadding),
+                        padding: EdgeInsets.only(
+                          top: topPadding,
+                          left: MediaQuery.paddingOf(context).left,
+                          right: MediaQuery.paddingOf(context).right,
+                        ),
                         child: Row(
                           children: [
                             const SizedBox(width: 8),
@@ -845,7 +849,11 @@ class PosterHeader extends StatelessWidget {
         );
       },
       child: Padding(
-        padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 12),
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.gutter + MediaQuery.paddingOf(context).left,
+          topInset + AppSpacing.sm,
+          AppSpacing.gutter + MediaQuery.paddingOf(context).right, AppSpacing.md,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1835,5 +1843,42 @@ class AppContentWidth extends StatelessWidget {
         child: SizedBox(width: double.infinity, child: child),
       ),
     );
+  }
+}
+
+/// Caps a sliver's cross axis before its children calculate their layout.
+class SliverAppContentWidth extends StatelessWidget {
+  const SliverAppContentWidth({
+    super.key,
+    required this.sliver,
+    this.maxWidth = 1200,
+  });
+
+  final Widget sliver;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverLayoutBuilder(
+      builder: (context, constraints) => SliverPadding(
+        padding: EdgeInsets.symmetric(
+          horizontal: math.max(0.0, (constraints.crossAxisExtent - maxWidth) / 2),
+        ),
+        sliver: sliver,
+      ),
+    );
+  }
+}
+
+/// Fixed-height chrome supports up to 1.5x; readers and players size their
+/// reading text separately through their own controls.
+class AppTextScaleClamp extends StatelessWidget {
+  const AppTextScaleClamp({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery.withClampedTextScaling(maxScaleFactor: 1.5, child: child);
   }
 }

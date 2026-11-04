@@ -107,7 +107,6 @@ class _HomePageState extends State<HomePage> {
           },
         ),
         ImageFavorites(computed: imageFavorites),
-        SliverPadding(padding: EdgeInsets.only(top: context.padding.bottom)),
       ],
     );
     return Center(
@@ -481,14 +480,14 @@ class _HomeBentoGrid extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       sliver: SliverLayoutBuilder(
         builder: (context, constraints) {
-          final width = MediaQuery.sizeOf(context).width;
+          final width = constraints.crossAxisExtent;
           final columns = width < 600 ? 2 : (width < 900 ? 3 : 4);
           return SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              mainAxisExtent: 76,
+              mainAxisExtent: MediaQuery.textScalerOf(context).scale(64) + AppSpacing.xl,
             ),
             delegate: SliverChildBuilderDelegate((context, index) {
               final tile = tiles[index];
@@ -526,17 +525,11 @@ class _HomeBentoGrid extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                tile.count?.toString() ?? '\u2026',
-                                style: ts.s24.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
+                          Text(
+                            tile.count?.toString() ?? '\u2026',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ts.s24.copyWith(fontWeight: FontWeight.w700),
                           ),
                           Tooltip(
                             message: tile.label,
@@ -923,6 +916,7 @@ class ImportComicsWidgetState extends State<ImportComicsWidget> {
       actions: [
         Button.text(
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.help_outline,
@@ -930,14 +924,14 @@ class ImportComicsWidgetState extends State<ImportComicsWidget> {
                 color: context.colorScheme.primary,
               ),
               const SizedBox(width: 8),
-              Text("help".tl),
+              Flexible(child: Text("help".tl)),
             ],
           ),
           onPressed: () {
             launchUrlString(
                 "https://github.com/gallhall/venera-v/blob/master/doc/import_comic.md");
           },
-        ).fixWidth(90).paddingRight(8),
+        ).paddingRight(8),
         Button.filled(
           isLoading: loading,
           onPressed: selectAndImport,
@@ -1218,8 +1212,7 @@ class __ChartLineState extends State<_ChartLine>
           child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)
               .paddingHorizontal(4)
               .toAlign(Alignment.centerLeft)
-              .fixWidth(context.width > 600 ? 120 : 80)
-              .fixHeight(double.infinity),
+              .fixWidth(MediaQuery.textScalerOf(context).scale(context.width > 600 ? 120 : 80)),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -1251,8 +1244,8 @@ class __ChartLineState extends State<_ChartLine>
         Text(
           widget.count.toString(),
           style: ts.s12,
-        ).fixWidth(context.width > 600 ? 60 : 30),
+        ).paddingHorizontal(4),
       ],
-    ).fixHeight(28);
+    ).minimumHeight(MediaQuery.textScalerOf(context).scale(28));
   }
 }

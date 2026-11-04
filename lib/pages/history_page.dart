@@ -260,7 +260,7 @@ class _HistoryPageState extends State<HistoryPage> {
         }
       },
       child: Scaffold(
-        body: SmoothCustomScrollView(
+        body: AppContentWidth(child: SmoothCustomScrollView(
           slivers: [
             Theme(
               data: Theme.of(context).copyWith(
@@ -368,7 +368,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 },
               ),
           ],
-        ),
+        )),
       ),
     );
   }

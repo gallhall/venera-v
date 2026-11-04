@@ -146,6 +146,7 @@ class BangumiTrendingPageState extends State<BangumiTrendingPage>
                   ),
                 ),
               ),
+            SliverPadding(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom)),
           ],
         ),
       ),

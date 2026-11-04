@@ -96,7 +96,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         !isEnabledSpecificSettings &&
         appdata.settings.isDeviceSpecificSettingsEnabled();
 
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Reading".tl)),
         _SettingsGroup(
@@ -457,7 +457,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }
 

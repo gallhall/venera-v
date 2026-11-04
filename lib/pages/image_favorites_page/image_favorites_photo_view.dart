@@ -174,7 +174,10 @@ class _ImageFavoritesPhotoViewState extends State<ImageFavoritesPhotoView> {
 
   Widget buildAppBar() {
     return Padding(
-      padding: EdgeInsets.fromLTRB(8, context.padding.top, 8, 0),
+      padding: EdgeInsets.fromLTRB(
+        8 + context.padding.left, context.padding.top,
+        8 + context.padding.right, 0,
+      ),
       child: Material(
         color: Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppRadius.xl),

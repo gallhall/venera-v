@@ -105,7 +105,10 @@ class _CoverViewerState extends State<_CoverViewer> {
               const SizedBox(width: 8),
             ],
           ),
-        ).paddingTop(context.padding.top),
+        )
+            .paddingTop(context.padding.top)
+            .paddingLeft(context.padding.left)
+            .paddingRight(context.padding.right),
       ),
     );
   }

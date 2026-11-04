@@ -14,7 +14,7 @@ class DebugPageState extends State<DebugPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Debug".tl)),
         _SettingsGroup(
@@ -106,6 +106,6 @@ class DebugPageState extends State<DebugPage> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }

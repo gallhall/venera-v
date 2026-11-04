@@ -82,7 +82,7 @@ class _AppbarState extends State<Appbar> {
         color: widget.backgroundColor ??
             context.colorScheme.surface.toOpacity(0.86),
       ),
-      height: _kAppBarHeight + context.padding.top,
+      constraints: BoxConstraints(minHeight: _kAppBarHeight + context.padding.top),
       child: Row(
         children: [
           const SizedBox(width: 8),
@@ -161,6 +161,7 @@ class SliverAppbar extends StatelessWidget {
         title: title,
         actions: actions,
         topPadding: MediaQuery.of(context).padding.top,
+        barHeight: MediaQuery.textScalerOf(context).scale(_kAppBarHeight),
         radius: radius,
         style: style,
       ),
@@ -179,6 +180,8 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 
   final double topPadding;
 
+  final double barHeight;
+
   final double radius;
 
   final AppbarStyle style;
@@ -188,6 +191,7 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     required this.title,
     this.actions,
     required this.topPadding,
+    required this.barHeight,
     this.radius = 0,
     this.style = AppbarStyle.blur,
   });
@@ -251,10 +255,10 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  double get maxExtent => _kAppBarHeight + topPadding;
+  double get maxExtent => barHeight + topPadding;
 
   @override
-  double get minExtent => _kAppBarHeight + topPadding;
+  double get minExtent => barHeight + topPadding;
 
   @override
   bool shouldRebuild(SliverPersistentHeaderDelegate oldDelegate) {
@@ -263,6 +267,7 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
         title != oldDelegate.title ||
         actions != oldDelegate.actions ||
         topPadding != oldDelegate.topPadding ||
+        barHeight != oldDelegate.barHeight ||
         radius != oldDelegate.radius ||
         style != oldDelegate.style;
   }
@@ -415,7 +420,7 @@ class _AppTabBarState extends State<AppTabBar> {
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     return SizedBox(
-      height: 48,
+      height: MediaQuery.textScalerOf(context).scale(36) + 12,
       width: double.infinity,
       child: MouseRegion(
         onEnter: (_) {
@@ -469,7 +474,7 @@ class _AppTabBarState extends State<AppTabBar> {
                           splashBorderRadius: BorderRadius.circular(AppRadius.pill),
                           tabs: List.generate(widget.tabs.length, (i) => SizedBox(
                             key: keys[i],
-                            height: 36,
+                            height: MediaQuery.textScalerOf(context).scale(36),
                             child: widget.tabs[i],
                           )),
                         ),
@@ -614,6 +619,7 @@ class _SliverSearchBarState extends State<SliverSearchBar>
         editingController: _editingController,
         controller: _controller,
         topPadding: MediaQuery.of(context).padding.top,
+        barHeight: MediaQuery.textScalerOf(context).scale(56),
         onChanged: widget.onChanged,
         action: widget.action,
         focusNode: widget.focusNode,
@@ -630,6 +636,8 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
 
   final double topPadding;
 
+  final double barHeight;
+
   final void Function(String)? onChanged;
 
   final Widget? action;
@@ -642,6 +650,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
     required this.editingController,
     required this.controller,
     required this.topPadding,
+    required this.barHeight,
     this.onChanged,
     this.action,
     this.focusNode,
@@ -672,7 +681,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   double get maxExtent =>
-      (title == null ? _kAppBarHeight : _kTitledHeight) + topPadding;
+      (title == null ? _kAppBarHeight : _kTitledHeight) + topPadding + barHeight - 56;
 
   @override
   double get minExtent => maxExtent;
@@ -683,6 +692,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
         editingController != oldDelegate.editingController ||
         controller != oldDelegate.controller ||
         topPadding != oldDelegate.topPadding ||
+        barHeight != oldDelegate.barHeight ||
         onChanged != oldDelegate.onChanged ||
         action != oldDelegate.action ||
         focusNode != oldDelegate.focusNode ||
@@ -766,8 +776,8 @@ class _RoundedSearchBar extends StatelessWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1200),
-            child: SizedBox(
-              height: 56,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 56),
               child: Row(
                 children: [
                   if (title == null) ...[
@@ -900,10 +910,18 @@ class TabActionButton extends StatelessWidget {
         child: IconTheme(
           data: IconThemeData(size: 20, color: context.colorScheme.primary),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               icon,
               const SizedBox(width: 8),
-              Text(text, style: ts.withColor(context.colorScheme.primary)),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.withColor(context.colorScheme.primary),
+                ),
+              ),
             ],
           ),
         ),

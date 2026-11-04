@@ -150,7 +150,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: Appbar(title: Text(widget.category)),
-      body: body,
+      body: AppContentWidth(child: body),
     );
   }
 

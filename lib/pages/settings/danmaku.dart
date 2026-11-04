@@ -24,7 +24,7 @@ class _DanmakuSettingsState extends State<DanmakuSettings> {
   @override
   Widget build(BuildContext context) {
     final builtIn = DanDanPlayApi.hasBuiltInCredentials;
-    return SmoothCustomScrollView(slivers: [
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(slivers: [
       SliverAppbar(title: Text('Danmaku'.tl)),
       _SettingsGroup(children: [
         SelectSetting(
@@ -97,7 +97,7 @@ class _DanmakuSettingsState extends State<DanmakuSettings> {
           ),
         ),
       ]),
-    ]);
+    ]));
   }
 
   @override

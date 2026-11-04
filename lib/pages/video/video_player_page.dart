@@ -1286,7 +1286,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 SizedBox(
                   width: 340,
                   child: ListView(
-                    padding: const EdgeInsets.only(bottom: 16),
+                    padding: EdgeInsets.only(
+                      bottom: context.padding.bottom + 16,
+                      right: isWide ? context.padding.right : 0,
+                    ),
                     children: buildInfo(),
                   ),
                 ),
@@ -1303,10 +1306,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               children: [
                 AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.only(bottom: 16),
+                  child: AppContentWidth(child: ListView(
+                    padding: EdgeInsets.only(
+                      bottom: context.padding.bottom + 16,
+                      right: isWide ? context.padding.right : 0,
+                    ),
                     children: buildInfo(),
-                  ),
+                  )),
                 ),
               ],
             ),
@@ -1327,10 +1333,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: AppContentWidth(child: ListView(
                   padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
                   children: buildInfo(),
-                ),
+                )),
               ),
             ],
           ),
@@ -1585,8 +1591,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               ),
               if (showPlayerBack || isFullscreen)
                 Positioned(
-                  left: 8,
-                  top: 8,
+                  left: 8 + MediaQuery.paddingOf(context).left,
+                  top: 8 + MediaQuery.paddingOf(context).top,
                   child: IconButton(
                     color: Colors.white,
                     icon: const Icon(Icons.arrow_back_rounded),

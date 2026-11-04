@@ -115,7 +115,7 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
       child: Column(
         children: [
           Container(
-            height: 56 + context.padding.top,
+            constraints: BoxConstraints(minHeight: 56 + context.padding.top),
             padding: EdgeInsets.only(top: context.padding.top),
             width: double.infinity,
             decoration: BoxDecoration(
@@ -139,11 +139,14 @@ class _PopUpWidgetScaffoldState extends State<PopUpWidgetScaffold> {
                 const SizedBox(
                   width: 16,
                 ),
-                Text(
-                  widget.title,
-                  style: ts.s18.copyWith(fontWeight: FontWeight.w600),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ts.s18.copyWith(fontWeight: FontWeight.w600),
+                  ),
                 ),
-                const Spacer(),
                 if (widget.tailing != null) ...widget.tailing!,
                 const SizedBox(width: 8),
               ],

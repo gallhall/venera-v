@@ -100,7 +100,7 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
-          ).fixHeight(36),
+          ).fixHeight(MediaQuery.textScalerOf(context).scale(36)),
         ],
       ),
     );
@@ -502,7 +502,7 @@ class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
-          ).fixHeight(32),
+          ).fixHeight(MediaQuery.textScalerOf(context).scale(32)),
         ],
       ),
     );

@@ -243,11 +243,12 @@ class ComicTile extends StatelessWidget {
 
   Widget _buildDetailedMode(BuildContext context) {
     return LayoutBuilder(builder: (context, constrains) {
-      final height = constrains.maxHeight - 16;
+      final height = constrains.maxHeight - 16 -
+          152 * (MediaQuery.textScalerOf(context).scale(16) / 16 - 1);
 
       Widget image = Container(
         width: height * 0.68,
-        height: double.infinity,
+        height: height,
         decoration: BoxDecoration(
           color: context.colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -597,13 +598,14 @@ class _ComicDescription extends StatelessWidget {
         if (tags != null && tags!.isNotEmpty)
           Expanded(
             child: LayoutBuilder(builder: (context, constraints) {
-              if (constraints.maxHeight < 22) {
+              final tagHeight = MediaQuery.textScalerOf(context).scale(17) + 4;
+              if (constraints.maxHeight < tagHeight) {
                 return Container();
               }
-              int cnt = (constraints.maxHeight - 22).toInt() ~/ 25;
+              int cnt = ((constraints.maxHeight - tagHeight) / (tagHeight + 3)).floor();
               return Container(
                 clipBehavior: Clip.antiAlias,
-                height: 21 + cnt * 24,
+                height: tagHeight + cnt * (tagHeight + 3),
                 width: double.infinity,
                 decoration: const BoxDecoration(),
                 child: Wrap(
@@ -615,11 +617,11 @@ class _ComicDescription extends StatelessWidget {
                   children: [
                     for (var s in tags!)
                       Container(
-                        height: 21,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2,
                         ),
                         constraints: BoxConstraints(
+                          minHeight: 21,
                           maxWidth: constraints.maxWidth * 0.45,
                         ),
                         decoration: BoxDecoration(
@@ -947,7 +949,7 @@ class _SliverGridComics extends StatelessWidget {
           ),
         );
       }, childCount: comics.length),
-      gridDelegate: SliverGridDelegateWithComics(),
+      gridDelegate: SliverGridDelegateWithComics(textScaler: MediaQuery.textScalerOf(context)),
     );
   }
 }

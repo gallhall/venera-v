@@ -103,12 +103,12 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
       );
     }
     return Scaffold(
-      body: Column(
+      body: SafeArea(top: false, bottom: false, child: Column(
         children: [
           Appbar(title: Text("Bangumi comments".tl)),
           Expanded(child: AppContentWidth(maxWidth: 800, child: body)),
         ],
-      ),
+      )),
     );
   }
 

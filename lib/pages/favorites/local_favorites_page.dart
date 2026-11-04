@@ -1083,7 +1083,7 @@ class _ReorderComicsPageState extends State<_ReorderComicsPage> {
           return GridView(
             key: _key,
             controller: _scrollController,
-            gridDelegate: SliverGridDelegateWithComics(),
+            gridDelegate: SliverGridDelegateWithComics(textScaler: MediaQuery.textScalerOf(context)),
             children: children,
           );
         },

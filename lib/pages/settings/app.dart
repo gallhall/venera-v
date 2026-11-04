@@ -40,7 +40,7 @@ class _AppSettingsState extends State<AppSettings> {
 
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("App".tl)),
         _SettingsGroup(
@@ -296,7 +296,7 @@ class _AppSettingsState extends State<AppSettings> {
                       ? Button.normal(
                           onPressed: () => showBangumiLoginDialog(context),
                           child: Text("Log in".tl),
-                        ).fixHeight(32)
+                        ).minimumHeight(32)
                       : Button.normal(
                           onPressed: () => showConfirmDialog(
                             context: context,
@@ -305,7 +305,7 @@ class _AppSettingsState extends State<AppSettings> {
                             onConfirm: BangumiManager().logout,
                           ),
                           child: Text("Log out".tl),
-                        ).fixHeight(32),
+                        ).minimumHeight(32),
                 );
               },
             ),
@@ -431,7 +431,7 @@ class _AppSettingsState extends State<AppSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }
 

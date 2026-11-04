@@ -74,7 +74,9 @@ class SliverGridDelegateWithFixedHeight extends SliverGridDelegate {
 }
 
 class SliverGridDelegateWithComics extends SliverGridDelegate {
-  SliverGridDelegateWithComics();
+  SliverGridDelegateWithComics({this.textScaler = TextScaler.noScaling});
+
+  final TextScaler textScaler;
 
   final bool useBriefMode = appdata.settings['comicDisplayMode'] == 'brief';
 
@@ -98,7 +100,7 @@ class SliverGridDelegateWithComics extends SliverGridDelegate {
   SliverGridLayout getDetailedModeLayout(
       SliverConstraints constraints, double scale) {
     const minCrossAxisExtent = 360;
-    final itemHeight = 152 * scale;
+    final itemHeight = 152 * scale + 152 * (textScaler.scale(16) / 16 - 1);
     final width = constraints.crossAxisExtent;
     var crossItems = width ~/ minCrossAxisExtent;
     crossItems = math.max(1, crossItems);
@@ -142,7 +144,8 @@ class SliverGridDelegateWithComics extends SliverGridDelegate {
   bool shouldRelayout(covariant SliverGridDelegate oldDelegate) {
     if (oldDelegate is! SliverGridDelegateWithComics) return true;
     if (oldDelegate.scale != scale ||
-        oldDelegate.useBriefMode != useBriefMode) {
+        oldDelegate.useBriefMode != useBriefMode ||
+        oldDelegate.textScaler != textScaler) {
       return true;
     }
     return false;

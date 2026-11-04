@@ -278,15 +278,16 @@ class NaviPaneState extends State<NaviPane>
       color: context.colorScheme.surface,
       child: Container(
         padding: const EdgeInsets.only(left: 16, right: 16),
-        height: _kTopBarHeight,
+        constraints: const BoxConstraints(minHeight: _kTopBarHeight),
         width: double.infinity,
         child: Row(
           children: [
-            Text(
+            Expanded(child: Text(
               widget.paneItems[currentPage].label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: ts.s20.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
+            )),
             for (var action in widget.paneActions)
               Tooltip(
                 message: action.label,
@@ -337,33 +338,44 @@ class NaviPaneState extends State<NaviPane>
             (_kSideBarWidth - _kFoldedSideBarWidth) * ((value - 2).clamp(0, 1)),
         height: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: paddingHorizontal),
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            SizedBox(height: MediaQuery.of(context).padding.top),
-            ...List<Widget>.generate(
-              widget.paneItems.length,
-              (index) => _SideNaviWidget(
-                enabled: currentPage == index,
-                entry: widget.paneItems[index],
-                showTitle: value == 3,
-                onTap: () {
-                  updatePage(index);
-                },
-                key: ValueKey(index),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(children: [
+                    const SizedBox(height: AppSpacing.lg),
+                    SizedBox(height: MediaQuery.paddingOf(context).top),
+                    ...List<Widget>.generate(
+                      widget.paneItems.length,
+                      (index) => _SideNaviWidget(
+                        enabled: currentPage == index,
+                        entry: widget.paneItems[index],
+                        showTitle: value == 3,
+                        onTap: () {
+                          updatePage(index);
+                        },
+                        key: ValueKey(index),
+                      ),
+                    ),
+                  ]),
+                  Column(children: [
+                    ...List<Widget>.generate(
+                      widget.paneActions.length,
+                      (index) => _PaneActionWidget(
+                        entry: widget.paneActions[index],
+                        showTitle: value == 3,
+                        key: ValueKey(index + widget.paneItems.length),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ]),
+                ],
               ),
             ),
-            const Spacer(),
-            ...List<Widget>.generate(
-              widget.paneActions.length,
-              (index) => _PaneActionWidget(
-                entry: widget.paneActions[index],
-                showTitle: value == 3,
-                key: ValueKey(index + widget.paneItems.length),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
     );
@@ -397,7 +409,8 @@ class _SideNaviWidget extends StatelessWidget {
     final label = Text(
       entry.label,
       maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+      overflow: showTitle ? TextOverflow.ellipsis : null,
+      softWrap: false,
       style: (showTitle ? ts.s14 : ts.s12).copyWith(
         color: foreground,
         fontWeight: enabled ? FontWeight.w600 : FontWeight.w500,
@@ -414,14 +427,21 @@ class _SideNaviWidget extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.xl),
           onTap: onTap,
           child: SizedBox(
-            height: showTitle ? 48 : 64,
+            height: MediaQuery.textScalerOf(context).scale(showTitle ? 48 : 64),
             child: showTitle
                 ? Row(
                     children: [icon, const SizedBox(width: 12), Expanded(child: label)],
                   ).paddingHorizontal(16)
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: [icon, const SizedBox(height: 4), label],
+                    children: [
+                      icon,
+                      const SizedBox(height: 4),
+                      // The folded rail is 72 wide: shrink long labels
+                      // ("Categories") instead of cutting or wrapping them.
+                      FittedBox(fit: BoxFit.scaleDown, child: label)
+                          .paddingHorizontal(4),
+                    ],
                   ),
           ),
         ),
@@ -713,6 +733,7 @@ class _NaviMainViewState extends State<_NaviMainView> {
           child: MediaQuery.removePadding(
             context: context,
             removeTop: shouldShowAppBar,
+            removeBottom: shouldShowAppBar,
             child: AnimatedSwitcher(
               duration: _fastAnimationDuration,
               child: state.buildMainViewContent(),

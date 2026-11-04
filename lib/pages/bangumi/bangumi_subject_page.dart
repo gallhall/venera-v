@@ -620,7 +620,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         children: [
           SmoothCustomScrollView(
             controller: scrollController,
-            slivers: [
+            slivers: <Widget>[
               if (subject == null)
                 SliverAppbar(title: appbarTitle, actions: appbarActions),
               if (subject != null) buildTitle(subject, context),
@@ -648,7 +648,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               SliverPadding(
                 padding: EdgeInsets.only(bottom: context.padding.bottom + 80),
               ),
-            ],
+            ].map((sliver) => SliverAppContentWidth(sliver: sliver)).toList(),
           ),
           if (subject != null)
             Positioned(
@@ -669,7 +669,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   Widget buildTitle(BangumiSubject subject, BuildContext context) {
     return SliverLazyToBoxAdapter(
       child: PosterHeader(
-        topInset: MediaQuery.paddingOf(context).top + 56,
+        topInset: MediaQuery.paddingOf(context).top +
+            MediaQuery.textScalerOf(context).scale(56),
         backdrop: subject.image.isEmpty
             ? null
             : CachedImageProvider(subject.image),
@@ -814,7 +815,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                     Share.shareText('${subject.displayName}\n${subject.url}'),
               ),
             ],
-          ).fixHeight(48),
+          ).fixHeight(MediaQuery.textScalerOf(context).scale(48)),
           if (mobile)
             Row(
               children: [

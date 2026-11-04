@@ -12,9 +12,9 @@ class _ReaderScaffold extends StatefulWidget {
 class _ReaderScaffoldState extends State<_ReaderScaffold> {
   bool _isOpen = false;
 
-  static const kTopBarHeight = 56.0;
+  double get kTopBarHeight => MediaQuery.textScalerOf(context).scale(56);
 
-  static const kBottomBarHeight = 105.0;
+  double get kBottomBarHeight => MediaQuery.textScalerOf(context).scale(105);
 
   bool get isOpen => _isOpen;
 
@@ -141,8 +141,10 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
           buildStatusInfo(),
         AnimatedPositioned(
           duration: const Duration(milliseconds: 180),
-          right: 16,
-          bottom: showFloatingButtonValue == 0 ? -58 : 36,
+          right: 16 + MediaQuery.paddingOf(context).right,
+          bottom: showFloatingButtonValue == 0
+              ? -58
+              : 36 + MediaQuery.paddingOf(context).bottom,
           child: buildEpChangeButton(),
         ),
         AnimatedPositioned(
@@ -538,7 +540,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 children: [
                   if (!small)
                     Container(
-                      height: 24,
+                      constraints: const BoxConstraints(minHeight: 24),
                       padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
                       decoration: BoxDecoration(
                         color: context.colorScheme.surfaceContainerHigh,
@@ -616,8 +618,8 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         : pageText;
 
     return Positioned(
-      bottom: 13,
-      left: 25,
+      bottom: 13 + MediaQuery.paddingOf(context).bottom,
+      left: 25 + MediaQuery.paddingOf(context).left,
       child: _ReaderInfoPill(child: Text(text, style: ts.s14)),
     );
   }
@@ -625,8 +627,8 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   Widget buildStatusInfo() {
     if (appdata.settings['enableClockAndBatteryInfoInReader']) {
       return Positioned(
-        bottom: 13,
-        right: 25,
+        bottom: 13 + MediaQuery.paddingOf(context).bottom,
+        right: 25 + MediaQuery.paddingOf(context).right,
         child: _ReaderInfoPill(
           child: Row(
             children: [
@@ -774,14 +776,13 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   Widget buildEpChangeButton() {
-    final extraWidth = context.padding.left + context.padding.right;
     if (context.reader.widget.chapters == null) {
       return const SizedBox();
     }
     switch (showFloatingButtonValue) {
       case 0:
         return Container(
-          width: 58 + extraWidth,
+          width: 58,
           height: 58,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
@@ -801,7 +802,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       case -1:
       case 1:
         return SizedBox(
-          width: 58 + extraWidth,
+          width: 58,
           height: 58,
           child: Material(
             color: context.colorScheme.surfaceContainerHigh.withValues(
@@ -1109,7 +1110,7 @@ class _SelectImageOverlayContentState
           alignment: Alignment(0, -0.8),
           child: Container(
             width: 232,
-            height: 42,
+            constraints: const BoxConstraints(minHeight: 42),
             decoration: BoxDecoration(
               color: context.colorScheme.surface,
               borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -1120,12 +1121,13 @@ class _SelectImageOverlayContentState
                 const SizedBox(width: 8),
                 const Icon(Icons.info_outline_rounded),
                 const SizedBox(width: 16),
-                Text(
+                Expanded(child: Text(
                   "Click to select an image".tl,
                   style: ts.s16.copyWith(
                     color: context.colorScheme.onSurface,
                   ),
-                ),
+                )),
+                const SizedBox(width: AppSpacing.sm),
               ],
             ),
           ),

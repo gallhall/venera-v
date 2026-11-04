@@ -10,7 +10,7 @@ class NetworkSettings extends StatefulWidget {
 class _NetworkSettingsState extends State<NetworkSettings> {
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Network".tl)),
         _SettingsGroup(
@@ -36,7 +36,7 @@ class _NetworkSettingsState extends State<NetworkSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }
 

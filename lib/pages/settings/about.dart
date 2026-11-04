@@ -70,7 +70,7 @@ class _AboutSettingsState extends State<AboutSettings> {
                       }
                     });
                   },
-                ).fixHeight(32),
+                ).minimumHeight(32),
               ),
               _SwitchSetting(
                 title: "Check for updates on startup".tl,
