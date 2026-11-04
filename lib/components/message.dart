@@ -7,18 +7,95 @@ void showToast({
   Widget? trailing,
   int? seconds,
 }) {
-  var newEntry = OverlayEntry(
-      builder: (context) => _ToastOverlay(
-            message: message,
-            icon: icon,
-            trailing: trailing,
-          ));
+  _showToast(
+    message: message,
+    context: context,
+    icon: icon,
+    trailingBuilder: (_) => trailing,
+    seconds: seconds ?? 2,
+  );
+}
 
-  var state = context.findAncestorStateOfType<OverlayWidgetState>();
+void _showToast({
+  required String message,
+  required BuildContext context,
+  Widget? icon,
+  required Widget? Function(VoidCallback dismiss) trailingBuilder,
+  required int seconds,
+}) {
+  final state = context.findAncestorStateOfType<OverlayWidgetState>();
+  late OverlayEntry entry;
+  Timer? timer;
+  var dismissed = false;
+  void dismiss() {
+    if (dismissed) {
+      return;
+    }
+    dismissed = true;
+    timer?.cancel();
+    state?.remove(entry);
+  }
 
-  state?.addOverlay(newEntry);
+  entry = OverlayEntry(
+    builder: (context) => _ToastOverlay(
+      message: message,
+      icon: icon,
+      trailing: trailingBuilder(dismiss),
+    ),
+  );
+  state?.addOverlay(entry);
+  timer = Timer(Duration(seconds: seconds), dismiss);
+}
 
-  Timer(Duration(seconds: seconds ?? 2), () => state?.remove(newEntry));
+/// A toast with an "Undo" action, for deletions that can be put back.
+void showUndoToast({
+  required BuildContext context,
+  required String message,
+  required VoidCallback onUndo,
+  int seconds = 4,
+}) {
+  var undone = false;
+  final undoColor = context.colorScheme.inversePrimary;
+  _showToast(
+    context: context,
+    message: message,
+    seconds: seconds,
+    trailingBuilder: (dismiss) => TextButton(
+      style: TextButton.styleFrom(
+        foregroundColor: undoColor,
+      ),
+      onPressed: () {
+        if (undone) {
+          return;
+        }
+        undone = true;
+        dismiss();
+        onUndo();
+      },
+      child: Text('Undo'.tl),
+    ),
+  );
+}
+
+/// Removes only folder membership; the manager retains the exact database rows.
+void removeLocalFavoritesWithUndo({
+  required BuildContext context,
+  required String folder,
+  required List<FavoriteItem> comics,
+  VoidCallback? onUndo,
+}) {
+  if (comics.isEmpty) {
+    return;
+  }
+  final restore = LocalFavoritesManager().removeComicsForUndo(folder, comics);
+  showUndoToast(
+    context: context,
+    message: 'Deleted'.tl,
+    onUndo: () {
+      restore();
+      onUndo?.call();
+    },
+  );
 }
 
 class _ToastOverlay extends StatelessWidget {
@@ -32,46 +109,50 @@ class _ToastOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      bottom: 24 + MediaQuery.of(context).viewInsets.bottom + context.padding.bottom,
-      left: 0,
-      right: 0,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Material(
-          color: Theme.of(context).colorScheme.inverseSurface,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          elevation: 2,
-          // From the theme, which sets the font: the overlay is above the
-          // pages' default text style.
-          textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onInverseSurface,
-              ),
-          child: IconTheme(
-            data: IconThemeData(
-                color: Theme.of(context).colorScheme.onInverseSurface),
-            child: IntrinsicWidth(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-                constraints: BoxConstraints(
-                  maxWidth: math.min(560.0, context.width - 32),
+    return ValueListenableBuilder<double>(
+      valueListenable: NaviPane.bottomBarHeight,
+      builder: (context, bottomBarHeight, child) => Positioned(
+        bottom: AppSpacing.xl + MediaQuery.of(context).viewInsets.bottom +
+            context.padding.bottom + bottomBarHeight,
+        left: 0,
+        right: 0,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Material(
+            color: Theme.of(context).colorScheme.inverseSurface,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            elevation: 2,
+            // From the theme, which sets the font: the overlay is above the
+            // pages' default text style.
+            textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onInverseSurface,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (icon != null) icon!.paddingRight(8),
-                    Expanded(
-                      child: Text(
-                        message,
-                        style: ts.s16.copyWith(
-                            fontWeight: FontWeight.w500),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+            child: IconTheme(
+              data: IconThemeData(
+                  color: Theme.of(context).colorScheme.onInverseSurface),
+              child: IntrinsicWidth(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                  constraints: BoxConstraints(
+                    maxWidth: math.min(560.0, context.width - 32),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (icon != null) icon!.paddingRight(8),
+                      Expanded(
+                        child: Text(
+                          message,
+                          style: ts.s16.copyWith(
+                              fontWeight: FontWeight.w500),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (trailing != null) trailing!.paddingLeft(8)
-                  ],
+                      if (trailing != null) trailing!.paddingLeft(8)
+                    ],
+                  ),
                 ),
               ),
             ),

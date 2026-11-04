@@ -361,6 +361,7 @@ class __DNSOverridesState extends State<_DNSOverrides> {
             color: context.colorScheme.outlineVariant,
           ),
           IconButton(
+            tooltip: 'Delete'.tl,
             icon: const Icon(Icons.delete_outline),
             onPressed: () {
               setState(() {

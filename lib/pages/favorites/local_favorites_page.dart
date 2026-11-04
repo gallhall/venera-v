@@ -526,17 +526,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                         text: "Delete Comic".tl,
                         color: context.colorScheme.error,
                         onClick: () {
-                          _showFavoriteConfirmDialog(
-                            context: context,
-                            title: "Delete".tl,
-                            content: "Delete @c comics?".tlParams({
-                              "c": selectedComics.length,
-                            }),
-                            btnColor: context.colorScheme.error,
-                            onConfirm: () {
-                              _deleteComicWithId();
-                            },
-                          );
+                          _deleteComicWithId();
                         },
                       ),
                     if (selectedComics.keys.any(
@@ -661,10 +651,10 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                     icon: Icons.delete_outlined,
                     text: "Delete".tl,
                     onClick: () {
-                      LocalFavoritesManager().deleteComicWithId(
-                        widget.folder,
-                        c.id,
-                        (c as FavoriteItem).type,
+                      removeLocalFavoritesWithUndo(
+                        context: context,
+                        folder: widget.folder,
+                        comics: [c as FavoriteItem],
                       );
                     },
                   ),
@@ -955,7 +945,11 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
 
   void _deleteComicWithId() {
     var toBeDeleted = selectedComics.keys.map((e) => e as FavoriteItem).toList();
-    LocalFavoritesManager().batchDeleteComics(widget.folder, toBeDeleted);
+    removeLocalFavoritesWithUndo(
+      context: context,
+      folder: widget.folder,
+      comics: toBeDeleted,
+    );
     _cancel();
   }
 }

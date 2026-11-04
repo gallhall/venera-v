@@ -757,9 +757,27 @@ class _SearchHistoryState extends State<_SearchHistory> {
           icon: Icons.delete_outlined,
           text: 'Delete'.tl,
           onClick: () {
-            appdata.removeSearchHistory(appdata.searchHistory[index]);
+            final keyword = appdata.searchHistory[index];
+            final position = index;
+            appdata.removeSearchHistory(keyword);
             appdata.saveData();
             setState(() {});
+            showUndoToast(
+              context: context,
+              message: 'Deleted'.tl,
+              onUndo: () {
+                if (!appdata.searchHistory.contains(keyword)) {
+                  appdata.searchHistory.insert(
+                    position.clamp(0, appdata.searchHistory.length).toInt(),
+                    keyword,
+                  );
+                  appdata.saveData();
+                }
+                if (mounted) {
+                  setState(() {});
+                }
+              },
+            );
           },
         ),
       ], title: appdata.searchHistory[index]);

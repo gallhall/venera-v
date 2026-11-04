@@ -85,6 +85,7 @@ class _CoverViewerState extends State<_CoverViewer> {
             children: [
               const SizedBox(width: 8),
               IconButton(
+                tooltip: 'Close'.tl,
                 icon: const Icon(Icons.close),
                 onPressed: () {
                   Navigator.of(context).pop();
@@ -99,6 +100,7 @@ class _CoverViewerState extends State<_CoverViewer> {
                 ),
               ),
               IconButton(
+                tooltip: 'Save Image'.tl,
                 icon: const Icon(Icons.save_alt_outlined),
                 onPressed: _saveCover,
               ),

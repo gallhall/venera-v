@@ -288,6 +288,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
                 const Spacer(),
                 if (updatedComics.isNotEmpty)
                   IconButton(
+                    tooltip: 'Mark all as read'.tl,
                     icon: Icon(Icons.clear_all_outlined),
                     onPressed: () {
                       showConfirmDialog(

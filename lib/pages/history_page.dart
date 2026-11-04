@@ -68,22 +68,24 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   void _removeHistory(History comic) {
-    if (comic.sourceKey.startsWith("Unknown")) {
-      HistoryManager().remove(
-        comic.id,
-        ComicType(int.parse(comic.sourceKey.split(':')[1])),
-      );
-    } else if (comic.sourceKey == 'local') {
-      HistoryManager().remove(
-        comic.id,
-        ComicType.local,
-      );
-    } else {
-      HistoryManager().remove(
-        comic.id,
-        ComicType(comic.sourceKey.hashCode),
-      );
+    _removeHistories([comic]);
+  }
+
+  void _removeHistories(List<History> removed) {
+    for (final comic in removed) {
+      HistoryManager().remove(comic.id, comic.type);
     }
+    showUndoToast(
+      context: context,
+      message: 'Deleted'.tl,
+      onUndo: () {
+        for (final comic in removed) {
+          if (HistoryManager().find(comic.id, comic.type) == null) {
+            HistoryManager().addHistory(comic);
+          }
+        }
+      },
+    );
   }
 
   /// Opens [h]: a video linked to a Bangumi anime opens its subject page,
@@ -211,9 +213,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   selectedComics.clear();
                 });
 
-                for (final comic in comicsToDelete) {
-                  _removeHistory(comic);
-                }
+                _removeHistories(comicsToDelete);
               },
       ),
     ];

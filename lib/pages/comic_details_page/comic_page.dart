@@ -343,6 +343,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               ),
               actions: [
                 IconButton(
+                  tooltip: 'More'.tl,
                   onPressed: showMoreActions,
                   icon: const Icon(Icons.more_horiz),
                 ),
@@ -525,10 +526,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     return SliverLazyToBoxAdapter(
       child: Column(
         children: [
-          ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            children: [
+          Builder(builder: (context) {
+            final actions = <Widget>[
               if (hasHistory && !isMobile)
                 ActionPill(
                   icon: const Icon(Icons.menu_book_outlined),
@@ -588,8 +587,22 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 text: 'Share'.tl,
                 onPressed: share,
               ),
-            ],
-          ).fixHeight(MediaQuery.textScalerOf(context).scale(48)),
+            ];
+            if (App.isDesktop || context.width >= 600) {
+              return Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: actions,
+              ).paddingHorizontal(AppSpacing.sm);
+            }
+            return HorizontalCoverList(
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                children: actions,
+              ),
+            ).fixHeight(MediaQuery.textScalerOf(context).scale(48));
+          }),
           if (isMobile)
             Row(
               children: [

@@ -29,6 +29,9 @@ class PaneActionEntry {
 }
 
 class NaviPane extends StatefulWidget {
+  /// Visible bar content height; the toast already accounts for the safe area.
+  static final bottomBarHeight = ValueNotifier<double>(0);
+
   const NaviPane({
     required this.paneItems,
     required this.paneActions,
@@ -107,6 +110,24 @@ class NaviPaneState extends State<NaviPane>
 
   void onNavigatorStateChange() {
     onRebuild(context);
+    _updateBottomBarHeight();
+  }
+
+  void _updateBottomBarHeight() {
+    // Route and animation notifications may arrive during build. Publish after
+    // layout, reading current state so queued callbacks cannot publish stale data.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final outerRoute = ModalRoute.of(context);
+      final mainRoute = widget.observer.routes.firstOrNull;
+      NaviPane.bottomBarHeight.value = controller.value < 2 &&
+              (outerRoute?.isCurrent ?? true) &&
+              (mainRoute?.isCurrent ?? false)
+          ? _kBottomBarHeight
+          : 0;
+    });
   }
 
   void updatePage(int index) {
@@ -133,13 +154,18 @@ class NaviPaneState extends State<NaviPane>
       upperBound: 3,
       vsync: this,
     );
+    controller.addListener(_updateBottomBarHeight);
     widget.observer.addListener(onNavigatorStateChange);
     super.initState();
   }
 
   @override
   void dispose() {
+    controller.removeListener(_updateBottomBarHeight);
     controller.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NaviPane.bottomBarHeight.value = 0;
+    });
     widget.observer.removeListener(onNavigatorStateChange);
     super.dispose();
   }
@@ -176,6 +202,9 @@ class NaviPaneState extends State<NaviPane>
   @override
   Widget build(BuildContext context) {
     onRebuild(context);
+    // Depend on the outer route too (e.g. a reader pushed on the root navigator).
+    ModalRoute.of(context)?.isCurrent;
+    _updateBottomBarHeight();
     final mq = MediaQuery.of(context);
     final sideInsets = (App.isMobile && mq.orientation == Orientation.landscape)
         ? EdgeInsets.only(
@@ -715,8 +744,18 @@ class _NaviMainView extends StatefulWidget {
 class _NaviMainViewState extends State<_NaviMainView> {
   NaviPaneState get state => widget.state;
 
+  late bool _showAppBar = state.controller.value < 2;
+
+  void _onLayoutChanged() {
+    final showAppBar = state.controller.value < 2;
+    if (showAppBar != _showAppBar) {
+      setState(() => _showAppBar = showAppBar);
+    }
+  }
+
   @override
   void initState() {
+    state.controller.addListener(_onLayoutChanged);
     state.mainViewUpdateHandler = () {
       setState(() {});
     };
@@ -724,8 +763,17 @@ class _NaviMainViewState extends State<_NaviMainView> {
   }
 
   @override
+  void dispose() {
+    state.controller.removeListener(_onLayoutChanged);
+    state.mainViewUpdateHandler = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    var shouldShowAppBar = state.controller.value < 2;
+    ModalRoute.of(context)?.isCurrent;
+    state._updateBottomBarHeight();
+    var shouldShowAppBar = _showAppBar;
     return Column(
       children: [
         if (shouldShowAppBar) state.buildTop().paddingTop(context.padding.top),

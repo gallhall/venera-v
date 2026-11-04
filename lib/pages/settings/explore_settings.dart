@@ -148,6 +148,7 @@ class _ManageBlockingWordViewState extends State<_ManageBlockingWordView> {
           return ListTile(
             title: Text(appdata.settings["blockedWords"][index]),
             trailing: IconButton(
+              tooltip: 'Delete'.tl,
               icon: const Icon(Icons.close),
               onPressed: () {
                 appdata.settings["blockedWords"].removeAt(index);
@@ -293,6 +294,7 @@ class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWo
           return ListTile(
             title: Text(appdata.settings["blockedCommentWords"][index]),
             trailing: IconButton(
+              tooltip: 'Delete'.tl,
               icon: const Icon(Icons.close),
               onPressed: () {
                 appdata.settings["blockedCommentWords"].removeAt(index);
