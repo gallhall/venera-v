@@ -648,7 +648,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   void openChapterDrawer() {
-    _openSideBar(
+    _openSubPage(
       context.reader.widget.chapters!.isGrouped
           ? _GroupedChaptersView(context.reader)
           : _ChaptersView(context.reader),
@@ -683,7 +683,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   void openSetting() {
-    _openSideBar(
+    _openSubPage(
       ReaderSettings(
         comicId: context.reader.cid,
         comicSource: context.reader.type.sourceKey,
@@ -721,15 +721,14 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     );
   }
 
-  void _openSideBar(Widget widget, {double width = 400}) {
+  void _openSubPage(Widget widget, {double width = 400}) {
     _gestureDetectorState?.ignoreNextTap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      showSideBar(
+      showSubPage(
         context,
         widget,
         width: width,
-        dismissible: true,
       ).whenComplete(() {
         _gestureDetectorState?.clearIgnoreNextTap();
       });
@@ -766,7 +765,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     var epId = chapters.ids.elementAt(chapterIndex);
     var chapterTitle = chapters.titles.elementAt(chapterIndex);
 
-    showSideBar(
+    showSubPage(
       context,
       CommentsPage(
         target: CommentTarget.chapter(

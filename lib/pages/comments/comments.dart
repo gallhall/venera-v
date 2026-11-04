@@ -110,11 +110,9 @@ class CommentsPage extends StatelessWidget {
   final Comment? replyComment;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    resizeToAvoidBottomInset: false,
-    appBar: Appbar(
-      title: target.isChapter ? _chapterHeading(target) : Text('Comments'.tl),
-    ),
+  Widget build(BuildContext context) => SubPage(
+    title: target.isChapter ? 'Chapter Comments'.tl : 'Comments'.tl,
+    subtitle: target.isChapter ? target.chapterTitle : null,
     body: AppContentWidth(
       maxWidth: 800,
       child: CommentsView(target: target, replyComment: replyComment),
@@ -710,7 +708,7 @@ class _CommentTileState extends State<CommentTile> {
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onPressed: () {
-        showSideBar(
+        showSubPage(
           context,
           CommentsPage(target: widget.target, replyComment: widget.comment),
           showBarrier: false,

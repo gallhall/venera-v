@@ -86,14 +86,7 @@ class _AppbarState extends State<Appbar> {
       child: Row(
         children: [
           const SizedBox(width: 8),
-          widget.leading ??
-              Tooltip(
-                message: "Back".tl,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.maybePop(context),
-                ),
-              ),
+          widget.leading ?? const SubPageBackButton(),
           const SizedBox(
             width: 16,
           ),
@@ -204,13 +197,7 @@ class _MySliverAppBarDelegate extends SliverPersistentHeaderDelegate {
         const SizedBox(width: 8),
         leading ??
             (Navigator.of(context).canPop()
-                ? Tooltip(
-                    message: "Back".tl,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.maybePop(context),
-                    ),
-                  )
+                ? const SubPageBackButton()
                 : const SizedBox()),
         const SizedBox(
           width: 16,

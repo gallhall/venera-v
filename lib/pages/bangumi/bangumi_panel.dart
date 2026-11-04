@@ -353,9 +353,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "Bangumi",
-      tailing: [
+      actions: [
         if (binding != null && !isSearching)
           IconButton(
             icon: const Icon(Icons.open_in_new),

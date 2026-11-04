@@ -1107,10 +1107,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         initialPosition ??
         Duration.zero;
     Comic? candidate;
-    await showSideBar(
+    await showSubPage(
       App.rootContext,
-      Scaffold(
-        appBar: Appbar(title: Text('Switch source'.tl)),
+      SubPage(
+        title: 'Switch source'.tl,
         body: Builder(builder: (sheetContext) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [

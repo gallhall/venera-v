@@ -402,6 +402,8 @@ Future<T?> showSidePanel<T>(
   required WidgetBuilder builder,
   double? heightFactor,
   bool showCloseButton = false,
+  // Header buttons, placed before the close button.
+  List<Widget>? actions,
 }) {
   final media = MediaQuery.of(context);
   final portraitPhone = media.size.width < 600 &&
@@ -412,6 +414,7 @@ Future<T?> showSidePanel<T>(
         : const EdgeInsets.all(AppSpacing.xl),
     child: Row(children: [
       Expanded(child: Text(title, style: ts.s18)),
+      ...?actions,
       if (showCloseButton)
         IconButton(tooltip: 'Close'.tl, icon: const Icon(Icons.close_outlined),
           onPressed: () => Navigator.pop(context)),

@@ -65,7 +65,7 @@ class _CategoriesPageState extends State<CategoriesPage>
   }
 
   void addPage() {
-    showPopUpWidget(App.rootContext, setCategoryPagesWidget());
+    showSubPage(App.rootContext, setCategoryPagesWidget());
   }
 
   @override

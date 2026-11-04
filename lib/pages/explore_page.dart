@@ -71,7 +71,7 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   void addPage() {
-    showPopUpWidget(App.rootContext, setExplorePagesWidget());
+    showSubPage(App.rootContext, setExplorePagesWidget());
   }
 
   NaviPaneState? naviPane;

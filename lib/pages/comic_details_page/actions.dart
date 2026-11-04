@@ -52,7 +52,7 @@ abstract mixin class _ComicPageActions {
   }
 
   void openFavPanel() {
-    showSideBar(
+    showSubPage(
       App.rootContext,
       _FavoritePanel(
         cid: comic.id,
@@ -225,7 +225,7 @@ abstract mixin class _ComicPageActions {
           }
         }
       }
-      await showSideBar(
+      await showSubPage(
         App.rootContext,
         _SelectDownloadChapter(
           comic.chapters!.titles.toList(),
@@ -303,7 +303,7 @@ abstract mixin class _ComicPageActions {
   }
 
   void showComments() {
-    showSideBar(
+    showSubPage(
       App.rootContext,
       CommentsPage(
         target: CommentTarget.comic(
@@ -318,7 +318,7 @@ abstract mixin class _ComicPageActions {
 
   /// Links the comic or video to a Bangumi subject, or shows the subject.
   void openBangumi() async {
-    await showPopUpWidget(
+    await showSubPage(
       App.rootContext,
       BangumiPanel(
         sourceKey: comic.sourceKey,

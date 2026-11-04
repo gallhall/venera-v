@@ -31,11 +31,11 @@ void main() {
     home: Scaffold(body: child),
   );
 
-  testWidgets('popup long title fits beside two actions at 1.5x', (tester) async {
+  testWidgets('sub-page long title fits beside two actions at 1.5x', (tester) async {
     viewport(tester, 360);
-    await tester.pumpWidget(frame(PopUpWidgetScaffold(
-      title: 'A very long popup title that must leave room for both actions',
-      tailing: [
+    await tester.pumpWidget(frame(SubPage(
+      title: 'A very long sub-page title that must leave room for both actions',
+      actions: [
         IconButton(onPressed: () {}, icon: const Icon(Icons.search_outlined)),
         IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz_outlined)),
       ],

@@ -189,7 +189,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
             tooltip: "Manage".tl,
             icon: const Icon(Icons.settings_outlined),
             onPressed: () {
-              showPopUpWidget(
+              showSubPage(
                 App.rootContext,
                 setFavoritesPagesWidget(),
               );

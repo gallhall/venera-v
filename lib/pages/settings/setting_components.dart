@@ -293,7 +293,7 @@ class _PopupWindowSetting extends StatelessWidget {
       title: Text(title),
       trailing: const Icon(Icons.chevron_right),
       onTap: () {
-        showPopUpWidget(App.rootContext, builder());
+        showSubPage(App.rootContext, builder());
       },
     );
   }
@@ -379,9 +379,9 @@ class _MultiPagesFilterState extends State<_MultiPagesFilter> {
       },
     );
 
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: widget.title,
-      tailing: [
+      actions: [
         if (keys.length < widget.pages.length)
           TextButton.icon(
             label: Text("Add".tl),

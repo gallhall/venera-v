@@ -115,7 +115,7 @@ class _ProxySettingViewState extends State<_ProxySettingView> {
 
   @override
   Widget build(BuildContext context) {
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "Proxy".tl,
       body: SingleChildScrollView(
         child: RadioGroup<String>(
@@ -276,7 +276,7 @@ class __DNSOverridesState extends State<_DNSOverrides> {
 
   @override
   Widget build(BuildContext context) {
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "DNS Overrides".tl,
       body: SingleChildScrollView(
         child: Column(

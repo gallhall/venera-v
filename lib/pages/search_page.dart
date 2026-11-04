@@ -220,7 +220,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void manageSearchSources() {
-    showPopUpWidget(App.rootContext, setSearchSourcesWidget());
+    showSubPage(App.rootContext, setSearchSourcesWidget());
   }
 
   Widget buildEmpty() {

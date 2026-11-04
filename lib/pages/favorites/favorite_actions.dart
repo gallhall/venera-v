@@ -291,25 +291,24 @@ Future<void> sortFolders() async {
     title: "Sort".tl,
     heightFactor: 0.85,
     showCloseButton: true,
+    actions: [
+      Builder(
+        builder: (context) => IconButton(
+          tooltip: "Help".tl,
+          icon: const Icon(Icons.help_outline),
+          onPressed: () {
+            showInfoDialog(
+              context: context,
+              title: "Reorder".tl,
+              content: "Long press and drag to reorder.".tl,
+            );
+          },
+        ),
+      ),
+    ],
     builder: (context) => StatefulBuilder(builder: (context, setState) {
       return Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: "Help".tl,
-                icon: const Icon(Icons.help_outline),
-                onPressed: () {
-                  showInfoDialog(
-                    context: context,
-                    title: "Reorder".tl,
-                    content: "Long press and drag to reorder.".tl,
-                  );
-                },
-              ),
-            ],
-          ),
           Expanded(
             child: ReorderableListView.builder(
               onReorder: (oldIndex, newIndex) {

@@ -167,7 +167,7 @@ class _AppSettingsState extends State<AppSettings> {
             _CallbackSetting(
               title: "Data Sync".tl,
               callback: () async {
-                showPopUpWidget(context, const _WebdavSetting());
+                showSubPage(context, const _WebdavSetting());
               },
               actionTitle: 'Set'.tl,
             ),
@@ -671,7 +671,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
 
   @override
   Widget build(BuildContext context) {
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "Webdav",
       body: SingleChildScrollView(
         child: Column(

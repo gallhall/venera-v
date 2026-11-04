@@ -475,7 +475,7 @@ class _HomeBentoGrid extends StatelessWidget {
             ),
         ];
     void openDownloads() {
-      showPopUpWidget(context, const DownloadingPage());
+      showSubPage(context, const DownloadingPage());
     }
 
     return SliverPadding(
