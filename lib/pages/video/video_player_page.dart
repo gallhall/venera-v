@@ -28,9 +28,11 @@ import 'package:venera/foundation/video/playback_session.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
 import 'package:venera/pages/video/danmaku_sheet.dart';
+import 'package:venera/pages/video/episode_comments.dart';
 import 'package:venera/pages/video/video_controls.dart';
 import 'package:venera/pages/video/anime4k_picker.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
+import 'package:venera/pages/bangumi/bangumi_panel.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
@@ -85,6 +87,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late ComicDetails details = widget.details;
   late List<VideoEpisode> episodes = VideoEpisode.fromDetails(details);
   late BangumiPlaybackContext? bangumi = widget.bangumi;
+  int contentTab = 0;
   late Duration? initialPosition = widget.initialPosition;
 
   ComicSource? get source => ComicSource.find(sourceKey);
@@ -1094,7 +1097,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Switches the source of a video opened without its Bangumi context,
   /// which is loaded first. With no other source matched yet, the subject
   /// page is opened to find them.
-  Future<void> pickLinkedSource() async {
+  Future<void> pickLinkedSource({bool forComments = false}) async {
+    if (forComments && !linkedToBangumi) {
+      await showSubPage(context, BangumiPanel(
+        sourceKey: sourceKey,
+        id: details.id,
+        title: details.title,
+        isVideo: true,
+        history: history,
+      ));
+      if (!mounted || !linkedToBangumi) {
+        return;
+      }
+    }
+    var linkingSource = sourceKey;
+    var linkingId = details.id;
+    var linkingEpisode = current;
+    var linkingToken = loadToken;
     var position = active?.currentPosition ?? Duration.zero;
     var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
     BangumiPlaybackContext? playback;
@@ -1116,6 +1135,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       dialog.close();
     }
     if (!mounted || playback == null) return;
+    if (forComments) {
+      if (sourceKey != linkingSource || details.id != linkingId ||
+          current != linkingEpisode || loadToken != linkingToken) {
+        return;
+      }
+      setState(() => bangumi = playback);
+      loadDanmaku();
+      return;
+    }
     if (playback.candidates.length < 2) {
       App.rootContext.to(
         () => BangumiSubjectPage(subjectId: playback!.subject.id),
@@ -1315,13 +1343,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 Expanded(child: buildPlayer()),
                 SizedBox(
                   width: 340,
-                  child: ListView(
-                    padding: EdgeInsets.only(
-                      bottom: context.padding.bottom + 16,
-                      right: isWide ? context.padding.right : 0,
-                    ),
-                    children: buildInfo(),
-                  ),
+                  child: buildContentTabs(),
                 ),
               ],
             ),
@@ -1336,13 +1358,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               children: [
                 AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
                 Expanded(
-                  child: AppContentWidth(child: ListView(
-                    padding: EdgeInsets.only(
-                      bottom: context.padding.bottom + 16,
-                      right: isWide ? context.padding.right : 0,
-                    ),
-                    children: buildInfo(),
-                  )),
+                  child: AppContentWidth(child: buildContentTabs()),
                 ),
               ],
             ),
@@ -1363,15 +1379,53 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ),
               ),
               Expanded(
-                child: AppContentWidth(child: ListView(
-                  padding: EdgeInsets.only(bottom: context.padding.bottom + 16),
-                  children: buildInfo(),
-                )),
+                child: AppContentWidth(child: buildContentTabs()),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget buildContentTabs() {
+    var b = bangumi;
+    int? episodeId;
+    if (b != null) {
+      episodeId = b.episodes
+          .where((e) => e.number == b.number).firstOrNull?.id;
+    }
+    return DefaultTabController(
+      length: 2,
+      initialIndex: contentTab,
+      child: Column(
+        children: [
+          TabBar(
+            onTap: (index) => setState(() => contentTab = index),
+            tabs: [
+              Tab(text: 'Details'.tl),
+              Tab(text: 'Comments'.tl),
+            ],
+          ),
+          Expanded(child: IndexedStack(
+            index: contentTab,
+            children: [
+              ListView(
+                padding: EdgeInsets.only(
+                  bottom: context.padding.bottom + 16,
+                  right: context.padding.right,
+                ),
+                children: buildInfo(),
+              ),
+              EpisodeComments(
+                episodeId: episodeId,
+                binding: b == null ? null : BangumiBinding.fromSubject(b.subject),
+                onLink: () => pickLinkedSource(forComments: true),
+              ),
+            ],
+          )),
+        ],
+      ),
     );
   }
 

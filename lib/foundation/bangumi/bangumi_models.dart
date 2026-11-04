@@ -321,6 +321,75 @@ class BangumiComment {
   }
 }
 
+/// A post in an episode's discussion, including its nested replies.
+class BangumiEpisodeComment {
+  final int id;
+  final int? floor;
+  final String content;
+  final DateTime? time;
+  final int state;
+  final BangumiUser user;
+  final List<BangumiEpisodeComment> replies;
+
+  const BangumiEpisodeComment({
+    required this.id,
+    this.floor,
+    this.content = '',
+    this.time,
+    this.state = 0,
+    this.user = const BangumiUser(username: ''),
+    this.replies = const [],
+  });
+
+  static BangumiEpisodeComment? fromJson(Object? json) {
+    if (json is! Map || json['id'] is! num) {
+      return null;
+    }
+    var createdAt = json['createdAt'];
+    var rawUser = json['user'];
+    return BangumiEpisodeComment(
+      id: _int(json['id']),
+      floor: json['floor'] is num ? _int(json['floor']) : null,
+      content: _string(json['content']),
+      time: createdAt is num && createdAt > 0 && createdAt < 8640000000000
+          ? DateTime.fromMillisecondsSinceEpoch(
+              createdAt.toInt() * 1000, isUtc: true)
+          : null,
+      state: _int(json['state']),
+      user: BangumiUser.fromJson(rawUser) ??
+          (rawUser is Map
+              ? BangumiUser(
+                  username: rawUser['id'] is num ? '${rawUser['id']}' : '',
+                  nickname: _string(rawUser['nickname']),
+                  avatar: _https(rawUser['avatar'] is Map
+                      ? rawUser['avatar']['large'] ??
+                          rawUser['avatar']['medium'] ??
+                          rawUser['avatar']['small']
+                      : rawUser['avatar']),
+                )
+              : const BangumiUser(username: '')),
+      replies: listFromJson(json['replies']),
+    );
+  }
+
+  /// The next API returns a bare array; also accept a data envelope.
+  static List<BangumiEpisodeComment> listFromJson(Object? json) {
+    var items = json is Map ? json['data'] : json;
+    var comments = <BangumiEpisodeComment>[
+      if (items is List)
+        for (var item in items)
+          if (fromJson(item) case final comment?)
+            // Deleted posts stay in the list with no content.
+            if (comment.content.trim().isNotEmpty ||
+                comment.replies.isNotEmpty)
+              comment,
+    ];
+    // The public API has no floor field: post IDs follow creation order.
+    comments.sort((a, b) => (a.floor ?? a.id).compareTo(b.floor ?? b.id));
+    return comments;
+  }
+}
+
 class BangumiCommentPage {
   final List<BangumiComment> data;
 
