@@ -47,7 +47,7 @@ class _RankingPageState extends State<RankingPage> {
       appBar: Appbar(
         title: Text("Ranking".tl),
       ),
-      body: ComicList(
+      body: AppContentWidth(child: ComicList(
         key: Key(optionValue),
         errorLeading: SizedBox(height: topPadding),
         leadingSliver:
@@ -62,7 +62,7 @@ class _RankingPageState extends State<RankingPage> {
             : (i) => ComicSource.find(sourceKey)?.isEnabled == true
                 ? data.rankingData!.loadWithNext!(optionValue, i)
                 : Future.value(Res<List<Comic>>.error('Source disabled'.tl)),
-      ),
+      )),
     );
   }
 

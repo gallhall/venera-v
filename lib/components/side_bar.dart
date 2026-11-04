@@ -79,11 +79,7 @@ class SideBarRoute<T> extends PopupRoute<T> {
     if (addTopPadding) {
       body = Padding(
         padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-        child: MediaQuery.removePadding(
-          context: context,
-          removeTop: true,
-          child: body,
-        ),
+        child: body,
       );
     }
 
@@ -110,14 +106,21 @@ class SideBarRoute<T> extends PopupRoute<T> {
             clipBehavior: Clip.antiAlias,
             child: Container(
               padding: EdgeInsets.fromLTRB(
-                  0,
+                  showSideBar ? 0 : MediaQuery.paddingOf(context).left,
                   0,
                   MediaQuery.of(context).padding.right,
                   addBottomPadding
                       ? MediaQuery.of(context).padding.bottom +
                           MediaQuery.of(context).viewInsets.bottom
                       : 0),
-              child: body,
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: addTopPadding,
+                removeLeft: !showSideBar,
+                removeRight: true,
+                removeBottom: addBottomPadding,
+                child: body,
+              ),
             ),
           ),
         ),

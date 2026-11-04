@@ -33,7 +33,7 @@ class _ToastOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
+      bottom: 24 + MediaQuery.of(context).viewInsets.bottom + context.padding.bottom,
       left: 0,
       right: 0,
       child: Align(
@@ -55,7 +55,7 @@ class _ToastOverlay extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
                 constraints: BoxConstraints(
-                  maxWidth: context.width - 32,
+                  maxWidth: math.min(560.0, context.width - 32),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

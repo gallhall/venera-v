@@ -10,7 +10,7 @@ class AppearanceSettings extends StatefulWidget {
 class _AppearanceSettingsState extends State<AppearanceSettings> {
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Appearance".tl)),
         _SettingsGroup(
@@ -55,6 +55,6 @@ class _AppearanceSettingsState extends State<AppearanceSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }

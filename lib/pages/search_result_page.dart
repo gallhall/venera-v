@@ -374,7 +374,7 @@ class _SuggestionsState extends State<_Suggestions> {
         ),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.fromLTRB(16, 0, 16, context.padding.bottom),
             itemCount: widget.controller.suggestions.length,
             itemBuilder: (context, index) =>
                 buildItem(widget.controller.suggestions[index]),

@@ -84,9 +84,10 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
             ).paddingTop(context.padding.top),
           Expanded(
             child: ListView.builder(
-              padding: widget.withAppbar
-                  ? EdgeInsets.zero
-                  : EdgeInsets.only(top: context.padding.top),
+              padding: EdgeInsets.only(
+                top: widget.withAppbar ? 0 : context.padding.top,
+                bottom: context.padding.bottom,
+              ),
               itemCount: folders.length + networkFolders.length + 3,
               itemBuilder: (context, index) {
                 if (index == 0) {

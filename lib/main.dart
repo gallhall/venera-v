@@ -326,7 +326,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             }
             return _SystemUiProvider(Material(
               color: App.isLinux ? Colors.transparent : null,
-              child: widget,
+              child: AppTextScaleClamp(child: widget),
             ));
           }
           throw ('widget is null');

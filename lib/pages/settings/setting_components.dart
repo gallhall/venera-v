@@ -122,7 +122,7 @@ class _SelectSettingState extends State<SelectSetting> {
     return InlineSelectTile<String>(
       title: Row(
         children: [
-          Text(widget.title),
+          Flexible(child: Text(widget.title)),
           const SizedBox(width: 4),
           if (widget.help != null)
             Button.icon(
@@ -369,9 +369,9 @@ class _MultiPagesFilterState extends State<_MultiPagesFilter> {
         return GridView(
           key: _key,
           controller: scrollController,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 1,
-            mainAxisExtent: 48,
+            mainAxisExtent: MediaQuery.textScalerOf(context).scale(56),
           ),
           children: children,
         );
@@ -520,7 +520,7 @@ class _CallbackSetting extends StatelessWidget {
       trailing: Button.normal(
         onPressed: callback,
         child: Text(actionTitle),
-      ).fixHeight(28),
+      ).minimumHeight(28),
       onTap: callback,
     );
   }

@@ -314,7 +314,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
         children: [
           SmoothCustomScrollView(
             controller: scrollController,
-            slivers: [
+            slivers: <Widget>[
               ...buildTitle(context),
               buildActions(context),
               buildDescription(),
@@ -328,7 +328,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                   bottom: context.padding.bottom + 80,
                 ), // Add additional padding for FAB
               ),
-            ],
+            ].map((sliver) => SliverAppContentWidth(sliver: sliver)).toList(),
           ),
           Positioned(
             top: 0,
@@ -439,7 +439,8 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   Iterable<Widget> buildTitle(BuildContext context) sync* {
     yield SliverLazyToBoxAdapter(
       child: PosterHeader(
-        topInset: MediaQuery.paddingOf(context).top + 56,
+        topInset: MediaQuery.paddingOf(context).top +
+            MediaQuery.textScalerOf(context).scale(56),
         // The cover shown while loading is cached already: no blank backdrop
         // while the source cover loads.
         backdrop: _loadingCoverTitle.$1 ?? (coverUrl.isEmpty ? null : coverImage),
@@ -588,7 +589,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 onPressed: share,
               ),
             ],
-          ).fixHeight(48),
+          ).fixHeight(MediaQuery.textScalerOf(context).scale(48)),
           if (isMobile)
             Row(
               children: [

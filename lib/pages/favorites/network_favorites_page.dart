@@ -328,7 +328,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
               }
             }),
             maxCrossAxisExtent: 450,
-            itemHeight: 52,
+            itemHeight: MediaQuery.textScalerOf(context).scale(52),
           ),
           if (widget.data.addFolder != null)
             SliverToBoxAdapter(
@@ -407,6 +407,8 @@ class _FolderTile extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: ts.s16.copyWith(
                         fontWeight: FontWeight.w500),
                   ),

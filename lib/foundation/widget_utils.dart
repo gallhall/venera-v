@@ -61,6 +61,10 @@ extension WidgetExtension on Widget{
     return SizedBox(width: width, child: this);
   }
 
+  Widget minimumHeight(double height){
+    return ConstrainedBox(constraints: BoxConstraints(minHeight: height), child: this);
+  }
+
   Widget fixHeight(double height){
     return SizedBox(height: height, child: this);
   }

@@ -138,7 +138,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 );
               },
-              child: buildRight(),
+              child: AppContentWidth(maxWidth: 800, child: buildRight()),
             ),
           )
         ],
@@ -155,8 +155,8 @@ class _SettingsPageState extends State<SettingsPage> {
           SizedBox(
             height: MediaQuery.of(context).padding.top,
           ),
-          SizedBox(
-            height: 56,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
             child: Row(children: [
               const SizedBox(
                 width: 8,
@@ -171,10 +171,12 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(
                 width: 24,
               ),
-              Text(
+              Expanded(child: Text(
                 "Settings".tl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: ts.s20,
-              )
+              ))
             ]),
           ),
           const SizedBox(

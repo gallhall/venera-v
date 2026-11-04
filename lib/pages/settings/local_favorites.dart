@@ -10,7 +10,7 @@ class LocalFavoritesSettings extends StatefulWidget {
 class _LocalFavoritesSettingsState extends State<LocalFavoritesSettings> {
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Local Favorites".tl)),
         _SettingsGroup(
@@ -75,6 +75,6 @@ class _LocalFavoritesSettingsState extends State<LocalFavoritesSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }

@@ -227,7 +227,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
     ];
 
     var body = Scaffold(
-      body: SmoothCustomScrollView(
+      body: AppContentWidth(child: SmoothCustomScrollView(
         slivers: [
           if (!searchMode)
             Theme(
@@ -442,7 +442,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
               },
             ),
         ],
-      ),
+      )),
     );
 
     return PopScope(

@@ -10,7 +10,7 @@ class ExploreSettings extends StatefulWidget {
 class _ExploreSettingsState extends State<ExploreSettings> {
   @override
   Widget build(BuildContext context) {
-    return SmoothCustomScrollView(
+    return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("Explore".tl)),
         _SettingsGroup(
@@ -117,7 +117,7 @@ class _ExploreSettingsState extends State<ExploreSettings> {
           child: SizedBox(height: context.padding.bottom + 16),
         ),
       ],
-    );
+    ));
   }
 }
 

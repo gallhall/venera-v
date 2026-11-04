@@ -384,7 +384,7 @@ class _BodyState extends State<_Body> {
     var anyExpanded = groups.entries.any(
       (entry) => entry.value.isNotEmpty && !_collapsedGroups.contains(entry.key),
     );
-    return SmoothCustomScrollView(
+    return AppContentWidth(child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text('Comic Source'.tl), style: AppbarStyle.shadow),
         buildCard(context),
@@ -422,7 +422,7 @@ class _BodyState extends State<_Body> {
             ),
         SliverPadding(padding: EdgeInsets.only(bottom: context.padding.bottom)),
       ],
-    );
+    ));
   }
 
   void delete(ComicSource source) {
@@ -1083,7 +1083,7 @@ class _CallbackSettingState extends State<_CallbackSetting> {
         onPressed: onClick,
         isLoading: isLoading,
         child: Text(buttonText.ts(widget.sourceKey)),
-      ).fixHeight(32),
+      ).minimumHeight(32),
     );
   }
 }
