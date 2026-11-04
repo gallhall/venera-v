@@ -31,7 +31,7 @@ import 'package:venera/pages/video/danmaku_sheet.dart';
 import 'package:venera/pages/video/video_controls.dart';
 import 'package:venera/pages/video/anime4k_picker.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
-import 'package:venera/pages/bangumi/bangumi_subject_page.dart';import 'package:venera/utils/io.dart';
+import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
 import 'package:window_manager/window_manager.dart';
@@ -1401,7 +1401,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         children: [
           view,
           if (isLoading || lease?.isOpening == true)
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
+            const Center(child: CircularProgressIndicator(color: MediaOverlayColors.content)),
           if (lease?.status != null && error == null)
             buildTorrentStatus(),
           if (session?.recovering == true && error == null)
@@ -1410,17 +1410,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             Positioned(
               right: 16,
               bottom: 64,
-              child: FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.black.withValues(alpha: 0.6),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                ),
-                onPressed: skipCurrent,
-                icon: const Icon(Icons.skip_next_rounded),
-                label: Text(skipLabel(currentSkip!)),
+              child: MediaPill(
+                onTap: skipCurrent,
+                icon: Icons.skip_next_rounded,
+                label: skipLabel(currentSkip!),
               ),
             ),
           if (isLocked) buildLockOverlay(),
@@ -1442,17 +1435,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           duration: const Duration(milliseconds: 200),
           child: IgnorePointer(
             ignoring: !showUnlock,
-            child: IconButton.filledTonal(
+            child: MediaPill(
               tooltip: 'Unlock'.tl,
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withValues(alpha: 0.6),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-              ),
-              icon: const Icon(Icons.lock_open_rounded),
-              onPressed: () => setState(() => isLocked = false),
+              icon: Icons.lock_open_rounded,
+              onTap: () => setState(() => isLocked = false),
             ).paddingLeft(24),
           ),
         ),
@@ -1466,17 +1452,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return IgnorePointer(
       child: Align(
         alignment: const Alignment(0, 0.45),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-          child: Text(
-            "Playback interrupted, reconnecting...".tl,
-            style: ts.s14.copyWith(color: Colors.white),
-          ),
-        ),
+        child: MediaPill(label: "Playback interrupted, reconnecting...".tl),
       ),
     );
   }
@@ -1504,11 +1480,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return IgnorePointer(
           child: Align(
             alignment: const Alignment(0, 0.65),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: Colors.black.withValues(alpha: 0.6),
-              child: Text(text,
-                style: ts.s12.copyWith(color: Colors.white)),
+            child: MediaPill(
+              child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: ts.s12.copyWith(color: MediaOverlayColors.content)),
             ),
           ),
         );
@@ -1518,94 +1492,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Widget buildError() {
     var untried = session?.nextUntriedStream;
-    return Container(
-      // Opaque: the buffering indicator of the player would show through.
-      color: Colors.black,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // In the small player above the episodes, long errors (e.g. a
-          // url) would push the buttons out of the player.
-          var compact = constraints.maxHeight < 300;
-          return Stack(
-            children: [
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 56,
-                    vertical: 16,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        (session?.hasRecovery == true
-                                ? "Playback interrupted"
-                                : "Playback failed")
-                            .tl,
-                        style: ts.s16.copyWith(
-                          color: Colors.white,
-                        ),
-                      ),
-                      if (allSourcesFailed)
-                        Text(
-                          "All sources failed".tl,
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                      const SizedBox(height: 8),
-                      Text(
-                        error!,
-                        maxLines: compact ? 2 : 4,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: ts.s12.copyWith(
-                          color: Colors.white70,
-                        ),
-                      ),
-                      SizedBox(height: compact ? 8 : 16),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          FilledButton(
-                            onPressed: retry,
-                            child: Text("Retry".tl),
-                          ),
-                          if (untried != null)
-                            OutlinedButton(
-                              onPressed: () => switchSource(untried),
-                              child: Text("Next source".tl),
-                            ),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white70,
-                            ),
-                            onPressed: () => saveFile(
-                              data: utf8.encode(Log().toString()),
-                              filename: 'log.txt',
-                            ),
-                            child: Text("Export logs".tl),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (showPlayerBack || isFullscreen)
-                Positioned(
-                  left: 8 + MediaQuery.paddingOf(context).left,
-                  top: 8 + MediaQuery.paddingOf(context).top,
-                  child: IconButton(
-                    tooltip: isFullscreen ? 'Exit full screen'.tl : 'Back'.tl,
-                    color: Colors.white,
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    onPressed: () =>
-                        isFullscreen ? setFullscreen(false) : context.pop(),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
+    return MediaErrorView(
+      message: error!,
+      title: (allSourcesFailed
+          ? 'All sources failed'
+          : session?.hasRecovery == true
+              ? 'Playback interrupted'
+              : 'Playback failed').tl,
+      retry: retry,
+      secondaryLabel: 'Next source'.tl,
+      onSecondary: untried == null ? null : () => switchSource(untried),
+      onBack: showPlayerBack || isFullscreen
+          ? () => isFullscreen ? setFullscreen(false) : context.pop()
+          : null,
+      backTooltip: isFullscreen ? 'Exit full screen'.tl : 'Back'.tl,
     );
   }
 

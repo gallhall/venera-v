@@ -294,7 +294,9 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
                 Expanded(
                   child: Center(
                     child: Text(
-                      _lastException.toString(),
+                      friendlyError(_lastException.toString(), cause: _lastException).summary,
+                      style: ts.s14.copyWith(color: context.colorScheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
                       maxLines: 3,
                     ),
                   ),
@@ -302,28 +304,17 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
                 const SizedBox(
                   height: 4,
                 ),
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: Listener(
-                    onPointerDown: (details) {
-                      GlobalState.find<_ReaderGestureDetectorState>().ignoreNextTap();
-                      setState(() {
-                        _loadingProgress = null;
-                        _lastException = null;
-                      });
-                      _resolveImage();
-                    },
-                    child: SizedBox(
-                      width: 84,
-                      height: 36,
-                      child: Center(
-                        child: Text(
-                          "Retry".tl,
-                          style: TextStyle(color: Colors.blue),
-                        ),
-                      ),
-                    ),
-                  ),
+                TextButton.icon(
+                  onPressed: () {
+                    GlobalState.find<_ReaderGestureDetectorState>().ignoreNextTap();
+                    setState(() {
+                      _loadingProgress = null;
+                      _lastException = null;
+                    });
+                    _resolveImage();
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text('Retry'.tl),
                 ),
                 const SizedBox(
                   height: 16,

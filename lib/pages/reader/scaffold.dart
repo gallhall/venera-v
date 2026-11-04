@@ -622,7 +622,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     return Positioned(
       bottom: 13 + MediaQuery.paddingOf(context).bottom,
       left: 25 + MediaQuery.paddingOf(context).left,
-      child: _ReaderInfoPill(child: Text(text, style: ts.s14)),
+      child: MediaPill(label: text),
     );
   }
 
@@ -631,8 +631,9 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
       return Positioned(
         bottom: 13 + MediaQuery.paddingOf(context).bottom,
         right: 25 + MediaQuery.paddingOf(context).right,
-        child: _ReaderInfoPill(
+        child: MediaPill(
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               _ClockWidget(),
               const SizedBox(width: 10),
@@ -781,59 +782,23 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     if (context.reader.widget.chapters == null) {
       return const SizedBox();
     }
-    switch (showFloatingButtonValue) {
-      case 0:
-        return Container(
-          width: 58,
-          height: 58,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: context.colorScheme.surfaceContainerHigh.withValues(
-              alpha: 0.9,
-            ),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-          child: Icon(
-            lastValue == 1
-                ? Icons.arrow_forward_ios_rounded
-                : Icons.arrow_back_ios_rounded,
-            size: 24,
-            color: context.colorScheme.primary,
-          ),
-        );
-      case -1:
-      case 1:
-        return SizedBox(
-          width: 58,
-          height: 58,
-          child: Material(
-            color: context.colorScheme.surfaceContainerHigh.withValues(
-              alpha: 0.9,
-            ),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            elevation: 0,
-            child: InkWell(
-              onTap: () {
-                if (showFloatingButtonValue == 1) {
-                  context.reader.toNextChapter();
-                } else if (showFloatingButtonValue == -1) {
-                  context.reader.toPrevChapter();
-                }
-                setFloatingButton(0);
-              },
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              child: Center(
-                child: Icon(
-                  _getArrowIcon(isReversed, showFloatingButtonValue),
-                  size: 24,
-                  color: context.colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
-        );
-    }
-    return const SizedBox();
+    final value = showFloatingButtonValue;
+    return MediaRoundButton(
+      size: 56,
+      icon: value == 0
+          ? (lastValue == 1 ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_rounded)
+          : _getArrowIcon(isReversed, value),
+      tooltip: (value == 0 ? lastValue : value) == 1
+          ? 'Next chapter'.tl : 'Previous chapter'.tl,
+      onPressed: value == 0 ? null : () {
+        if (value == 1) {
+          context.reader.toNextChapter();
+        } else if (value == -1) {
+          context.reader.toPrevChapter();
+        }
+        setFloatingButton(0);
+      },
+    );
   }
 
   IconData _getArrowIcon(bool reversed, int value) {
@@ -998,7 +963,7 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
 
   Widget _batteryInfo(int batteryLevel) {
     IconData batteryIcon;
-    Color batteryColor = context.colorScheme.onSurface;
+    Color batteryColor = MediaOverlayColors.content;
 
     if (state == BatteryState.charging) {
       batteryIcon = Icons.battery_charging_full_rounded;
@@ -1020,7 +985,7 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
       batteryIcon = Icons.battery_0_bar_rounded;
     } else {
       batteryIcon = Icons.battery_alert_rounded;
-      batteryColor = context.colorScheme.error;
+      batteryColor = MediaOverlayColors.warning;
     }
 
     return Row(
@@ -1103,35 +1068,13 @@ class _SelectImageOverlayContentState
       onTapUp: (details) {
         widget.onTap(details.globalPosition);
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
+      child: ColoredBox(
+        color: MediaOverlayColors.dim,
         child: Align(
-          alignment: Alignment(0, -0.8),
-          child: Container(
-            width: 232,
-            constraints: const BoxConstraints(minHeight: 42),
-            decoration: BoxDecoration(
-              color: context.colorScheme.surface,
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(color: context.colorScheme.outlineVariant),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 8),
-                const Icon(Icons.info_outline_rounded),
-                const SizedBox(width: 16),
-                Expanded(child: Text(
-                  "Click to select an image".tl,
-                  style: ts.s16.copyWith(
-                    color: context.colorScheme.onSurface,
-                  ),
-                )),
-                const SizedBox(width: AppSpacing.sm),
-              ],
-            ),
+          alignment: const Alignment(0, -0.8),
+          child: MediaPill(
+            icon: Icons.info_outline_rounded,
+            label: "Click to select an image".tl,
           ),
         ),
       ),
@@ -1166,27 +1109,6 @@ class _ReaderBarSurface extends StatelessWidget {
               ? const BorderRadius.vertical(top: Radius.circular(AppRadius.xl))
               : BorderRadius.zero,
         ),
-        child: child,
-      ),
-    );
-  }
-}
-
-class _ReaderInfoPill extends StatelessWidget {
-  const _ReaderInfoPill({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: DefaultTextStyle.merge(
-        style: ts.s14.copyWith(color: context.colorScheme.onSurface),
         child: child,
       ),
     );

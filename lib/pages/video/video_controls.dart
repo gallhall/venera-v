@@ -550,7 +550,7 @@ class _VideoControlsState extends State<VideoControls> {
             if (buffering && swipeSeekTarget == null)
               const IgnorePointer(
                 child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+                  child: CircularProgressIndicator(color: MediaOverlayColors.content),
                 ),
               ),
             IgnorePointer(
@@ -701,7 +701,7 @@ class _VideoControlsState extends State<VideoControls> {
   }) {
     return IconButton(
       icon: icon,
-      color: Colors.white,
+      color: MediaOverlayColors.content,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       onPressed: onPressed,
@@ -736,7 +736,7 @@ class _VideoControlsState extends State<VideoControls> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: ts.s16.copyWith(
-                          color: Colors.white,
+                          color: MediaOverlayColors.content,
                         ),
                       ),
                     ),
@@ -759,21 +759,17 @@ class _VideoControlsState extends State<VideoControls> {
           IconButton(
             tooltip: 'Previous chapter'.tl,
             iconSize: 32,
-            color: Colors.white,
+            color: MediaOverlayColors.content,
             icon: const Icon(Icons.skip_previous_rounded),
             onPressed: c.onPrevious,
           ),
         const SizedBox(width: 24),
-        IconButton(
+        MediaRoundButton(
           tooltip: playing ? 'Pause'.tl : 'Play'.tl,
+          size: 64,
           iconSize: 40,
-          style: IconButton.styleFrom(
-            fixedSize: const Size(64, 64),
-            backgroundColor: Colors.black.withValues(alpha: 0.35),
-            shape: const CircleBorder(),
-          ),
-          color: Colors.white,
-          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+          light: true,
+          icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
           onPressed: player.playOrPause,
         ),
         const SizedBox(width: 24),
@@ -781,7 +777,7 @@ class _VideoControlsState extends State<VideoControls> {
           IconButton(
             tooltip: 'Next chapter'.tl,
             iconSize: 32,
-            color: Colors.white,
+            color: MediaOverlayColors.content,
             icon: const Icon(Icons.skip_next_rounded),
             onPressed: c.onNext,
           ),
@@ -789,10 +785,9 @@ class _VideoControlsState extends State<VideoControls> {
     );
   }
 
-  static const _timeStyle = TextStyle(
-    color: Colors.white,
-    fontSize: 12,
-    fontFeatures: [FontFeature.tabularFigures()],
+  TextStyle get _timeStyle => ts.s12.copyWith(
+    color: MediaOverlayColors.content,
+    fontFeatures: const [FontFeature.tabularFigures()],
   );
 
   Widget buildBottomBar(PlayerControls c) {
@@ -922,10 +917,10 @@ class _VideoControlsState extends State<VideoControls> {
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
         trackHeight: 2,
-        activeTrackColor: Colors.white,
-        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
-        thumbColor: Colors.white,
-        overlayColor: Colors.white24,
+        activeTrackColor: MediaOverlayColors.content,
+        inactiveTrackColor: MediaOverlayColors.content.withValues(alpha: 0.3),
+        thumbColor: MediaOverlayColors.content,
+        overlayColor: MediaOverlayColors.track,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
       ),
@@ -942,8 +937,8 @@ class _VideoControlsState extends State<VideoControls> {
         trackHeight: 4,
         trackShape: const _PlayerSeekTrackShape(),
         activeTrackColor: color,
-        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
-        secondaryActiveTrackColor: Colors.white.withValues(alpha: 0.5),
+        inactiveTrackColor: MediaOverlayColors.content.withValues(alpha: 0.3),
+        secondaryActiveTrackColor: MediaOverlayColors.content.withValues(alpha: 0.5),
         thumbColor: color,
         overlayColor: color.withAlpha(60),
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
@@ -978,7 +973,7 @@ class _VideoControlsState extends State<VideoControls> {
   Widget buildFeedback() {
     Widget? top;
     if (speedingUp) {
-      top = _Bubble(
+      top = MediaPill(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -986,7 +981,7 @@ class _VideoControlsState extends State<VideoControls> {
             const SizedBox(width: 4),
             const Icon(
               Icons.fast_forward_rounded,
-              color: Colors.white,
+              color: MediaOverlayColors.content,
               size: 20,
             ),
           ],
@@ -999,7 +994,7 @@ class _VideoControlsState extends State<VideoControls> {
     var target = swipeSeekTarget;
     if (target != null) {
       var diff = (target - swipeSeekFrom).inSeconds;
-      center = _Bubble(
+      center = MediaPill(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1017,7 +1012,7 @@ class _VideoControlsState extends State<VideoControls> {
     if (seekSide != 0) {
       side = Align(
         alignment: Alignment(seekSide * 0.7, 0),
-        child: _Bubble(
+        child: MediaPill(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1025,7 +1020,7 @@ class _VideoControlsState extends State<VideoControls> {
                 seekSide < 0
                     ? Icons.fast_rewind_rounded
                     : Icons.fast_forward_rounded,
-                color: Colors.white,
+                color: MediaOverlayColors.content,
                 size: 20,
               ),
               const SizedBox(width: 4),
@@ -1068,18 +1063,18 @@ class _VideoControlsState extends State<VideoControls> {
     } else {
       icon = value < 0.5 ? Icons.volume_down_rounded : Icons.volume_up_rounded;
     }
-    return _Bubble(
+    return MediaPill(
       child: SizedBox(
         width: 156,
         child: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 20),
+            Icon(icon, color: MediaOverlayColors.content, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: LinearProgressIndicator(
                 value: value,
-                color: Colors.white,
-                backgroundColor: Colors.white24,
+                color: MediaOverlayColors.content,
+                backgroundColor: MediaOverlayColors.track,
               ),
             ),
           ],
@@ -1088,7 +1083,7 @@ class _VideoControlsState extends State<VideoControls> {
     );
   }
 
-  static const _bubbleText = TextStyle(color: Colors.white, fontSize: 14);
+  TextStyle get _bubbleText => ts.s14.copyWith(color: MediaOverlayColors.content);
 }
 
 /// The gradient behind a bar of the controls. Only the buttons take
@@ -1111,7 +1106,7 @@ class _Shade extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: fromTop ? Alignment.topCenter : Alignment.bottomCenter,
                   end: fromTop ? Alignment.bottomCenter : Alignment.topCenter,
-                  colors: const [Colors.black54, Colors.transparent],
+                  colors: const [MediaOverlayColors.shade, Colors.transparent],
                 ),
               ),
             ),
@@ -1153,24 +1148,6 @@ class _PlayerSeekTrackShape extends RoundedRectSliderTrackShape {
       isDiscrete: isDiscrete,
       isEnabled: isEnabled,
       additionalActiveTrackHeight: 0,
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-      ),
-      child: child,
     );
   }
 }
