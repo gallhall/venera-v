@@ -96,7 +96,7 @@ class _BangumiGridCoverState extends State<BangumiGridCover> {
           ),
           const SizedBox(height: 6),
           Text(
-            subject.displayName,
+            keepLastWordTogether(subject.displayName),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,
@@ -397,12 +397,14 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
                 child: AppLoadingView(),
               )
             else if (today.isNotEmpty)
+              // Same frame as the Local section: covers start under the
+              // divider's 16dp inset, a gap below it, clipped inside the card.
               SizedBox(
                 height: 168,
                 child: HorizontalCoverList(
                   child: ListView(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     children: [
                       for (var subject in _sorted(today, watching))
                         SizedBox(
@@ -415,7 +417,7 @@ class _BangumiCalendarWidgetState extends State<BangumiCalendarWidget> {
                     ],
                   ),
                 ),
-              ).paddingBottom(12)
+              ).paddingHorizontal(8).paddingTop(8).paddingBottom(12)
             else
               AppEmptyView.inline('Nothing airing'.tl),
           ],
@@ -498,7 +500,7 @@ class __HomeSubjectCoverState extends State<_HomeSubjectCover> {
           ),
           const SizedBox(height: 4),
           Text(
-            subject.displayName,
+            keepLastWordTogether(subject.displayName),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: ts.s12,

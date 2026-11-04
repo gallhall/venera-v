@@ -1498,6 +1498,24 @@ class HorizontalCoverList extends StatelessWidget {
   }
 }
 
+/// Chinese and Japanese text may wrap between any two characters, so a short
+/// last word such as the season in "转生就是剑 第二季" ends up split as
+/// "第 / 二季". Glue that word with word joiners; the space before it stays a
+/// break, so it moves to the next line whole.
+String keepLastWordTogether(String title, {int maxLength = 6}) {
+  final space = title.trimRight().lastIndexOf(' ');
+  if (space <= 0) {
+    return title;
+  }
+  final last = title.substring(space + 1).trimRight();
+  if (last.isEmpty || last.characters.length > maxLength) {
+    return title;
+  }
+  return title.substring(0, space + 1) + last.characters.join(_wordJoiner);
+}
+
+const _wordJoiner = '⁠';
+
 /// Paint the interaction overlay above opaque cover images.
 class CoverButton extends StatelessWidget {
   const CoverButton({
