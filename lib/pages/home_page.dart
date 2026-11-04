@@ -133,9 +133,9 @@ class _SearchBar extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Material(
           color: context.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           child: InkWell(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(AppRadius.xl),
             onTap: () {
               context.to(() => const SearchPage());
             },
@@ -212,7 +212,7 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
       child = SliverToBoxAdapter(
         child: AppCard(
           child: ListTile(
-            leading: const AppIconBox(Icons.sync, size: 36),
+            leading: const AppIconBox(Icons.sync_outlined, size: 36),
             title: Text('Syncing Data'.tl),
             trailing: const CircularProgressIndicator(
               strokeWidth: 2,
@@ -224,14 +224,14 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
       child = SliverToBoxAdapter(
         child: AppCard(
           child: ListTile(
-            leading: const AppIconBox(Icons.sync, size: 36),
+            leading: const AppIconBox(Icons.sync_outlined, size: 36),
             title: Text('Sync Data'.tl),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (DataSync().lastError != null)
                   InkWell(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                     onTap: () {
                       showDialogMessage(
                         App.rootContext,
@@ -246,7 +246,7 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
                       ),
                       decoration: BoxDecoration(
                         color: context.colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(AppRadius.lg),
                       ),
                       child: Row(
                         children: [
@@ -327,7 +327,7 @@ class _ContinueCard extends StatelessWidget {
             Hero(
               tag: heroID,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 child: cover == null
                     ? SizedBox(
                         width: 72,
@@ -466,7 +466,7 @@ class _HomeBentoGrid extends StatelessWidget {
             )
           else
             (
-              icon: Icons.update,
+              icon: Icons.update_outlined,
               label: 'Follow Updates'.tl,
               count: followCount,
               updates: followCount,
@@ -625,7 +625,7 @@ class _HistoryState extends State<_History> {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: SectionCard(
-        icon: Icons.history,
+        icon: Icons.history_outlined,
         title: 'History'.tl,
         collapseKey: 'home_history',
         onTap: () => context.to(() => const HistoryPage()),
@@ -1211,7 +1211,7 @@ class __ChartLineState extends State<_ChartLine>
     return Row(
       children: [
         InkWell(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
           onTap: () {
             widget.onTap?.call(widget.text);
           },
@@ -1233,7 +1233,7 @@ class __ChartLineState extends State<_ChartLine>
                     width: width * _controller.value,
                     height: 18,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(AppRadius.xs),
                       gradient: LinearGradient(
                         colors: [
                           context.colorScheme.primaryContainer,

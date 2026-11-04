@@ -252,7 +252,7 @@ class _SearchPageState extends State<SearchPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const AppIconBox(Icons.search_off, size: 56),
+                    const AppIconBox(Icons.search_off_outlined, size: 56),
                     const SizedBox(height: 16),
                     Text(msg, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
@@ -340,7 +340,7 @@ class _SearchPageState extends State<SearchPage> {
     return SliverToBoxAdapter(
       child: SectionCard(
         dense: true,
-        icon: Icons.manage_search,
+        icon: Icons.manage_search_outlined,
         title: "Search in".tl,
         actions: [
           IconButton(
@@ -438,7 +438,7 @@ class _SearchPageState extends State<SearchPage> {
     return SliverToBoxAdapter(
       child: SectionCard(
         dense: true,
-        icon: Icons.tune,
+        icon: Icons.tune_outlined,
         title: "Search options".tl,
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,7 +503,7 @@ class _SearchPageState extends State<SearchPage> {
     Widget buildItem(Pair<String, TranslationType> value) {
       if (value.left == "**URL**") {
         return ListTile(
-          leading: const Icon(Icons.link),
+          leading: const Icon(Icons.link_outlined),
           title: Text("Open link".tl),
           subtitle: Text(
             controller.text,
@@ -527,7 +527,7 @@ class _SearchPageState extends State<SearchPage> {
           return const SizedBox();
         }
         return ListTile(
-          leading: const Icon(Icons.link),
+          leading: const Icon(Icons.link_outlined),
           title: Text("${"Open comic".tl}: ${comicSource.name}"),
           subtitle: Text(
             controller.text,
@@ -555,7 +555,7 @@ class _SearchPageState extends State<SearchPage> {
         ),
         trailing: IconButton(
           tooltip: "Fill".tl,
-          icon: const Icon(Icons.north_west),
+          icon: const Icon(Icons.north_west_outlined),
           onPressed: () => onSelected(value.left, value.right),
         ),
         onTap: () => onSelected(value.left, value.right),
@@ -573,7 +573,7 @@ class _SearchPageState extends State<SearchPage> {
               trailing: Tooltip(
                 message: "Clear".tl,
                 child: IconButton(
-                  icon: const Icon(Icons.clear_all),
+                  icon: const Icon(Icons.clear_all_outlined),
                   onPressed: () {
                     suggestions.clear();
                     update();
@@ -708,12 +708,12 @@ class _SearchHistoryState extends State<_SearchHistory> {
     return SliverToBoxAdapter(
       child: SectionCard(
         dense: true,
-        icon: Icons.history,
+        icon: Icons.history_outlined,
         title: "Search History".tl,
         actions: [
           IconButton(
             tooltip: "Clear".tl,
-            icon: const Icon(Icons.clear_all),
+            icon: const Icon(Icons.clear_all_outlined),
             onPressed: () => showConfirmDialog(
               context: context,
               title: "Clear Search History".tl,
@@ -745,7 +745,7 @@ class _SearchHistoryState extends State<_SearchHistory> {
     void showMenu(Offset offset) {
       showMenuX(context, offset, [
         MenuEntry(
-          icon: Icons.copy,
+          icon: Icons.copy_outlined,
           text: 'Copy'.tl,
           onClick: () {
             Clipboard.setData(
@@ -754,7 +754,7 @@ class _SearchHistoryState extends State<_SearchHistory> {
           },
         ),
         MenuEntry(
-          icon: Icons.delete,
+          icon: Icons.delete_outlined,
           text: 'Delete'.tl,
           onClick: () {
             appdata.removeSearchHistory(appdata.searchHistory[index]);
@@ -769,10 +769,10 @@ class _SearchHistoryState extends State<_SearchHistory> {
       builder: (context) {
         return Material(
           color: context.colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           child: InkWell(
             mouseCursor: SystemMouseCursors.click,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
             onTap: () {
               widget.search(appdata.searchHistory[index]);
             },

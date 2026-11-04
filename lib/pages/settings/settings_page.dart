@@ -64,15 +64,15 @@ class _SettingsPageState extends State<SettingsPage> {
   ];
 
   final icons = <IconData>[
-    Icons.explore,
-    Icons.book,
-    Icons.color_lens,
-    Icons.collections_bookmark_rounded,
-    Icons.apps,
-    Icons.public,
-    Icons.subtitles,
-    Icons.info,
-    Icons.bug_report,
+    Icons.explore_outlined,
+    Icons.book_outlined,
+    Icons.color_lens_outlined,
+    Icons.collections_bookmark_outlined,
+    Icons.apps_outlined,
+    Icons.public_outlined,
+    Icons.subtitles_outlined,
+    Icons.info_outlined,
+    Icons.bug_report_outlined,
   ];
 
   @override

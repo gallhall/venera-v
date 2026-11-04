@@ -530,7 +530,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             children: [
               if (hasHistory && !isMobile)
                 ActionPill(
-                  icon: const Icon(Icons.menu_book),
+                  icon: const Icon(Icons.menu_book_outlined),
                   text: 'Continue'.tl,
                   onPressed: continueRead,
                 ),
@@ -542,7 +542,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 ),
               if (!isMobile && !isDownloaded)
                 ActionPill(
-                  icon: const Icon(Icons.download),
+                  icon: const Icon(Icons.download_outlined),
                   text: 'Download'.tl,
                   onPressed: download,
                 ),
@@ -578,12 +578,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               ),
               if (comicSource.commentsLoader != null)
                 ActionPill(
-                  icon: const Icon(Icons.comment),
+                  icon: const Icon(Icons.comment_outlined),
                   text: (comic.commentCount ?? 'Comments'.tl).toString(),
                   onPressed: showComments,
                 ),
               ActionPill(
-                icon: const Icon(Icons.share),
+                icon: const Icon(Icons.share_outlined),
                 text: 'Share'.tl,
                 onPressed: share,
               ),
@@ -631,7 +631,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const AppIconBox(Icons.history, size: 36),
+                  const AppIconBox(Icons.history_outlined, size: 36),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Builder(
@@ -692,7 +692,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     }
     return SliverLazyToBoxAdapter(
       child: SectionCard(
-        icon: Icons.notes,
+        icon: Icons.notes_outlined,
         title: "Description".tl,
         body: DescriptionBody(text: comic.description!),
       ),
@@ -711,7 +711,7 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
 
     Widget buildTag({required String text, VoidCallback? onTap}) {
       final color = context.colorScheme.surfaceContainerHigh;
-      final borderRadius = BorderRadius.circular(10);
+      final borderRadius = BorderRadius.circular(AppRadius.sm);
       const padding = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
 
       if (onTap != null) {
@@ -728,12 +728,12 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
             onSecondaryTapDown: (details) {
               showMenuX(context, details.globalPosition, [
                 MenuEntry(
-                  icon: Icons.remove_red_eye,
+                  icon: Icons.remove_red_eye_outlined,
                   text: "View".tl,
                   onClick: onTap,
                 ),
                 MenuEntry(
-                  icon: Icons.copy,
+                  icon: Icons.copy_outlined,
                   text: "Copy".tl,
                   onClick: () {
                     Clipboard.setData(ClipboardData(text: text));

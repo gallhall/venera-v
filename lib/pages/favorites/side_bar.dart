@@ -61,7 +61,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
       decoration: BoxDecoration(
         color: context.colorScheme.surfaceContainerLow,
         borderRadius: widget.withAppbar
-            ? const BorderRadius.horizontal(right: Radius.circular(28))
+            ? const BorderRadius.horizontal(right: Radius.circular(AppRadius.xl))
             : null,
       ),
       clipBehavior: Clip.antiAlias,
@@ -147,7 +147,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
                 },
               ),
               MenuEntry(
-                icon: Icons.reorder,
+                icon: Icons.reorder_outlined,
                 text: 'Sort'.tl,
                 onClick: () {
                   sortFolders().then((value) {
@@ -186,7 +186,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
           const Spacer(),
           IconButton(
             tooltip: "Manage".tl,
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_outlined),
             onPressed: () {
               showPopUpWidget(
                 App.rootContext,
@@ -213,7 +213,7 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
     return buildFolderRow(
       title: folderName,
       selected: isSelected,
-      icon: isSelected ? Icons.folder : Icons.folder_outlined,
+      icon: isSelected ? Icons.folder_outlined : Icons.folder_outlined,
       count: count,
       onTap: () {
         if (isSelected) {
@@ -262,10 +262,10 @@ class _LeftBarState extends State<_LeftBar> implements FolderList {
         color: selected
             ? colors.secondaryContainer
             : colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           mouseCursor: SystemMouseCursors.click,
           child: SizedBox(
             height: 48,

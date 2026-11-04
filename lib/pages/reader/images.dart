@@ -1085,7 +1085,7 @@ class _ContinuousModeState extends State<_ContinuousMode>
                         });
                         _loadNext();
                       },
-                      icon: const Icon(Icons.refresh),
+                      icon: const Icon(Icons.refresh_rounded),
                       label: Text('Retry'.tl),
                     ),
             );
@@ -1614,7 +1614,7 @@ class _SwipeChangeChapterProgressState
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            widget.isPrev ? Icons.arrow_downward : Icons.arrow_upward,
+            widget.isPrev ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
             color: context.colorScheme.onSurface,
             size: 16,
           ),
@@ -1645,7 +1645,7 @@ class _ProgressPainter extends CustomPainter {
       ..color = backgroundColor
       ..style = PaintingStyle.fill;
     canvas.drawRRect(
-      RRect.fromLTRBR(0, 0, size.width, size.height, Radius.circular(16)),
+      RRect.fromLTRBR(0, 0, size.width, size.height, Radius.circular(AppRadius.lg)),
       paint,
     );
 
@@ -1656,7 +1656,7 @@ class _ProgressPainter extends CustomPainter {
         0,
         size.width * value,
         size.height,
-        Radius.circular(16),
+        Radius.circular(AppRadius.lg),
       ),
       paint,
     );

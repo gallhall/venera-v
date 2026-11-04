@@ -77,7 +77,7 @@ class _FollowUpdatesWidgetState
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: SectionCard(
-        icon: Icons.update,
+        icon: Icons.update_outlined,
         title: 'Follow Updates'.tl,
         collapseKey: 'home_follow_updates',
         onTap: () => context.to(() => const FollowUpdatesPage()),
@@ -191,7 +191,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const AppIconBox(Icons.update, size: 56),
+            const AppIconBox(Icons.update_outlined, size: 56),
             const SizedBox(height: 12),
             Text(
               'Not Configured'.tl,
@@ -279,7 +279,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
-                Icon(Icons.update),
+                Icon(Icons.update_outlined),
                 const SizedBox(width: 8),
                 Text(
                   "Updates".tl,
@@ -288,7 +288,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
                 const Spacer(),
                 if (updatedComics.isNotEmpty)
                   IconButton(
-                    icon: Icon(Icons.clear_all),
+                    icon: Icon(Icons.clear_all_outlined),
                     onPressed: () {
                       showConfirmDialog(
                         context: App.rootContext,
@@ -335,7 +335,7 @@ class _FollowUpdatesPageState extends AutomaticGlobalState<FollowUpdatesPage> {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
-                Icon(Icons.list),
+                Icon(Icons.list_outlined),
                 const SizedBox(width: 8),
                 Text(
                   "All Comics".tl,

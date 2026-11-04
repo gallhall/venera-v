@@ -102,7 +102,7 @@ class _MainPageState extends State<MainPage> {
             },
           ),
         PaneActionEntry(
-          icon: Icons.settings,
+          icon: Icons.settings_outlined,
           label: "Settings".tl,
           onTap: () {
             to(() => const SettingsPage(), preventDuplicate: true);

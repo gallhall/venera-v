@@ -465,7 +465,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               : context.colorScheme.onSurfaceVariant,
           icon: context.reader.autoPageTurningTimer != null
               ? const Icon(Icons.timer_rounded)
-              : const Icon(Icons.timer_outlined),
+              : const Icon(Icons.timer_rounded),
           onPressed: () {
             context.reader.autoPageTurning(
               context.reader.cid,
@@ -542,7 +542,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                       padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
                       decoration: BoxDecoration(
                         color: context.colorScheme.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
                       child: Center(child: Text(text, style: ts.s12)),
                     ).paddingLeft(16),
@@ -788,7 +788,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             color: context.colorScheme.surfaceContainerHigh.withValues(
               alpha: 0.9,
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Icon(
             lastValue == 1
@@ -807,7 +807,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             color: context.colorScheme.surfaceContainerHigh.withValues(
               alpha: 0.9,
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             elevation: 0,
             child: InkWell(
               onTap: () {
@@ -818,7 +818,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
                 }
                 setFloatingButton(0);
               },
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               child: Center(
                 child: Icon(
                   _getArrowIcon(isReversed, showFloatingButtonValue),
@@ -1103,7 +1103,7 @@ class _SelectImageOverlayContentState
       child: Container(
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
         child: Align(
           alignment: Alignment(0, -0.8),
@@ -1112,18 +1112,17 @@ class _SelectImageOverlayContentState
             height: 42,
             decoration: BoxDecoration(
               color: context.colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               border: Border.all(color: context.colorScheme.outlineVariant),
             ),
             child: Row(
               children: [
                 const SizedBox(width: 8),
-                const Icon(Icons.info_outline),
+                const Icon(Icons.info_outline_rounded),
                 const SizedBox(width: 16),
                 Text(
                   "Click to select an image".tl,
-                  style: TextStyle(
-                    fontSize: 16,
+                  style: ts.s16.copyWith(
                     color: context.colorScheme.onSurface,
                   ),
                 ),
@@ -1160,7 +1159,7 @@ class _ReaderBarSurface extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.surfaceContainer,
           borderRadius: roundTop
-              ? const BorderRadius.vertical(top: Radius.circular(24))
+              ? const BorderRadius.vertical(top: Radius.circular(AppRadius.xl))
               : BorderRadius.zero,
         ),
         child: child,
@@ -1180,7 +1179,7 @@ class _ReaderInfoPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: context.colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: DefaultTextStyle.merge(
         style: ts.s14.copyWith(color: context.colorScheme.onSurface),

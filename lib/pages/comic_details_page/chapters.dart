@@ -76,7 +76,7 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
         }
 
         return SliverSectionCard(
-          icon: Icons.format_list_numbered,
+          icon: Icons.format_list_numbered_outlined,
           title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
           collapseKey: 'chapters',
           leadingActions: [
@@ -141,10 +141,10 @@ class _NormalComicChaptersState extends State<_NormalComicChapters> {
                     color: selected
                         ? context.colorScheme.primaryContainer
                         : context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                     child: InkWell(
                       onTap: () => state.read(i + 1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Center(
@@ -279,7 +279,7 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
         }
 
         return SliverSectionCard(
-          icon: Icons.format_list_numbered,
+          icon: Icons.format_list_numbered_outlined,
           title: state.comicSource.isVideoSource ? "Episodes".tl : "Chapters".tl,
           collapseKey: 'chapters',
           leadingActions: [
@@ -366,10 +366,10 @@ class _GroupedComicChaptersState extends State<_GroupedComicChapters>
                     color: selected
                         ? context.colorScheme.primaryContainer
                         : context.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                     child: InkWell(
                       onTap: () => state.read(chapterIndex + 1),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Center(

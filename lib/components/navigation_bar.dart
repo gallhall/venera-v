@@ -408,10 +408,10 @@ class _SideNaviWidget extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           color: enabled ? colors.secondaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           onTap: onTap,
           child: SizedBox(
             height: showTitle ? 48 : 64,
@@ -541,7 +541,7 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
           width: 64,
           height: 32,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             color: isHovering
                 ? colorScheme.onSurface.withValues(alpha: 0.08)
                 : Colors.transparent,
@@ -551,7 +551,7 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
               width: 32 + value * 32,
               height: 32,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 color: Color.lerp(
                   colorScheme.secondaryContainer,
                   Color.alphaBlend(

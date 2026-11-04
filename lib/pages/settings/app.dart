@@ -45,13 +45,13 @@ class _AppSettingsState extends State<AppSettings> {
         SliverAppbar(title: Text("App".tl)),
         _SettingsGroup(
           title: "Data".tl,
-          icon: Icons.storage,
+          icon: Icons.storage_outlined,
           children: [
             ListTile(
               title: Text("Storage Path for local comics".tl),
               subtitle: Text(LocalManager().path, softWrap: false),
               trailing: IconButton(
-                icon: const Icon(Icons.copy),
+                icon: const Icon(Icons.copy_outlined),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: LocalManager().path));
                   context.showMessage(message: "Path copied to clipboard".tl);
@@ -324,7 +324,7 @@ class _AppSettingsState extends State<AppSettings> {
         ),
         _SettingsGroup(
           title: 'BT playback'.tl,
-          icon: Icons.video_settings,
+          icon: Icons.video_settings_outlined,
           children: [
             SelectSetting(
               title: 'BT max cache size'.tl,
@@ -505,7 +505,7 @@ class _LogsPageState extends State<LogsPage> {
                               .colorScheme
                               .surfaceContainerHighest,
                           borderRadius:
-                              const BorderRadius.all(Radius.circular(16)),
+                              const BorderRadius.all(Radius.circular(AppRadius.lg)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(5, 0, 5, 1),
@@ -523,7 +523,7 @@ class _LogsPageState extends State<LogsPage> {
                             Theme.of(context).colorScheme.primaryContainer
                           ][logToShow[index].level.index],
                           borderRadius:
-                              const BorderRadius.all(Radius.circular(16)),
+                              const BorderRadius.all(Radius.circular(AppRadius.lg)),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(5, 0, 5, 1),
@@ -753,7 +753,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             ),
             const SizedBox(height: 12),
             ListTile(
-              leading: Icon(Icons.sync),
+              leading: Icon(Icons.sync_outlined),
               title: Text("Auto Sync Data".tl),
               contentPadding: EdgeInsets.zero,
               trailing: Switch(
@@ -791,7 +791,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
                       ),
                       child: Row(
                         children: [

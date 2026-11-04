@@ -37,7 +37,7 @@ Future<void> showDanmakuSheet(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
       surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(28)),
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl)),
       ),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(

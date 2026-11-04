@@ -141,7 +141,7 @@ class _CommentsPageState extends State<CommentsPage> {
                               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                               decoration: BoxDecoration(
                                 color: context.colorScheme.surfaceContainer,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(AppRadius.md),
                               ),
                               child: _CommentTile(
                                 comment: widget.replyComment!,
@@ -215,7 +215,7 @@ class _CommentsPageState extends State<CommentsPage> {
       decoration: BoxDecoration(color: context.colorScheme.surfaceContainer),
       child: Material(
         color: context.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         child: Row(
           children: [
             Expanded(
@@ -226,11 +226,11 @@ class _CommentsPageState extends State<CommentsPage> {
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainerHigh,
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                     borderSide: BorderSide(color: context.colorScheme.primary),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
@@ -285,7 +285,7 @@ class _CommentsPageState extends State<CommentsPage> {
                     });
                   }
                 },
-                icon: const Icon(Icons.send),
+                icon: const Icon(Icons.send_outlined),
               ),
           ],
         ).paddingRight(4),
@@ -339,7 +339,7 @@ class _CommentTileState extends State<_CommentTile> {
               height: 36,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 color: context.colorScheme.surfaceContainerHigh,
               ),
               child: widget.comment.avatar == null
@@ -552,7 +552,7 @@ class _CommentTileState extends State<_CommentTile> {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         color: context.colorScheme.surfaceContainerHigh,
       ),
       child: Row(

@@ -179,7 +179,7 @@ class _BangumiSearchPageState extends State<BangumiSearchPage> {
                   if (empty) ...[
                     SliverToBoxAdapter(
                       child: ListTile(
-                        leading: const Icon(Icons.history),
+                        leading: const Icon(Icons.history_outlined),
                         title: Text('Search History'.tl),
                         trailing: TextButton(
                           onPressed: history.isEmpty
@@ -344,7 +344,7 @@ class __AnimeSearchCardState extends State<_AnimeSearchCard> {
           Hero(
             tag: 'cover$heroID',
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               child: Container(
                 width: 72,
                 height: 108,

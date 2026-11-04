@@ -161,7 +161,7 @@ class _ImageFavoritesPhotoViewState extends State<ImageFavoritesPhotoView> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(AppRadius.xl),
           ),
           child: Text(
             '${currentPage + 1}/${images.length}',
@@ -177,7 +177,7 @@ class _ImageFavoritesPhotoViewState extends State<ImageFavoritesPhotoView> {
       padding: EdgeInsets.fromLTRB(8, context.padding.top, 8, 0),
       child: Material(
         color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         clipBehavior: Clip.antiAlias,
         child: IconButtonTheme(
           data: IconButtonThemeData(

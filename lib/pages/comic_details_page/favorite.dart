@@ -261,7 +261,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                     child: Container(
                       decoration: BoxDecoration(
                         color: context.colorScheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(AppRadius.xs),
                       ),
                     ),
                   ),
@@ -271,7 +271,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                   width: 60 + (index * 2),
                   decoration: BoxDecoration(
                     color: context.colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                 ),
               );
@@ -325,7 +325,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                   ),
                   decoration: BoxDecoration(
                     color: context.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Text("Added".tl, style: ts.s12),
                 ),
@@ -408,7 +408,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
                     ),
                     decoration: BoxDecoration(
                       color: context.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: Text("Added".tl, style: ts.s12),
                   ),
@@ -529,7 +529,7 @@ class _LocalSectionState extends State<_LocalSection> {
                     ),
                     decoration: BoxDecoration(
                       color: context.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: Text("Added".tl, style: ts.s12),
                   ),
@@ -629,7 +629,7 @@ class _HoverButtonState extends State<_HoverButton> {
                       ? (isHovered ? removeHoverColor : removeColor)
                       : (isHovered ? addHoverColor : addColor))
                 : context.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Text(
             widget.isFavorite ? "Remove".tl : "Add".tl,

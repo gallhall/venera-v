@@ -96,15 +96,15 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
               filled: true,
               fillColor: context.colorScheme.surfaceContainerHigh,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(AppRadius.xl),
                 borderSide: BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(AppRadius.xl),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(AppRadius.xl),
                 borderSide: BorderSide(color: context.colorScheme.primary),
               ),
               errorText: error,
@@ -386,15 +386,15 @@ class _BangumiPanelState extends State<BangumiPanel> {
             filled: true,
             fillColor: context.colorScheme.surfaceContainerHigh,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(AppRadius.xl),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(AppRadius.xl),
               borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(AppRadius.xl),
               borderSide: BorderSide(color: context.colorScheme.primary),
             ),
             suffixIcon: IconButton(
@@ -477,7 +477,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
         if (widget.subject == null) ...[
           const Divider(),
           ListTile(
-            leading: const Icon(Icons.exposure),
+            leading: const Icon(Icons.exposure_outlined),
             title: Text(
               (binding.isBook ? "Chapter offset" : "Episode offset").tl,
             ),
@@ -500,7 +500,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.swap_horiz),
+            leading: const Icon(Icons.swap_horiz_outlined),
             title: Text("Link another subject".tl),
             onTap: () {
               setState(() => isSearching = true);
@@ -510,7 +510,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
             },
           ),
           ListTile(
-            leading: Icon(Icons.link_off, color: context.colorScheme.error),
+            leading: Icon(Icons.link_off_outlined, color: context.colorScheme.error),
             title: Text("Unlink".tl),
             onTap: unbind,
           ),
@@ -567,7 +567,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
     ).paddingHorizontal(16).paddingVertical(8);
     yield AppCard(
       child: ListTile(
-        leading: const Icon(Icons.checklist),
+        leading: const Icon(Icons.checklist_outlined),
         title: Text(
           (isBook ? "Read @n chapters" : "Watched @n episodes").tlParams({
             "n": total > 0 ? "$done / $total" : "$done",
@@ -627,7 +627,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
     var local = localProgress;
     if (local != null && local != done) {
       yield ListTile(
-        leading: const Icon(Icons.history),
+        leading: const Icon(Icons.history_outlined),
         title: Text(
           (isBook
                   ? "Set to local progress: chapter @n"
@@ -638,7 +638,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
       );
     }
     yield SwitchListTile(
-      secondary: const Icon(Icons.sync),
+      secondary: const Icon(Icons.sync_outlined),
       title: Text("Sync progress automatically".tl),
       subtitle: Text(
         "Mark episodes and chapters on Bangumi once they are finished".tl,
@@ -699,7 +699,7 @@ class _SubjectTile extends StatelessWidget {
             height: 78,
             decoration: BoxDecoration(
               color: context.colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             clipBehavior: Clip.antiAlias,
             child: subject.image.isEmpty
@@ -737,7 +737,7 @@ class _SubjectTile extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        Icons.star,
+                        Icons.star_outlined,
                         size: 16,
                         color: context.colorScheme.primary,
                       ),

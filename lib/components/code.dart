@@ -64,9 +64,8 @@ class _CodeEditorState extends State<CodeEditor> {
               child: Center(
                 child: Text(
                   i.toString(),
-                  style: TextStyle(
+                  style: ts.s12.copyWith(
                     color: context.colorScheme.outline,
-                    fontSize: 13,
                     height: 1.0,
                     fontFamily: 'Consolas',
                     fontFamilyFallback: ['Courier New', 'monospace'],
@@ -125,7 +124,7 @@ class _CodeEditorState extends State<CodeEditor> {
                               focusNode: _focusNode,
                               maxLines: null,
                               cursorHeight: 1.5 * 14,
-                              style: TextStyle(height: 1.5, fontSize: 14),
+                              style: ts.s14.copyWith(height: 1.5),
                               decoration: InputDecoration(
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.all(8),
@@ -183,9 +182,8 @@ class _CodeTextEditingController extends TextEditingController {
       theme: _theme!,
     );
     var result = highlighter.highlight(text);
-    style = TextStyle(
+    style = ts.s14.copyWith(
       height: 1.5,
-      fontSize: 14,
       fontFamily: 'Consolas',
       fontFamilyFallback: ['Courier New', 'Roboto Mono', 'monospace'],
     );

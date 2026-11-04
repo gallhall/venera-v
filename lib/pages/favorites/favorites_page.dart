@@ -119,7 +119,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           alignment: Alignment.centerLeft,
           child: Material(
             color: context.colorScheme.surfaceContainerLow,
-            borderRadius: const BorderRadius.horizontal(right: Radius.circular(28)),
+            borderRadius: const BorderRadius.horizontal(right: Radius.circular(AppRadius.xl)),
             clipBehavior: Clip.antiAlias,
             child: SizedBox(
               width: min(300, context.width - 16),
@@ -164,7 +164,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const AppIconBox(Icons.folder_open, size: 56),
+                    const AppIconBox(Icons.folder_open_outlined, size: 56),
                     const SizedBox(height: 16),
                     Text("Unselected".tl, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
@@ -218,7 +218,7 @@ class _FavoriteFolderTitle extends StatelessWidget {
       child: Tooltip(
         message: "Folders".tl,
         child: InkWell(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

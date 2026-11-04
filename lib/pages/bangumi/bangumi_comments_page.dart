@@ -126,7 +126,7 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
               width: 36,
               height: 36,
               child: comment.user.avatar.isEmpty
-                  ? const Icon(Icons.person)
+                  ? const Icon(Icons.person_outlined)
                   : AnimatedImage(
                       image: CachedImageProvider(comment.user.avatar),
                     ),
@@ -150,7 +150,7 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.star,
+                            Icons.star_outlined,
                             size: 16,
                             color: context.colorScheme.primary,
                           ),

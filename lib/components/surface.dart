@@ -34,7 +34,7 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       side: BorderSide(
         color: highlighted ? colors.primary : colors.outlineVariant,
         width: highlighted ? 1.5 : 0.6,
@@ -104,7 +104,7 @@ class AppBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: backgroundColor ?? background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         text,
@@ -143,7 +143,7 @@ class AppIconBox extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: color ?? colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: Icon(icon, color: foreground),
     );
@@ -262,7 +262,7 @@ Future<T?> showOptionsSheet<T>(
       elevation: 0,
       backgroundColor: colors.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: buildContent,
     );
@@ -299,7 +299,7 @@ Future<void> showActionSheet(
       maxHeight: MediaQuery.sizeOf(context).height * 0.6,
     ),
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
     ),
     builder: (context) => SafeArea(
       top: false,
@@ -412,7 +412,7 @@ Future<T?> showSidePicker<T>(
       backgroundColor: context.colorScheme.surfaceContainerLow,
       surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(28)),
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl)),
       ),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
@@ -516,7 +516,7 @@ class OptionRow extends StatelessWidget {
             Icon(
               selected
                   ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked,
+                  : Icons.radio_button_unchecked_outlined,
               color: selected ? colors.primary : colors.onSurfaceVariant,
               size: 20,
             ),
@@ -727,7 +727,7 @@ class FloatingDetailsAppBar extends StatelessWidget {
                             Expanded(
                               child: DefaultTextStyle(
                                 style: DefaultTextStyle.of(context).style
-                                    .copyWith(fontSize: 20, color: foreground),
+                                    .s20.copyWith(color: foreground),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 child: title,
@@ -853,7 +853,7 @@ class PosterHeader extends StatelessWidget {
               width: coverHeight * 0.72,
               height: coverHeight,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 boxShadow: const [
                   BoxShadow(
                     color: Colors.black26,
@@ -863,7 +863,7 @@ class PosterHeader extends StatelessWidget {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 child: cover,
               ),
             ),
@@ -1011,11 +1011,11 @@ class ActionPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Material(
         color: active ? colors.secondaryContainer : colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
         child: InkWell(
           onTap: (isLoading ?? false) ? null : onPressed,
           onLongPress: onLongPressed,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
           child: SizedBox(
             height: 40,
             child: Padding(
@@ -1289,7 +1289,7 @@ class _SliverSectionCardState extends State<SliverSectionCard> {
           SliverToBoxAdapter(
             child: Material(
               type: MaterialType.transparency,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               clipBehavior: Clip.antiAlias,
               child: _SectionCardHeader(
                 icon: widget.icon,
@@ -1471,7 +1471,7 @@ class CoverButton extends StatelessWidget {
     required this.child,
     required this.label,
     this.onLongPress,
-    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(AppRadius.sm)),
   });
 
   final VoidCallback onTap;
@@ -1653,9 +1653,9 @@ class _EpisodeTile extends StatelessWidget {
       color: item.selected
           ? colors.secondaryContainer
           : colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: item.selected ? null : item.onTap,
         child: SizedBox(
           height: 44,
@@ -1681,7 +1681,7 @@ class _EpisodeTile extends StatelessWidget {
                   right: 6,
                   top: 4,
                   child: Icon(
-                    Icons.download_done_rounded,
+                    Icons.download_done_outlined,
                     size: 12,
                     color: colors.primary,
                   ),

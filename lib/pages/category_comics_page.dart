@@ -196,8 +196,7 @@ class _CategoryComicsPageState extends State<CategoryComicsPage> {
           ),
           child: Text(
             optionList.label.ts(sourceKey),
-            style: TextStyle(
-              fontSize: 14,
+            style: ts.s14.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),

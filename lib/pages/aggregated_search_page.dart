@@ -187,7 +187,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
       margin: const EdgeInsets.only(left: _kLeftPadding),
       decoration: BoxDecoration(
         color: context.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
     );
   }
@@ -224,7 +224,7 @@ class _SliverSearchResultState extends State<_SliverSearchResult>
     }
 
     return SectionCard(
-      icon: Icons.manage_search,
+      icon: Icons.manage_search_outlined,
       title: widget.source.name,
       onTap: showMore,
       actions: [

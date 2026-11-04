@@ -79,7 +79,7 @@ class AppErrorView extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Icon(Icons.error_outline_rounded, size: 18, color: colors.error),
+            Icon(Icons.error_outline, size: 18, color: colors.error),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -114,7 +114,7 @@ class AppErrorView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline_rounded, size: 40, color: colors.error),
+              Icon(Icons.error_outline, size: 40, color: colors.error),
               const SizedBox(height: 8),
               Text(
                 error.title,

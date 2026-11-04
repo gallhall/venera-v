@@ -196,12 +196,12 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
   Widget build(BuildContext context) {
     List<Widget> selectActions = [
       IconButton(
-        icon: const Icon(Icons.select_all),
+        icon: const Icon(Icons.select_all_outlined),
         tooltip: "Select All".tl,
         onPressed: selectAll,
       ),
       IconButton(
-        icon: const Icon(Icons.deselect),
+        icon: const Icon(Icons.deselect_outlined),
         tooltip: "Deselect".tl,
         onPressed: deSelect,
       ),
@@ -232,7 +232,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
                   isSelected:
                       timeFilterSelect != TimeRange.all ||
                       numFilterSelect != numFilterList[0],
-                  icon: const Icon(Icons.sort_rounded),
+                  icon: const Icon(Icons.sort_outlined),
                   onPressed: sort,
                 ),
               ),
@@ -241,7 +241,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
                     ? "Exit Multi-Select".tl
                     : "Multi-Select".tl,
                 child: IconButton(
-                  icon: const Icon(Icons.checklist),
+                  icon: const Icon(Icons.checklist_outlined),
                   onPressed: () {
                     setState(() {
                       multiSelectMode = !multiSelectMode;
@@ -299,15 +299,15 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
                   vertical: 10,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide.none,
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
                   borderSide: BorderSide(color: context.colorScheme.primary),
                 ),
               ),
@@ -369,7 +369,7 @@ class _ImageFavoritesPageState extends State<ImageFavoritesPage> {
     Widget body = Scrollbar(
       controller: scrollController,
       thickness: App.isDesktop ? 8 : 12,
-      radius: const Radius.circular(8),
+      radius: const Radius.circular(AppRadius.sm),
       interactive: true,
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
@@ -464,7 +464,7 @@ class _ImageFavoritesDialogState extends State<_ImageFavoritesDialog> {
   Widget build(BuildContext context) {
     Widget tabBar = Material(
       color: context.colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
       child: AppTabBar(
         key: PageStorageKey(optionTypes),
         tabs: optionTypes.map((e) => Tab(text: e.tl, key: Key(e))).toList(),

@@ -54,7 +54,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
             elevation: 3,
             shadowColor: context.colorScheme.shadow,
             surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             clipBehavior: Clip.antiAlias,
             child: Container(
               width: width,
@@ -72,7 +72,7 @@ class _MenuRoute<T> extends PopupRoute<T> {
 
   Widget buildEntry(MenuEntry entry, BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
       onTap: () {
         Navigator.of(context).pop();
         entry.onClick();

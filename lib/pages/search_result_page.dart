@@ -198,7 +198,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
     return Tooltip(
       message: "Settings".tl,
       child: IconButton.filledTonal(
-        icon: const Icon(Icons.tune),
+        icon: const Icon(Icons.tune_outlined),
         onPressed: () async {
           if (suggestionOverlay != null) {
             suggestionsController.remove();
@@ -349,7 +349,7 @@ class _SuggestionsState extends State<_Suggestions> {
         ),
         trailing: IconButton(
           tooltip: "Fill".tl,
-          icon: const Icon(Icons.north_west),
+          icon: const Icon(Icons.north_west_outlined),
           onPressed: () => onSelected(value.left, value.right),
         ),
         onTap: () => onSelected(value.left, value.right),
@@ -364,7 +364,7 @@ class _SuggestionsState extends State<_Suggestions> {
           trailing: Tooltip(
             message: "Clear".tl,
             child: IconButton(
-              icon: const Icon(Icons.clear_all),
+              icon: const Icon(Icons.clear_all_outlined),
               onPressed: () {
                 widget.controller.suggestions.clear();
                 widget.controller.remove();
@@ -475,7 +475,7 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SectionCard(
-            icon: Icons.manage_search,
+            icon: Icons.manage_search_outlined,
             title: "Search in".tl,
             body: Wrap(
               spacing: 8,
@@ -551,7 +551,7 @@ class _SearchSettingsDialogState extends State<_SearchSettingsDialog> {
     }
 
     return SectionCard(
-      icon: Icons.tune,
+      icon: Icons.tune_outlined,
       title: "Search options".tl,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

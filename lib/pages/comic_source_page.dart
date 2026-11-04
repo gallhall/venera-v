@@ -489,7 +489,7 @@ class _BodyState extends State<_Body> {
         elevation: 0,
         color: context.colorScheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           side: BorderSide(
             color: context.colorScheme.outlineVariant,
             width: 0.5,
@@ -506,7 +506,7 @@ class _BodyState extends State<_Body> {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: context.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: Icon(
                       Icons.dashboard_customize_outlined,
@@ -525,10 +525,10 @@ class _BodyState extends State<_Body> {
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainerHigh,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                     borderSide: BorderSide.none,
                   ),
-                  prefixIcon: const Icon(Icons.link),
+                  prefixIcon: const Icon(Icons.link_outlined),
                   suffixIcon: IconButton(
                     tooltip: 'Add'.tl,
                     onPressed: () => handleAddSource(url),
@@ -1031,7 +1031,7 @@ class _CheckUpdatesButtonState extends State<_CheckUpdatesButton> {
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : Icon(Icons.update),
+          : Icon(Icons.update_outlined),
       label: Text("Check updates".tl),
       onPressed: check,
     );
@@ -1209,9 +1209,9 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
                       color: hasUpdate ? context.colorScheme.primary
                           : context.colorScheme.onSurfaceVariant,
                       entries: [
-                        MenuEntry(text: 'Edit'.tl, icon: Icons.edit_note,
+                        MenuEntry(text: 'Edit'.tl, icon: Icons.edit_note_outlined,
                           onClick: () => widget.edit(source)),
-                        MenuEntry(text: 'Update'.tl, icon: Icons.update,
+                        MenuEntry(text: 'Update'.tl, icon: Icons.update_outlined,
                           color: hasUpdate ? context.colorScheme.primary : null,
                           onClick: () => widget.update(source)),
                         MenuEntry(text: 'Delete'.tl, icon: Icons.delete_outline,
@@ -1229,7 +1229,7 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
               maintainState: true,
               shape: const Border(),
               collapsedShape: const Border(),
-              leading: const Icon(Icons.tune),
+              leading: const Icon(Icons.tune_outlined),
               title: Text('Settings'.tl),
               children: [...buildSourceSettings(), ..._buildAccount()],
             ),
@@ -1293,7 +1293,7 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit_outlined),
               onPressed: () {
                 showInputDialog(
                   context: context,
@@ -1430,7 +1430,7 @@ class _LoginPageState extends State<_LoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text("Login".tl, style: const TextStyle(fontSize: 24)),
+                Text("Login".tl, style: ts.s24),
                 const SizedBox(height: 32),
                 if (widget.config.cookieFields == null)
                   TextField(
@@ -1506,7 +1506,7 @@ class _LoginPageState extends State<_LoginPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.link),
+                        const Icon(Icons.link_outlined),
                         const SizedBox(width: 8),
                         Text("Create Account".tl),
                       ],

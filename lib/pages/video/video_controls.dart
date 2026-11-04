@@ -735,9 +735,8 @@ class _VideoControlsState extends State<VideoControls> {
                         c.title ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: ts.s16.copyWith(
                           color: Colors.white,
-                          fontSize: 16,
                         ),
                       ),
                     ),
@@ -1166,7 +1165,7 @@ class _Bubble extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: child,
     );

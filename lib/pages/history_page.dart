@@ -183,24 +183,24 @@ class _HistoryPageState extends State<HistoryPage> {
       MenuButton(
         entries: [
           MenuEntry(
-            icon: Icons.select_all,
+            icon: Icons.select_all_outlined,
             text: "Select All".tl,
             onClick: selectAll,
           ),
           MenuEntry(
-            icon: Icons.deselect,
+            icon: Icons.deselect_outlined,
             text: "Deselect".tl,
             onClick: deSelect,
           ),
           MenuEntry(
-            icon: Icons.flip,
+            icon: Icons.flip_outlined,
             text: "Invert Selection".tl,
             onClick: invertSelection,
           ),
         ],
       ),
       IconButton(
-        icon: const Icon(Icons.delete),
+        icon: const Icon(Icons.delete_outlined),
         tooltip: "Delete".tl,
         onPressed: selectedComics.isEmpty
             ? null
@@ -225,7 +225,7 @@ class _HistoryPageState extends State<HistoryPage> {
         onPressed: _refreshAllHistories,
       ),
       IconButton(
-        icon: const Icon(Icons.checklist),
+        icon: const Icon(Icons.checklist_outlined),
         tooltip: multiSelectMode ? "Exit Multi-Select".tl : "Multi-Select".tl,
         onPressed: () {
           setState(() {
@@ -235,7 +235,7 @@ class _HistoryPageState extends State<HistoryPage> {
       ),
       IconButton(
         tooltip: 'Clear History'.tl,
-        icon: const Icon(Icons.clear_all),
+        icon: const Icon(Icons.clear_all_outlined),
         onPressed: () => showConfirmDialog(
           context: context,
           title: 'Clear History'.tl,
@@ -311,7 +311,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const AppIconBox(Icons.history, size: 56),
+                        const AppIconBox(Icons.history_outlined, size: 56),
                         const SizedBox(height: 16),
                         Text(
                           "No history yet".tl,
