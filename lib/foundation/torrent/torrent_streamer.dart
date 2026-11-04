@@ -11,30 +11,11 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart';
-import 'package:venera/network/bangumi_network.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'loopback_server.dart';
-import 'torrent_lookup.dart';
-
-const publicTorrentTrackers = [
-  'udp://tracker.opentrackr.org:1337/announce',
-  'udp://open.stealth.si:80/announce',
-  'udp://explodie.org:6969/announce',
-  'udp://tracker.torrent.eu.org:451/announce',
-  'udp://open.demonii.com:1337/announce',
-  'udp://exodus.desync.com:6969/announce',
-  // Anime trackers, over HTTP too: UDP and the DHT routers are often
-  // blocked on mobile networks in China.
-  'http://tracker.opentrackr.org:1337/announce',
-  'https://tr.bangumi.moe:9696/announce',
-  'http://tr.bangumi.moe:6969/announce',
-  'http://t.acg.rip:6699/announce',
-  'http://open.acgnxtracker.com:80/announce',
-  'http://share.camoe.cn:8080/announce',
-  'http://t.nyaatracker.com:80/announce',
-  'http://nyaa.tracker.wf:7777/announce',
-];
+import 'torrent_metadata.dart';
+export 'torrent_metadata.dart' show publicTorrentTrackers;
 
 class TorrentStatus {
   final bool metadata;
@@ -123,65 +104,16 @@ class DartTorrentStreamer implements TorrentStreamer {
       MetadataDownloader.setCacheDirectory(
         '${session.directory!.path}/metadata');
       await Directory('${session.directory!.path}/metadata').create();
-      var uri = Uri.parse(magnetOrTorrentUrl);
-      MagnetLink? magnet;
-      var peers = <CompactAddress>[];
-      TorrentModel model;
-      if (uri.scheme == 'magnet') {
-        magnet = MagnetParser.parse(magnetOrTorrentUrl);
-        if (magnet == null) {
-          throw FormatException('Invalid magnet link'.tl);
-        }
-        var torrent = matchingTorrent(await mikanTorrent(magnet.infoHashString,
-          cancelToken: session.cancelToken), magnet.infoHashString);
-        session.checkCancelled();
-        if (torrent != null) {
-          model = torrent;
-        } else {
-          var trackers = {...magnet.trackers,
-            ...publicTorrentTrackers.map(Uri.parse)};
-          Log.info('Torrent', 'Fetching metadata of ${magnet.infoHashString} '
-              '(episode $episode) from ${trackers.length} trackers and DHT');
-          var started = DateTime.now();
-          List<int>? bytes;
-          for (var attempt = 1; bytes == null; attempt++) {
-            var left = const Duration(seconds: 90) -
-                DateTime.now().difference(started);
-            if (left <= Duration.zero) {
-              throw TimeoutException('Torrent metadata timed out'.tl);
-            }
-            if (attempt > 1) {
-              Log.info('Torrent', 'No metadata yet, starting over with other '
-                  'peers (attempt $attempt)');
-              await Future.any([
-                Future<void>.delayed(const Duration(seconds: 1)),
-                session.cancelled.future,
-              ]);
-              session.checkCancelled();
-            }
-            bytes = await _fetchMetadata(magnet, trackers.toList(), session,
-              peers, left);
-          }
-          model = TorrentParser.parseBytes(Uint8List.fromList([
-            ...'d4:info'.codeUnits, ...bytes, 101,
-          ]));
-        }
-      } else {
-        if (uri.scheme != 'http' && uri.scheme != 'https') {
-          throw FormatException('Invalid torrent URL'.tl);
-        }
-        var response = await BangumiNetwork.dio().get<List<int>>(
-          magnetOrTorrentUrl,
-          cancelToken: session.cancelToken,
-          options: Options(responseType: ResponseType.bytes,
-            receiveTimeout: const Duration(seconds: 30),
-            extra: {'connectTimeout': const Duration(seconds: 10)},
-            headers: {'cache-time': 'no'}),
-        );
-        model = TorrentParser.parseBytes(Uint8List.fromList(response.data!));
-      }
-      session.checkCancelled();
-      _validatePaths(model);
+      var metadata = await loadTorrentMetadata(magnetOrTorrentUrl,
+        TorrentMetadataOperation(cancelled: session.cancelled.future,
+          cancelToken: session.cancelToken, checkCancelled: session.checkCancelled,
+          onStatus: (value) {
+            session.status.value = TorrentStatus(progress: value.progress,
+              peers: value.peers);
+          }));
+      var model = metadata.model;
+      var magnet = metadata.magnet;
+      var peers = metadata.peers;
       var file = selectVideo(model.files, episode);
       Log.info('Torrent', 'Playing ${file.path} '
           '(${file.length ~/ (1024 * 1024)} MB, ${model.files.length} files, '
@@ -322,75 +254,6 @@ class DartTorrentStreamer implements TorrentStreamer {
     }
   }
 
-  /// One metadata download, null when it makes no progress for 30 seconds
-  /// (or runs out of [left]). The engine can keep waiting on peers that never
-  /// send the metadata, while a fresh start with other peers often has it
-  /// within seconds.
-  Future<List<int>?> _fetchMetadata(MagnetLink magnet, List<Uri> trackers,
-      _TorrentSession session, List<CompactAddress> peers,
-      Duration left) async {
-    var downloader = MetadataDownloader(magnet.infoHashString,
-      trackers: trackers);
-    var completed = Completer<List<int>?>();
-    var seconds = 0;
-    var progress = 0.0;
-    var progressAt = 0;
-    session.timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      session.status.value = TorrentStatus(
-        progress: downloader.progress,
-        peers: downloader.activePeers.length,
-      );
-      if (++seconds % 15 == 0) {
-        Log.info('Torrent', 'Metadata ${downloader.progress}% from '
-            '${downloader.activePeers.length} peers after ${seconds}s');
-      }
-      if (downloader.progress != progress) {
-        progress = downloader.progress;
-        progressAt = seconds;
-      }
-      var stalled = seconds - progressAt >= 30;
-      if ((stalled || seconds >= left.inSeconds) && !completed.isCompleted) {
-        completed.complete(null);
-      }
-    });
-    var listener = downloader.createListener()
-      ..on<MetaDataDownloadComplete>((event) {
-        peers.addAll(downloader.activePeers.map((p) => p.address));
-        if (!completed.isCompleted) {
-          completed.complete(event.data);
-        }
-      })
-      ..on<MetaDataDownloadProgress>((event) {
-        session.status.value = TorrentStatus(
-          progress: event.progress.toDouble(),
-          peers: downloader.activePeers.length,
-        );
-      })
-      ..on<MetaDataDownloadFailed>((event) {
-        Log.warning('Torrent', 'Metadata download failed: ${event.error}');
-        if (!completed.isCompleted) {
-          completed.complete(null);
-        }
-      });
-    try {
-      unawaited(downloader.startDownload().catchError((Object e) {
-        if (!completed.isCompleted) {
-          completed.completeError(e);
-        }
-      }));
-      return await Future.any([
-        completed.future,
-        session.cancelled.future.then<List<int>?>((_) {
-          throw StateError('Torrent playback cancelled'.tl);
-        }),
-      ]);
-    } finally {
-      session.timer?.cancel();
-      listener.dispose();
-      await downloader.stop();
-    }
-  }
-
   /// Cache needed to play [file]. The engine creates a file at its full
   /// length on its first write, and only the selected file and the files
   /// sharing a boundary piece with it are written; the rest of a batch is
@@ -407,7 +270,7 @@ class DartTorrentStreamer implements TorrentStreamer {
   }
 
   static TorrentFileModel selectVideo(List<TorrentFileModel> files,
-      int? episode) {
+      int? episode, {bool requireEpisode = false}) {
     var videos = files.where((file) => !file.isPaddingFile &&
       RegExp(r'\.(mkv|mp4|webm|avi|mov|m4v|ts|m2ts|wmv)$',
         caseSensitive: false).hasMatch(file.path)).toList();
@@ -428,22 +291,10 @@ class DartTorrentStreamer implements TorrentStreamer {
         return matches.first;
       }
     }
+    if (requireEpisode && episode != null && videos.length > 1) {
+      throw StateError('File not found in torrent'.tl);
+    }
     return videos.first;
-  }
-
-  static void _validatePaths(TorrentModel model) {
-    for (var path in [model.name, ...model.files.map((f) => f.path)]) {
-      var parts = path.replaceAll('\\', '/').split('/');
-      if (path.isEmpty || path.startsWith('/') || path.startsWith('\\') ||
-          path.contains(':') || path.contains('\x00') ||
-          parts.any((p) => p == '..' || p == '.')) {
-        throw FormatException('Unsafe torrent file path'.tl);
-      }
-    }
-    if (model.files.any((f) => f.symlinkPath != null ||
-        (f.attributes?.isSymlink ?? false))) {
-      throw FormatException('Unsafe torrent file path'.tl);
-    }
   }
 
   @override

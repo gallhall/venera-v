@@ -30,6 +30,7 @@ import 'package:events_emitter2/events_emitter2.dart';
 import 'file/download_file_manager.dart';
 import 'file/state_file.dart';
 import 'file/state_file_v2.dart';
+import 'file/selected_file_storage.dart';
 import 'lsd/lsd.dart';
 import 'peer/protocol/peer.dart';
 import 'piece/base_piece_selector.dart';
@@ -111,6 +112,10 @@ abstract class TorrentTask with EventsEmittable<TaskEvent> {
       encryptionConfig: encryptionConfig,
     );
   }
+  /// Opt-in selective disk IO, configured before start. Upload is disabled.
+  void useSelectedFileStorage(SelectedFileStorage storage);
+  Future<void> verifySelectedFiles(Set<int> fileIndices);
+  void retryPeerDiscovery();
   void startAnnounceUrl(Uri url, Uint8List infoHash);
   TorrentModel get metaInfo;
 
@@ -468,6 +473,56 @@ class _TorrentTask
 
   LSD? _lsd;
 
+  SelectedFileStorage? _selectedStorage;
+
+  @override
+  void useSelectedFileStorage(SelectedFileStorage storage) {
+    if (state != TaskState.stopped) {
+      throw StateError('Configure storage before starting the task');
+    }
+    _selectedStorage = storage;
+  }
+
+  /// A batch episode can join after startup. Validate its old disk data before
+  /// enabling it: the saved bitfield may describe a previous selection whose
+  /// files were removed. Synchronize the selector's Piece objects as well.
+  @override
+  Future<void> verifySelectedFiles(Set<int> fileIndices) async {
+    final storage = _selectedStorage;
+    final manager = _pieceManager;
+    if (storage == null || manager == null) {
+      return;
+    }
+    final pieces = <int>{
+      for (var index in fileIndices)
+        for (var p = _metaInfo.files[index].offset ~/ _metaInfo.pieceLength;
+            p * _metaInfo.pieceLength < _metaInfo.files[index].end; p++) p,
+    };
+    await storage.recover(_stateFile as StateFileV2, pieces: pieces);
+    for (var index in pieces) {
+      final old = manager[index]!;
+      final have = _stateBitfield!.getBit(index);
+      if (have == old.isCompletelyWritten) {
+        continue;
+      }
+      final restored = Piece(old.hashString, index, old.byteLength, old.offset,
+          isComplete: have, version: old.version);
+      for (var peer in _peersManager?.activePeers ?? <Peer>[]) {
+        if (peer.remoteCompletePieces.contains(index)) {
+          restored.addAvailablePeer(peer);
+        }
+      }
+      manager.pieces[index] = restored;
+      manager.downloadingPieces.remove(index);
+    }
+  }
+
+  @override
+  void retryPeerDiscovery() {
+    _tracker?.retryNow();
+    requestPeersFromDHT();
+  }
+
   Object? _stateFile; // Can be StateFile or StateFileV2
 
   @override
@@ -682,6 +737,10 @@ class _TorrentTask
     _tracker ??= tracker.TorrentAnnounceTracker(this);
     _stateFile ??= await StateFileV2.getStateFile(savePath, model);
 
+    if (_selectedStorage != null) {
+      await _selectedStorage!.recover(_stateFile as StateFileV2);
+    }
+
     // Initialize file priority manager
     _filePriorityManager ??= FilePriorityManager(model);
 
@@ -759,7 +818,8 @@ class _TorrentTask
     }
 
     _fileManager ??= await DownloadFileManager.createFileManager(
-        model, savePath, _stateFile!, _pieceManager!.pieces.values.toList());
+        model, savePath, _stateFile!, _pieceManager!.pieces.values.toList(),
+        selectedStorage: _selectedStorage);
     _peersManager ??= PeersManager(_peerId, model, ipFilter: _ipFilter);
     _peersManager?.setLeechFilter(_leechFilter);
     _peersManager?.setSSLConfig(_sslConfig);
@@ -1222,6 +1282,11 @@ class _TorrentTask
     _filePriorityManager!.setPriorities(priorities);
     _updatePiecePriorities();
     _saveFilePriorities();
+    if (_selectedStorage != null && state == TaskState.running) {
+      for (var peer in _peersManager?.activePeers ?? <Peer>[]) {
+        Timer.run(() => requestPieces(peer));
+      }
+    }
     _log.info('Set priorities for ${priorities.length} files');
   }
 
@@ -1480,6 +1545,10 @@ class _TorrentTask
       return;
     }
 
+    if (_selectedStorage != null && (state != TaskState.running ||
+        _filePriorityManager?.getPiecePriority(pieceIndex) == FilePriority.skip)) {
+      return;
+    }
     final piece = _pieceManager![pieceIndex];
     if (piece == null || _fileManager!.localHave(pieceIndex)) {
       return;
@@ -1522,7 +1591,18 @@ class _TorrentTask
     }
   }
 
-  Future<void> processPieceAccepted(int index) async {
+  final Set<Future<void>> _pendingPieceWrites = {};
+
+  Future<void> processPieceAccepted(int index) {
+    late Future<void> write;
+    write = _writeAcceptedPiece(index).whenComplete(() {
+      _pendingPieceWrites.remove(write);
+    });
+    _pendingPieceWrites.add(write);
+    return write;
+  }
+
+  Future<void> _writeAcceptedPiece(int index) async {
     var piece = _pieceManager?[index];
     if (piece == null || _fileManager == null || _pieceManager == null) return;
 
@@ -1530,11 +1610,14 @@ class _TorrentTask
     if (block == null) return;
 
     if (_fileManager!.localHave(index)) return;
-    var written = await _fileManager!.writeFile(
-      index,
-      0,
-      block,
-    );
+    bool written;
+    try {
+      written = await _fileManager!.writeFile(index, 0, block);
+    } catch (error) {
+      events.emit(TaskStorageFailed(error));
+      pause();
+      return;
+    }
 
     if (!written) return;
     _pieceManager!.processPieceWriteComplete(index);
@@ -1684,6 +1767,9 @@ class _TorrentTask
   }
 
   void _processPeerRequest(PeerRequestEvent event) async {
+    if (_selectedStorage != null) {
+      return;
+    }
     if (!event.peer.canUpload) {
       return;
     }
@@ -1867,6 +1953,12 @@ class _TorrentTask
 
   void requestPieces(Peer peer, [int pieceIndex = -1]) async {
     if (_pieceManager == null || _peersManager == null) return;
+    if (_selectedStorage != null) {
+      // HAVE/allowed-fast callbacks also pass explicit indices. Offline
+      // downloads always go through the rarest-first selector, including its
+      // skip filter, rather than fetching whatever piece a peer just announced.
+      pieceIndex = -1;
+    }
     _advancedSelector?.setLocalPeerEndpoint(
       _peersManager?.localExternalIP,
       port: _serverSocket?.port ?? 0,
@@ -1920,6 +2012,10 @@ class _TorrentTask
       piece.pushSubPiece(subIndex);
       return;
     }
+    if (_selectedStorage != null && state != TaskState.running) {
+      piece.pushSubPiece(subIndex);
+      return;
+    }
     if (!peer.sendRequest(piece.index, begin, size)) {
       piece.pushSubPiece(subIndex);
     } else {
@@ -1967,6 +2063,9 @@ class _TorrentTask
     _serverSocketListener = null;
     await _serverSocket?.close();
     _serverSocket = null;
+    // Peers are disposed above; let accepted, verified pieces finish their
+    // durable writes before closing the bitfield and the file manager.
+    await Future.wait(_pendingPieceWrites.toList());
     await _fileManager?.close();
     _fileManager = null;
     await _dht?.stop();
