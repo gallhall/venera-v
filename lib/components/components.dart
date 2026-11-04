@@ -45,6 +45,7 @@ part 'tokens.dart';
 part 'layout.dart';
 part 'loading.dart';
 part 'state_view.dart';
+part 'media_overlay.dart';
 part 'menu.dart';
 part 'message.dart';
 part 'navigation_bar.dart';

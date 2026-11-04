@@ -390,15 +390,54 @@ Future<T?> showSidePicker<T>(
   Map<T, Object>? icons,
   Widget? content,
 }) {
+  return showSidePanel<T>(context, title: title,
+    builder: (context) => content ?? _PickerOptions<T>(
+      options: options, selected: selected, icons: icons));
+}
+
+/// A titled bottom sheet on portrait phones, a right-side panel otherwise.
+Future<T?> showSidePanel<T>(
+  BuildContext context, {
+  required String title,
+  required WidgetBuilder builder,
+  double? heightFactor,
+  bool showCloseButton = false,
+}) {
   final media = MediaQuery.of(context);
-  if (media.size.width < 600 && media.orientation == Orientation.portrait) {
-    return showOptionsSheet<T>(
-      context,
-      title: title,
-      options: options,
-      selected: selected,
-      icons: icons,
-      content: content,
+  final portraitPhone = media.size.width < 600 &&
+      media.orientation == Orientation.portrait;
+  Widget header(BuildContext context) => Padding(
+    padding: portraitPhone
+        ? const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.sm)
+        : const EdgeInsets.all(AppSpacing.xl),
+    child: Row(children: [
+      Expanded(child: Text(title, style: ts.s18)),
+      if (showCloseButton)
+        IconButton(tooltip: 'Close'.tl, icon: const Icon(Icons.close_outlined),
+          onPressed: () => Navigator.pop(context)),
+    ]),
+  );
+  if (portraitPhone) {
+    return showModalBottomSheet<T>(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      elevation: 0,
+      backgroundColor: context.colorScheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      builder: (context) => ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: media.size.height * (heightFactor ?? 0.7)),
+        child: SizedBox(
+          height: heightFactor == null ? null : media.size.height * heightFactor,
+          child: SafeArea(top: false,
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [header(context), Flexible(child: Builder(builder: builder))]),
+          ),
+        ),
+      ),
     );
   }
   return showDialog<T>(
@@ -412,28 +451,13 @@ Future<T?> showSidePicker<T>(
       backgroundColor: context.colorScheme.surfaceContainerLow,
       surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl)),
-      ),
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl))),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 360,
-        height: double.infinity,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(title, style: ts.s18),
-              ),
-              Expanded(
-                child: content ??
-                    _PickerOptions<T>(
-                    options: options, selected: selected, icons: icons),
-              ),
-            ],
-          ),
-        ),
+      child: SizedBox(width: 360, height: double.infinity,
+        child: SafeArea(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [header(context), Expanded(child: Builder(builder: builder))],
+        )),
       ),
     ),
   );

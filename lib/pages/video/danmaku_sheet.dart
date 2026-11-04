@@ -11,42 +11,11 @@ Future<void> showDanmakuSheet(
   BuildContext context,
   DanmakuSession session,
 ) async {
-  Widget content(BuildContext context) => _DanmakuSheet(session: session);
-  var media = MediaQuery.of(context);
-  if (media.size.width < 600 && media.orientation == Orientation.portrait) {
-    await showModalBottomSheet<void>(
-      context: context,
-      useRootNavigator: true,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      builder: (context) => SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.8,
-        child: content(context),
-      ),
-    );
-    return;
-  }
-  await showDialog<void>(
-    context: context,
-    useSafeArea: false,
-    builder: (context) => Dialog(
-      alignment: Alignment.centerRight,
-      insetPadding: EdgeInsets.zero,
-      constraints: const BoxConstraints(maxWidth: 360),
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      surfaceTintColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 360,
-        height: double.infinity,
-        child: content(context),
-      ),
-    ),
-  );
+  await showSidePanel<void>(context,
+    title: 'Danmaku'.tl,
+    heightFactor: 0.8,
+    showCloseButton: true,
+    builder: (context) => _DanmakuSheet(session: session));
 }
 
 class _DanmakuSheet extends StatefulWidget {
@@ -190,14 +159,6 @@ class _DanmakuSheetState extends State<_DanmakuSheet> {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
-            ListTile(
-              title: Text('Danmaku'.tl),
-              trailing: IconButton(
-                tooltip: 'Close'.tl,
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-              ),
-            ),
             AppCard(child: Column(children: [
               SwitchListTile(
                 title: Text('Danmaku'.tl),

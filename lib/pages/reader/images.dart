@@ -1078,16 +1078,26 @@ class _ContinuousModeState extends State<_ContinuousMode>
                       width: 20, height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _nextError = null;
-                        });
-                        _loadNext();
-                      },
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: Text('Retry'.tl),
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(friendlyError(_nextError!).summary,
+                          maxLines: 3, overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: ts.s14.copyWith(color: context.colorScheme.onSurfaceVariant)),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _nextError = null;
+                            });
+                            _loadNext();
+                          },
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text('Retry'.tl),
+                        ),
+                      ],
                     ),
+              expanded: _nextError != null,
             );
           }
           return const SizedBox();
@@ -1310,11 +1320,11 @@ class _ContinuousModeState extends State<_ContinuousMode>
     );
   }
 
-  Widget _buildChapterRow(Widget child) {
+  Widget _buildChapterRow(Widget child, {bool expanded = false}) {
     final vertical = reader.mode == ReaderMode.continuousTopToBottom;
     return Container(
-      width: vertical ? double.infinity : 96,
-      height: vertical ? 48 : double.infinity,
+      width: vertical ? double.infinity : (expanded ? 240 : 96),
+      height: vertical ? (expanded ? 132 : 48) : double.infinity,
       padding: const EdgeInsets.all(8),
       color: context.colorScheme.surfaceContainerLow,
       alignment: Alignment.center,
