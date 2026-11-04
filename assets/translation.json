@@ -1,5 +1,12 @@
 {
   "zh_CN": {
+    "Not linked to Bangumi": "未关联 Bangumi",
+    "Link to Bangumi": "关联 Bangumi",
+    "No comments for this episode": "本集暂无评论",
+    "View all comments of the anime": "查看整部番评论",
+    "Post comment": "发送评论",
+    "Show @n replies": "展开 @n 条回复",
+    "Hide replies": "收起回复",
     "Download BT only on Wi-Fi": "仅在 Wi-Fi 下载 BT",
     "Waiting for Wi-Fi": "等待 Wi-Fi",
     "No available peers yet, try another resource": "暂未找到可用节点，请尝试其他资源",
@@ -882,6 +889,13 @@
     "Bangumi comments": "Bangumi 吐槽"
   },
   "zh_TW": {
+    "Not linked to Bangumi": "未關聯 Bangumi",
+    "Link to Bangumi": "關聯 Bangumi",
+    "No comments for this episode": "本集暫無評論",
+    "View all comments of the anime": "查看整部動畫評論",
+    "Post comment": "發送評論",
+    "Show @n replies": "展開 @n 條回覆",
+    "Hide replies": "收起回覆",
     "Download BT only on Wi-Fi": "僅在 Wi-Fi 下載 BT",
     "Waiting for Wi-Fi": "等待 Wi-Fi",
     "No available peers yet, try another resource": "暫未找到可用節點，請嘗試其他資源",

@@ -127,6 +127,13 @@ class BangumiApi {
     );
   }
 
+  Future<List<BangumiEpisodeComment>> episodeComments(int episodeId) async {
+    return BangumiEpisodeComment.listFromJson(await _request(
+      'GET',
+      '$nextBaseUrl/p1/episodes/$episodeId/comments',
+    ));
+  }
+
   /// The main episodes of a subject, in order.
   Future<List<BangumiEpisode>> episodes(int subjectId) async {
     const limit = 200;
