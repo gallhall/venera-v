@@ -3,6 +3,9 @@ part of 'comic_page.dart';
 abstract mixin class _ComicPageActions {
   void update();
 
+  /// Provided by the page's State; undo can fire after the page is closed.
+  bool get mounted;
+
   ComicDetails get comic;
 
   ComicSource get comicSource => ComicSource.find(comic.sourceKey)!;
@@ -56,6 +59,9 @@ abstract mixin class _ComicPageActions {
         type: comic.comicType,
         isFavorite: isFavorite,
         onFavorite: (local, network) {
+          if (!mounted) {
+            return;
+          }
           if (network != null) {
             isFavorite = network;
           }

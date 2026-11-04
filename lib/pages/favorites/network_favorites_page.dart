@@ -416,6 +416,7 @@ class _FolderTile extends StatelessWidget {
               ),
               if (deleteFolder != null)
                 IconButton(
+                  tooltip: 'Delete'.tl,
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () => onDeleteFolder(context),
                 )

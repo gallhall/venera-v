@@ -1443,6 +1443,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           child: IgnorePointer(
             ignoring: !showUnlock,
             child: IconButton.filledTonal(
+              tooltip: 'Unlock'.tl,
               style: IconButton.styleFrom(
                 backgroundColor: Colors.black.withValues(alpha: 0.6),
                 foregroundColor: Colors.white,
@@ -1594,6 +1595,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   left: 8 + MediaQuery.paddingOf(context).left,
                   top: 8 + MediaQuery.paddingOf(context).top,
                   child: IconButton(
+                    tooltip: isFullscreen ? 'Exit full screen'.tl : 'Back'.tl,
                     color: Colors.white,
                     icon: const Icon(Icons.arrow_back_rounded),
                     onPressed: () =>

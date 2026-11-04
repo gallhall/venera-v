@@ -510,6 +510,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             children: [
               const SizedBox(width: 8),
               IconButton.filledTonal(
+                tooltip: isReversed ? 'Next chapter'.tl : 'Previous chapter'.tl,
                 onPressed: () => !isReversed
                     ? context.reader.chapter > 1
                           ? context.reader.toPrevChapter()
@@ -521,6 +522,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
               ),
               Expanded(child: buildSlider()),
               IconButton.filledTonal(
+                tooltip: isReversed ? 'Previous chapter'.tl : 'Next chapter'.tl,
                 onPressed: () => !isReversed
                     ? context.reader.chapter < context.reader.maxChapter
                           ? context.reader.toNextChapter()

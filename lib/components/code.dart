@@ -108,38 +108,40 @@ class _CodeEditorState extends State<CodeEditor> {
               child: SizedBox.expand(
                 child: ScrollConfiguration(
                   behavior: _CustomScrollBehavior(),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    controller: horizontalScrollController,
+                  child: HorizontalCoverList(
                     child: SingleChildScrollView(
-                      scrollDirection: Axis.vertical,
-                      controller: verticalScrollController,
-                      child: Row(
-                        children: [
-                          buildLineNumbers(),
-                          IntrinsicWidth(
-                            stepWidth: 100,
-                            child: TextField(
-                              controller: _controller,
-                              focusNode: _focusNode,
-                              maxLines: null,
-                              cursorHeight: 1.5 * 14,
-                              style: ts.s14.copyWith(height: 1.5),
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.all(8),
+                      scrollDirection: Axis.horizontal,
+                      controller: horizontalScrollController,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.vertical,
+                        controller: verticalScrollController,
+                        child: Row(
+                          children: [
+                            buildLineNumbers(),
+                            IntrinsicWidth(
+                              stepWidth: 100,
+                              child: TextField(
+                                controller: _controller,
+                                focusNode: _focusNode,
+                                maxLines: null,
+                                cursorHeight: 1.5 * 14,
+                                style: ts.s14.copyWith(height: 1.5),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.all(8),
+                                ),
+                                onChanged: (value) {
+                                  widget.onChanged?.call(value);
+                                  if (lineCount != calculateLineCount(value)) {
+                                    setState(() {
+                                      lineCount = calculateLineCount(value);
+                                    });
+                                  }
+                                },
                               ),
-                              onChanged: (value) {
-                                widget.onChanged?.call(value);
-                                if (lineCount != calculateLineCount(value)) {
-                                  setState(() {
-                                    lineCount = calculateLineCount(value);
-                                  });
-                                }
-                              },
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

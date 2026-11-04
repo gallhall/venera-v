@@ -674,6 +674,70 @@ class LocalFavoritesManager with ChangeNotifier {
     return true;
   }
 
+  /// Delete folder memberships and return a one-shot restoration of every column,
+  /// including display_order, favorite time and optional update metadata.
+  VoidCallback removeComicsForUndo(String folder, List<FavoriteItem> comics) {
+    final rows = <Map<String, Object?>>[];
+    for (final comic in comics.toSet()) {
+      rows.addAll(_db.select(
+        'select * from "$folder" where id == ? and type == ?;',
+        [comic.id, comic.type.value],
+      ).map((row) => Map<String, Object?>.from(row)));
+    }
+    // Keep the cached cover too: deleting it here would make offline Undo lossy.
+    _db.execute('BEGIN TRANSACTION');
+    try {
+      for (final row in rows) {
+        _db.execute(
+          'delete from "$folder" where id == ? and type == ?;',
+          [row['id'], row['type']],
+        );
+      }
+      _db.execute('COMMIT');
+    } catch (e) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    counts[folder] = count(folder);
+    for (final row in rows) {
+      reduceHashedId(row['id'] as String, row['type'] as int);
+    }
+    notifyListeners();
+    var restored = false;
+    return () {
+      if (restored || !existsFolder(folder)) {
+        return;
+      }
+      restored = true;
+      final inserted = <Map<String, Object?>>[];
+      _db.execute('BEGIN TRANSACTION');
+      try {
+        for (final row in rows) {
+          final columns = row.keys.map((key) => '"$key"').join(', ');
+          final placeholders = List.filled(row.length, '?').join(', ');
+          // A comic re-added since deletion keeps its newer data.
+          _db.execute(
+            'insert or ignore into "$folder" ($columns) values ($placeholders);',
+            row.values.toList(),
+          );
+          if (_db.select('select changes();').first[0] == 1) {
+            inserted.add(row);
+          }
+        }
+        _db.execute('COMMIT');
+      } catch (e) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+      counts[folder] = count(folder);
+      for (final row in inserted) {
+        final hash = (row['id'] as String).hashCode ^ (row['type'] as int);
+        _hashedIds[hash] = (_hashedIds[hash] ?? 0) + 1;
+      }
+      notifyListeners();
+    };
+  }
+
   void moveFavorite(
       String sourceFolder, String targetFolder, String id, ComicType type) {
     if (!existsFolder(sourceFolder)) {

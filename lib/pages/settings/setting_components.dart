@@ -396,6 +396,7 @@ class _MultiPagesFilterState extends State<_MultiPagesFilter> {
     Widget removeButton = Padding(
       padding: const EdgeInsets.only(right: 8),
       child: IconButton(
+        tooltip: 'Delete'.tl,
         onPressed: () {
           setState(() {
             keys.remove(key);

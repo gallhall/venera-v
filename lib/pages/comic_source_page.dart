@@ -1293,6 +1293,7 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: IconButton(
+              tooltip: 'Edit'.tl,
               icon: const Icon(Icons.edit_outlined),
               onPressed: () {
                 showInputDialog(

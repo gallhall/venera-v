@@ -51,6 +51,7 @@ class _AppSettingsState extends State<AppSettings> {
               title: Text("Storage Path for local comics".tl),
               subtitle: Text(LocalManager().path, softWrap: false),
               trailing: IconButton(
+                tooltip: 'Copy'.tl,
                 icon: const Icon(Icons.copy_outlined),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: LocalManager().path));
@@ -455,6 +456,7 @@ class _LogsPageState extends State<LogsPage> {
         title: Text("Logs".tl),
         actions: [
           IconButton(
+            tooltip: 'Filter'.tl,
               onPressed: () => setState(() {
                     showMenuX(context,
                       Offset(context.width, context.padding.top + kToolbarHeight), [
@@ -466,6 +468,7 @@ class _LogsPageState extends State<LogsPage> {
               icon: const Icon(Icons.filter_list_outlined)
           ),
           IconButton(
+            tooltip: 'More'.tl,
               onPressed: () => setState(() {
                     showMenuX(context,
                       Offset(context.width, context.padding.top + kToolbarHeight), [
@@ -709,6 +712,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                 hintStyle: TextStyle(color: Theme.of(context).hintColor),
                 border: OutlineInputBorder(),
                 suffixIcon: IconButton(
+                  tooltip: 'Help'.tl,
                   icon: Icon(Icons.help_outline),
                   onPressed: () {
                     showDialog(
@@ -733,6 +737,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: IconButton(
+                                    tooltip: 'Open in browser'.tl,
                                     icon: const Icon(Icons.open_in_new),
                                     onPressed: () {
                                       launchUrlString("https://github.com/gallhall/venera-v/blob/15450cc57130c09879ecd08fbbc7fc77de83ff6a/lib/foundation/appdata.dart#L174");

@@ -398,6 +398,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
               borderSide: BorderSide(color: context.colorScheme.primary),
             ),
             suffixIcon: IconButton(
+              tooltip: 'Search'.tl,
               icon: const Icon(Icons.search),
               onPressed: isLoading ? null : search,
             ),
@@ -488,11 +489,13 @@ class _BangumiPanelState extends State<BangumiPanel> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
+                  tooltip: 'Decrease offset'.tl,
                   icon: const Icon(Icons.remove),
                   onPressed: () => setOffset(binding.offset - 1),
                 ),
                 Text("${binding.offset}", style: ts.s16),
                 IconButton(
+                  tooltip: 'Increase offset'.tl,
                   icon: const Icon(Icons.add),
                   onPressed: () => setOffset(binding.offset + 1),
                 ),
@@ -577,12 +580,14 @@ class _BangumiPanelState extends State<BangumiPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              tooltip: 'Decrease progress'.tl,
               icon: const Icon(Icons.remove),
               onPressed: isLoading || done <= 0
                   ? null
                   : () => setProgress(done - 1),
             ),
             IconButton(
+              tooltip: 'Increase progress'.tl,
               icon: const Icon(Icons.add),
               onPressed: isLoading ? null : () => setProgress(done + 1),
             ),

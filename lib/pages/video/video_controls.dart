@@ -334,7 +334,7 @@ class _VideoControlsState extends State<VideoControls> {
       const SingleActivator(LogicalKeyboardKey.space): player.playOrPause,
       const SingleActivator(LogicalKeyboardKey.keyJ): () => seekBy(-_seekStep),
       const SingleActivator(LogicalKeyboardKey.keyL): () => seekBy(_seekStep),
-      const SingleActivator(LogicalKeyboardKey.keyI): () => seekBy(_seekStep),
+      const SingleActivator(LogicalKeyboardKey.keyK): player.playOrPause,
       const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
           seekBy(const Duration(seconds: -5)),
       const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
@@ -757,6 +757,7 @@ class _VideoControlsState extends State<VideoControls> {
       children: [
         if (c.onPrevious != null)
           IconButton(
+            tooltip: 'Previous chapter'.tl,
             iconSize: 32,
             color: Colors.white,
             icon: const Icon(Icons.skip_previous_rounded),
@@ -764,6 +765,7 @@ class _VideoControlsState extends State<VideoControls> {
           ),
         const SizedBox(width: 24),
         IconButton(
+          tooltip: playing ? 'Pause'.tl : 'Play'.tl,
           iconSize: 40,
           style: IconButton.styleFrom(
             fixedSize: const Size(64, 64),
@@ -777,6 +779,7 @@ class _VideoControlsState extends State<VideoControls> {
         const SizedBox(width: 24),
         if (c.onNext != null)
           IconButton(
+            tooltip: 'Next chapter'.tl,
             iconSize: 32,
             color: Colors.white,
             icon: const Icon(Icons.skip_next_rounded),

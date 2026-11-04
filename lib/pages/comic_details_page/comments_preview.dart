@@ -38,6 +38,7 @@ class _CommentsPartState extends State<_CommentsPart> {
         bodyPadding: EdgeInsets.zero,
         actions: [
           IconButton(
+            tooltip: 'Previous comments'.tl,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
             padding: const EdgeInsets.all(4),
             icon: const Icon(Icons.chevron_left),
@@ -52,6 +53,7 @@ class _CommentsPartState extends State<_CommentsPart> {
             },
           ),
           IconButton(
+            tooltip: 'Next comments'.tl,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 40),
             padding: const EdgeInsets.all(4),
             icon: const Icon(Icons.chevron_right),

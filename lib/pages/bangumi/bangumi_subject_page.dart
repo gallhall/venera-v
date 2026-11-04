@@ -758,10 +758,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     return SliverLazyToBoxAdapter(
       child: Column(
         children: [
-          ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            children: [
+          Builder(builder: (context) {
+            final actions = <Widget>[
               if (hasHistory && !mobile)
                 ActionPill(
                   icon: const Icon(Icons.play_arrow_outlined),
@@ -814,8 +812,22 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 onPressed: () =>
                     Share.shareText('${subject.displayName}\n${subject.url}'),
               ),
-            ],
-          ).fixHeight(MediaQuery.textScalerOf(context).scale(48)),
+            ];
+            if (App.isDesktop || context.width >= 600) {
+              return Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: actions,
+              ).paddingHorizontal(AppSpacing.sm);
+            }
+            return HorizontalCoverList(
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                children: actions,
+              ),
+            ).fixHeight(MediaQuery.textScalerOf(context).scale(48));
+          }),
           if (mobile)
             Row(
               children: [
@@ -1279,6 +1291,7 @@ class _PlaySourceCardState extends State<_PlaySourceCard> {
                     )
                   else
                     IconButton(
+                      tooltip: expanded ? 'Collapse'.tl : 'Expand'.tl,
                       onPressed: toggle,
                       icon: AnimatedChevron(expanded: expanded),
                     ),

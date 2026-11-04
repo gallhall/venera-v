@@ -121,6 +121,7 @@ class _FavoriteListState extends State<_FavoriteList> {
   @override
   Widget build(BuildContext context) {
     final localFavoritesFirst = appdata.settings['localFavoritesFirst'] ?? true;
+    final onFavorite = widget.onFavorite;
 
     final localSection = _LocalSection(
       cid: widget.cid,
@@ -130,7 +131,7 @@ class _FavoriteListState extends State<_FavoriteList> {
       localFolders: widget.localFolders,
       added: widget.added,
       onFavorite: (local) {
-        widget.onFavorite(local, null);
+        onFavorite(local, null);
       },
     );
 
@@ -539,10 +540,24 @@ class _LocalSectionState extends State<_LocalSection> {
               isFavorite: isAdded,
               onTap: () {
                 if (isAdded) {
-                  LocalFavoritesManager().deleteComicWithId(
-                    folder,
-                    widget.cid,
-                    widget.type,
+                  final onFavorite = widget.onFavorite;
+                  final cid = widget.cid;
+                  final type = widget.type;
+                  removeLocalFavoritesWithUndo(
+                    context: context,
+                    folder: folder,
+                    comics: [widget.favoriteItem],
+                    onUndo: () {
+                      final manager = LocalFavoritesManager();
+                      if (mounted) {
+                        setState(() {
+                          if (manager.find(cid, type).contains(folder)) {
+                            localAdded.add(folder);
+                          }
+                        });
+                      }
+                      onFavorite(manager.isExist(cid, type));
+                    },
                   );
                   setState(() {
                     localAdded.remove(folder);
