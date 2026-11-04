@@ -503,6 +503,8 @@ class _PickerOptionsState<T> extends State<_PickerOptions<T>> {
             OptionRow(
               key: option.key == widget.selected ? selectedKey : null,
               icon: widget.icons?[option.key],
+              // An icon menu with nothing selected is a list of actions.
+              radio: widget.icons == null || widget.selected != null,
               text: option.value,
               selected: option.key == widget.selected,
               onTap: () => Navigator.of(context).pop(option.key),
@@ -521,12 +523,16 @@ class OptionRow extends StatelessWidget {
     required this.onTap,
     this.leftPadding = 24,
     this.icon,
+    this.radio = true,
   }) : assert(icon == null || icon is IconData || icon is Widget);
 
   final String text;
   final bool selected;
   final VoidCallback onTap;
   final double leftPadding;
+
+  /// Whether a radio mark leads the row; off for action menus.
+  final bool radio;
 
   /// IconData, or a custom widget for player actions.
   final Object? icon;
@@ -540,14 +546,16 @@ class OptionRow extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(leftPadding, 12, 24, 12),
         child: Row(
           children: [
-            Icon(
-              selected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked_outlined,
-              color: selected ? colors.primary : colors.onSurfaceVariant,
-              size: 20,
-            ),
-            const SizedBox(width: 16),
+            if (radio) ...[
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked_outlined,
+                color: selected ? colors.primary : colors.onSurfaceVariant,
+                size: 20,
+              ),
+              const SizedBox(width: 16),
+            ],
             if (icon != null) ...[
               IconTheme(
                 data: IconThemeData(size: 20, color: colors.onSurfaceVariant),
