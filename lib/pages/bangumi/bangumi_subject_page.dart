@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -115,7 +114,6 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       ? Object()
       : 'cover${widget.heroID}';
   bool showAppbarTitle = false, showFAB = false;
-  bool showAllEpisodes = false;
   ColorScheme? _coverTint;
   (ImageProvider, Brightness)? _tintKey;
 
@@ -981,124 +979,55 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
 
   Widget buildEpisodes() {
     var progress = manager.localProgress(widget.subjectId);
-    return SliverLayoutBuilder(
-      builder: (context, constraints) {
-        var columns = math.max(
-          1,
-          ((constraints.crossAxisExtent - 16) / 200).ceil(),
-        );
-        var length = showAllEpisodes
-            ? episodes.length
-            : math.min(episodes.length, columns * 8);
-        return SliverSectionCard(
-          icon: Icons.format_list_numbered_outlined,
-          title: 'Episodes'.tl,
-          collapseKey: 'chapters',
-          leadingActions: [
-            IconButton(
-              tooltip: 'Order'.tl,
-              iconSize: 20,
-              color: context.colorScheme.onSurfaceVariant,
-              visualDensity: VisualDensity.compact,
-              icon: Transform.flip(
-                flipY: reverseEpisodes,
-                child: const Icon(Icons.sort),
-              ),
-              onPressed: () =>
-                  setState(() => reverseEpisodes = !reverseEpisodes),
-            ),
-          ],
-          footer: length < episodes.length
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 8),
-                  child: Center(
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: context.colorScheme.primary,
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: () => setState(() => showAllEpisodes = true),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text("${"Show all".tl} (${episodes.length})"),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.expand_more, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              : null,
-          slivers: [
-            if (episodes.isEmpty && !loading && error == null)
-              SliverToBoxAdapter(child: AppEmptyView.inline('No results'.tl)),
-            SliverPadding(
-              padding: EdgeInsets.zero,
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedHeight(
-                  maxCrossAxisExtent: 250,
-                  itemHeight: 48,
-                ),
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  var episode =
-                      episodes[reverseEpisodes
-                          ? episodes.length - index - 1
-                          : index];
-                  var watched = progress.watched.contains(episode.number);
-                  var selected = progress.episode == episode.number;
-                  var name = episode.nameCn.isEmpty
-                      ? episode.name
-                      : episode.nameCn;
-                  var title = 'Episode @ep'.tlParams({'ep': episode.number});
-                  if (name.isNotEmpty) {
-                    title += ' \u00b7 $name';
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Material(
-                      color: selected
-                          ? context.colorScheme.primaryContainer
-                          : context.colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      child: InkWell(
-                        onTap: canPlay ? () => play(episode) : null,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Tooltip(
-                            message: title,
-                            child: Center(
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                textAlign: TextAlign.center,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: selected
-                                      ? context.colorScheme.onPrimaryContainer
-                                      : watched
-                                      ? context.colorScheme.outline
-                                      : null,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }, childCount: length),
-              ),
-            ),
-          ],
-        );
-      },
+    final selected = episodes.indexWhere(
+      (episode) => progress.episode == episode.number,
+    );
+    final selectedIndex = selected < 0
+        ? null
+        : (reverseEpisodes ? episodes.length - selected - 1 : selected);
+    return SliverSectionCard(
+      icon: Icons.format_list_numbered_outlined,
+      title: 'Episodes'.tl,
+      collapseKey: 'chapters',
+      leadingActions: [
+        IconButton(
+          tooltip: 'Order'.tl,
+          iconSize: 20,
+          color: context.colorScheme.onSurfaceVariant,
+          visualDensity: VisualDensity.compact,
+          icon: Transform.flip(
+            flipY: reverseEpisodes,
+            child: const Icon(Icons.sort),
+          ),
+          onPressed: () =>
+              setState(() => reverseEpisodes = !reverseEpisodes),
+        ),
+      ],
+      slivers: [
+        if (episodes.isEmpty && !loading && error == null)
+          SliverToBoxAdapter(child: AppEmptyView.inline('No results'.tl)),
+        SliverEpisodeGrid(
+          count: episodes.length,
+          allLabelsShort: false,
+          selectedIndex: selectedIndex,
+          itemBuilder: (index) {
+            final episode = episodes[reverseEpisodes
+                ? episodes.length - index - 1
+                : index];
+            final name = episode.nameCn.isEmpty ? episode.name : episode.nameCn;
+            var title = 'Episode @ep'.tlParams({'ep': episode.number});
+            if (name.isNotEmpty) {
+              title += ' \u00b7 $name';
+            }
+            return EpisodeGridItem(
+              label: title,
+              selected: progress.episode == episode.number,
+              watched: progress.watched.contains(episode.number),
+              onTap: canPlay ? () => play(episode) : null,
+            );
+          },
+        ),
+      ],
     );
   }
 
