@@ -265,8 +265,8 @@ bool get isHomeBangumiCalendarShown =>
 /// Two lines of 12sp cover title. The strut fixes the line height: CJK
 /// fallback fonts are taller than Roboto, and a box sized for Roboto cut off
 /// the bottom of the second line.
-const _coverTitleStrut = StrutStyle(
-  fontSize: 12,
+final _coverTitleStrut = StrutStyle.fromTextStyle(
+  ts.s12,
   height: 1.4,
   forceStrutHeight: true,
 );
