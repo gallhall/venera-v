@@ -50,13 +50,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   /// Episodes to download. If null, all episodes, or the video itself if it
   /// has none.
-  final List<String>? episodes;
+  List<String>? episodes;
 
   /// Quality picked when the download was added, see
   /// [VideoQuality.maxHeight].
   final String quality;
 
-  final int? bangumiSubjectId;
+  int? bangumiSubjectId;
   /// Source chapter id -> Bangumi episode id (also for online tasks).
   final Map<String, int> bangumiEpisodeIds;
   /// Source chapter id -> exact BT release selected in the download sheet.
@@ -71,9 +71,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     this.episodes,
     this.quality = 'highest',
     this.bangumiSubjectId,
-    this.bangumiEpisodeIds = const {},
-    this.torrentReleases = const {},
-  });
+    Map<String, int> bangumiEpisodeIds = const {},
+    Map<String, VideoDownloadRelease> torrentReleases = const {},
+  }) : bangumiEpisodeIds = {...bangumiEpisodeIds},
+       torrentReleases = {...torrentReleases};
 
   static const manifestName = 'episode.json';
 
@@ -110,7 +111,187 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   int _runId = 0;
 
   /// Whether the run [run] is to go on.
-  bool _isCurrent(int run) => _isRunning && run == _runId;
+  bool _isCurrent(int run) {
+    if (!_isRunning) {
+      return false;
+    }
+    if (run >= 0) {
+      return run == _runId;
+    }
+    return _episodeRuns.values.contains(run);
+  }
+
+  final _pausedEpisodes = <String>{};
+  final _deletedEpisodes = <String>{};
+  final _episodeRuns = <String, int>{};
+  final _episodeWork = <String, Future<void>>{};
+  final _episodeTokens = <int, CancelToken>{};
+  int _nextEpisodeRun = 0;
+  int? _readyRun;
+  String? _onlineEpisode;
+  final _onlineQueue = TorrentDownloadQueue(limit: 1);
+
+  List<String?> get episodeIds => _targets;
+  bool episodeCompleted(String? ep) => _completed.contains(ep ?? '');
+  bool episodeActive(String? ep) => _onlineEpisode == (ep ?? '');
+  bool episodePaused(String? ep) => _pausedEpisodes.contains(ep ?? '') || isPaused;
+  double episodeProgress(String? ep) => episodeCompleted(ep) ? 1 :
+      _torrentStatuses[ep ?? '']?.progress ??
+      (_onlineEpisode == (ep ?? '') ? _episodeProgress : 0);
+  int episodeSpeed(String? ep) => episodePaused(ep) ? 0 :
+      _torrentStatuses[ep ?? '']?.bytesPerSecond.round() ??
+      (_onlineEpisode == (ep ?? '') ? currentSpeed : 0);
+
+  void _saveEpisodeState() {
+    // Unregistered tasks (including restored tasks under construction) need no IO.
+    if (LocalManager().downloadingTasks.contains(this)) {
+      unawaited(LocalManager().saveCurrentDownloadingTasks());
+    }
+    notifyListeners();
+  }
+
+  void pauseEpisode(String? ep) {
+    var key = ep ?? '';
+    if (episodeCompleted(ep)) {
+      return;
+    }
+    _pausedEpisodes.add(key);
+    var run = _episodeRuns.remove(key);
+    _episodeTokens.remove(run)?.cancel();
+    var handle = _torrentHandles.remove(key);
+    if (handle != null) {
+      unawaited(handle.cancel());
+    }
+    _saveEpisodeState();
+  }
+
+  void resumeEpisode(String? ep) {
+    var key = ep ?? '';
+    if (_deletedEpisodes.contains(key) || episodeCompleted(ep)) {
+      return;
+    }
+    if (!_isRunning) {
+      // A task-level pause (including a restored task) applies to every
+      // unfinished episode. Resuming one must leave its siblings paused.
+      for (var sibling in _targets) {
+        if (!episodeCompleted(sibling)) {
+          _pausedEpisodes.add(sibling ?? '');
+        }
+      }
+    }
+    _pausedEpisodes.remove(key);
+    _episodeErrors.remove(key);
+    _torrentStatuses.remove(key);
+    _saveEpisodeState();
+    if (_isRunning) {
+      _scheduleEpisode(ep, _runId);
+    } else {
+      unawaited(_start(resumeAll: false));
+    }
+  }
+
+  void retryEpisode(String? ep) => resumeEpisode(ep);
+
+  Future<void> deleteEpisode(String? ep) async {
+    var key = ep ?? '';
+    pauseEpisode(ep);
+    _deletedEpisodes.add(key);
+    await _episodeWork[key];
+    _completed.remove(key);
+    _pausedEpisodes.remove(key);
+    _episodeErrors.remove(key);
+    _torrentStatuses.remove(key);
+    if (path != null) {
+      await Directory(episodeDirectory(path!, ep)).deleteIgnoreError(recursive: true);
+    }
+    var local = path == null ? null : LocalManager().find(id, comicType);
+    if (local != null) {
+      if (ep == null) {
+        LocalManager().remove(id, comicType);
+      } else {
+        LocalManager().deleteComicChapters(local, [ep]);
+      }
+    }
+    if (_targets.isEmpty) {
+      pause();
+      LocalManager().removeTask(this);
+      if (path != null && LocalManager().find(id, comicType) == null) {
+        await Directory(path!).deleteIgnoreError(recursive: true);
+      }
+    } else if (!_isRunning && _targets.every(episodeCompleted) &&
+        LocalManager().downloadingTasks.contains(this)) {
+      LocalManager().completeTask(this);
+    }
+    _saveEpisodeState();
+  }
+
+  Future<int> episodeSizeOnDisk(String? ep) async {
+    if (path == null) {
+      return 0;
+    }
+    return directorySize(episodeDirectory(path!, ep));
+  }
+
+  static Future<int> directorySize(String path) async {
+    var total = 0;
+    try {
+      await for (var entry in Directory(path).list(recursive: true, followLinks: false)) {
+        if (entry is File) {
+          try {
+            total += await entry.length();
+          } on FileSystemException {
+            // A segment may be renamed or deleted during the scan.
+          }
+        }
+      }
+    } on FileSystemException {
+      // A queued/deleted episode has no directory.
+    }
+    return total;
+  }
+
+  /// Extend an existing selection without interrupting its current episodes.
+  void addEpisodes(List<String> ids, {Map<String, int> bangumiIds = const {},
+      Map<String, VideoDownloadRelease> releases = const {}}) {
+    var singleVideo = comic != null && (comic!.chapters == null || comic!.chapters!.length == 0);
+    if (!singleVideo) {
+      episodes = {..._targets.whereType<String>(), ...ids}.toList();
+    }
+    bangumiEpisodeIds.addAll(bangumiIds);
+    for (var ep in ids) {
+      _deletedEpisodes.remove(ep);
+      if (releases[ep] case var release?) {
+        torrentReleases[ep] = release;
+      }
+      if (!episodeCompleted(ep)) {
+        // Invalidate an old failed handle before replacing its resource.
+        pauseEpisode(singleVideo && ep.isEmpty ? null : ep);
+        resumeEpisode(singleVideo && ep.isEmpty ? null : ep);
+      }
+    }
+    if (path != null && _readyRun == _runId) {
+      unawaited(_saveCacheMetadata());
+    }
+    _saveEpisodeState();
+  }
+
+  static const cacheMetadataName = 'video_cache.json';
+
+  Future<void> _saveCacheMetadata() async {
+    var file = File(FilePath.join(path!, cacheMetadataName));
+    var ids = <String, int>{};
+    int? previousSubject;
+    try {
+      var previous = jsonDecode(await file.readAsString()) as Map;
+      ids.addAll(Map<String, int>.from(previous['bangumiEpisodeIds'] ?? {}));
+      previousSubject = previous['bangumiSubjectId'] as int?;
+    } catch (_) {
+      // Older local videos have no cache identity sidecar.
+    }
+    ids.addAll(bangumiEpisodeIds);
+    await file.writeAsString(jsonEncode({'bangumiSubjectId': bangumiSubjectId ?? previousSubject,
+      'sourceTitle': comic?.title, 'bangumiEpisodeIds': ids}));
+  }
 
   bool _isError = false;
 
@@ -133,14 +314,16 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       return null;
     }
     var states = _torrentStatuses.values.toList();
-    var active = states.where((s) => s.phase != TorrentDownloadPhase.done).toList();
+    var active = _torrentStatuses.entries.where((e) =>
+      !_pausedEpisodes.contains(e.key) && !_episodeErrors.containsKey(e.key) &&
+      !_completed.contains(e.key) && e.value.phase != TorrentDownloadPhase.done)
+      .map((e) => e.value).toList();
     var representative = active.firstWhere(
       (s) => s.failure != null || s.noPeersHint ||
         s.phase == TorrentDownloadPhase.waitingForWifi,
       orElse: () => active.isEmpty ? states.last : active.first);
-    var sessions = <String?, TorrentDownloadStatus>{
-      for (var s in active) s.session: s,
-    }.values;
+    var seen = <String>{};
+    var sessions = active.where((s) => s.session == null || seen.add(s.session!)).toList();
     return TorrentDownloadStatus(phase: representative.phase,
       progress: progress, failure: representative.failure,
       noPeersHint: representative.noPeersHint,
@@ -174,22 +357,24 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   bool get isPaused => !_isRunning;
 
   @override
-  int get speed => currentSpeed + (torrentStatus?.bytesPerSecond.round() ?? 0);
+  int get speed => isPaused ? 0 : currentSpeed + (torrentStatus?.bytesPerSecond.round() ?? 0);
 
   /// Episode ids to download; `[null]` for a video without episodes.
   List<String?> get _targets {
     var chapters = comic?.chapters;
-    if (chapters == null || chapters.length == 0) return [null];
-    return episodes ?? chapters.ids.toList();
+    var ids = episodes ?? (chapters == null || chapters.length == 0
+        ? <String?>[null] : chapters.ids.toList());
+    return ids.where((ep) => !_deletedEpisodes.contains(ep ?? '')).toList();
   }
 
   @override
   double get progress {
     if (comic == null) return 0;
     var total = _targets.length;
-    var btProgress = _torrentStatuses.entries.where((e) =>
-      !_completed.contains(e.key)).fold<double>(0, (n, e) => n + e.value.progress);
-    return ((_completed.length + _episodeProgress + btProgress) / total)
+    if (total == 0) {
+      return 0;
+    }
+    return (_targets.fold<double>(0, (sum, ep) => sum + episodeProgress(ep)) / total)
       .clamp(0.0, 1.0);
   }
 
@@ -229,7 +414,17 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   @override
   void pause() {
     if (isPaused) return;
+    for (var ep in _targets) {
+      if (!episodeCompleted(ep)) {
+        _pausedEpisodes.add(ep ?? '');
+      }
+    }
     _isRunning = false;
+    _episodeRuns.clear();
+    for (var token in _episodeTokens.values) {
+      token.cancel();
+    }
+    _episodeTokens.clear();
     unawaited(_closeTorrents());
     _message = "Paused";
     stopRecorder();
@@ -239,6 +434,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   @override
   void cancel() async {
+    pause();
     _isRunning = false;
     await _closeTorrents();
     stopRecorder();
@@ -261,8 +457,18 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   void _setError(String message) {
     Log.error("Download", message);
+    for (var ep in _targets) {
+      if (!episodeCompleted(ep) && !_pausedEpisodes.contains(ep ?? '')) {
+        _episodeErrors.putIfAbsent(ep ?? '', () => message);
+      }
+    }
     _isRunning = false;
     _isError = true;
+    _episodeRuns.clear();
+    for (var token in _episodeTokens.values) {
+      token.cancel();
+    }
+    _episodeTokens.clear();
     unawaited(_closeTorrents());
     _message = message;
     stopRecorder();
@@ -272,175 +478,231 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   @override
   void onNextSecond(Timer t) {
-    notifyListeners();
     super.onNextSecond(t);
+    notifyListeners();
   }
 
   @override
-  void resume() async {
+  void resume() {
+    _pausedEpisodes.clear();
+    if (_isRunning) {
+      for (var ep in _targets) {
+        _scheduleEpisode(ep, _runId);
+      }
+      return;
+    }
+    unawaited(_start(resumeAll: true));
+  }
+
+  Future<void> _start({required bool resumeAll}) async {
     if (_isRunning) return;
+    if (resumeAll) {
+      _pausedEpisodes.clear();
+    }
     var run = ++_runId;
     _isError = false;
     _isRunning = true;
     _message = "Resuming...";
-    notifyListeners();
-    runRecorder();
-    await _btClosing;
-    if (!_isCurrent(run)) {
-      return;
-    }
-    _torrentStatuses.clear();
-    _episodeErrors.clear();
-    await _openClient();
-
-    if (comic == null) {
-      _message = "Fetching video info...";
+    try {
       notifyListeners();
-      var res = await _runWithRetry(() async {
-        var r = await source.loadComicInfo!(videoId);
-        return r.error ? throw r.errorMessage! : r.data;
-      });
-      if (!_isCurrent(run)) return;
-      if (res.error) return _setError("Error: ${res.errorMessage}");
-      comic = res.data;
-    }
-
-    if (path == null) {
-      try {
-        var dir = await LocalManager().findValidDirectory(
-          videoId,
-          comicType,
-          comic!.title,
-        );
-        if (!await dir.exists()) await dir.create(recursive: true);
-        path = dir.path;
-      } catch (e, s) {
-        if (!_isCurrent(run)) return;
-        Log.error("Download", e.toString(), s);
-        return _setError("Error: $e");
-      }
-    }
-    await LocalManager().saveCurrentDownloadingTasks();
-    if (!_isCurrent(run)) return;
-
-    if (_cover == null) {
-      _message = "Downloading cover...";
-      notifyListeners();
-      var res = await _runWithRetry(() async {
-        Uint8List? data;
-        await for (var p in ImageDownloader.loadThumbnail(
-          comic!.cover,
-          source.key,
-        )) {
-          data = p.imageBytes ?? data;
-        }
-        if (data == null) throw "Failed to download cover";
-        var file = File(
-          FilePath.join(path!, "cover${detectFileType(data).ext}"),
-        );
-        await file.writeAsBytes(data);
-        return "file://${file.path}";
-      });
-      if (!_isCurrent(run)) return;
-      if (res.error) {
-        // The episodes are downloaded without it: a cover host can be
-        // unreachable (e.g. Bangumi's from some networks).
-        Log.warning("Download", "No cover: ${res.errorMessage}");
-      } else {
-        _cover = res.data;
-        await LocalManager().saveCurrentDownloadingTasks();
-      }
-    }
-
-    var targets = _targets;
-    var pending = <Future<void>>[];
-    Future<void> saveTail = Future.value();
-    Future<void> finish(String? ep, String label, VideoPlayInfo info) async {
-      await _downloadEpisode(ep, label, run, info);
+      runRecorder();
+      await _btClosing;
       if (!_isCurrent(run)) {
         return;
       }
-      _completed.add(ep ?? '');
-      if (!info.isTorrent) {
-        _episodeProgress = 0;
+      await Future.wait(_episodeWork.values.toList());
+      if (!_isCurrent(run)) {
+        return;
       }
-      saveTail = saveTail.then((_) => LocalManager().saveCurrentDownloadingTasks());
-      await saveTail;
-    }
-    try {
-      for (int i = 0; i < targets.length; i++) {
-        if (!_isCurrent(run)) {
-          break;
-        }
-        var ep = targets[i];
-        if (_completed.contains(ep ?? '')) {
-          continue;
-        }
-        var dir = Directory(episodeDirectory(path!, ep));
-        if (await dir.joinFile(manifestName).exists()) {
-          _completed.add(ep ?? '');
-          continue;
-        }
-        var result = await _runWithRetry(() async {
-          var selected = torrentReleases[ep];
-          if (selected != null) {
-            return selected.playInfo;
-          }
-          var r = await source.loadVideoPlayInfo!(videoId, ep);
+      await _openClient();
+
+      if (comic == null) {
+        _message = "Fetching video info...";
+        notifyListeners();
+        var res = await _runWithRetry(() async {
+          var r = await source.loadComicInfo!(videoId);
           return r.error ? throw r.errorMessage! : r.data;
         });
-        if (!_isCurrent(run)) {
-          break;
-        }
-        if (result.error) {
-          throw result.errorMessage!;
-        }
-        var info = result.data;
-        var label = targets.length > 1 ? "${i + 1}/${targets.length} " : "";
-        if (info.isTorrent) {
-          // Submit batch episodes together. The downloader deduplicates torrent
-          // sessions and queues torrents, rather than serializing episodes.
-          pending.add(finish(ep, label, info).catchError((Object e, StackTrace s) {
-            if (_isCurrent(run)) {
-              Log.error("Download", "$e", s);
-              // A missing batch file belongs to this episode only. Keep all
-              // sibling handles alive and retain the failed task for retry.
-              _episodeErrors[ep ?? ''] = e.toString();
-              notifyListeners();
-            }
-          }));
-        } else {
-          await finish(ep, label, info);
-        }
+        if (!_isCurrent(run)) return;
+        if (res.error) return _setError("Error: ${res.errorMessage}");
+        comic = res.data;
       }
-      await Future.wait(pending);
-    } catch (e, s) {
-      if (_isCurrent(run)) {
-        Log.error("Download", "$e", s);
-        _setError(e.toString());
-      }
-      await Future.wait(pending);
-      return;
-    }
-    if (!_isCurrent(run)) {
-      return;
-    }
 
-    stopRecorder();
-    _closeClient();
-    if (_episodeErrors.isNotEmpty) {
+      if (path == null) {
+        try {
+          var dir = await LocalManager().findValidDirectory(
+            videoId,
+            comicType,
+            comic!.title,
+          );
+          if (!await dir.exists()) await dir.create(recursive: true);
+          path = dir.path;
+        } catch (e, s) {
+          if (!_isCurrent(run)) return;
+          Log.error("Download", e.toString(), s);
+          return _setError("Error: $e");
+        }
+      }
+      await LocalManager().saveCurrentDownloadingTasks();
+      if (!_isCurrent(run)) return;
+
+      if (_cover == null) {
+        _message = "Downloading cover...";
+        notifyListeners();
+        var res = await _runWithRetry(() async {
+          Uint8List? data;
+          await for (var p in ImageDownloader.loadThumbnail(
+            comic!.cover,
+            source.key,
+          )) {
+            data = p.imageBytes ?? data;
+          }
+          if (data == null) throw "Failed to download cover";
+          var file = File(
+            FilePath.join(path!, "cover${detectFileType(data).ext}"),
+          );
+          await file.writeAsBytes(data);
+          return "file://${file.path}";
+        });
+        if (!_isCurrent(run)) return;
+        if (res.error) {
+          // The episodes are downloaded without it: a cover host can be
+          // unreachable (e.g. Bangumi's from some networks).
+          Log.warning("Download", "No cover: ${res.errorMessage}");
+        } else {
+          _cover = res.data;
+          await LocalManager().saveCurrentDownloadingTasks();
+        }
+      }
+
+      await _saveCacheMetadata();
+      if (!_isCurrent(run)) {
+        return;
+      }
+      _readyRun = run;
+      for (var ep in _targets) {
+        _scheduleEpisode(ep, run);
+      }
+      while (_isCurrent(run) && _episodeWork.isNotEmpty) {
+        await Future.wait(_episodeWork.values.toList());
+      }
+      if (!_isCurrent(run)) {
+        return;
+      }
+      stopRecorder();
+      _closeClient();
       if (_completed.isNotEmpty) {
         await LocalManager().add(toLocalComic());
       }
-      await LocalManager().saveCurrentDownloadingTasks();
-      if (!_isCurrent(run)) {
-        return;
+      if (_targets.isNotEmpty && _targets.every(episodeCompleted)) {
+        _isRunning = false;
+        LocalManager().completeTask(this);
+      } else {
+        _isRunning = false;
+        _isError = _episodeErrors.isNotEmpty;
+        if (_isError) {
+          _message = _episodeErrors.values.join('\n');
+        }
+        await LocalManager().saveCurrentDownloadingTasks();
+        notifyListeners();
       }
-      _setError(_episodeErrors.entries.map((e) =>
-        '${comic?.chapters?[e.key] ?? e.key}: ${e.value}').join('\n'));
+    } catch (e, s) {
+      if (_isCurrent(run)) {
+        Log.error('Download', '$e', s);
+        _setError(e.toString());
+      }
+    }
+  }
+
+  void _scheduleEpisode(String? ep, int parentRun) {
+    var key = ep ?? '';
+    if (_readyRun != parentRun || path == null || !_isCurrent(parentRun) || episodeCompleted(ep) ||
+        _pausedEpisodes.contains(key) || _deletedEpisodes.contains(key) ||
+        _episodeRuns.containsKey(key)) {
       return;
     }
-    LocalManager().completeTask(this);
+    var previous = _episodeWork[key];
+    var run = --_nextEpisodeRun;
+    _episodeRuns[key] = run;
+    _episodeTokens[run] = CancelToken();
+    _episodeErrors.remove(key);
+    late Future<void> work;
+    work = () async {
+      try {
+        await previous;
+        if (!_isCurrent(run)) {
+          return;
+        }
+        var dir = Directory(episodeDirectory(path!, ep));
+        if (!await dir.joinFile(manifestName).exists()) {
+          var result = await _runWithRetry(() async {
+            var selected = torrentReleases[key];
+            if (selected != null) {
+              return selected.playInfo;
+            }
+            var response = await source.loadVideoPlayInfo!(videoId, ep);
+            return response.error ? throw response.errorMessage! : response.data;
+          });
+          if (!_isCurrent(run)) {
+            return;
+          }
+          if (result.error) {
+            throw result.errorMessage!;
+          }
+          var info = result.data;
+          if (info.isTorrent) {
+            await _downloadEpisode(ep, '', run, info);
+          } else {
+            // Online episodes share one HTTP client and transfer recorder.
+            void Function()? release;
+            try {
+              release = await _onlineQueue.acquire(
+                cancelled: _episodeTokens[run]?.whenCancel.then<void>((_) {}));
+              if (!_isCurrent(run)) {
+                return;
+              }
+              stopRecorder();
+              runRecorder();
+              _onlineEpisode = key;
+              _episodeProgress = 0;
+              await _downloadEpisode(ep, '', run, info);
+            } finally {
+              if (_onlineEpisode == key) {
+                _onlineEpisode = null;
+                _episodeProgress = 0;
+                stopRecorder();
+                if (_isCurrent(parentRun)) {
+                  runRecorder();
+                }
+              }
+              release?.call();
+            }
+          }
+        }
+        if (!_isCurrent(run) || !await dir.joinFile(manifestName).exists()) {
+          return;
+        }
+        if (!_completed.contains(key)) {
+          _completed.add(key);
+        }
+        await LocalManager().saveCurrentDownloadingTasks();
+      } catch (e, s) {
+        if (_isCurrent(run)) {
+          Log.error('Download', '$e', s);
+          _episodeErrors[key] = e.toString();
+        }
+      } finally {
+        if (_episodeRuns[key] == run) {
+          _episodeRuns.remove(key);
+        }
+        _episodeTokens.remove(run);
+        if (identical(_episodeWork[key], work)) {
+          _episodeWork.remove(key);
+        }
+        notifyListeners();
+      }
+    }();
+    _episodeWork[key] = work;
   }
 
   Future<void> _downloadEpisode(String? ep, String label, int run,
@@ -475,7 +737,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           dir,
           "${info.sources.indexOf(source)}:${source.name}",
         );
-        var kind = await _detect(source, headers);
+        var kind = await _detect(source, headers, run: run);
         String video;
         String? audio;
         var temporary = <Directory>[];
@@ -572,7 +834,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       try {
         await _claimDirectory(dir,
-          "${info.sources.indexOf(source)}:${source.name}");
+          'bt:${source.url}:${torrentReleases[episodeKey]?.path}:${info.torrentEpisode}');
         if (!_isCurrent(run)) {
           return;
         }
@@ -633,7 +895,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
     await for (var entry in dir.list()) {
       // The cover of a video without episodes, which shares its directory.
-      if (entry is File && entry.name.startsWith('cover.')) continue;
+      if (entry is File && (entry.name.startsWith('cover.') ||
+          entry.name == cacheMetadataName)) {
+        continue;
+      }
       await entry.delete(recursive: true);
     }
     await marker.writeAsString(source);
@@ -699,15 +964,16 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   Future<VideoStreamType> _detect(
     VideoPlaySource source,
-    Map<String, String> headers,
-  ) async {
+    Map<String, String> headers, {
+    int? run,
+  }) async {
     if (source.type != VideoStreamType.auto) return source.type;
     var path = Uri.parse(source.url).path.toLowerCase();
     if (path.endsWith('.m3u8')) return VideoStreamType.hls;
     if (path.endsWith('.mpd')) return VideoStreamType.dash;
     if (path.endsWith('.mp4')) return VideoStreamType.mp4;
     // Look at the first bytes.
-    var head = await _readText(source.url, headers, maxBytes: 1024);
+    var head = await _readText(source.url, headers, maxBytes: 1024, run: run);
     if (HlsPlaylist.isPlaylist(head)) return VideoStreamType.hls;
     if (head.contains('<MPD')) return VideoStreamType.dash;
     return VideoStreamType.mp4;
@@ -740,19 +1006,19 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       return result.text;
     }
 
-    var text = await _readText(url.toString(), headers);
+    var text = await _readText(url.toString(), headers, run: run);
     Uri? audioUrl;
     if (HlsPlaylist.isMaster(text)) {
       var variant = HlsPlaylist.pickVariant(text, url, _maxHeight);
       url = variant.uri;
       if (withAudio) audioUrl = variant.audio;
-      text = await _readText(url.toString(), headers);
+      text = await _readText(url.toString(), headers, run: run);
     }
     var playlist = HlsPlaylist.localize(withoutAds(text, url), url);
     var audio = audioUrl == null
         ? null
         : HlsPlaylist.localize(
-            withoutAds(await _readText(audioUrl.toString(), headers), audioUrl),
+            withoutAds(await _readText(audioUrl.toString(), headers, run: run), audioUrl),
             audioUrl,
             prefix: 'audio_',
           );
@@ -788,7 +1054,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _message = "${label}Fetching manifest...";
     notifyListeners();
     var dash = DashManifest.parse(
-      await _readText(url.toString(), headers),
+      await _readText(url.toString(), headers, run: run),
       url,
       _maxHeight,
     );
@@ -978,6 +1244,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     var start = range == null && await part.exists() ? await part.length() : 0;
     var response = await _dio.get<ResponseBody>(
       url,
+      cancelToken: _episodeTokens[run],
       options: Options(
         headers: {
           ...headers,
@@ -1022,6 +1289,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     if (total != null && received < total) {
       throw "Connection closed early ($received/$total bytes)";
     }
+    if (!_isCurrent(run)) {
+      return;
+    }
     await part.rename(file.path);
   }
 
@@ -1029,9 +1299,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String url,
     Map<String, String> headers, {
     int? maxBytes,
+    int? run,
   }) async {
     var response = await _dio.get<ResponseBody>(
       url,
+      cancelToken: _episodeTokens[run],
       options: Options(
         headers: {
           ...headers,
@@ -1046,6 +1318,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     await for (var chunk in response.data!.stream.timeout(
       const Duration(seconds: 30),
     )) {
+      if (run != null && !_isCurrent(run)) {
+        throw StateError('Episode paused');
+      }
       bytes.addAll(chunk);
       if (maxBytes != null && bytes.length >= maxBytes) break;
     }
@@ -1073,6 +1348,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "bangumiEpisodeIds": bangumiEpisodeIds,
       "torrentReleases": torrentReleases.map((k, v) => MapEntry(k, v.toJson())),
       "episodeErrors": _episodeErrors,
+      "pausedEpisodes": _pausedEpisodes.toList(),
+      "deletedEpisodes": _deletedEpisodes.toList(),
       "path": path,
       "cover": _cover,
       "completed": _completed,
@@ -1101,6 +1378,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
               Map<String, dynamic>.from(e.value)),
         },
       )
+      .._pausedEpisodes.addAll(List<String>.from(json['pausedEpisodes'] ?? []))
+      .._deletedEpisodes.addAll(List<String>.from(json['deletedEpisodes'] ?? []))
       ..path = json["path"]
       .._cover = json["cover"]
       .._episodeErrors.addAll(Map<String, String>.from(json['episodeErrors'] ?? {}))

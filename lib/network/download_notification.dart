@@ -11,17 +11,21 @@ import 'package:venera/utils/translations.dart';
 
 /// Keeps the downloads running in the background on Android, through the
 /// foreground service `DownloadService` of the app. Its notification shows
-/// the progress of the first task and pauses or resumes it, and it holds a
-/// wake lock while a task runs.
+/// the progress of an active task and pauses or resumes it, and it holds a
+/// wake lock while any task runs.
 ///
-/// The service runs only while the first task runs. It is sent the state of
+/// The service runs while at least one task runs. It is sent the state of
 /// the task once a second: without updates for two minutes it stops, as the
 /// downloads are then gone or stuck.
 abstract final class DownloadNotification {
   static const _channel = MethodChannel("venera/download_service");
 
-  /// The task whose changes are listened to: the first one.
-  static DownloadTask? _task;
+  static final _tasks = <DownloadTask>{};
+
+  static DownloadTask? get _currentTask {
+    var tasks = LocalManager().downloadingTasks;
+    return tasks.where((task) => !task.isPaused).firstOrNull ?? tasks.firstOrNull;
+  }
 
   /// "none", "running", "paused" or "error", as last sent to the service.
   static String _state = "none";
@@ -54,7 +58,7 @@ abstract final class DownloadNotification {
     _onTasksChanged();
     try {
       if (await _channel.invokeMethod<bool>("takeResumeRequest") == true) {
-        LocalManager().downloadingTasks.firstOrNull?.resume();
+        _currentTask?.resume();
       }
     } catch (e) {
       Log.error("Download", "Cannot read the resume request: $e");
@@ -70,12 +74,14 @@ abstract final class DownloadNotification {
   static void moveToBackground() => _invoke("moveTaskToBack");
 
   static void _onTasksChanged() {
-    var first = LocalManager().downloadingTasks.firstOrNull;
-    if (first != _task) {
-      _task?.removeListener(_schedule);
-      _task = first;
-      _task?.addListener(_schedule);
+    var current = LocalManager().downloadingTasks.toSet();
+    for (var task in _tasks.difference(current)) {
+      task.removeListener(_schedule);
     }
+    for (var task in current.difference(_tasks)) {
+      task.addListener(_schedule);
+    }
+    _tasks..clear()..addAll(current);
     _schedule();
   }
 
@@ -88,7 +94,7 @@ abstract final class DownloadNotification {
   }
 
   static String _currentState() {
-    var task = LocalManager().downloadingTasks.firstOrNull;
+    var task = _currentTask;
     if (task == null) return "none";
     if (task.isError) return "error";
     if (task.isPaused) return "paused";
@@ -97,7 +103,13 @@ abstract final class DownloadNotification {
 
   static void _sync() {
     var state = _currentState();
-    if (state == _state) return;
+    if (state == _state) {
+      // The representative can change while another anime keeps running.
+      if (state != 'none') {
+        _push();
+      }
+      return;
+    }
     _state = state;
     keepAppOpen.value = state == "running";
     if (state == "running") {
@@ -115,7 +127,7 @@ abstract final class DownloadNotification {
   }
 
   static void _push() {
-    var task = LocalManager().downloadingTasks.firstOrNull;
+    var task = _currentTask;
     if (task == null || _currentState() != _state) return;
     var text = switch (_state) {
       "paused" => "Paused".tl,
@@ -151,7 +163,7 @@ abstract final class DownloadNotification {
 
   /// Pause or resume from the notification.
   static Future<void> _onAction(MethodCall call) async {
-    var task = LocalManager().downloadingTasks.firstOrNull;
+    var task = _currentTask;
     switch (call.method) {
       case "pause":
         task?.pause();

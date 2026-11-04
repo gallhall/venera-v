@@ -21,7 +21,7 @@ import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
-import 'bangumi_download_panel.dart';
+import 'anime_cache_page.dart';
 import 'bangumi_play.dart';
 import 'bangumi_search_page.dart';
 
@@ -524,7 +524,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
 
   Future<void> download() async {
     await showSubPage(context,
-      BangumiDownloadPanel(subjectId: widget.subjectId));
+      AnimeCachePage(subjectId: widget.subjectId,
+        title: subject?.displayName ?? widget.initialTitle ?? 'Episode cache'.tl,
+        initialEpisodeId: continueEpisode?.id));
   }
 
   @override

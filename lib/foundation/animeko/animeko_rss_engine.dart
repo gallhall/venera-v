@@ -235,7 +235,10 @@ class AnimekoRssEngine {
         .where((e) => e.name.local == 'item')) {
       String? field(String name) => item.childElements
           .where((e) => e.name.local == name).firstOrNull?.innerText.trim();
-      var title = field('title') ?? '';
+      // Some feeds escape their titles twice ("&amp;amp;").
+      var title = (field('title') ?? '').replaceAll('&quot;', '"')
+          .replaceAll('&#39;', "'").replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>').replaceAll('&amp;', '&');
       var enclosure = item.childElements
           .where((e) => e.name.local == 'enclosure').firstOrNull;
       var enclosed = enclosure?.getAttribute('url') ?? '';

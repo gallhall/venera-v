@@ -346,10 +346,8 @@ class LocalManager with ChangeNotifier {
 
   Future<void> add(LocalComic comic, [String? id]) async {
     var old = find(id ?? comic.id, comic.comicType);
-    var downloaded = comic.downloadedChapters;
-    if (old != null) {
-      downloaded.addAll(old.downloadedChapters);
-    }
+    var downloaded = {...comic.downloadedChapters,
+      ...?old?.downloadedChapters}.toList();
     _db.execute(
       'INSERT OR REPLACE INTO comics VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
       [
@@ -541,7 +539,9 @@ class LocalManager with ChangeNotifier {
     downloadingTasks.remove(task);
     notifyListeners();
     saveCurrentDownloadingTasks();
-    downloadingTasks.firstOrNull?.resume();
+    if (task is! VideoDownloadTask) {
+      downloadingTasks.where((t) => t is! VideoDownloadTask).firstOrNull?.resume();
+    }
   }
 
   void removeTask(DownloadTask task) {
@@ -551,23 +551,35 @@ class LocalManager with ChangeNotifier {
   }
 
   void moveToFirst(DownloadTask task) {
-    if (downloadingTasks.first != task) {
-      var shouldResume = !downloadingTasks.first.isPaused;
-      downloadingTasks.first.pause();
-      downloadingTasks.remove(task);
-      downloadingTasks.insert(0, task);
-      notifyListeners();
-      saveCurrentDownloadingTasks();
-      if (shouldResume) {
-        downloadingTasks.first.resume();
-      }
+    var first = downloadingTasks.where((t) => t is! VideoDownloadTask).firstOrNull;
+    if (downloadingTasks.isEmpty || downloadingTasks.first == task) {
+      return;
+    }
+    var shouldResume = task is! VideoDownloadTask && first?.isPaused == false;
+    if (task is! VideoDownloadTask && first != task) {
+      first?.pause();
+    }
+    downloadingTasks.remove(task);
+    downloadingTasks.insert(0, task);
+    notifyListeners();
+    saveCurrentDownloadingTasks();
+    if (shouldResume) {
+      task.resume();
     }
   }
 
-  Future<void> saveCurrentDownloadingTasks() async {
-    var tasks = downloadingTasks.map((e) => e.toJson()).toList();
-    await File(FilePath.join(App.dataPath, 'downloading_tasks.json'))
-        .writeAsString(jsonEncode(tasks));
+  Future<void> _savingTasks = Future.value();
+
+  Future<void> saveCurrentDownloadingTasks() {
+    // Video tasks and episode controls save independently. Serialize writes so
+    // one file cannot contain interleaved JSON from two active tasks.
+    return _savingTasks = _savingTasks.catchError((Object e) {
+      Log.error('LocalManager', 'Failed to save downloads: $e');
+    }).then((_) async {
+      var tasks = downloadingTasks.map((e) => e.toJson()).toList();
+      await File(FilePath.join(App.dataPath, 'downloading_tasks.json'))
+          .writeAsString(jsonEncode(tasks));
+    });
   }
 
   void restoreDownloadingTasks() {
@@ -592,7 +604,11 @@ class LocalManager with ChangeNotifier {
     downloadingTasks.add(task);
     notifyListeners();
     saveCurrentDownloadingTasks();
-    downloadingTasks.first.resume();
+    if (task is VideoDownloadTask) {
+      task.resume();
+    } else {
+      downloadingTasks.where((t) => t is! VideoDownloadTask).first.resume();
+    }
   }
 
   void deleteComic(LocalComic c, [bool removeFileOnDisk = true]) {

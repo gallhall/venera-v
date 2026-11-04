@@ -1,5 +1,24 @@
 {
   "zh_CN": {
+    "Select anime": "选择番剧",
+    "Anime": "动漫",
+    "Anime information": "番剧信息",
+    "Cache management": "缓存管理",
+    "Cached": "已缓存",
+    "Change resource": "换资源",
+    "Concurrent downloads": "同时下载数",
+    "Delete all": "删除全部",
+    "Disk usage": "占用空间",
+    "Download settings": "下载设置",
+    "Download speed": "下载速度",
+    "Episode cache": "单集缓存",
+    "Manage all caches": "管理全部缓存",
+    "No episodes": "暂无剧集",
+    "Other": "其他",
+    "Pause all": "全部暂停",
+    "Resume all": "全部继续",
+    "Resume": "继续",
+    "@n connections": "@n 个连接",
     "Data sources": "数据源",
     "BT resources": "BT 资源",
     "Online": "在线",
@@ -313,7 +332,6 @@
     "Try another playback source": "请在播放源列表中选择其他来源",
     "Switch source": "切换播放源",
     "Loading": "加载中",
-
     "Home": "主页",
     "Favorites": "收藏",
     "Explore": "发现",
@@ -918,9 +936,30 @@
     "Log out of Bangumi?": "退出 Bangumi 登录？",
     "Show airing schedule on home page": "在主页显示放送表",
     "Only when a video source is installed": "仅在安装了视频源时显示",
-    "Bangumi comments": "Bangumi 吐槽"
+    "Bangumi comments": "Bangumi 吐槽",
+    "Delete the cached files of this episode?": "删除这一集的缓存文件？",
+    "Delete all cached files of this anime?": "删除这部番的全部缓存文件？"
   },
   "zh_TW": {
+    "Select anime": "選擇番劇",
+    "Anime": "動漫",
+    "Anime information": "番劇資訊",
+    "Cache management": "快取管理",
+    "Cached": "已快取",
+    "Change resource": "更換資源",
+    "Concurrent downloads": "同時下載數",
+    "Delete all": "刪除全部",
+    "Disk usage": "佔用空間",
+    "Download settings": "下載設定",
+    "Download speed": "下載速度",
+    "Episode cache": "單集快取",
+    "Manage all caches": "管理全部快取",
+    "No episodes": "暫無劇集",
+    "Other": "其他",
+    "Pause all": "全部暫停",
+    "Resume all": "全部繼續",
+    "Resume": "繼續",
+    "@n connections": "@n 個連線",
     "Data sources": "資料源",
     "BT resources": "BT 資源",
     "Online": "線上",
@@ -1234,7 +1273,6 @@
     "Try another playback source": "請在播放來源清單中選擇其他來源",
     "Switch source": "切換播放來源",
     "Loading": "載入中",
-
     "Home": "首頁",
     "Favorites": "收藏",
     "Explore": "探索",
@@ -1839,6 +1877,8 @@
     "Log out of Bangumi?": "登出 Bangumi？",
     "Show airing schedule on home page": "在首頁顯示放送表",
     "Only when a video source is installed": "僅在安裝了影片源時顯示",
-    "Bangumi comments": "Bangumi 吐槽"
+    "Bangumi comments": "Bangumi 吐槽",
+    "Delete the cached files of this episode?": "刪除這一集的快取檔案？",
+    "Delete all cached files of this anime?": "刪除這部番的全部快取檔案？"
   }
 }
