@@ -167,7 +167,7 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                     child: Column(
                       children: [
                         Text(error!),
-                        Button.outlined(
+                        OutlinedButton(
                           onPressed: loadNext,
                           child: Text("Retry".tl),
                         ),

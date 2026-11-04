@@ -554,7 +554,7 @@ class _SingleBottomNaviWidgetState extends State<_SingleBottomNaviWidget>
     controller = AnimationController(
       value: widget.enabled ? 1 : 0,
       vsync: this,
-      duration: _fastAnimationDuration,
+      duration: AppDuration.fast,
     );
   }
 
@@ -783,7 +783,7 @@ class _NaviMainViewState extends State<_NaviMainView> {
             removeTop: shouldShowAppBar,
             removeBottom: shouldShowAppBar,
             child: AnimatedSwitcher(
-              duration: _fastAnimationDuration,
+              duration: AppDuration.fast,
               child: state.buildMainViewContent(),
             ),
           ),

@@ -187,7 +187,7 @@ class _ManageBlockingWordViewState extends State<_ManageBlockingWordView> {
               },
             ).paddingHorizontal(12),
             actions: [
-              Button.filled(
+              FilledButton(
                 onPressed: () {
                   if (appdata.settings["blockedWords"]
                       .contains(controller.text)) {
@@ -333,7 +333,7 @@ class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWo
               },
             ).paddingHorizontal(12),
             actions: [
-              Button.filled(
+              FilledButton(
                 onPressed: () {
                   if (appdata.settings["blockedCommentWords"]
                       .contains(controller.text)) {

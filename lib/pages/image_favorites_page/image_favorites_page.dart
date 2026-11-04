@@ -477,123 +477,130 @@ class _ImageFavoritesDialogState extends State<_ImageFavoritesDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             tabBar,
-            TabViewBody(
-              children: [
-                RadioGroup<ImageFavoriteSortType>(
-                  groupValue: sortType,
-                  onChanged: (v) {
-                    setState(() {
-                      sortType = v ?? sortType;
-                    });
-                  },
-                  child: Column(
-                    children: ImageFavoriteSortType.values
-                        .map(
-                          (e) => RadioListTile<ImageFavoriteSortType>(
-                            title: Text(e.value.tl),
-                            value: e,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-                Column(
+            Builder(builder: (context) {
+              final controller = DefaultTabController.of(context);
+              return ListenableBuilder(
+                listenable: controller,
+                builder: (context, child) => IndexedStack(
+                  index: controller.index,
                   children: [
-                    ListTile(
-                      title: Text("Time Filter".tl),
-                      trailing: TextButton(
-                        child: Text(timeRangeType.value.tl),
-                        onPressed: () async {
-                          final value = await showOptionsSheet<TimeRangeType>(
-                            context,
-                            title: 'Time Filter'.tl,
-                            options: {
-                              for (final value in TimeRangeType.values)
-                                value: value.value.tl,
-                            },
-                            selected: timeRangeType,
-                          );
-                          if (mounted && value != null) {
-                            setState(() => timeRangeType = value);
-                          }
-                        },
+                    RadioGroup<ImageFavoriteSortType>(
+                      groupValue: sortType,
+                      onChanged: (v) {
+                        setState(() {
+                          sortType = v ?? sortType;
+                        });
+                      },
+                      child: Column(
+                        children: ImageFavoriteSortType.values
+                            .map(
+                              (e) => RadioListTile<ImageFavoriteSortType>(
+                                title: Text(e.value.tl),
+                                value: e,
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
-                    if (timeRangeType == TimeRangeType.custom)
-                      Column(
-                        children: [
-                          ListTile(
-                            title: Text("Start Time".tl),
-                            trailing: TextButton(
-                              onPressed: () async {
-                                final date = await showDatePicker(
-                                  context: context,
-                                  initialDate: start ?? DateTime.now(),
-                                  firstDate: DateTime(2000),
-                                  lastDate: end ?? DateTime.now(),
-                                );
-                                if (date != null) {
-                                  setState(() {
-                                    start = date;
-                                  });
-                                }
-                              },
-                              child: Text(
-                                start == null
-                                    ? "Select Date".tl
-                                    : DateFormat("yyyy-MM-dd").format(start!),
-                              ),
-                            ),
-                          ),
-                          ListTile(
-                            title: Text("End Time".tl),
-                            trailing: TextButton(
-                              onPressed: () async {
-                                final date = await showDatePicker(
-                                  context: context,
-                                  initialDate: end ?? DateTime.now(),
-                                  firstDate: start ?? DateTime(2000),
-                                  lastDate: DateTime.now(),
-                                );
-                                if (date != null) {
-                                  setState(() {
-                                    end = date;
-                                  });
-                                }
-                              },
-                              child: Text(
-                                end == null
-                                    ? "Select Date".tl
-                                    : DateFormat("yyyy-MM-dd").format(end!),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ListTile(
-                      title: Text("Image Favorites Greater Than".tl),
-                      trailing: TextButton(
-                        child: Text('$numFilter'),
-                        onPressed: () async {
-                          final value = await showOptionsSheet<int>(
-                            context,
-                            title: 'Image Favorites Greater Than'.tl,
-                            options: {
-                              for (final value in numFilterList)
-                                value: '$value',
+                    Column(
+                      children: [
+                        ListTile(
+                          title: Text("Time Filter".tl),
+                          trailing: TextButton(
+                            child: Text(timeRangeType.value.tl),
+                            onPressed: () async {
+                              final value = await showOptionsSheet<TimeRangeType>(
+                                context,
+                                title: 'Time Filter'.tl,
+                                options: {
+                                  for (final value in TimeRangeType.values)
+                                    value: value.value.tl,
+                                },
+                                selected: timeRangeType,
+                              );
+                              if (mounted && value != null) {
+                                setState(() => timeRangeType = value);
+                              }
                             },
-                            selected: numFilter,
-                          );
-                          if (mounted && value != null) {
-                            setState(() => numFilter = value);
-                          }
-                        },
-                      ),
+                          ),
+                        ),
+                        if (timeRangeType == TimeRangeType.custom)
+                          Column(
+                            children: [
+                              ListTile(
+                                title: Text("Start Time".tl),
+                                trailing: TextButton(
+                                  onPressed: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: start ?? DateTime.now(),
+                                      firstDate: DateTime(2000),
+                                      lastDate: end ?? DateTime.now(),
+                                    );
+                                    if (date != null) {
+                                      setState(() {
+                                        start = date;
+                                      });
+                                    }
+                                  },
+                                  child: Text(
+                                    start == null
+                                        ? "Select Date".tl
+                                        : DateFormat("yyyy-MM-dd").format(start!),
+                                  ),
+                                ),
+                              ),
+                              ListTile(
+                                title: Text("End Time".tl),
+                                trailing: TextButton(
+                                  onPressed: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: end ?? DateTime.now(),
+                                      firstDate: start ?? DateTime(2000),
+                                      lastDate: DateTime.now(),
+                                    );
+                                    if (date != null) {
+                                      setState(() {
+                                        end = date;
+                                      });
+                                    }
+                                  },
+                                  child: Text(
+                                    end == null
+                                        ? "Select Date".tl
+                                        : DateFormat("yyyy-MM-dd").format(end!),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ListTile(
+                          title: Text("Image Favorites Greater Than".tl),
+                          trailing: TextButton(
+                            child: Text('$numFilter'),
+                            onPressed: () async {
+                              final value = await showOptionsSheet<int>(
+                                context,
+                                title: 'Image Favorites Greater Than'.tl,
+                                options: {
+                                  for (final value in numFilterList)
+                                    value: '$value',
+                                },
+                                selected: numFilter,
+                              );
+                              if (mounted && value != null) {
+                                setState(() => numFilter = value);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              );
+            }),
           ],
         ),
       ),

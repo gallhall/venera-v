@@ -960,7 +960,7 @@ class DetailsLoadingView extends StatelessWidget {
                       style: ts.s20.copyWith(fontWeight: FontWeight.w600),
                     ),
             ),
-            const DetailsLoadingIndicator(),
+            const _DetailsLoadingIndicator(),
           ],
         ),
         const Positioned(
@@ -974,8 +974,8 @@ class DetailsLoadingView extends StatelessWidget {
   }
 }
 
-class DetailsLoadingIndicator extends StatelessWidget {
-  const DetailsLoadingIndicator({super.key});
+class _DetailsLoadingIndicator extends StatelessWidget {
+  const _DetailsLoadingIndicator();
 
   @override
   Widget build(BuildContext context) {

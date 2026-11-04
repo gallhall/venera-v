@@ -36,43 +36,6 @@ class SliverGridViewWithFixedItemHeight extends StatelessWidget {
   }
 }
 
-class SliverGridDelegateWithFixedHeight extends SliverGridDelegate {
-  const SliverGridDelegateWithFixedHeight({
-    required this.maxCrossAxisExtent,
-    required this.itemHeight,
-  });
-
-  final double maxCrossAxisExtent;
-
-  final double itemHeight;
-
-  @override
-  SliverGridLayout getLayout(SliverConstraints constraints) {
-    final width = constraints.crossAxisExtent;
-    var crossItems = width ~/ maxCrossAxisExtent;
-    if (width % maxCrossAxisExtent != 0) {
-      crossItems += 1;
-    }
-    return SliverGridRegularTileLayout(
-        crossAxisCount: crossItems,
-        mainAxisStride: itemHeight,
-        crossAxisStride: width / crossItems,
-        childMainAxisExtent: itemHeight,
-        childCrossAxisExtent: width / crossItems,
-        reverseCrossAxis: false);
-  }
-
-  @override
-  bool shouldRelayout(covariant SliverGridDelegate oldDelegate) {
-    if (oldDelegate is! SliverGridDelegateWithFixedHeight) return true;
-    if (oldDelegate.maxCrossAxisExtent != maxCrossAxisExtent ||
-        oldDelegate.itemHeight != itemHeight) {
-      return true;
-    }
-    return false;
-  }
-}
-
 class SliverGridDelegateWithComics extends SliverGridDelegate {
   SliverGridDelegateWithComics({this.textScaler = TextScaler.noScaling});
 
@@ -164,31 +127,5 @@ class SliverLazyToBoxAdapter extends StatelessWidget {
       SizedBox(),
       child,
     ]);
-  }
-}
-
-class SliverAnimatedVisibility extends StatelessWidget {
-  const SliverAnimatedVisibility({
-    super.key,
-    required this.visible,
-    required this.child,
-  });
-
-  final bool visible;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    var child = visible ? this.child : const SizedBox.shrink();
-
-    return SliverToBoxAdapter(
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: child,
-      ),
-    );
   }
 }

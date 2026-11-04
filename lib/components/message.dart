@@ -206,22 +206,6 @@ class OverlayWidgetState extends State<OverlayWidget> {
   }
 }
 
-void showDialogMessage(BuildContext context, String title, String message) {
-  showDialog(
-    context: context,
-    builder: (context) => ContentDialog(
-      title: title,
-      content: Text(message).paddingHorizontal(16),
-      actions: [
-        FilledButton(
-          onPressed: context.pop,
-          child: Text("OK".tl),
-        )
-      ],
-    ),
-  );
-}
-
 Future<void> showConfirmDialog({
   required BuildContext context,
   required String title,
@@ -531,16 +515,11 @@ Future<void> showInputDialog({
                     setState(() => error = result.toString());
                   }
                 },
-                child: isLoading
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: context.colorScheme.onPrimary,
-                        ),
-                      )
-                    : Text(confirmText.tl),
+                child: LoadingButtonChild(
+                  isLoading: isLoading,
+                  color: context.colorScheme.onPrimary,
+                  child: Text(confirmText.tl),
+                ),
               ),
             ],
           );
@@ -577,52 +556,11 @@ Future<int?> showSelectDialog({
   required String title,
   required List<String> options,
   int? initialIndex,
-}) async {
-  int? current = initialIndex;
-
-  await showDialog(
-    context: App.rootContext,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return ContentDialog(
-            title: title,
-            content: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Select(
-                    current: current == null ? "" : options[current!],
-                    values: options,
-                    minWidth: 156,
-                    onTap: (i) {
-                      setState(() {
-                        current = i;
-                      });
-                    },
-                  )
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  current = null;
-                  context.pop();
-                },
-                child: Text('Cancel'.tl),
-              ),
-              FilledButton(
-                onPressed: current == null ? null : context.pop,
-                child: Text('Confirm'.tl),
-              ),
-            ],
-          );
-        },
-      );
-    },
+}) {
+  return showOptionsSheet<int>(
+    App.rootContext,
+    title: title,
+    options: {for (var i = 0; i < options.length; i++) i: options[i]},
+    selected: initialIndex,
   );
-
-  return current;
 }

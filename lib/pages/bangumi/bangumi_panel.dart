@@ -116,10 +116,13 @@ class _BangumiLoginDialogState extends State<_BangumiLoginDialog> {
         ],
       ).paddingHorizontal(16),
       actions: [
-        Button.filled(
-          isLoading: isLoading,
-          onPressed: login,
-          child: Text("Log in".tl),
+        FilledButton(
+          onPressed: isLoading ? null : login,
+          child: LoadingButtonChild(
+            isLoading: isLoading,
+            color: context.colorScheme.onPrimary,
+            child: Text("Log in".tl),
+          ),
         ),
       ],
     );

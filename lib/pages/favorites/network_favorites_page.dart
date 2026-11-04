@@ -18,14 +18,12 @@ Future<bool> _deleteComic(
     builder: (context) {
       bool loading = false;
       return StatefulBuilder(builder: (context, setState) {
-        return _FavoriteDialog(
+        return ContentDialog(
           title: "Remove".tl,
           content: Text("Remove comic from favorite?".tl).paddingHorizontal(16),
           actions: [
-            Button.filled(
-              isLoading: loading,
-              color: context.colorScheme.error,
-              onPressed: () async {
+            FilledButton(
+              onPressed: loading ? null : () async {
                 setState(() {
                   loading = true;
                 });
@@ -48,7 +46,15 @@ Future<bool> _deleteComic(
                   context.showMessage(message: res.errorMessage!);
                 }
               },
-              child: Text("Confirm".tl),
+              style: FilledButton.styleFrom(
+                backgroundColor: context.colorScheme.error,
+                foregroundColor: context.colorScheme.onError,
+              ),
+              child: LoadingButtonChild(
+                isLoading: loading,
+                color: context.colorScheme.onError,
+                child: Text("Confirm".tl),
+              ),
             ),
           ],
         );
@@ -259,9 +265,7 @@ class _MultiFolderFavoritesPageState extends State<_MultiFolderFavoritesPage> {
         children: [
           appBar,
           const Expanded(
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
+            child: AppLoadingView(),
           ),
         ],
       );
@@ -435,14 +439,12 @@ class _FolderTile extends StatelessWidget {
       builder: (context) {
         bool loading = false;
         return StatefulBuilder(builder: (context, setState) {
-          return _FavoriteDialog(
+          return ContentDialog(
             title: "Delete".tl,
             content: Text("Delete folder?".tl).paddingHorizontal(16),
             actions: [
-              Button.filled(
-                isLoading: loading,
-                color: context.colorScheme.error,
-                onPressed: () async {
+              FilledButton(
+                onPressed: loading ? null : () async {
                   setState(() {
                     loading = true;
                   });
@@ -458,7 +460,15 @@ class _FolderTile extends StatelessWidget {
                     context.showMessage(message: res.errorMessage!);
                   }
                 },
-                child: Text("Confirm".tl),
+                style: FilledButton.styleFrom(
+                  backgroundColor: context.colorScheme.error,
+                  foregroundColor: context.colorScheme.onError,
+                ),
+                child: LoadingButtonChild(
+                  isLoading: loading,
+                  color: context.colorScheme.onError,
+                  child: Text("Confirm".tl),
+                ),
               ),
             ],
           );
@@ -485,7 +495,7 @@ class _CreateFolderDialogState extends State<_CreateFolderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return _FavoriteDialog(
+    return ContentDialog(
       title: "Create a folder".tl,
       content: Column(
         children: [
@@ -505,9 +515,8 @@ class _CreateFolderDialogState extends State<_CreateFolderDialog> {
         ],
       ),
       actions: [
-        Button.filled(
-          isLoading: loading,
-          onPressed: () {
+        FilledButton(
+          onPressed: loading ? null : () {
             setState(() {
               loading = true;
             });
@@ -524,7 +533,11 @@ class _CreateFolderDialogState extends State<_CreateFolderDialog> {
               }
             });
           },
-          child: Text("Submit".tl),
+          child: LoadingButtonChild(
+            isLoading: loading,
+            color: context.colorScheme.onPrimary,
+            child: Text("Submit".tl),
+          ),
         )
       ],
     );

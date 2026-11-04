@@ -21,3 +21,8 @@ abstract final class AppSpacing {
   /// Horizontal page gutter.
   static const double gutter = 16;
 }
+
+/// Shared animation timings.
+abstract final class AppDuration {
+  static const fast = Duration(milliseconds: 160);
+}

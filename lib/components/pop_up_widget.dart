@@ -19,22 +19,20 @@ class PopUpWidget<T> extends PopupRoute<T> {
       Animation<double> secondaryAnimation) {
     var height = MediaQuery.of(context).size.height * 0.9;
     bool showPopUp = MediaQuery.of(context).size.width > 500;
-    Widget body = PopupIndicatorWidget(
-      child: Container(
-        decoration: showPopUp
-            ? BoxDecoration(
-                borderRadius: BorderRadius.all(Radius.circular(AppRadius.xl)),
-                color: context.colorScheme.surfaceContainerLow,
-              )
-            : null,
-        clipBehavior: showPopUp ? Clip.antiAlias : Clip.none,
-        width: showPopUp ? 500 : double.infinity,
-        height: showPopUp ? height : double.infinity,
-        child: ClipRect(
-          child: Navigator(
-            onGenerateRoute: (settings) => MaterialPageRoute(
-              builder: (context) => widget,
-            ),
+    Widget body = Container(
+      decoration: showPopUp
+          ? BoxDecoration(
+              borderRadius: BorderRadius.all(Radius.circular(AppRadius.xl)),
+              color: context.colorScheme.surfaceContainerLow,
+            )
+          : null,
+      clipBehavior: showPopUp ? Clip.antiAlias : Clip.none,
+      width: showPopUp ? 500 : double.infinity,
+      height: showPopUp ? height : double.infinity,
+      child: ClipRect(
+        child: Navigator(
+          onGenerateRoute: (settings) => MaterialPageRoute(
+            builder: (context) => widget,
           ),
         ),
       ),
@@ -72,17 +70,6 @@ class PopUpWidget<T> extends PopupRoute<T> {
       ),
       child: child,
     );
-  }
-}
-
-class PopupIndicatorWidget extends InheritedWidget {
-  const PopupIndicatorWidget({super.key, required super.child});
-
-  @override
-  bool updateShouldNotify(covariant InheritedWidget oldWidget) => false;
-
-  static PopupIndicatorWidget? maybeOf(BuildContext context) {
-    return context.dependOnInheritedWidgetOfExactType<PopupIndicatorWidget>();
   }
 }
 

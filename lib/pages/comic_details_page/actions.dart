@@ -362,9 +362,8 @@ abstract mixin class _ComicPageActions {
                         size: 40,
                       ),
                       const Spacer(),
-                      Button.filled(
-                        isLoading: isLoading,
-                        onPressed: () {
+                      FilledButton(
+                        onPressed: isLoading ? null : () {
                           setState(() {
                             isLoading = true;
                           });
@@ -383,7 +382,11 @@ abstract mixin class _ComicPageActions {
                             }
                           });
                         },
-                        child: Text("Submit".tl),
+                        child: LoadingButtonChild(
+                          isLoading: isLoading,
+                          color: context.colorScheme.onPrimary,
+                          child: Text("Submit".tl),
+                        ),
                       )
                     ],
                   ),

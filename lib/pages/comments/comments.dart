@@ -270,7 +270,7 @@ class _CommentsViewState extends State<CommentsView> {
 
   Widget _list() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingView();
     }
     if (_error != null) {
       return AppErrorView(
@@ -851,28 +851,30 @@ class _CommentTileState extends State<CommentTile> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Tooltip(
-            message: "Upvote".tl,
-            child: Button.icon(
+          IconButton(
+            icon: LoadingButtonChild(
               isLoading: isVotingUp,
-              icon: const Icon(Icons.arrow_upward_outlined),
-              size: 18,
               color: upColor,
-              onPressed: () => vote(true),
+              child: const Icon(Icons.arrow_upward_outlined),
             ),
+            color: upColor,
+            onPressed: isVotingUp ? null : () => vote(true),
+            iconSize: 18,
+            tooltip: "Upvote".tl,
           ),
           const SizedBox(width: AppSpacing.xs),
           Text(widget.comment.score.toString()),
           const SizedBox(width: AppSpacing.xs),
-          Tooltip(
-            message: "Downvote".tl,
-            child: Button.icon(
+          IconButton(
+            icon: LoadingButtonChild(
               isLoading: isVotingDown,
-              icon: const Icon(Icons.arrow_downward_outlined),
-              size: 18,
               color: downColor,
-              onPressed: () => vote(false),
+              child: const Icon(Icons.arrow_downward_outlined),
             ),
+            color: downColor,
+            onPressed: isVotingDown ? null : () => vote(false),
+            iconSize: 18,
+            tooltip: "Downvote".tl,
           ),
         ],
       ),

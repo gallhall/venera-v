@@ -294,11 +294,11 @@ class _AppSettingsState extends State<AppSettings> {
                   title: Text("Bangumi Account".tl),
                   subtitle: Text(user?.displayName ?? "Not logged in".tl),
                   trailing: user == null
-                      ? Button.normal(
+                      ? FilledButton.tonal(
                           onPressed: () => showBangumiLoginDialog(context),
                           child: Text("Log in".tl),
                         ).minimumHeight(32)
-                      : Button.normal(
+                      : FilledButton.tonal(
                           onPressed: () => showConfirmDialog(
                             context: context,
                             title: "Log out".tl,
@@ -814,9 +814,8 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             ),
             const SizedBox(height: 16),
             Center(
-              child: Button.filled(
-                isLoading: isTesting,
-                onPressed: () async {
+              child: FilledButton(
+                onPressed: isTesting ? null : () async {
                   var oldConfig = appdata.settings['webdav'];
                   var oldAutoSync = appdata.implicitData['webdavAutoSync'];
 
@@ -866,7 +865,11 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                     App.rootPop();
                   }
                 },
-                child: Text("Continue".tl),
+                child: LoadingButtonChild(
+                  isLoading: isTesting,
+                  color: context.colorScheme.onPrimary,
+                  child: Text("Continue".tl),
+                ),
               ),
             )
           ],
