@@ -659,7 +659,7 @@ class _HistoryState extends State<_History> {
                     },
                   ),
                 ),
-              ).paddingHorizontal(8).paddingBottom(12),
+              ).paddingHorizontal(8).paddingTop(6).paddingBottom(12),
           ],
         ),
       ),
@@ -743,7 +743,7 @@ class _LocalState extends State<_Local> {
                     },
                   ),
                 ),
-              ).paddingHorizontal(8).paddingBottom(12),
+              ).paddingHorizontal(8).paddingTop(6).paddingBottom(12),
             if (local.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(
