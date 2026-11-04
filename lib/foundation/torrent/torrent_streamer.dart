@@ -297,7 +297,8 @@ class DartTorrentStreamer implements TorrentStreamer {
   }
 
   static TorrentFileModel selectVideo(List<TorrentFileModel> files,
-      int? episode, {bool requireEpisode = false}) {
+      int? episode, {bool requireEpisode = false,
+      bool allowSingleFileFallback = true}) {
     var videos = files.where((file) => !file.isPaddingFile &&
       RegExp(r'\.(mkv|mp4|webm|avi|mov|m4v|ts|m2ts|wmv)$',
         caseSensitive: false).hasMatch(file.path)).toList();
@@ -318,7 +319,8 @@ class DartTorrentStreamer implements TorrentStreamer {
         return matches.first;
       }
     }
-    if (requireEpisode && episode != null && videos.length > 1) {
+    if (requireEpisode && episode != null &&
+        (videos.length > 1 || !allowSingleFileFallback)) {
       throw StateError('File not found in torrent'.tl);
     }
     return videos.first;
