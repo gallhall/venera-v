@@ -115,72 +115,58 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
   Widget buildComment(BangumiComment comment) {
     var time = comment.time?.toLocal();
     String pad(int value) => value.toString().padLeft(2, '0');
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return CommentCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      avatarSpacing: AppSpacing.md,
+      contentSpacing: 6,
+      avatar: ClipOval(
+        child: Container(
+          color: context.colorScheme.surfaceContainerHigh,
+          width: 36,
+          height: 36,
+          child: comment.user.avatar.isEmpty
+              ? const Icon(Icons.person_outlined)
+              : AnimatedImage(image: CachedImageProvider(comment.user.avatar)),
+        ),
+      ),
+      name: comment.user.displayName,
+      meta: Wrap(
+        spacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          ClipOval(
-            child: Container(
-              color: context.colorScheme.surfaceContainerHigh,
-              width: 36,
-              height: 36,
-              child: comment.user.avatar.isEmpty
-                  ? const Icon(Icons.person_outlined)
-                  : AnimatedImage(
-                      image: CachedImageProvider(comment.user.avatar),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (comment.rate > 0)
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  comment.user.displayName,
-                  style: ts.s14.copyWith(fontWeight: FontWeight.w600),
+                Icon(
+                  Icons.star_outlined,
+                  size: 16,
+                  color: context.colorScheme.primary,
                 ),
-                Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (comment.rate > 0)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.star_outlined,
-                            size: 16,
-                            color: context.colorScheme.primary,
-                          ),
-                          Text('${comment.rate} / 10', style: ts.s12),
-                        ],
-                      ),
-                    if (BangumiCollectionType.values.contains(comment.type))
-                      Text(
-                        _statusName(comment.type, widget.binding.isBook),
-                        style: ts.s12.copyWith(
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    if (time != null)
-                      Text(
-                        '${time.year}-${pad(time.month)}-${pad(time.day)} '
-                        '${pad(time.hour)}:${pad(time.minute)}',
-                        style: ts.s12.copyWith(
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                SelectableText(comment.comment, style: ts.s14),
+                Text('${comment.rate} / 10', style: ts.s12),
               ],
             ),
-          ),
+          if (BangumiCollectionType.values.contains(comment.type))
+            Text(
+              _statusName(comment.type, widget.binding.isBook),
+              style: ts.s12.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (time != null)
+            Text(
+              '${time.year}-${pad(time.month)}-${pad(time.day)} '
+              '${pad(time.hour)}:${pad(time.minute)}',
+              style: ts.s12.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
         ],
       ),
+      content: SelectableText(comment.comment, style: ts.s14),
     );
   }
 }

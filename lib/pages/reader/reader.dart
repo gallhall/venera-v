@@ -15,7 +15,6 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/components/custom_slider.dart';
-import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -27,13 +26,13 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
-import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/image_provider/reader_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/network/network_error.dart';
+import 'package:venera/pages/comments/comments.dart';
 import 'package:venera/pages/settings/settings_page.dart';
 import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/pages/video/video_player_page.dart';
@@ -47,7 +46,6 @@ import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/volume.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:battery_plus/battery_plus.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
 import 'reader_chain.dart';
@@ -63,8 +61,6 @@ part 'comic_image.dart';
 part 'loading.dart';
 
 part 'chapters.dart';
-
-part 'chapter_comments.dart';
 
 extension _ReaderContext on BuildContext {
   _ReaderState get reader => findAncestorStateOfType<_ReaderState>()!;

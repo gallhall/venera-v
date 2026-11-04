@@ -6,7 +6,6 @@ import 'package:photo_view/photo_view.dart';
 import 'package:shimmer_animation/shimmer_animation.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
-import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
@@ -22,6 +21,7 @@ import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
+import 'package:venera/pages/comments/comments.dart';
 import 'package:venera/pages/favorites/favorites_page.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
@@ -32,8 +32,6 @@ import 'package:venera/utils/io.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 import 'dart:math' as math;
-
-part 'comments_page.dart';
 
 part 'chapters.dart';
 
@@ -880,7 +878,16 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     if (comic.comments == null || comic.comments!.isEmpty) {
       return const SliverPadding(padding: EdgeInsets.zero);
     }
-    return _CommentsPart(comments: comic.comments!, showMore: showComments);
+    return _CommentsPart(
+      comments: comic.comments!,
+      showMore: showComments,
+      target: CommentTarget.comic(
+        source: comicSource,
+        comicId: comic.comicId,
+        subId: comic.subId,
+        title: comic.title,
+      ),
+    );
   }
 
   /// The cover of the tile that opened the page, else the one of the
