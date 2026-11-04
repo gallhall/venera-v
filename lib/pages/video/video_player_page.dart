@@ -1443,6 +1443,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Widget buildPlayer() {
     var p = active;
+    var peerHint = ignoringSession
+        ? PeerHint.none : session?.peerHint ?? PeerHint.none;
     Widget view;
     if (p != null) {
       view = LayoutBuilder(
@@ -1475,6 +1477,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         key: ObjectKey(p),
         player: p,
         controls: controls,
+        loadingOverlay: peerHint != PeerHint.none && error == null
+            ? buildPeerHint(peerHint) : null,
         child: view,
       );
     }
@@ -1484,11 +1488,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         fit: StackFit.expand,
         children: [
           view,
-          if (isLoading || lease?.isOpening == true)
-            const Center(child: CircularProgressIndicator(color: MediaOverlayColors.content)),
-          if (lease?.status != null && error == null)
+          if ((isLoading || lease?.isOpening == true) &&
+              peerHint == PeerHint.none)
+            const IgnorePointer(
+              child: Center(child: CircularProgressIndicator(
+                color: MediaOverlayColors.content)),
+            ),
+          if (p == null && peerHint != PeerHint.none && error == null)
+            buildPeerHint(peerHint),
+          if (p == null && lease?.isTorrent == true && error == null)
+            buildOpeningControls(),
+          if (lease?.status != null && error == null &&
+              peerHint == PeerHint.none)
             buildTorrentStatus(),
-          if (session?.recovering == true && error == null)
+          if (session?.recovering == true && error == null &&
+              peerHint == PeerHint.none)
             buildReconnecting(),
           if (currentSkip != null && !isLocked)
             Positioned(
@@ -1503,6 +1517,80 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (isLocked) buildLockOverlay(),
           if (error != null) buildError(),
         ],
+      ),
+    );
+  }
+
+  Widget buildPeerHint(PeerHint hint) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const IgnorePointer(
+              child: SizedBox(width: 24, height: 24,
+                child: CircularProgressIndicator(
+                  color: MediaOverlayColors.content)),
+            ),
+            AppCard(
+              margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IgnorePointer(
+                    child: Text(
+                      hint == PeerHint.searching
+                          ? 'No available peers yet, still searching…'.tl
+                          : 'Switching to the next resource…'.tl,
+                      textAlign: TextAlign.center,
+                      style: ts.s14.copyWith(
+                        color: context.colorScheme.onSurface),
+                    ),
+                  ),
+                  if (hint == PeerHint.searching)
+                    TextButton(
+                      onPressed: () => session?.retryPeers(),
+                      child: Text('Retry'.tl),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Metadata discovery has no player yet. Keep navigation available here too.
+  Widget buildOpeningControls() {
+    var c = buildControls();
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            if (c.onBack != null)
+              MediaRoundButton(icon: Icons.arrow_back_rounded,
+                onPressed: c.onBack, tooltip: 'Back'.tl, size: 40),
+            MediaRoundButton(icon: Icons.skip_previous_rounded,
+              onPressed: c.onPrevious, tooltip: 'Previous chapter'.tl, size: 40),
+            MediaRoundButton(icon: Icons.skip_next_rounded,
+              onPressed: c.onNext, tooltip: 'Next chapter'.tl, size: 40),
+            const Spacer(),
+            PopupMenuButton<PlayerControlAction>(
+              icon: const Icon(Icons.more_vert,
+                color: MediaOverlayColors.content),
+              itemBuilder: (_) => [
+                for (var action in c.actions)
+                  PopupMenuItem(value: action, child: Text(action.label)),
+              ],
+              onSelected: (action) => action.onPressed(context),
+            ),
+          ],
+        ),
       ),
     );
   }

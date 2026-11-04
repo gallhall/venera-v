@@ -20,6 +20,8 @@ abstract interface class PlaybackEngines {
   String? get error;
 }
 
+enum PeerHint { none, searching, switching }
+
 sealed class PlaybackEvent {}
 
 class PlaybackStarted extends PlaybackEvent {
@@ -92,6 +94,19 @@ class PlaybackSession extends ChangeNotifier {
   VideoPlayback? get active => _active;
   StreamLease? _lease;
   StreamLease? get lease => _lease;
+  PeerHint _peerHint = PeerHint.none;
+  PeerHint get peerHint => _peerHint;
+  Timer? _peerHintTimer;
+  VoidCallback? _stopPeerHint;
+
+  /// Refresh the swarm in place; playback and cached pieces stay open.
+  Future<void> retryPeers() async {
+    try {
+      await _lease?.retryPeers();
+    } catch (e) {
+      Log.warning('Torrent', 'Could not refresh peers: $e');
+    }
+  }
   Duration _openedAt = Duration.zero;
   Duration get openedAt => _openedAt;
   bool get recovering => _recovery != null && !_started;
@@ -208,6 +223,7 @@ class PlaybackSession extends ChangeNotifier {
         // is seen to advance; with a known duration it did play.
         if (completed && !_playbackAdvanced && _duration > Duration.zero) {
           _playbackAdvanced = true;
+          _clearPeerHint();
           cancelStartupWatch();
           _markStarted();
         }
@@ -221,6 +237,7 @@ class PlaybackSession extends ChangeNotifier {
         if (!_playbackAdvanced &&
             p.isPlaying && !p.isBuffering && position > _openedAt) {
           _playbackAdvanced = true;
+          _clearPeerHint();
           cancelStartupWatch();
           _markStarted();
         }
@@ -247,7 +264,49 @@ class PlaybackSession extends ChangeNotifier {
     _changed();
   }
 
+  void _clearPeerHint() {
+    var changed = _peerHint != PeerHint.none;
+    _peerHintTimer?.cancel();
+    _stopPeerHint?.call();
+    _stopPeerHint = null;
+    _peerHint = PeerHint.none;
+    if (changed) {
+      _changed();
+    }
+  }
+
+  void _watchPeerHint(StreamLease opening) {
+    _clearPeerHint();
+    if (!opening.isTorrent) {
+      return;
+    }
+    var status = opening.status;
+    var waited = false;
+    void update() {
+      if (_disposed || !identical(_lease, opening)) {
+        return;
+      }
+      var hint = _peerHint;
+      if ((status?.value.peers ?? 0) > 0 || _playbackAdvanced) {
+        hint = PeerHint.none;
+      } else if (waited && hint != PeerHint.switching && !_paused) {
+        hint = PeerHint.searching;
+      }
+      if (hint != _peerHint) {
+        _peerHint = hint;
+        _changed();
+      }
+    }
+    status?.addListener(update);
+    _stopPeerHint = () => status?.removeListener(update);
+    _peerHintTimer = timers(const Duration(seconds: 30), () {
+      waited = true;
+      update();
+    });
+  }
+
   Future<void> _releaseLease() async {
+    _clearPeerHint();
     var previous = _lease;
     _lease = null;
     _leaseInput = null;
@@ -289,14 +348,23 @@ class PlaybackSession extends ChangeNotifier {
       }
     }
     var opening = _lease!;
+    _watchPeerHint(opening);
     if (autoSwitch()) {
       void timedOut() {
-        if (!_disposed && token == _openToken && !_playbackAdvanced) {
+        if (!_disposed && token == _openToken && !_playbackAdvanced &&
+            autoSwitch()) {
+          if (opening.isTorrent) {
+            _peerHint = PeerHint.switching;
+            _changed();
+          }
           _started = false;
           _onPlayerError("Playback start timed out".tl);
         }
       }
-      _startupWatch = opening.watchStartup(startupLimit(), timedOut);
+      _startupWatch = opening.watchStartup(
+        opening.isTorrent ? const Duration(seconds: 45) : startupLimit(),
+        timedOut,
+      );
     }
     VideoStreamRequest request;
     try {
@@ -560,6 +628,7 @@ class PlaybackSession extends ChangeNotifier {
     _isLoading = false;
     cancelStartupWatch();
     _retryTimer?.cancel();
+    _peerHintTimer?.cancel();
     await _active?.pause();
   }
 
