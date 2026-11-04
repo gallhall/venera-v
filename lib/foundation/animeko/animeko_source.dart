@@ -82,6 +82,33 @@ abstract final class AnimekoSource {
   static bool isRssSource(ComicSource source) =>
       source.animekoSource?.factoryId == 'rss';
 
+  /// Raw releases for the download sheet. Subject filters belong to that
+  /// sheet, so global playback subtitle preferences must not remove lines.
+  static Future<List<RssRelease>> downloadReleases(ComicSource source,
+      int subjectId, String keyword, {List<String> names = const [],
+      bool useSubjectLookup = true}) async {
+    if (!isRssSource(source)) {
+      return [];
+    }
+    var runtime = _runtimes[source] ??= _AnimekoRuntime(source.animekoSource!);
+    var exact = useSubjectLookup
+        ? await findBangumiSubject(source, subjectId, [keyword]) : null;
+    var mikan = exact == null ? null : runtime.mikanId(exact.id);
+    if (mikan != null) {
+      return runtime.mikanReleases(mikan);
+    }
+    var queries = [keyword];
+    var releases = await runtime.rssReleases(keyword);
+    if (releases.isEmpty) {
+      queries.addAll(AnimekoRssEngine.seriesKeywords([keyword]));
+    }
+    var id = AnimekoRssEngine.subjectId(keyword, keywords: queries,
+      names: names.isEmpty ? [keyword] : names);
+    return (await AnimekoRssEngine.subjectGroups(id, runtime.rssReleases,
+      includeUnmarked: true))
+        .expand((g) => g.releases).toList();
+  }
+
   static Future<List<Comic>> findRssBangumiSubject(ComicSource source,
       List<String> keywords, List<String> names,
       {void Function(bool)? onFiltered}) async {
@@ -464,16 +491,21 @@ class _AnimekoRuntime {
     return id;
   }
 
+  Future<List<RssRelease>> mikanReleases(int id) async {
+    var releases = _mikanFeeds[id] ??= AnimekoRssEngine.parse(await send(
+      AnimekoRequest(Uri.https(mikanHost, '/RSS/Bangumi',
+        {'bangumiId': '$id'}).toString())));
+    while (_mikanFeeds.length > 32) {
+      _mikanFeeds.remove(_mikanFeeds.keys.first);
+    }
+    return releases;
+  }
+
   Future<List<AnimekoChannel>> channels(String id, String title) async {
     if (isRss) {
       var exact = mikanId(id);
       if (exact != null) {
-        var releases = _mikanFeeds[exact] ??= AnimekoRssEngine.parse(await send(
-          AnimekoRequest(Uri.https(mikanHost, '/RSS/Bangumi',
-            {'bangumiId': '$exact'}).toString())));
-        while (_mikanFeeds.length > 32) {
-          _mikanFeeds.remove(_mikanFeeds.keys.first);
-        }
+        var releases = await mikanReleases(exact);
         var groups = RssPreferences.fromSettings((key) => appdata.settings[key])
             .order(AnimekoRssEngine.subjectKeyword(id),
               AnimekoRssEngine.group(releases));

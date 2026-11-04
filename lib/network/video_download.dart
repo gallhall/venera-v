@@ -1,5 +1,35 @@
 part of 'download.dart';
 
+/// An exact resource choice, persisted independently of source search results.
+/// [episode] uses the release's numbering, including for absolute-numbered
+/// batch files. A known [path] takes precedence after metadata lookup.
+class VideoDownloadRelease {
+  final String url;
+  final String title;
+  final String? magnet;
+  final int? episode;
+  final String? path;
+  final bool isBatch;
+
+  const VideoDownloadRelease({required this.url, required this.title,
+    this.magnet, this.episode, this.path, this.isBatch = false});
+
+  Map<String, dynamic> toJson() => {'url': url, 'title': title,
+    'magnet': magnet, 'episode': episode, 'path': path, 'isBatch': isBatch};
+
+  factory VideoDownloadRelease.fromJson(Map<String, dynamic> json) =>
+      VideoDownloadRelease(url: json['url'], title: json['title'],
+        magnet: json['magnet'], episode: json['episode'], path: json['path'],
+        isBatch: json['isBatch'] == true);
+
+  VideoPlayInfo get playInfo => VideoPlayInfo(isTorrent: true,
+    torrentEpisode: episode, sources: [
+      VideoPlaySource(url: url, name: title),
+      if (magnet != null && magnet != url)
+        VideoPlaySource(url: magnet!, name: title),
+    ]);
+}
+
 /// Downloads episodes of a video source.
 ///
 /// Each episode is saved in its own directory, like comic chapters (the
@@ -26,12 +56,23 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// [VideoQuality.maxHeight].
   final String quality;
 
+  final int? bangumiSubjectId;
+  /// Source chapter id -> Bangumi episode id (also for online tasks).
+  final Map<String, int> bangumiEpisodeIds;
+  /// Source chapter id -> exact BT release selected in the download sheet.
+  final Map<String, VideoDownloadRelease> torrentReleases;
+  final _episodeErrors = <String, String>{};
+  Map<String, String> get episodeErrors => Map.unmodifiable(_episodeErrors);
+
   VideoDownloadTask({
     required this.source,
     required this.videoId,
     this.comic,
     this.episodes,
     this.quality = 'highest',
+    this.bangumiSubjectId,
+    this.bangumiEpisodeIds = const {},
+    this.torrentReleases = const {},
   });
 
   static const manifestName = 'episode.json';
@@ -249,6 +290,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       return;
     }
     _torrentStatuses.clear();
+    _episodeErrors.clear();
     await _openClient();
 
     if (comic == null) {
@@ -340,6 +382,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           continue;
         }
         var result = await _runWithRetry(() async {
+          var selected = torrentReleases[ep];
+          if (selected != null) {
+            return selected.playInfo;
+          }
           var r = await source.loadVideoPlayInfo!(videoId, ep);
           return r.error ? throw r.errorMessage! : r.data;
         });
@@ -357,7 +403,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           pending.add(finish(ep, label, info).catchError((Object e, StackTrace s) {
             if (_isCurrent(run)) {
               Log.error("Download", "$e", s);
-              _setError(e.toString());
+              // A missing batch file belongs to this episode only. Keep all
+              // sibling handles alive and retain the failed task for retry.
+              _episodeErrors[ep ?? ''] = e.toString();
+              notifyListeners();
             }
           }));
         } else {
@@ -379,6 +428,18 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
     stopRecorder();
     _closeClient();
+    if (_episodeErrors.isNotEmpty) {
+      if (_completed.isNotEmpty) {
+        await LocalManager().add(toLocalComic());
+      }
+      await LocalManager().saveCurrentDownloadingTasks();
+      if (!_isCurrent(run)) {
+        return;
+      }
+      _setError(_episodeErrors.entries.map((e) =>
+        '${comic?.chapters?[e.key] ?? e.key}: ${e.value}').join('\n'));
+      return;
+    }
     LocalManager().completeTask(this);
   }
 
@@ -516,7 +577,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           return;
         }
         handle = TorrentDownloader.instance.download(source.url,
-          TorrentDownloadFile(episode: info.torrentEpisode, directory: dir,
+          TorrentDownloadFile(episode: info.torrentEpisode,
+            path: torrentReleases[episodeKey]?.path,
+            isBatch: torrentReleases[episodeKey]?.isBatch ?? false, directory: dir,
             sessionDirectory: Directory(path!)));
         _torrentHandles[episodeKey] = handle;
         handle.addListener(update);
@@ -538,6 +601,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         }
         Log.warning("Download", "Torrent ${source.name} failed: $e");
         lastError = e;
+        if (e is TorrentDownloadException &&
+            e.reason == TorrentDownloadFailure.fileNotFound) {
+          // Another transport for the same torrent cannot add a missing file.
+          rethrow;
+        }
       } finally {
         handle?.removeListener(update);
         if (identical(_torrentHandles[episodeKey], handle)) {
@@ -1001,6 +1069,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "comic": comic?.toJson(),
       "episodes": episodes,
       "quality": quality,
+      "bangumiSubjectId": bangumiSubjectId,
+      "bangumiEpisodeIds": bangumiEpisodeIds,
+      "torrentReleases": torrentReleases.map((k, v) => MapEntry(k, v.toJson())),
+      "episodeErrors": _episodeErrors,
       "path": path,
       "cover": _cover,
       "completed": _completed,
@@ -1021,9 +1093,17 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         quality: json["quality"] ??
             appdata.settings["videoDownloadQuality"] ??
             "highest",
+        bangumiSubjectId: json['bangumiSubjectId'],
+        bangumiEpisodeIds: Map<String, int>.from(json['bangumiEpisodeIds'] ?? {}),
+        torrentReleases: {
+          for (var e in (json['torrentReleases'] as Map? ?? {}).entries)
+            e.key as String: VideoDownloadRelease.fromJson(
+              Map<String, dynamic>.from(e.value)),
+        },
       )
       ..path = json["path"]
       .._cover = json["cover"]
+      .._episodeErrors.addAll(Map<String, String>.from(json['episodeErrors'] ?? {}))
       .._completed.addAll(List<String>.from(json["completed"] ?? []));
   }
 

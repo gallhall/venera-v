@@ -14,6 +14,21 @@ import 'package:venera/utils/translations.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(AppTranslation.init);
+  test('download candidates keep unmarked absolute numbering for Bangumi matching', () async {
+    const absolute = RssRelease(title: '[Group] Series - 26 [1080P]',
+      url: 'https://example.test/26.torrent');
+    const wanted = RssRelease(title: '[Group] Series S2 - 01 [1080P]',
+      url: 'https://example.test/s2.torrent');
+    const other = RssRelease(title: '[Group] Series S3 - 01 [1080P]',
+      url: 'https://example.test/s3.torrent');
+    var id = AnimekoRssEngine.subjectId('Series S2');
+    Future<List<RssRelease>> fetch(String _) async => [absolute, wanted, other];
+    var normal = await AnimekoRssEngine.subjectGroups(id, fetch);
+    expect(normal.expand((g) => g.releases), [wanted]);
+    var downloads = await AnimekoRssEngine.subjectGroups(id, fetch, includeUnmarked: true);
+    expect(downloads.expand((g) => g.releases), unorderedEquals([absolute, wanted]));
+  });
+
   test('AnimeGarden fixture: all releases, base32 hashes and subject ids',
       () async {
     var releases = AnimekoRssEngine.parse(await File(

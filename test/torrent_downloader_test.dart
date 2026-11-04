@@ -165,6 +165,23 @@ void main() {
       announces: [], nodes: [], version: TorrentVersion.v1)), throwsFormatException);
   });
 
+  test('a missing batch episode cannot fall back to its only video', () {
+    var model = batch();
+    var singleFile = TorrentModel(name: model.name, files: [model.files.first],
+      infoHashBuffer: model.infoHashBuffer, pieceLength: model.pieceLength,
+      pieces: model.pieces, announces: [], nodes: [], version: TorrentVersion.v1);
+    var directory = Directory('unused');
+    expect(() => selectedTorrentFile(singleFile, TorrentDownloadFile(
+      episode: 2, isBatch: true, directory: directory)), throwsA(
+        isA<TorrentDownloadException>().having((e) => e.reason, 'reason',
+          TorrentDownloadFailure.fileNotFound)));
+    // The valid sibling remains selectable after the missing episode failed.
+    expect(selectedTorrentFile(singleFile, TorrentDownloadFile(
+      episode: 1, isBatch: true, directory: directory)), 0);
+    expect(selectedTorrentFile(singleFile, TorrentDownloadFile(
+      episode: 2, directory: directory)), 0);
+  });
+
   test('rarest-first selection never selects skipped pieces or suggestions', () {
     var model = batch();
     var pieces = TestPieces(model);

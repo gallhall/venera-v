@@ -7,111 +7,9 @@ import 'package:venera/foundation/bangumi/bangumi_matching.dart';
 import 'package:venera/foundation/torrent/torrent_id.dart';
 
 import 'animeko_source_config.dart';
+import 'rss_release.dart';
 
-class RssRelease {
-  final String title;
-  final String url;
-  final String? infoHash;
-  final int? size;
-  final int? seeders;
-  final DateTime? pubDate;
-  final String? subjectId;
-
-  const RssRelease({
-    required this.title,
-    required this.url,
-    this.infoHash,
-    this.size,
-    this.seeders,
-    this.pubDate,
-    this.subjectId,
-  });
-}
-
-/// Release naming is separate from transport, so file selection uses it too.
-class RssReleaseName {
-  final String group;
-  final String series;
-  final int? episode;
-  final int? endEpisode;
-  final int version;
-
-  const RssReleaseName(
-    this.group, this.series, this.episode, this.endEpisode, this.version,
-  );
-
-  bool get isBatch => endEpisode != null;
-  String get displayName => group.isEmpty ? series : '[$group] $series';
-  String get key => '$group|$series'.toLowerCase()
-      .replaceAll(RegExp(r'[\s_]+'), ' ').trim();
-
-  static final _episode = RegExp(
-    r'S\d+E(\d{1,3})(?:\.\d+)?(?:v(\d+))?'
-    r'|(?:EP(?:ISODE)?\.?\s*|第\s*)(\d{1,3})(?:\.\d+)?'
-    r'(?:v(\d+))?(?:\s*[-~–]\s*(\d{1,3}))?(?:\s*[话話集])?'
-    // Series markers are masked before matching; keep their text in series.
-    r'|(?:\[|\s-\s*|\s(?=\d{1,3}\s*[-~–]))'
-    r'(\d{1,3})(?:\.\d+)?(?:v(\d+))?'
-    r'(?:\s*[-~–]\s*(\d{1,3}))?(?=\]|\s|\(|$)',
-    caseSensitive: false,
-  );
-  static final _technical = RegExp(
-    r'\[[^\]]*(?:\d{3,4}[pi]|\d{3,4}x\d{3,4}|'
-    r'HEVC|AVC|AAC|FLAC|[xh]\.?26[45]|WEB[- ]?DL|BDRIP|'
-    r'MP4|MKV|CHS|CHT|GB|BIG5|简|簡|繁|字幕|月新番)[^\]]*\]',
-    caseSensitive: false,
-  );
-
-  static RssReleaseName parse(String title) {
-    var text = title.replaceAll('【', '[').replaceAll('】', ']')
-        .replaceFirst(RegExp(r'\.(mkv|mp4|avi|webm|mov|m4v|ts|m2ts|wmv)$',
-          caseSensitive: false), '');
-    var first = RegExp(r'^\s*\[([^\]]+)\]').firstMatch(text);
-    var group = first?[1]?.trim() ?? '';
-    if (first != null) {
-      text = text.substring(first.end).trim();
-    }
-    // Preserve offsets so series names retain Season/Part/Cour markers.
-    var episodeText = text.replaceAllMapped(RegExp(
-      r'\b(?:Season|Part|Cour)\s*\d+\b|第\s*[\d一二三四五六七八九十]+'
-      r'\s*(?:部分|クール|季|期)', caseSensitive: false),
-      (m) => ' ' * m[0]!.length);
-    var match = _episode.firstMatch(episodeText);
-    int? number;
-    int? end;
-    var version = 1;
-    if (match != null) {
-      if (!RegExp(r'\d\.\d').hasMatch(match[0]!)) {
-        number = int.parse((match[1] ?? match[3] ?? match[6])!);
-        end = int.tryParse(match[5] ?? match[8] ?? '');
-      }
-      version = int.tryParse(match[2] ?? match[4] ?? match[7] ?? '') ?? 1;
-    }
-    for (var revision in RegExp(r'(?<![a-z0-9])v(\d+)(?!\d)',
-        caseSensitive: false).allMatches(text)) {
-      var value = int.parse(revision[1]!);
-      if (value > version) {
-        version = value;
-      }
-    }
-    var series = match == null ? text : text.substring(0, match.start);
-    // S2E05 also carries the season, which belongs in the series title.
-    if (match != null && match[1] != null) {
-      series += match[0]!.split(RegExp('E', caseSensitive: false)).first;
-    }
-    series = series.replaceAll(_technical, ' ')
-        .replaceAll(RegExp(r'\([^)]*(?:1080|720|2160|AVC|HEVC)[^)]*\)',
-          caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'\.(mkv|mp4|avi|webm)$',
-          caseSensitive: false), '')
-        .replaceAllMapped(RegExp(r'\bS0+(\d+)\b', caseSensitive: false),
-          (m) => 'S${m[1]}')
-        .replaceAll(RegExp(r'[\[\]]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ').trim()
-        .replaceAll(RegExp(r'[\s\-_/]+$'), '');
-    return RssReleaseName(group, series, number, end, version);
-  }
-}
+export 'rss_release.dart';
 
 class RssSeries {
   final RssReleaseName name;
@@ -305,15 +203,26 @@ class AnimekoRssEngine {
   }
 
   /// Replays both new multi-keyword ids and existing single-keyword ids.
+  /// Downloads also retain unmarked releases: Bangumi ep/sort matching can
+  /// identify their absolute numbers without guessing a season from the title.
   static Future<List<RssSeries>> subjectGroups(String id,
-      Future<List<RssRelease>> Function(String) fetch) async {
+      Future<List<RssRelease>> Function(String) fetch,
+      {bool includeUnmarked = false}) async {
     var data = jsonDecode(id) as Map;
     var keyword = subjectKeyword(id);
     var items = merge([
       for (var query in subjectKeywords(id)) await fetch(query),
     ], names: (data['names'] as List?)?.cast<String>());
-    return subjects(keyword, items).where((s) => s.season == data['season'])
+    var selected = subjects(keyword, items).where((s) => s.season == data['season'])
         .firstOrNull?.groups ?? <RssSeries>[];
+    if (!includeUnmarked) {
+      return selected;
+    }
+    return group(merge([
+      selected.expand((g) => g.releases).toList(),
+      items.where((r) => !_seasonMarker.hasMatch(
+        RssReleaseName.parse(r.title).series)).toList(),
+    ]));
   }
 
   static final _hexHash = RegExp(r'(?<![0-9a-f])([0-9a-f]{40})(?![0-9a-f])',

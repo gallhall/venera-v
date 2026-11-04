@@ -21,12 +21,14 @@ export 'torrent_download_state.dart';
 class TorrentDownloadFile {
   final String? path;
   final int? episode;
+  /// A batch must match a named episode even if it contains only one video.
+  final bool isBatch;
   final Directory directory;
   /// Keep the session state outside individual episode directories: switching
   /// one episode's source must not remove a sibling's live bitfield.
   final Directory? sessionDirectory;
   const TorrentDownloadFile({this.path, this.episode, required this.directory,
-    this.sessionDirectory});
+    this.sessionDirectory, this.isBatch = false});
 }
 
 /// Exact path mapping is case sensitive and never falls back to another episode.
@@ -42,7 +44,7 @@ int selectedTorrentFile(TorrentModel model, TorrentDownloadFile request) {
   }
   try {
     var file = DartTorrentStreamer.selectVideo(model.files, request.episode,
-      requireEpisode: true);
+      requireEpisode: true, allowSingleFileFallback: !request.isBatch);
     return model.files.indexOf(file);
   } catch (e) {
     throw TorrentDownloadException(TorrentDownloadFailure.fileNotFound, e);

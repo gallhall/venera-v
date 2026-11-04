@@ -18,10 +18,10 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/network/cloudflare.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
-import 'package:venera/network/network_error.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
+import 'bangumi_download_panel.dart';
 import 'bangumi_play.dart';
 import 'bangumi_search_page.dart';
 
@@ -522,44 +522,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     );
   }
 
-  /// Downloads episodes of the current source, picked with their quality.
-  /// With no source matched yet, the sources are shown to pick one.
   Future<void> download() async {
-    var candidate = current;
-    var source = ComicSource.find(candidate?.sourceKey ?? '');
-    if (candidate == null || source == null) return pickSource();
-    var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
-    ComicDetails details;
-    try {
-      details = await (matcher.detailsOf(candidate) ??
-          loadBangumiDetails(candidate));
-    } catch (e) {
-      if (mounted) {
-        context.showMessage(
-            message: friendlyError(e.toString(), cause: e).summary);
-      }
-      return;
-    } finally {
-      dialog.close();
-    }
-    if (!mounted) return;
-    // Rule sources often give no cover, or a relative one, which the
-    // download cannot load: the search result's or Bangumi's is used.
-    bool usable(String url) => Uri.tryParse(url)?.hasScheme == true;
-    if (!usable(details.cover)) {
-      var cover = [candidate.cover, subject?.image ?? '']
-          .where(usable)
-          .firstOrNull;
-      if (cover != null) {
-        details = ComicDetails.fromJson({
-          ...details.toJson(),
-          'subtitle': details.subTitle,
-          'cover': cover,
-          'chapters': details.chapters?.toJson(),
-        });
-      }
-    }
-    await downloadVideoEpisodes(source, details);
+    await showSubPage(context,
+      BangumiDownloadPanel(subjectId: widget.subjectId));
   }
 
   @override
