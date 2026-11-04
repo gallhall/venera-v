@@ -1004,7 +1004,7 @@ Future<bool> downloadVideoEpisodes(
         if (local?.downloadedChapters.contains(ids[i]) ?? false) i,
     ];
     List<int>? selected;
-    await showSideBar(
+    await showSubPage(
       App.rootContext,
       _SelectDownloadChapter(
         titles,
@@ -1050,11 +1050,8 @@ class _SelectDownloadChapterState extends State<_SelectDownloadChapter> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: Appbar(
-        title: Text("Download".tl),
-        backgroundColor: context.colorScheme.surfaceContainerLow,
-      ),
+    return SubPage(
+      title: "Download".tl,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

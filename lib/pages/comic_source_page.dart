@@ -537,7 +537,7 @@ class _BodyState extends State<_Body> {
                   FilledButton.tonalIcon(
                     icon: const Icon(Icons.article_outlined),
                     label: Text('Comic Source list'.tl),
-                    onPressed: () => showPopUpWidget(
+                    onPressed: () => showSubPage(
                       App.rootContext,
                       const _ComicSourceList(),
                     ),
@@ -545,7 +545,7 @@ class _BodyState extends State<_Body> {
                   FilledButton.tonalIcon(
                     icon: const Icon(Icons.movie_filter_outlined),
                     label: Text('Kazumi Rules'.tl),
-                    onPressed: () => showPopUpWidget(
+                    onPressed: () => showSubPage(
                       App.rootContext,
                       const KazumiRulesPage(),
                     ),
@@ -553,7 +553,7 @@ class _BodyState extends State<_Body> {
                   FilledButton.tonalIcon(
                     icon: const Icon(Icons.subscriptions_outlined),
                     label: Text('Animeko Sources'.tl),
-                    onPressed: () => showPopUpWidget(
+                    onPressed: () => showSubPage(
                       App.rootContext,
                       const AnimekoSubsPage(),
                     ),

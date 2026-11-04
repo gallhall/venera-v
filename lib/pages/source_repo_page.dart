@@ -148,7 +148,7 @@ class _SourceRepoPageState extends State<SourceRepoPage> {
     var entries = widget.entries;
     var canInstall = entries?.any((e) => e.status().canInstall) ?? false;
     var canUpdate = entries?.any((e) => e.status().canUpdate) ?? false;
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: widget.title,
       body: AppContentWidth(
         child: ListView.builder(

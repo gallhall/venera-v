@@ -465,7 +465,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Future<void> openCollection() async {
-    await showPopUpWidget(
+    await showSubPage(
       App.rootContext,
       BangumiPanel(
         sourceKey: current?.sourceKey ?? '',
@@ -503,10 +503,10 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Future<void> pickSource() async {
-    await showSideBar(
+    await showSubPage(
       App.rootContext,
-      Scaffold(
-        appBar: Appbar(title: Text('Playback sources'.tl)),
+      SubPage(
+        title: 'Playback sources'.tl,
         body: Builder(
           builder: (sheetContext) => ValueListenableBuilder<int>(
             valueListenable: sourceUpdates,

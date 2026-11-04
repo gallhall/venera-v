@@ -219,7 +219,7 @@ class _LocalComicsPageState extends State<LocalComicsPage> {
             icon: Icons.download_outlined,
             text: "Downloading".tl,
             onClick: () {
-              showPopUpWidget(context, const DownloadingPage());
+              showSubPage(context, const DownloadingPage());
             },
           ),
         ],
@@ -694,9 +694,9 @@ Future<void> openComicFolder(LocalComic comic) async {
 void showDeleteChaptersPopWindow(BuildContext context, LocalComic comic) {
   var chapters = <String>[];
 
-  showPopUpWidget(
+  showSubPage(
     context,
-    PopUpWidgetScaffold(
+    SubPage(
       title: "Delete Chapters".tl,
       body: StatefulBuilder(builder: (context, setState) {
         return Column(

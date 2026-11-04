@@ -133,9 +133,9 @@ class _ManageBlockingWordViewState extends State<_ManageBlockingWordView> {
   @override
   Widget build(BuildContext context) {
     assert(appdata.settings["blockedWords"] is List);
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "Keyword blocking".tl,
-      tailing: [
+      actions: [
         TextButton.icon(
           icon: const Icon(Icons.add),
           label: Text("Add".tl),
@@ -279,9 +279,9 @@ class _ManageBlockingCommentWordViewState extends State<_ManageBlockingCommentWo
   @override
   Widget build(BuildContext context) {
     assert(appdata.settings["blockedCommentWords"] is List);
-    return PopUpWidgetScaffold(
+    return SubPage(
       title: "Comment keyword blocking".tl,
-      tailing: [
+      actions: [
         TextButton.icon(
           icon: const Icon(Icons.add),
           label: Text("Add".tl),

@@ -6,7 +6,7 @@ Future<void> showLocalFavoritePanel(
   FavoriteItem item, {
   VoidCallback? onChanged,
 }) {
-  return showSideBar(
+  return showSubPage(
     context,
     _FavoritePanel(
       cid: item.id,
@@ -70,8 +70,8 @@ class _FavoritePanelState extends State<_FavoritePanel>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: Appbar(title: Text("Favorite".tl)),
+    return SubPage(
+      title: "Favorite".tl,
       body: _FavoriteList(
         cid: widget.cid,
         type: widget.type,
