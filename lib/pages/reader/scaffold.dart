@@ -90,15 +90,16 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
         sliderFocus.nextFocus();
       }
     });
-    if (rotation != null) {
-      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    }
     super.initState();
     Future.delayed(const Duration(milliseconds: 200), addDragListener);
   }
 
   @override
   void dispose() {
+    // A rotation lock belongs to the reader; don't leave the app locked.
+    if (rotation != null) {
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    }
     sliderFocus.dispose();
     super.dispose();
   }
@@ -417,7 +418,8 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             },
           ),
         ),
-      if (App.isAndroid)
+      // iPad ignores orientation requests for apps that support split view.
+      if (App.isAndroid || (App.isIOS && MediaQuery.sizeOf(context).shortestSide < 600))
         Tooltip(
           message: "Screen Rotation".tl,
           child: IconButton(

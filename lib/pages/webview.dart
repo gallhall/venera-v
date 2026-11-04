@@ -127,7 +127,7 @@ class _AppWebviewState extends State<AppWebview> {
   Widget build(BuildContext context) {
     final actions = [
       Tooltip(
-        message: "More",
+        message: "More".tl,
         child: IconButton(
           icon: const Icon(Icons.more_horiz),
           onPressed: () {
