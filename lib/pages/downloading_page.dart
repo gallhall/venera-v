@@ -227,6 +227,13 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (task is VideoDownloadTask && !task.isPaused &&
+                        (task as VideoDownloadTask).torrentStatus != null)
+                      IconButton(
+                        tooltip: 'Retry'.tl,
+                        icon: const Icon(Icons.refresh, size: 20),
+                        onPressed: (task as VideoDownloadTask).retryTorrentPeers,
+                      ),
                     IconButton(
                       tooltip: "Move To First".tl,
                       icon: const Icon(Icons.vertical_align_top_outlined, size: 20),

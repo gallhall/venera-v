@@ -258,6 +258,7 @@ class Settings with ChangeNotifier {
     'videoAnime4kHalfPrecision': true,
     'videoAnime4k': 'off', // default for media_kit playback
     'videoSubtitle': 'auto', // auto, no, or the title of the chosen track
+    'btDownloadWifiOnly': false,
     'btMaxCacheGB': '2',
     'btDownloadLimitKB': '0',
     'btUploadLimitKB': '0',
