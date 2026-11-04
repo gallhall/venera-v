@@ -605,7 +605,9 @@ class _LocalSectionState extends State<_LocalSection> {
   }
 }
 
-class _HoverButton extends StatefulWidget {
+/// Small Add / Remove button on a folder row; Material handles hover,
+/// focus and pressed states in both themes.
+class _HoverButton extends StatelessWidget {
   const _HoverButton({
     required this.isFavorite,
     required this.onTap,
@@ -617,45 +619,28 @@ class _HoverButton extends StatefulWidget {
   final bool enabled;
 
   @override
-  State<_HoverButton> createState() => _HoverButtonState();
-}
-
-class _HoverButtonState extends State<_HoverButton> {
-  bool isHovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final removeColor = context.colorScheme.error;
-    final removeHoverColor = Color.lerp(removeColor, Colors.black, 0.2)!;
-    final addColor = context.colorScheme.primary;
-    final addHoverColor = Color.lerp(addColor, Colors.black, 0.2)!;
-    
-    return MouseRegion(
-      onEnter: widget.enabled ? (_) => setState(() => isHovered = true) : null,
-      onExit: widget.enabled ? (_) => setState(() => isHovered = false) : null,
-      child: GestureDetector(
-        onTap: widget.enabled ? widget.onTap : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: widget.enabled
-                ? (widget.isFavorite
-                      ? (isHovered ? removeHoverColor : removeColor)
-                      : (isHovered ? addHoverColor : addColor))
-                : context.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          child: Text(
-            widget.isFavorite ? "Remove".tl : "Add".tl,
-            style: ts.s12.copyWith(
-              color: widget.enabled
-                  ? context.colorScheme.onPrimary
-                  : context.colorScheme.onSurfaceVariant,
-            ),
-          ),
+    final colors = context.colorScheme;
+    return FilledButton(
+      onPressed: enabled ? onTap : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: isFavorite ? colors.error : colors.primary,
+        foregroundColor: isFavorite ? colors.onError : colors.onPrimary,
+        disabledBackgroundColor: colors.surfaceContainerLow,
+        disabledForegroundColor: colors.onSurfaceVariant,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        textStyle: ts.s12,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
         ),
       ),
+      child: Text(isFavorite ? "Remove".tl : "Add".tl),
     );
   }
 }

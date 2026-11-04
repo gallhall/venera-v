@@ -34,7 +34,7 @@ class ComicSourcePage extends StatelessWidget {
         : source.url;
     if (!updateUrl.isURL) {
       if (showLoading) {
-        App.rootContext.showMessage(message: "Invalid url config");
+        App.rootContext.showMessage(message: "Invalid url config".tl);
         return;
       } else {
         throw Exception("Invalid url config");
