@@ -398,7 +398,11 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         await play(episode, retryCached: false);
         return;
       }
-      if (mounted) setState(() => playError = e.toString());
+      if (mounted) {
+        setState(() => playError = e.toString());
+        // Also where the episode was tapped, far below the error line.
+        context.showMessage(message: e.toString());
+      }
     } finally {
       if (mounted) {
         setState(() {
