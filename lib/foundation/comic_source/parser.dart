@@ -126,6 +126,7 @@ class ComicSourceParser {
     }
     _key = key;
     _checkKeyValidation();
+    _js = SourceScript(key);
     var mediaType = SourceMediaType.parse(
       JsEngine().runCode("this['temp'].mediaType"),
     );
@@ -185,12 +186,17 @@ class ComicSourceParser {
 
     if (_checkExists("init")) {
       Future.delayed(const Duration(milliseconds: 50), () {
-        JsEngine().runCode("ComicSource.sources.$_key.init()");
+        _js.run("init");
       });
     }
 
     return source;
   }
+
+  /// The source object in the engine, once the key is known.
+  late SourceScript _js;
+
+  Future<bool> _relogin() => ComicSource.find(_key!)!.reLogin();
 
   _checkKeyValidation() {
     // 仅允许数字和字母以及下划线
@@ -230,24 +236,18 @@ class ComicSourceParser {
 
     if (_checkExists("account.login")) {
       login = (account, pwd) async {
-        try {
-          await JsEngine().runCode("""
-          ComicSource.sources.$_key.account.login(${jsonEncode(account)},
-          ${jsonEncode(pwd)})
-        """);
+        return SourceScript.guard(() async {
+          await _js.run("account.login", [account, pwd]);
           var source = ComicSource.find(_key!)!;
           source.data["account"] = <String>[account, pwd];
           source.saveData();
           return const Res(true);
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       };
     }
 
     void logout() {
-      JsEngine().runCode("ComicSource.sources.$_key.account.logout()");
+      _js.run("account.logout");
     }
 
     bool Function(String url, String title)? checkLoginStatus;
@@ -256,17 +256,12 @@ class ComicSourceParser {
 
     if (_checkExists('account.loginWithWebview')) {
       checkLoginStatus = (url, title) {
-        return JsEngine().runCode("""
-            ComicSource.sources.$_key.account.loginWithWebview.checkStatus(
-              ${jsonEncode(url)}, ${jsonEncode(title)})
-          """);
+        return _js.run("account.loginWithWebview.checkStatus", [url, title]);
       };
 
       if (_checkExists('account.loginWithWebview.onLoginSuccess')) {
         onLoginSuccess = () {
-          JsEngine().runCode("""
-            ComicSource.sources.$_key.account.loginWithWebview.onLoginSuccess()
-          """);
+          _js.run("account.loginWithWebview.onLoginSuccess");
         };
       }
     }
@@ -276,9 +271,7 @@ class ComicSourceParser {
     if (_checkExists('account.loginWithCookies?.validate')) {
       validateCookies = (cookies) async {
         try {
-          var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.account.loginWithCookies.validate(${jsonEncode(cookies)})
-          """);
+          var res = await _js.run("account.loginWithCookies.validate", [cookies]);
           return res;
         } catch (e, s) {
           Log.error("Network", "$e\n$s");
@@ -314,10 +307,8 @@ class ComicSourceParser {
       Future<Res<List<Object>>> Function(int index)? loadMixed;
       if (type == "singlePageWithMultiPart") {
         loadMultiPart = () async {
-          try {
-            var res = await JsEngine().runCode(
-              "ComicSource.sources.$_key.explore[$i].load()",
-            );
+          return SourceScript.guard(() async {
+            var res = await _js.run("explore[$i].load");
             return Res(
               List.from(
                 res.keys
@@ -333,18 +324,13 @@ class ComicSourceParser {
                     .toList(),
               ),
             );
-          } catch (e, s) {
-            Log.error("Data Analysis", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          }, tag: "Data Analysis");
         };
       } else if (type == "multiPageComicList") {
         if (_checkExists("explore[$i].load")) {
           loadPage = (int page) async {
-            try {
-              var res = await JsEngine().runCode(
-                "ComicSource.sources.$_key.explore[$i].load(${jsonEncode(page)})",
-              );
+            return SourceScript.guard(() async {
+              var res = await _js.run("explore[$i].load", [page]);
               return Res(
                 List.generate(
                   res["comics"].length,
@@ -352,17 +338,12 @@ class ComicSourceParser {
                 ),
                 subData: res["maxPage"],
               );
-            } catch (e, s) {
-              Log.error("Network", "$e\n$s");
-              return Res.error(e.toString());
-            }
+            });
           };
         } else {
           loadNext = (next) async {
-            try {
-              var res = await JsEngine().runCode(
-                "ComicSource.sources.$_key.explore[$i].loadNext(${jsonEncode(next)})",
-              );
+            return SourceScript.guard(() async {
+              var res = await _js.run("explore[$i].loadNext", [next]);
               return Res(
                 List.generate(
                   res["comics"].length,
@@ -370,18 +351,13 @@ class ComicSourceParser {
                 ),
                 subData: res["next"],
               );
-            } catch (e, s) {
-              Log.error("Network", "$e\n$s");
-              return Res.error(e.toString());
-            }
+            });
           };
         }
       } else if (type == "multiPartPage") {
         loadMultiPart = () async {
-          try {
-            var res = await JsEngine().runCode(
-              "ComicSource.sources.$_key.explore[$i].load()",
-            );
+          return SourceScript.guard(() async {
+            var res = await _js.run("explore[$i].load");
             return Res(
               List.from(
                 (res as List).map((e) {
@@ -395,17 +371,12 @@ class ComicSourceParser {
                 }),
               ),
             );
-          } catch (e, s) {
-            Log.error("Data Analysis", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          }, tag: "Data Analysis");
         };
       } else if (type == 'mixed') {
         loadMixed = (index) async {
-          try {
-            var res = await JsEngine().runCode(
-              "ComicSource.sources.$_key.explore[$i].load(${jsonEncode(index)})",
-            );
+          return SourceScript.guard(() async {
+            var res = await _js.run("explore[$i].load", [index]);
             var list = <Object>[];
             for (var data in (res['data'] as List)) {
               if (data is List) {
@@ -423,10 +394,7 @@ class ComicSourceParser {
               }
             }
             return Res(list, subData: res['maxPage']);
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         };
       }
       pages.add(
@@ -579,10 +547,7 @@ class ComicSourceParser {
     if (_checkExists("categoryComics.optionLoader")) {
       optionLoader = (category, param) async {
         try {
-          dynamic res = JsEngine().runCode("""
-          ComicSource.sources.$_key.categoryComics.optionLoader(
-            ${jsonEncode(category)}, ${jsonEncode(param)})
-        """);
+          dynamic res = _js.run("categoryComics.optionLoader", [category, param]);
           if (res is Future) {
             res = await res;
           }
@@ -644,11 +609,8 @@ class ComicSourceParser {
       loadWithNext;
       if (_checkExists("categoryComics.ranking.load")) {
         load = (option, page) async {
-          try {
-            var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.categoryComics.ranking.load(
-              ${jsonEncode(option)}, ${jsonEncode(page)})
-          """);
+          return SourceScript.guard(() async {
+            var res = await _js.run("categoryComics.ranking.load", [option, page]);
             return Res(
               List.generate(
                 res["comics"].length,
@@ -656,18 +618,12 @@ class ComicSourceParser {
               ),
               subData: res["maxPage"],
             );
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         };
       } else {
         loadWithNext = (option, next) async {
-          try {
-            var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.categoryComics.ranking.loadWithNext(
-              ${jsonEncode(option)}, ${jsonEncode(next)})
-          """);
+          return SourceScript.guard(() async {
+            var res = await _js.run("categoryComics.ranking.loadWithNext", [option, next]);
             return Res(
               List.generate(
                 res["comics"].length,
@@ -675,10 +631,7 @@ class ComicSourceParser {
               ),
               subData: res["next"],
             );
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         };
       }
       rankingData = RankingData(options, load, loadWithNext);
@@ -692,15 +645,8 @@ class ComicSourceParser {
       options: options,
       optionsLoader: optionLoader,
       load: (category, param, options, page) async {
-        try {
-          var res = await JsEngine().runCode("""
-              ComicSource.sources.$_key.categoryComics.load(
-                ${jsonEncode(category)},
-                ${jsonEncode(param)},
-                ${jsonEncode(options)},
-                ${jsonEncode(page)}
-              )
-            """);
+        return SourceScript.guard(() async {
+          var res = await _js.run("categoryComics.load", [category, param, options, page]);
           return Res(
             List.generate(
               res["comics"].length,
@@ -708,10 +654,7 @@ class ComicSourceParser {
             ),
             subData: res["maxPage"],
           );
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       },
       rankingData: rankingData,
     );
@@ -747,11 +690,8 @@ class ComicSourceParser {
 
     if (_checkExists('search.load')) {
       loadPage = (keyword, page, searchOption) async {
-        try {
-          var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.search.load(
-            ${jsonEncode(keyword)}, ${jsonEncode(searchOption)}, ${jsonEncode(page)})
-        """);
+        return SourceScript.guard(() async {
+          var res = await _js.run("search.load", [keyword, searchOption, page]);
           return Res(
             List.generate(
               res["comics"].length,
@@ -759,18 +699,12 @@ class ComicSourceParser {
             ),
             subData: res["maxPage"],
           );
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       };
     } else {
       loadNext = (keyword, next, searchOption) async {
-        try {
-          var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.search.loadNext(
-            ${jsonEncode(keyword)}, ${jsonEncode(searchOption)}, ${jsonEncode(next)})
-        """);
+        return SourceScript.guard(() async {
+          var res = await _js.run("search.loadNext", [keyword, searchOption, next]);
           return Res(
             List.generate(
               res["comics"].length,
@@ -778,10 +712,7 @@ class ComicSourceParser {
             ),
             subData: res["next"],
           );
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       };
     }
 
@@ -790,51 +721,36 @@ class ComicSourceParser {
 
   LoadComicFunc? _parseLoadComicFunc() {
     return (id) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.loadInfo(${jsonEncode(id)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.loadInfo", [id]);
         if (res is! Map<String, dynamic>) throw "Invalid data";
         res['comicId'] = id;
         res['sourceKey'] = _key;
         return Res(ComicDetails.fromJson(res));
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
   LoadComicPagesFunc? _parseLoadComicPagesFunc() {
     return (id, ep) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.loadEp(${jsonEncode(id)}, ${jsonEncode(ep)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.loadEp", [id, ep]);
         return Res(List.from(res["images"]));
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
   LoadVideoPlayInfoFunc _parseLoadVideoPlayInfoFunc() {
     return (id, epId) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.video.loadPlayInfo(${jsonEncode(id)}, ${jsonEncode(epId)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("video.loadPlayInfo", [id, epId]);
         var info = VideoPlayInfo.fromJson(res);
         info = await info.resolveWebSources((url, headers) async {
           var r = await VideoSniffer.sniff(url, headers: headers);
           return (url: r.url, headers: r.headers, type: r.type);
         });
         return Res(info);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -851,16 +767,7 @@ class ComicSourceParser {
       if (!ComicSource.find(_key!)!.isLogged) {
         return const Res.error("Not login");
       }
-      var res = await func();
-      if (res.error && res.errorMessage!.contains("Login expired")) {
-        var reLoginRes = await ComicSource.find(_key!)!.reLogin();
-        if (!reLoginRes) {
-          return const Res.error("Login expired and re-login failed");
-        } else {
-          return func();
-        }
-      }
-      return res;
+      return SourceScript.withRelogin(func, _relogin);
     }
 
     Future<Res<bool>> addOrDelFavFunc(
@@ -870,16 +777,10 @@ class ComicSourceParser {
       String? favId,
     ) async {
       func() async {
-        try {
-          await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.addOrDelFavorite(
-              ${jsonEncode(comicId)}, ${jsonEncode(folderId)}, ${jsonEncode(isAdding)})
-          """);
+        return SourceScript.guard(() async {
+          await _js.run("favorites.addOrDelFavorite", [comicId, folderId, isAdding]);
           return const Res(true);
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res<bool>.error(e.toString());
-        }
+        });
       }
 
       return retryZone(func);
@@ -892,11 +793,8 @@ class ComicSourceParser {
     if (_checkExists("favorites.loadComics")) {
       loadComic = (int page, [String? folder]) async {
         Future<Res<List<Comic>>> func() async {
-          try {
-            var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.loadComics(
-              ${jsonEncode(page)}, ${jsonEncode(folder)})
-          """);
+          return SourceScript.guard(() async {
+            var res = await _js.run("favorites.loadComics", [page, folder]);
             return Res(
               List.generate(
                 res["comics"].length,
@@ -904,10 +802,7 @@ class ComicSourceParser {
               ),
               subData: res["maxPage"],
             );
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         }
 
         return retryZone(func);
@@ -917,11 +812,8 @@ class ComicSourceParser {
     if (_checkExists("favorites.loadNext")) {
       loadNext = (String? next, [String? folder]) async {
         Future<Res<List<Comic>>> func() async {
-          try {
-            var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.loadNext(
-              ${jsonEncode(next)}, ${jsonEncode(folder)})
-          """);
+          return SourceScript.guard(() async {
+            var res = await _js.run("favorites.loadNext", [next, folder]);
             return Res(
               List.generate(
                 res["comics"].length,
@@ -929,10 +821,7 @@ class ComicSourceParser {
               ),
               subData: res["next"],
             );
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         }
 
         return retryZone(func);
@@ -948,47 +837,32 @@ class ComicSourceParser {
     if (multiFolder) {
       loadFolders = ([String? comicId]) async {
         Future<Res<Map<String, String>>> func() async {
-          try {
-            var res = await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.loadFolders(${jsonEncode(comicId)})
-          """);
+          return SourceScript.guard(() async {
+            var res = await _js.run("favorites.loadFolders", [comicId]);
             List<String>? subData;
             if (res["favorited"] != null) {
               subData = List.from(res["favorited"]);
             }
             return Res(Map.from(res["folders"]), subData: subData);
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         }
 
         return retryZone(func);
       };
       if (_checkExists("favorites.addFolder")) {
         addFolder = (name) async {
-          try {
-            await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.addFolder(${jsonEncode(name)})
-          """);
+          return SourceScript.guard(() async {
+            await _js.run("favorites.addFolder", [name]);
             return const Res(true);
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         };
       }
       if (_checkExists("favorites.deleteFolder")) {
         deleteFolder = (key) async {
-          try {
-            await JsEngine().runCode("""
-            ComicSource.sources.$_key.favorites.deleteFolder(${jsonEncode(key)})
-          """);
+          return SourceScript.guard(() async {
+            await _js.run("favorites.deleteFolder", [key]);
             return const Res(true);
-          } catch (e, s) {
-            Log.error("Network", "$e\n$s");
-            return Res.error(e.toString());
-          }
+          });
         };
       }
     }
@@ -1011,19 +885,13 @@ class ComicSourceParser {
   CommentsLoader? _parseCommentsLoader() {
     if (!_checkExists("comic.loadComments")) return null;
     return (id, subId, page, replyTo) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.loadComments(
-            ${jsonEncode(id)}, ${jsonEncode(subId)}, ${jsonEncode(page)}, ${jsonEncode(replyTo)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.loadComments", [id, subId, page, replyTo]);
         return Res(
           (res["comments"] as List).map((e) => Comment.fromJson(e)).toList(),
           subData: res["maxPage"],
         );
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1031,47 +899,26 @@ class ComicSourceParser {
     if (!_checkExists("comic.sendComment")) return null;
     return (id, subId, content, replyTo) async {
       Future<Res<bool>> func() async {
-        try {
-          await JsEngine().runCode("""
-            ComicSource.sources.$_key.comic.sendComment(
-              ${jsonEncode(id)}, ${jsonEncode(subId)}, ${jsonEncode(content)}, ${jsonEncode(replyTo)})
-          """);
+        return SourceScript.guard(() async {
+          await _js.run("comic.sendComment", [id, subId, content, replyTo]);
           return const Res(true);
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       }
 
-      var res = await func();
-      if (res.error && res.errorMessage!.contains("Login expired")) {
-        var reLoginRes = await ComicSource.find(_key!)!.reLogin();
-        if (!reLoginRes) {
-          return const Res.error("Login expired and re-login failed");
-        } else {
-          return func();
-        }
-      }
-      return res;
+      return SourceScript.withRelogin(func, _relogin);
     };
   }
 
   ChapterCommentsLoader? _parseChapterCommentsLoader() {
     if (!_checkExists("comic.loadChapterComments")) return null;
     return (comicId, epId, page, replyTo) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.loadChapterComments(
-            ${jsonEncode(comicId)}, ${jsonEncode(epId)}, ${jsonEncode(page)}, ${jsonEncode(replyTo)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.loadChapterComments", [comicId, epId, page, replyTo]);
         return Res(
           (res["comments"] as List).map((e) => Comment.fromJson(e)).toList(),
           subData: res["maxPage"],
         );
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1079,28 +926,13 @@ class ComicSourceParser {
     if (!_checkExists("comic.sendChapterComment")) return null;
     return (comicId, epId, content, replyTo) async {
       Future<Res<bool>> func() async {
-        try {
-          await JsEngine().runCode("""
-            ComicSource.sources.$_key.comic.sendChapterComment(
-              ${jsonEncode(comicId)}, ${jsonEncode(epId)}, ${jsonEncode(content)}, ${jsonEncode(replyTo)})
-          """);
+        return SourceScript.guard(() async {
+          await _js.run("comic.sendChapterComment", [comicId, epId, content, replyTo]);
           return const Res(true);
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       }
 
-      var res = await func();
-      if (res.error && res.errorMessage!.contains("Login expired")) {
-        var reLoginRes = await ComicSource.find(_key!)!.reLogin();
-        if (!reLoginRes) {
-          return const Res.error("Login expired and re-login failed");
-        } else {
-          return func();
-        }
-      }
-      return res;
+      return SourceScript.withRelogin(func, _relogin);
     };
   }
 
@@ -1109,10 +941,7 @@ class ComicSourceParser {
       return null;
     }
     return (imageKey, comicId, ep) async {
-      var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.onImageLoad(
-            ${jsonEncode(imageKey)}, ${jsonEncode(comicId)}, ${jsonEncode(ep)})
-        """);
+      var res = _js.run("comic.onImageLoad", [imageKey, comicId, ep]);
       if (res is Future) {
         return await res;
       }
@@ -1125,9 +954,7 @@ class ComicSourceParser {
       return null;
     }
     return (imageKey) {
-      var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.onThumbnailLoad(${jsonEncode(imageKey)})
-        """);
+      var res = _js.run("comic.onThumbnailLoad", [imageKey]);
       if (res is! Map) {
         Log.error("Network", "function onThumbnailLoad return invalid data");
         throw "function onThumbnailLoad return invalid data";
@@ -1141,15 +968,10 @@ class ComicSourceParser {
       return null;
     }
     return (id, next) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.loadThumbnails(${jsonEncode(id)}, ${jsonEncode(next)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.loadThumbnails", [id, next]);
         return Res(List<String>.from(res['thumbnails']), subData: res['next']);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1158,15 +980,10 @@ class ComicSourceParser {
       return null;
     }
     return (id, isLiking) async {
-      try {
-        await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.likeComic(${jsonEncode(id)}, ${jsonEncode(isLiking)})
-        """);
+      return SourceScript.guard(() async {
+        await _js.run("comic.likeComic", [id, isLiking]);
         return const Res(true);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1175,15 +992,10 @@ class ComicSourceParser {
       return null;
     }
     return (id, subId, commentId, isUp, isCancel) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.voteComment(${jsonEncode(id)}, ${jsonEncode(subId)}, ${jsonEncode(commentId)}, ${jsonEncode(isUp)}, ${jsonEncode(isCancel)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.voteComment", [id, subId, commentId, isUp, isCancel]);
         return Res(res is num ? res.toInt() : 0);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1192,15 +1004,10 @@ class ComicSourceParser {
       return null;
     }
     return (id, subId, commentId, isLiking) async {
-      try {
-        var res = await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.likeComment(${jsonEncode(id)}, ${jsonEncode(subId)}, ${jsonEncode(commentId)}, ${jsonEncode(isLiking)})
-        """);
+      return SourceScript.guard(() async {
+        var res = await _js.run("comic.likeComment", [id, subId, commentId, isLiking]);
         return Res(res is num ? res.toInt() : 0);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1254,9 +1061,7 @@ class ComicSourceParser {
       return null;
     }
     return (namespace, tag) {
-      var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.onClickTag(${jsonEncode(namespace)}, ${jsonEncode(tag)})
-        """);
+      var res = _js.run("comic.onClickTag", [namespace, tag]);
       if (res is! Map) {
         return null;
       }
@@ -1271,10 +1076,7 @@ class ComicSourceParser {
       return null;
     }
     return (namespace, tag) {
-      var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.search.onTagSuggestionSelected(
-            ${jsonEncode(namespace)}, ${jsonEncode(tag)})
-        """);
+      var res = _js.run("search.onTagSuggestionSelected", [namespace, tag]);
       return res is String ? res : "$namespace:$tag";
     };
   }
@@ -1285,9 +1087,7 @@ class ComicSourceParser {
     }
     List<String> domains = List.from(_getValue("comic.link.domains"));
     linkToId(String link) {
-      var res = JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.link.linkToId(${jsonEncode(link)})
-        """);
+      var res = _js.run("comic.link.linkToId", [link]);
       return res as String?;
     }
 
@@ -1299,15 +1099,10 @@ class ComicSourceParser {
       return null;
     }
     return (id, rating) async {
-      try {
-        await JsEngine().runCode("""
-          ComicSource.sources.$_key.comic.starRating(${jsonEncode(id)}, ${jsonEncode(rating)})
-        """);
+      return SourceScript.guard(() async {
+        await _js.run("comic.starRating", [id, rating]);
         return const Res(true);
-      } catch (e, s) {
-        Log.error("Network", "$e\n$s");
-        return Res.error(e.toString());
-      }
+      });
     };
   }
 
@@ -1317,28 +1112,18 @@ class ComicSourceParser {
     }
     return ArchiveDownloader(
       (cid) async {
-        try {
-          var res = await JsEngine().runCode("""
-              ComicSource.sources.$_key.comic.archive.getArchives(${jsonEncode(cid)})
-            """);
+        return SourceScript.guard(() async {
+          var res = await _js.run("comic.archive.getArchives", [cid]);
           return Res(
             (res as List).map((e) => ArchiveInfo.fromJson(e)).toList(),
           );
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       },
       (cid, aid) async {
-        try {
-          var res = await JsEngine().runCode("""
-              ComicSource.sources.$_key.comic.archive.getDownloadUrl(${jsonEncode(cid)}, ${jsonEncode(aid)})
-            """);
+        return SourceScript.guard(() async {
+          var res = await _js.run("comic.archive.getDownloadUrl", [cid, aid]);
           return Res(res as String);
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
-          return Res.error(e.toString());
-        }
+        });
       },
     );
   }

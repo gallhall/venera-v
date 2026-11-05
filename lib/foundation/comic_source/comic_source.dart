@@ -10,6 +10,7 @@ import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'source_enablement.dart';
+import 'source_script.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/res.dart';
