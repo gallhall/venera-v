@@ -282,12 +282,18 @@ class PlaybackSession extends ChangeNotifier {
     }
     var status = opening.status;
     var waited = false;
+    var received = false;
     void update() {
       if (_disposed || !identical(_lease, opening)) {
         return;
       }
       var hint = _peerHint;
-      if ((status?.value.peers ?? 0) > 0 || _playbackAdvanced) {
+      var value = status?.value;
+      received = received || (value?.receiving ?? false);
+      // Peers that have sent data are slow rather than useless.
+      var connected = (value?.usable ?? false) ||
+          received && (value?.peers ?? 0) > 0;
+      if (connected || _playbackAdvanced) {
         hint = PeerHint.none;
       } else if (waited && hint != PeerHint.switching && !_paused) {
         hint = PeerHint.searching;

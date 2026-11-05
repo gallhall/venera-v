@@ -490,6 +490,23 @@ void main() {
     expect(session.peerHint, PeerHint.none);
   });
 
+  test('BT peers that send nothing after metadata keep the hint', () async {
+    automatic = false;
+    create(info: _torrent);
+    await start();
+    var status = torrents.statuses.values.single;
+    status.value = const TorrentStatus(peers: 1, metadata: false);
+    clock.elapse(30);
+    expect(session.peerHint, PeerHint.searching);
+    status.value =
+        const TorrentStatus(peers: 1, metadata: false, bytesPerSecond: 100);
+    expect(session.peerHint, PeerHint.none);
+    status.value = const TorrentStatus(peers: 1, metadata: false);
+    expect(session.peerHint, PeerHint.none);
+    status.value = const TorrentStatus(metadata: false);
+    expect(session.peerHint, PeerHint.searching);
+  });
+
   test('BT with peers before 30 seconds has no searching hint', () async {
     create(info: _torrent);
     await start();

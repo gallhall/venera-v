@@ -176,7 +176,7 @@ class _EpisodeCommentsState extends State<EpisodeComments> {
         ].join(' · '),
         style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
       ),
-      content: DefaultTextStyle(
+      content: DefaultTextStyle.merge(
         style: ts.s14,
         child: RichCommentContent(
           key: ValueKey(comment.content),

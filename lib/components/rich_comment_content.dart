@@ -302,6 +302,11 @@ class _RichCommentContentState extends State<RichCommentContent> {
                   width: size,
                   height: size,
                   image: CachedImageProvider(e.url),
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    Icons.broken_image_outlined,
+                    size: size / 3,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                 ),
               );
               if (e.link != null) {

@@ -162,14 +162,17 @@ class _TorrentLease extends _Lease {
     var result = watch(onStalled);
     if (!result._cancelled) {
       // Metadata discovery counts as startup too. Within [limit] the
-      // torrent must reach a peer; a swarm that does is slow, not dead,
-      // and gets three times the limit without data, or five minutes.
+      // torrent must reach a usable swarm (see [TorrentStatus.usable]); one
+      // that does is slow, not dead, and gets three times the limit
+      // without data, or five minutes.
       var idle = 0, elapsed = 0;
+      var usable = false;
       result._timer = timerFactory(const Duration(seconds: 1), () {
-        var peers = status?.value.peers ?? 0;
-        idle = (status?.value.bytesPerSecond ?? 0) > 0 ? 0 : idle + 1;
+        var value = status?.value;
+        usable = usable || (value?.usable ?? false);
+        idle = (value?.bytesPerSecond ?? 0) > 0 ? 0 : idle + 1;
         elapsed++;
-        if (peers == 0 && Duration(seconds: elapsed) >= limit ||
+        if (!usable && Duration(seconds: elapsed) >= limit ||
             Duration(seconds: idle) >= limit * 3 ||
             elapsed >= 300) {
           result._fire();
