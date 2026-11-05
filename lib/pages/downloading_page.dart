@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
-import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/video_cache.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/bangumi/anime_cache_page.dart';
 import 'package:venera/pages/video/video_cache_widgets.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/network/download_queue.dart';
 
 class DownloadingPage extends StatefulWidget {
   const DownloadingPage({super.key, this.initialSubjectId, this.initialGroupKey,
@@ -31,7 +31,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
   final episodeKeys = <String, GlobalKey>{};
   bool positioned = false;
 
-  List<DownloadTask> get comics => LocalManager().downloadingTasks
+  List<DownloadTask> get comics => DownloadQueue().tasks
       .where((t) => t is! VideoDownloadTask).toList();
   String? get targetGroup => widget.initialGroupKey ??
       (widget.initialSubjectId == null ? null : 'bangumi:${widget.initialSubjectId}');
@@ -39,18 +39,18 @@ class _DownloadingPageState extends State<DownloadingPage> {
   @override
   void initState() {
     super.initState();
-    var tasks = LocalManager().downloadingTasks;
+    var tasks = DownloadQueue().tasks;
     anime = targetGroup != null || (tasks.any((t) => t is VideoDownloadTask) &&
       !tasks.any((t) => t is! VideoDownloadTask && !t.isPaused));
     firstTask = comics.firstOrNull;
     firstTask?.addListener(update);
-    LocalManager().addListener(update);
+    DownloadQueue().addListener(update);
     cache = VideoCacheController()..addListener(update);
   }
 
   @override
   void dispose() {
-    LocalManager().removeListener(update);
+    DownloadQueue().removeListener(update);
     firstTask?.removeListener(update);
     cache.removeListener(update);
     cache.dispose();
@@ -325,7 +325,7 @@ class _DownloadTaskTileState extends State<_DownloadTaskTile> {
                     IconButton(
                       tooltip: "Move To First".tl,
                       icon: const Icon(Icons.vertical_align_top_outlined, size: 20),
-                      onPressed: () => LocalManager().moveToFirst(task),
+                      onPressed: () => DownloadQueue().moveToFirst(task),
                     ),
                     IconButton(
                       tooltip: "Cancel".tl,

@@ -154,8 +154,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   void _saveEpisodeState() {
     // Unregistered tasks (including restored tasks under construction) need no IO.
-    if (LocalManager().downloadingTasks.contains(this)) {
-      unawaited(LocalManager().saveCurrentDownloadingTasks());
+    if (DownloadQueue().tasks.contains(this)) {
+      unawaited(DownloadQueue().save());
     }
     notifyListeners();
   }
@@ -224,13 +224,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
     if (_targets.isEmpty) {
       pause();
-      LocalManager().removeTask(this);
+      DownloadQueue().remove(this);
       if (path != null && LocalManager().find(id, comicType) == null) {
         await Directory(path!).deleteIgnoreError(recursive: true);
       }
     } else if (!_isRunning && _targets.every(episodeCompleted) &&
-        LocalManager().downloadingTasks.contains(this)) {
-      LocalManager().completeTask(this);
+        DownloadQueue().tasks.contains(this)) {
+      DownloadQueue().complete(this);
     }
     _saveEpisodeState();
   }
@@ -455,7 +455,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     await _closeTorrents();
     stopRecorder();
     _closeClient();
-    LocalManager().removeTask(this);
+    DownloadQueue().remove(this);
     var dir = path;
     if (dir == null) return;
     if (LocalManager().find(id, comicType) == null) {
@@ -559,7 +559,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           return _setError("Error: $e");
         }
       }
-      await LocalManager().saveCurrentDownloadingTasks();
+      await DownloadQueue().save();
       if (!_isCurrent(run)) return;
 
       if (_cover == null) {
@@ -587,7 +587,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           Log.warning("Download", "No cover: ${res.errorMessage}");
         } else {
           _cover = res.data;
-          await LocalManager().saveCurrentDownloadingTasks();
+          await DownloadQueue().save();
         }
       }
 
@@ -612,14 +612,14 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       if (_targets.isNotEmpty && _targets.every(episodeCompleted)) {
         _isRunning = false;
-        LocalManager().completeTask(this);
+        DownloadQueue().complete(this);
       } else {
         _isRunning = false;
         _isError = _episodeErrors.isNotEmpty;
         if (_isError) {
           _message = _episodeErrors.values.join('\n');
         }
-        await LocalManager().saveCurrentDownloadingTasks();
+        await DownloadQueue().save();
         notifyListeners();
       }
     } catch (e, s) {
@@ -701,7 +701,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         if (!_completed.contains(key)) {
           _completed.add(key);
         }
-        await LocalManager().saveCurrentDownloadingTasks();
+        await DownloadQueue().save();
       } catch (e, s) {
         if (_isCurrent(run)) {
           Log.error('Download', '$e', s);

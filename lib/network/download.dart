@@ -30,6 +30,7 @@ import 'package:venera/utils/io.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'file_downloader.dart';
+import 'package:venera/network/download_queue.dart';
 
 part 'video_download.dart';
 
@@ -122,7 +123,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   @override
   void cancel() {
     _isRunning = false;
-    LocalManager().removeTask(this);
+    DownloadQueue().remove(this);
     var local = LocalManager().find(id, comicType);
     if (path != null) {
       if (local == null) {
@@ -306,7 +307,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
     }
 
-    await LocalManager().saveCurrentDownloadingTasks();
+    await DownloadQueue().save();
 
     if (_cover == null) {
       _message = "Downloading cover...";
@@ -335,7 +336,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         _cover = res.data;
         notifyListeners();
       }
-      await LocalManager().saveCurrentDownloadingTasks();
+      await DownloadQueue().save();
     }
 
     if (_images == null) {
@@ -400,7 +401,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
       _message = "$_downloadedCount/$_totalCount";
       notifyListeners();
-      await LocalManager().saveCurrentDownloadingTasks();
+      await DownloadQueue().save();
     }
 
     while (_chapter < _images!.length) {
@@ -421,13 +422,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         _index++;
         _downloadedCount++;
         _message = "$_downloadedCount/$_totalCount";
-        await LocalManager().saveCurrentDownloadingTasks();
+        await DownloadQueue().save();
       }
       _index = 0;
       _chapter++;
     }
 
-    LocalManager().completeTask(this);
+    DownloadQueue().complete(this);
     stopRecorder();
   }
 
@@ -719,7 +720,7 @@ class ArchiveDownloadTask extends DownloadTask {
       Directory(path!).deleteIgnoreError(recursive: true);
     }
     path = null;
-    LocalManager().removeTask(this);
+    DownloadQueue().remove(this);
   }
 
   @override
@@ -827,7 +828,7 @@ class ArchiveDownloadTask extends DownloadTask {
 
     await archiveFile.deleteIgnoreError();
 
-    LocalManager().completeTask(this);
+    DownloadQueue().complete(this);
   }
 
   static Future<void> _extractArchive(String archive, String outDir) async {

@@ -12,10 +12,10 @@ import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
-import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/network/download_queue.dart';
 
 /// Can be opened directly by a subject, cache episode, or failed task.
 /// No state or matcher from BangumiSubjectPage is required.
@@ -104,7 +104,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     }
     load();
     peerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      var value = LocalManager().downloadingTasks.whereType<VideoDownloadTask>()
+      var value = DownloadQueue().tasks.whereType<VideoDownloadTask>()
           .where((t) => t.bangumiSubjectId == widget.subjectId)
           .any((t) => t.torrentStatuses.values.any((s) => s.noPeersHint));
       if (mounted && value != noPeers) {
@@ -438,7 +438,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   Future<bool> startBT(List<({BangumiEpisode episode, _EpisodeChoice choice})> selected) async {
     var source = selected.first.choice.source;
     var details = btDetails(source);
-    var existing = LocalManager().downloadingTasks.whereType<VideoDownloadTask>()
+    var existing = DownloadQueue().tasks.whereType<VideoDownloadTask>()
         .where((t) => (t.bangumiSubjectId == widget.subjectId &&
           t.torrentReleases.isNotEmpty) ||
           (t.id == details.id && t.source.key == source.key)).firstOrNull;
@@ -466,7 +466,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       torrentReleases: {
         for (var e in selected) e.choice.chapterId: e.choice.torrent!,
       });
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     await removeReplacedEpisode(task, selected.map((e) => e.episode.id),
       selected.map((e) => e.choice.chapterId));
     if (!mounted) {
@@ -479,7 +479,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   Future<bool> startOnline(Comic candidate, ComicDetails details,
       List<({BangumiEpisode episode, _EpisodeChoice choice})> selected) async {
     var source = selected.first.choice.source;
-    var existing = LocalManager().downloadingTasks.whereType<VideoDownloadTask>()
+    var existing = DownloadQueue().tasks.whereType<VideoDownloadTask>()
         .where((t) => t.id == details.id && t.source.key == source.key).firstOrNull;
     var quality = existing?.quality ?? await selectDownloadQuality(source, details.id,
       selected.first.choice.chapterId.isEmpty ? null : selected.first.choice.chapterId);
@@ -512,7 +512,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       bangumiSubjectId: widget.subjectId, bangumiEpisodes: {
         for (var e in selected) e.choice.chapterId: e.episode,
       });
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     await removeReplacedEpisode(task, selected.map((e) => e.episode.id),
       selected.map((e) => e.choice.chapterId));
     if (!mounted) {

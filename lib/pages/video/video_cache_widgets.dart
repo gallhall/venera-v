@@ -16,6 +16,7 @@ import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/network/download_queue.dart';
 
 Future<void> playCachedEpisode(BuildContext context, VideoCacheEntry entry) async {
   var local = entry.local ?? (entry.task?.comic == null ? null : entry.task!.toLocalComic());
@@ -72,7 +73,7 @@ Future<void> deleteCachedEpisode(VideoCacheEntry entry) async {
     }
     var last = entry.chapterId == null ||
         current.downloadedChapters.every((id) => id == entry.chapterId);
-    var active = LocalManager().downloadingTasks.any((task) => task.path == current.baseDir);
+    var active = DownloadQueue().tasks.any((task) => task.path == current.baseDir);
     if (last && !active) {
       LocalManager().deleteComic(current, false);
       await Directory(current.baseDir).deleteIgnoreError(recursive: true);

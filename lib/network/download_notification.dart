@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
+import 'package:venera/network/download_queue.dart';
 
 /// Keeps the downloads running in the background on Android, through the
 /// foreground service `DownloadService` of the app. Its notification shows
@@ -23,7 +23,7 @@ abstract final class DownloadNotification {
   static final _tasks = <DownloadTask>{};
 
   static DownloadTask? get _currentTask {
-    var tasks = LocalManager().downloadingTasks;
+    var tasks = DownloadQueue().tasks;
     return tasks.where((task) => !task.isPaused).firstOrNull ?? tasks.firstOrNull;
   }
 
@@ -50,11 +50,11 @@ abstract final class DownloadNotification {
   @visibleForTesting
   static Future<void> attach() async {
     _channel.setMethodCallHandler(_onAction);
-    LocalManager().completedTasks.listen((task) {
+    DownloadQueue().completed.listen((task) {
       _completed++;
       _lastCompleted = task.title;
     });
-    LocalManager().addListener(_onTasksChanged);
+    DownloadQueue().addListener(_onTasksChanged);
     _onTasksChanged();
     try {
       if (await _channel.invokeMethod<bool>("takeResumeRequest") == true) {
@@ -74,7 +74,7 @@ abstract final class DownloadNotification {
   static void moveToBackground() => _invoke("moveTaskToBack");
 
   static void _onTasksChanged() {
-    var current = LocalManager().downloadingTasks.toSet();
+    var current = DownloadQueue().tasks.toSet();
     for (var task in _tasks.difference(current)) {
       task.removeListener(_schedule);
     }
@@ -135,7 +135,7 @@ abstract final class DownloadNotification {
         "${task.message} · ${bytesToReadableString(task.speed)}/s",
       _ => task.message,
     };
-    var queued = LocalManager().downloadingTasks.length - 1;
+    var queued = DownloadQueue().tasks.length - 1;
     _invoke("update", {
       "state": _state,
       "title": task.title,

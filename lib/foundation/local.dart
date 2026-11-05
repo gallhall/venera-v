@@ -12,7 +12,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
-import 'package:venera/network/download.dart';
+import 'package:venera/network/download_queue.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
 import 'package:venera/pages/reader/reader.dart';
@@ -352,7 +352,7 @@ class LocalManager with ChangeNotifier {
     _checkPathValidation();
     _checkNoMedia();
     await ComicSourceManager().ensureInit();
-    restoreDownloadingTasks();
+    DownloadQueue().restore();
   }
 
   String findValidId(ComicType type) {
@@ -533,13 +533,6 @@ class LocalManager with ChangeNotifier {
         .contains((chapters ?? comic.chapters)!.ids.elementAtOrNull(ep - 1));
   }
 
-  List<DownloadTask> downloadingTasks = [];
-
-  bool isDownloading(String id, ComicType type) {
-    return downloadingTasks
-        .any((element) => element.id == id && element.comicType == type);
-  }
-
   Future<Directory> findValidDirectory(
       String id, ComicType type, String name) async {
     var comic = find(id, type);
@@ -552,89 +545,6 @@ class LocalManager with ChangeNotifier {
     }
     var dir = findValidDirectoryName(path, name);
     return Directory(FilePath.join(path, dir)).create().then((value) => value);
-  }
-
-  final _completedTasks = StreamController<DownloadTask>.broadcast(sync: true);
-
-  /// Tasks that have completed, before they leave [downloadingTasks].
-  Stream<DownloadTask> get completedTasks => _completedTasks.stream;
-
-  void completeTask(DownloadTask task) {
-    add(task.toLocalComic());
-    _completedTasks.add(task);
-    downloadingTasks.remove(task);
-    notifyListeners();
-    saveCurrentDownloadingTasks();
-    if (task is! VideoDownloadTask) {
-      downloadingTasks.where((t) => t is! VideoDownloadTask).firstOrNull?.resume();
-    }
-  }
-
-  void removeTask(DownloadTask task) {
-    downloadingTasks.remove(task);
-    notifyListeners();
-    saveCurrentDownloadingTasks();
-  }
-
-  void moveToFirst(DownloadTask task) {
-    var first = downloadingTasks.where((t) => t is! VideoDownloadTask).firstOrNull;
-    if (downloadingTasks.isEmpty || downloadingTasks.first == task) {
-      return;
-    }
-    var shouldResume = task is! VideoDownloadTask && first?.isPaused == false;
-    if (task is! VideoDownloadTask && first != task) {
-      first?.pause();
-    }
-    downloadingTasks.remove(task);
-    downloadingTasks.insert(0, task);
-    notifyListeners();
-    saveCurrentDownloadingTasks();
-    if (shouldResume) {
-      task.resume();
-    }
-  }
-
-  Future<void> _savingTasks = Future.value();
-
-  Future<void> saveCurrentDownloadingTasks() {
-    // Video tasks and episode controls save independently. Serialize writes so
-    // one file cannot contain interleaved JSON from two active tasks.
-    return _savingTasks = _savingTasks.catchError((Object e) {
-      Log.error('LocalManager', 'Failed to save downloads: $e');
-    }).then((_) async {
-      var tasks = downloadingTasks.map((e) => e.toJson()).toList();
-      await File(FilePath.join(App.dataPath, 'downloading_tasks.json'))
-          .writeAsString(jsonEncode(tasks));
-    });
-  }
-
-  void restoreDownloadingTasks() {
-    var file = File(FilePath.join(App.dataPath, 'downloading_tasks.json'));
-    if (file.existsSync()) {
-      try {
-        var tasks = jsonDecode(file.readAsStringSync());
-        for (var e in tasks) {
-          var task = DownloadTask.fromJson(e);
-          if (task != null) {
-            downloadingTasks.add(task);
-          }
-        }
-      } catch (e) {
-        file.delete();
-        Log.error("LocalManager", "Failed to restore downloading tasks: $e");
-      }
-    }
-  }
-
-  void addTask(DownloadTask task) {
-    downloadingTasks.add(task);
-    notifyListeners();
-    saveCurrentDownloadingTasks();
-    if (task is VideoDownloadTask) {
-      task.resume();
-    } else {
-      downloadingTasks.where((t) => t is! VideoDownloadTask).first.resume();
-    }
   }
 
   void deleteComic(LocalComic c, [bool removeFileOnDisk = true]) {
