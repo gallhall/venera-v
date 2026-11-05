@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
@@ -139,6 +140,14 @@ class LocalComic with HistoryMixin implements Comic {
   /// first downloaded episode.
   VideoPlayerPage videoPlayer(String sourceKey) {
     var history = HistoryManager().find(id, comicType);
+    // A download of a Bangumi subject continues from the subject's history.
+    var subjectId = bangumiSubjectIdFromHistory(id) ??
+        switch (BangumiManager().bindingOf(sourceKey, id)) {
+          var b? when !b.isBook => b.subjectId,
+          _ => null,
+        };
+    history ??= subjectId == null ? null : HistoryManager().find(
+        bangumiHistoryId(subjectId), ComicType.bangumi);
     var (ep, group) = _firstDownloadedChapter();
     return VideoPlayerPage(
       sourceKey: sourceKey,

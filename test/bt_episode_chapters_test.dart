@@ -108,4 +108,21 @@ void main() {
       {1001: null, 1002: null});
     expect(ReleaseChapterMap({'a': release('01')}, []).episode(1001), isNull);
   });
+
+  test('fallback lines keep the language and put dubs last', () {
+    RssRelease named(String title) => RssRelease(title: title,
+        url: 'https://example.com/$title.torrent');
+    var map = ReleaseChapterMap({
+      'current': named('[A] Anime - 02 [1080P][简中]'),
+      'dub': named('[B][粵語] Anime - 02 [1080P][简中]'),
+      'cht': named('[C] Anime - 02 [1080P][繁中]'),
+      'chs720': named('[D] Anime - 02 [720P][简中]'),
+      'chs': named('[E] Anime - 02 [1080P][简中]'),
+    }, season(2, offset: 0));
+    var order = map.fallbacks(1002, map.lineOf('current'))
+        .map((e) => e.chapter.chapterId).toList();
+    expect(order, ['chs', 'chs720', 'cht', 'dub']);
+    expect(isDubbedRelease('[x] 国语 Anime'), isTrue);
+    expect(isDubbedRelease('[ANi] Anime - 02 [1080P][Baha]'), isFalse);
+  });
 }

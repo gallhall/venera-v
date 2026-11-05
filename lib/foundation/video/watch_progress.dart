@@ -7,6 +7,7 @@ abstract interface class WatchHistoryStore {
   History? find(String id, ComicType type);
   void add(History history, {bool notifyLater = false});
   void addAsync(History history);
+  void remove(String id, ComicType type);
 }
 
 class _HistoryStore implements WatchHistoryStore {
@@ -24,6 +25,9 @@ class _HistoryStore implements WatchHistoryStore {
   void addAsync(History history) {
     HistoryManager().addHistoryAsync(history);
   }
+
+  @override
+  void remove(String id, ComicType type) => HistoryManager().remove(id, type);
 }
 
 typedef BangumiWatchSync = Future<BangumiSyncResult> Function({
@@ -37,6 +41,9 @@ abstract class WatchProgress {
   History get history;
   Duration? resumeAt(int index);
   bool isWatched(String key);
+
+  /// Whether episode [index] of the episode list is watched.
+  bool isWatchedAt(int index);
   void begin();
   void playing();
   void save({
@@ -121,6 +128,9 @@ class SourceWatchProgress extends WatchProgress {
 
   @override
   bool isWatched(String key) => history.readEpisode.contains(key);
+
+  @override
+  bool isWatchedAt(int index) => isWatched(episodes().historyKey(index));
 
   @override
   void begin() {
@@ -225,9 +235,32 @@ class SourceWatchProgress extends WatchProgress {
   }
 }
 
+/// A downloaded video opened without its Bangumi context whose subject is
+/// known. Its progress is the subject's, as when it is watched online.
+class BangumiLinkedVideo {
+  final int subjectId;
+  final String title;
+  final String cover;
+
+  /// The number on Bangumi of episode [index], null for extras.
+  final int? Function(int index) number;
+
+  /// The video's own history from before: merged into the subject's once,
+  /// then removed so the video is listed once.
+  final (String, ComicType)? previous;
+
+  const BangumiLinkedVideo({
+    required this.subjectId,
+    required this.title,
+    required this.cover,
+    required this.number,
+    this.previous,
+  });
+}
+
 /// Uses the live Bangumi context, falling back to source rules while absent.
 /// Its history is the subject's while there is one: linking a subject later
-/// moves saving to it.
+/// moves saving to it. A [linked] download also saves to its subject.
 class BangumiWatchProgress extends SourceWatchProgress {
   BangumiWatchProgress({
     required super.sourceKey,
@@ -236,6 +269,7 @@ class BangumiWatchProgress extends SourceWatchProgress {
     required super.current,
     required this.bangumi,
     required this.initialPosition,
+    this.linked,
     super.initialHistory,
     super.store,
     super.sync,
@@ -248,29 +282,122 @@ class BangumiWatchProgress extends SourceWatchProgress {
 
   final BangumiPlaybackContext? Function() bangumi;
   final Duration? Function() initialPosition;
+  final BangumiLinkedVideo? Function()? linked;
   final BangumiLocalProgress Function(int) _localProgress;
   final void Function(int) _clearLegacyProgress;
 
+  /// Only while there is no live context.
+  BangumiLinkedVideo? get _linked => bangumi() == null ? linked?.call() : null;
+
   @override
-  Object? get _historyKey => bangumi()?.subject.id;
+  Object? get _historyKey => bangumi()?.subject.id ?? _linked?.subjectId;
 
   @override
   History _loadHistory() {
     var b = bangumi();
-    return b == null
-        ? super._loadHistory()
-        : bangumiSubjectHistory(b.subject, _localProgress(b.subject.id));
+    if (b != null) {
+      return bangumiSubjectHistory(b.subject, _localProgress(b.subject.id));
+    }
+    var l = _linked;
+    return l == null ? super._loadHistory() : _linkedHistory(l);
+  }
+
+  History _linkedHistory(BangumiLinkedVideo l) {
+    var id = bangumiHistoryId(l.subjectId);
+    var history = store.find(id, ComicType.bangumi) ??
+        History.fromMap({
+          'type': ComicType.bangumi.value,
+          'id': id,
+          'title': l.title,
+          'subtitle': '',
+          'cover': l.cover,
+          'ep': 0,
+          'page': 0,
+          'max_page': 0,
+          'time': 0,
+          'readEpisode': <String>[],
+        });
+    var previous = l.previous == null
+        ? null : store.find(l.previous!.$1, l.previous!.$2);
+    if (previous == null) {
+      return history;
+    }
+    int? number(int ep, int? group) {
+      var index = episodes().fromHistory(ep, group);
+      return index == null ? null : l.number(index);
+    }
+    for (var key in previous.readEpisode) {
+      var parts = key.split('-').map(int.tryParse).toList();
+      var n = parts.length == 2 && parts.every((e) => e != null)
+          ? number(parts[1]!, parts[0])
+          : parts.length == 1 && parts[0] != null ? number(parts[0]!, null)
+          : null;
+      if (n != null) {
+        history.readEpisode.add('$n');
+      }
+    }
+    var n = number(previous.ep, previous.group);
+    if (n != null && previous.time.isAfter(history.time)) {
+      history
+        ..ep = n
+        ..group = null
+        ..page = previous.page
+        ..maxPage = previous.maxPage
+        ..time = previous.time;
+    }
+    store.add(history);
+    store.remove(l.previous!.$1, l.previous!.$2);
+    return history;
   }
 
   @override
-  Duration? resumeAt(int index) =>
-      bangumi() == null ? super.resumeAt(index) : initialPosition();
+  Duration? resumeAt(int index) {
+    if (bangumi() != null) {
+      return initialPosition();
+    }
+    var l = _linked;
+    if (l == null) {
+      return super.resumeAt(index);
+    }
+    if (l.number(index) != history.ep) return null;
+    var position = Duration(seconds: history.page);
+    var total = Duration(seconds: history.maxPage ?? 0);
+    if (position <= Duration.zero) return null;
+    if (total > Duration.zero && position >= total) return null;
+    return position;
+  }
+
+  @override
+  bool isWatchedAt(int index) {
+    var l = _linked;
+    if (l == null) {
+      return super.isWatchedAt(index);
+    }
+    var n = l.number(index);
+    return n != null && history.readEpisode.contains('$n');
+  }
 
   @override
   void _saveEpisode(bool sync) {
     var b = bangumi();
     if (b == null) {
-      super._saveEpisode(sync);
+      var l = _linked;
+      if (l == null) {
+        super._saveEpisode(sync);
+        return;
+      }
+      // An extra has no place in the subject's progress.
+      var n = l.number(current());
+      if (n == null) {
+        return;
+      }
+      history
+        ..ep = n
+        ..group = null;
+      if (_markedWatched || _playedToEnd) {
+        history.readEpisode.add('$n');
+      }
+      store.add(history, notifyLater: sync);
       return;
     }
     history

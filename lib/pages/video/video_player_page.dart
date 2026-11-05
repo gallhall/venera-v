@@ -253,6 +253,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     current: () => current,
     initialHistory: widget.history,
     bangumi: () => bangumi,
+    linked: () => linkedVideo,
     initialPosition: () => initialPosition,
     onSync: showBangumiSyncResult,
     sync: ({required sourceKey, required id, required title,
@@ -273,6 +274,55 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   );
 
   History get history => watchProgress.history;
+
+  (String, String)? _linkedFor;
+  BangumiLinkedVideo? _linkedVideo;
+
+  /// This video as a download of a Bangumi subject: a BT download is stored
+  /// under the subject's id, another one under a source linked to it.
+  BangumiLinkedVideo? get linkedVideo {
+    var key = (sourceKey, details.id);
+    if (_linkedFor == key) {
+      return _linkedVideo;
+    }
+    _linkedFor = key;
+    return _linkedVideo = _findLinkedVideo();
+  }
+
+  BangumiLinkedVideo? _findLinkedVideo() {
+    if (localVideo == null) {
+      return null;
+    }
+    var subjectId = bangumiSubjectIdFromHistory(details.id);
+    BangumiBinding? binding;
+    if (subjectId == null) {
+      binding = BangumiManager().bindingOf(sourceKey, details.id);
+      if (binding == null || binding.isBook) {
+        return null;
+      }
+      subjectId = binding.subjectId;
+    }
+    var existing = HistoryManager().find(
+        bangumiHistoryId(subjectId), ComicType.bangumi);
+    return BangumiLinkedVideo(
+      subjectId: subjectId,
+      title: existing?.title ?? binding?.name ?? details.title,
+      cover: existing?.cover ?? details.cover,
+      previous: (details.id, ComicType.fromKey(sourceKey)),
+      number: (index) {
+        var e = episodes.elementAtOrNull(index);
+        if (e == null) {
+          return null;
+        }
+        var position = episodes.toHistory(index).ep;
+        var title = e.id == null ? '' : e.title;
+        // BT downloads are titled "Episode n · name" from the subject.
+        return binding == null
+            ? BangumiEpisodeNumber.of(title.split(' · ').first, position)
+            : binding.subjectNumberOf(title, position);
+      },
+    );
+  }
 
   /// Saves the progress while playing.
   Timer? historyTimer;
@@ -316,6 +366,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     int? index;
     if (widget.initialEp != null) {
       index = episodes.fromHistory(widget.initialEp!, widget.initialGroup);
+    } else if (linkedVideo case var linked?) {
+      // The subject's history counts in Bangumi numbers.
+      for (var i = 0; i < episodes.length && history.ep >= 1; i++) {
+        if (linked.number(i) == history.ep) {
+          index = i;
+          break;
+        }
+      }
     } else if (history.ep >= 1) {
       index = episodes.fromHistory(history.ep, history.group);
     }
@@ -629,17 +687,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var releases = btReleases;
     if (releases != null) {
       var target = BangumiEpisodeNumber.match(releases.episodes, bangumi!.number);
-      for (var option in releases.lines) {
-        if (triedReleaseLines.contains(option) || target == null) {
-          continue;
-        }
-        var match = releases.forLine(option)[target.id];
-        if (match != null) {
-          var index = episodes.indexWhere((e) => e.id == match.chapterId);
-          if (index >= 0) {
-            line = index;
-            break;
-          }
+      var options = target == null ? const <Never>[] : releases.fallbacks(
+          target.id, releases.lineOf(episode.id), tried: triedReleaseLines);
+      for (var option in options) {
+        var index = episodes.indexWhere((e) => e.id == option.chapter.chapterId);
+        if (index >= 0) {
+          line = index;
+          break;
         }
       }
     } else {
@@ -1920,9 +1974,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         EpisodeGridItem(
                           label: episodes[i].title,
                           selected: current == i,
-                          watched: watchProgress.isWatched(
-                            episodes.historyKey(i),
-                          ),
+                          watched: watchProgress.isWatchedAt(i),
                           downloaded: DownloadedPlayInfo.isDownloaded(
                             local,
                             episodes[i].id,

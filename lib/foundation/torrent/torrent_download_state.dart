@@ -62,9 +62,16 @@ class TorrentDownloadStatus {
   }
 }
 
-/// Measures consecutive time without connections, excluding queue/Wi-Fi waits.
-/// Retry does not reset it; only an actual connection clears the hint/deadline.
+/// Measures consecutive time without usable peers, excluding queue/Wi-Fi
+/// waits. Retry does not reset it; only a usable peer clears the
+/// hint/deadline.
 class TorrentPeerDeadline {
+  /// The peers that count: while fetching metadata every connected one,
+  /// afterwards none until one has sent data, as a peer that sends nothing
+  /// is no better than none.
+  static int usable({required int peers, required bool metadata,
+      required bool received}) => metadata || received ? peers : 0;
+
   final DateTime Function() now;
   Duration _idle = Duration.zero;
   DateTime? _last;

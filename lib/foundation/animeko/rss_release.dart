@@ -18,6 +18,47 @@ class RssRelease {
     this.pubDate,
     this.subjectId,
   });
+
+  /// The info hash in lowercase hex, from [infoHash] or the URL: magnets
+  /// carry it, as hex or base32 (dmhy), and Mikan names its .torrent files
+  /// by it. Null if neither has one.
+  String? get hexInfoHash {
+    for (var value in [
+      infoHash,
+      RegExp(r'btih:([0-9a-z]+)', caseSensitive: false).firstMatch(url)?[1],
+      RegExp(r'(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])', caseSensitive: false)
+          .firstMatch(url)?[0],
+    ]) {
+      var hash = value == null ? null : normalizeInfoHash(value);
+      if (hash != null) {
+        return hash;
+      }
+    }
+    return null;
+  }
+}
+
+/// [value] as lowercase hex: 40 hex digits, or 32 base32 characters.
+String? normalizeInfoHash(String value) {
+  value = value.trim();
+  if (RegExp(r'^[0-9a-f]{40}$', caseSensitive: false).hasMatch(value)) {
+    return value.toLowerCase();
+  }
+  if (!RegExp(r'^[a-z2-7]{32}$', caseSensitive: false).hasMatch(value)) {
+    return null;
+  }
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  var bits = 0, count = 0;
+  var out = StringBuffer();
+  for (var c in value.toLowerCase().split('')) {
+    bits = ((bits << 5) | alphabet.indexOf(c)) & 0xfff;
+    count += 5;
+    if (count >= 8) {
+      count -= 8;
+      out.write(((bits >> count) & 0xff).toRadixString(16).padLeft(2, '0'));
+    }
+  }
+  return out.toString();
 }
 
 /// Release naming is separate from transport, so file selection uses it too.

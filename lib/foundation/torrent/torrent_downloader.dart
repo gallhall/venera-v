@@ -151,6 +151,9 @@ class _DownloadSession {
   Object? storageError;
   int metadataPeers = 0;
 
+  /// Whether a peer has sent data since the task started.
+  bool received = false;
+
   _DownloadSession(this.owner, this.key, this.source);
 
   void checkCancelled() {
@@ -216,7 +219,9 @@ class _DownloadSession {
   void _publish({TorrentDownloadFailure? failure}) {
     var current = task;
     var peers = current?.connectedPeersNumber ?? metadataPeers;
-    deadline.observe(peers, waiting: !onWifi);
+    received = received || (current?.currentDownloadSpeed ?? 0) > 0;
+    deadline.observe(TorrentPeerDeadline.usable(peers: peers,
+        metadata: current == null, received: received), waiting: !onWifi);
     if (failure == null && deadline.expired) {
       failure = TorrentDownloadFailure.noPeers;
       storageError = TorrentDownloadException(failure);

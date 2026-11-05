@@ -44,6 +44,9 @@ class _Store implements WatchHistoryStore {
   }
 
   @override
+  void remove(String id, ComicType type) => events.add('remove');
+
+  @override
   void addAsync(History history) {
     events.add('async');
     writes.add((
@@ -397,4 +400,117 @@ void main() {
     expect(first.ep, 0);
     expect(h.localReads, [42, 43]);
   });
+
+  group('linked download', () {
+    late Map<(String, int), History> saved;
+    late List<(String, int)> removed;
+    var episodes = const [
+      VideoEpisode('1', 'Episode 1 · A', null),
+      VideoEpisode('2', 'Episode 2 · B', null),
+      VideoEpisode('sp', 'SP', null),
+    ];
+    var current = 0;
+    History entry(String id, ComicType type, int ep, int page,
+        List<String> read, int time) => History.fromMap({
+      'type': type.value, 'id': id, 'title': 't', 'subtitle': '', 'cover': '',
+      'ep': ep, 'page': page, 'max_page': 100, 'time': time,
+      'readEpisode': read,
+    });
+    var source = ComicType('dmhy'.hashCode);
+
+    BangumiWatchProgress create({bool previous = true}) {
+      var store = _MapStore(saved, removed);
+      return BangumiWatchProgress(
+        sourceKey: () => 'dmhy',
+        details: () => _Details(),
+        episodes: () => episodes,
+        current: () => current,
+        store: store,
+        sync: ({required sourceKey, required id, required title,
+            required position}) async => const BangumiSyncSkipped(),
+        bangumi: () => null,
+        initialPosition: () => null,
+        localProgress: (_) => const BangumiLocalProgress(),
+        clearLegacyProgress: (_) {},
+        linked: () => BangumiLinkedVideo(
+          subjectId: 9,
+          title: 'Anime',
+          cover: '',
+          previous: previous ? ('bangumi:9', source) : null,
+          // Episode n is Bangumi episode n + 10; the extra has none.
+          number: (i) => i < 2 ? i + 11 : null,
+        ),
+      );
+    }
+
+    setUp(() {
+      saved = {};
+      removed = [];
+      current = 0;
+    });
+
+    test('saves to the subject in Bangumi numbers', () {
+      var progress = create(previous: false);
+      current = 1;
+      progress.ended(const Duration(seconds: 100), started: true);
+      var h = saved[('bangumi:9', ComicType.bangumi.value)]!;
+      expect(h.ep, 12);
+      expect(h.readEpisode, contains('12'));
+      expect(progress.isWatchedAt(1), isTrue);
+      expect(progress.isWatchedAt(0), isFalse);
+    });
+
+    test('merges and removes the old history of the download', () {
+      saved[('bangumi:9', source.value)] =
+          entry('bangumi:9', source, 2, 40, ['1'], 2000);
+      saved[('bangumi:9', ComicType.bangumi.value)] =
+          entry('bangumi:9', ComicType.bangumi, 5, 10, ['5'], 1000);
+      var progress = create();
+      var h = progress.history;
+      expect(h.ep, 12);
+      expect(h.page, 40);
+      expect(h.readEpisode, containsAll(['5', '11']));
+      expect(removed, [('bangumi:9', source.value)]);
+      expect(progress.resumeAt(1), const Duration(seconds: 40));
+      expect(progress.resumeAt(0), isNull);
+    });
+
+    test('older download history keeps the subject position', () {
+      saved[('bangumi:9', source.value)] =
+          entry('bangumi:9', source, 1, 40, [], 1000);
+      saved[('bangumi:9', ComicType.bangumi.value)] =
+          entry('bangumi:9', ComicType.bangumi, 5, 10, [], 2000);
+      expect(create().history.ep, 5);
+    });
+
+    test('extras are not saved to the subject', () {
+      var progress = create(previous: false);
+      current = 2;
+      progress.ended(const Duration(seconds: 100), started: true);
+      expect(saved, isEmpty);
+    });
+  });
+}
+
+class _MapStore implements WatchHistoryStore {
+  _MapStore(this.saved, this.removed);
+
+  final Map<(String, int), History> saved;
+  final List<(String, int)> removed;
+
+  @override
+  History? find(String id, ComicType type) => saved[(id, type.value)];
+
+  @override
+  void add(History history, {bool notifyLater = false}) =>
+      saved[(history.id, history.type.value)] = history;
+
+  @override
+  void addAsync(History history) => add(history);
+
+  @override
+  void remove(String id, ComicType type) {
+    removed.add((id, type.value));
+    saved.remove((id, type.value));
+  }
 }

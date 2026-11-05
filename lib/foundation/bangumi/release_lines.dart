@@ -195,6 +195,45 @@ class ReleaseChapterMap {
         });
       });
 
+  /// The lines to fall back to for episode [id] after [current] fails, most
+  /// alike first: the same languages, then a shared one, then the same
+  /// resolution. Dubs replace the original audio and come last.
+  List<({ReleaseLine line, EpisodeReleaseChapter chapter})> fallbacks(
+      int id, ReleaseLine? current, {Set<ReleaseLine> tried = const {}}) {
+    int score(ReleaseLine line, EpisodeReleaseChapter chapter) {
+      var value = 0;
+      if (current != null) {
+        var known = current.languages.difference({ReleaseLanguage.unknown});
+        if (line.languages.length == current.languages.length &&
+            line.languages.containsAll(current.languages)) {
+          value += 4;
+        } else if (known.any(line.languages.contains)) {
+          value += 2;
+        }
+        if (line.resolution == current.resolution) {
+          value += 1;
+        }
+      }
+      if (isDubbedRelease(chapter.release.title)) {
+        value -= 8;
+      }
+      return value;
+    }
+    var options = [
+      for (var line in lines)
+        if (!tried.contains(line) && line != current)
+          if (forLine(line)[id] case var chapter?)
+            (line: line, chapter: chapter, score: score(line, chapter)),
+    ];
+    // A stable sort keeps the source order among equals.
+    var order = List.generate(options.length, (i) => i)
+      ..sort((a, b) {
+        var c = options[b].score.compareTo(options[a].score);
+        return c != 0 ? c : a.compareTo(b);
+      });
+    return [for (var i in order) (line: options[i].line, chapter: options[i].chapter)];
+  }
+
   /// Prefer the selected line, then the remembered group, then source order.
   EpisodeReleaseChapter? episode(int id, {ReleaseLine? preferredLine,
       String? preferredGroup}) {
@@ -270,3 +309,12 @@ class SubjectReleaseFilterMemory {
     data['subjectReleaseFilters'] = subjects;
   }
 }
+
+final _dub = RegExp(
+  r'粤语|粵語|粤配|粵配|国语|國語|国配|國配|台配|港配|普通话|普通話|中配'
+  r'|(?<![a-z])dub(bed)?(?![a-z])',
+  caseSensitive: false,
+);
+
+/// Whether [title] is a dub, as 粤语 or 国语 releases are.
+bool isDubbedRelease(String title) => _dub.hasMatch(title);

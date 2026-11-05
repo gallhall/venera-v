@@ -137,6 +137,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   bool episodePaused(String? ep) => _pausedEpisodes.contains(ep ?? '') || isPaused;
   double episodeProgress(String? ep) => episodeCompleted(ep) ? 1 :
       _torrentStatuses[ep ?? '']?.progress ??
+      _torrentProgress[ep ?? ''] ??
       (_onlineEpisode == (ep ?? '') ? _episodeProgress : 0);
   int episodeSpeed(String? ep) => episodePaused(ep) ? 0 :
       _torrentStatuses[ep ?? '']?.bytesPerSecond.round() ??
@@ -302,6 +303,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   final _torrentHandles = <String, TorrentDownloadHandle>{};
   final _torrentStatuses = <String, TorrentDownloadStatus>{};
+
+  /// The last progress of each BT episode, kept while it is paused and
+  /// across restarts: its files are allocated at full size from the start.
+  final _torrentProgress = <String, double>{};
   Future<void> _btClosing = Future.value();
 
   /// Per-episode state for the cache UI; session counters are shared by batch
@@ -829,6 +834,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
           return;
         }
         _torrentStatuses[episodeKey] = handle.value;
+        if (handle.value.phase != TorrentDownloadPhase.failed) {
+          _torrentProgress[episodeKey] = handle.value.progress;
+        }
         _message = '$label${torrentStatus!.message}';
         notifyListeners();
       }
@@ -1353,6 +1361,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "path": path,
       "cover": _cover,
       "completed": _completed,
+      "torrentProgress": _torrentProgress,
     };
   }
 
@@ -1383,6 +1392,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       ..path = json["path"]
       .._cover = json["cover"]
       .._episodeErrors.addAll(Map<String, String>.from(json['episodeErrors'] ?? {}))
+      .._torrentProgress.addAll({
+        for (var e in (json['torrentProgress'] as Map? ?? {}).entries)
+          if (e.value is num) e.key as String: (e.value as num).toDouble(),
+      })
       .._completed.addAll(List<String>.from(json["completed"] ?? []));
   }
 
