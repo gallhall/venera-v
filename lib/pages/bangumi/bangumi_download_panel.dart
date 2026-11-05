@@ -445,6 +445,10 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     await previous.deleteEpisode(widget.replacingChapterId);
   }
 
+  /// A BT download lists every episode of the subject as a chapter.
+  Map<String, BangumiEpisode> subjectEpisodes() =>
+      {for (var episode in episodes) '${episode.id}': episode};
+
   Future<bool> startBT(List<({BangumiEpisode episode, _EpisodeChoice choice})> selected) async {
     var source = selected.first.choice.source;
     var details = btDetails(source);
@@ -456,7 +460,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       existing.bangumiSubjectId ??= widget.subjectId;
       existing.comic = btDetails(existing.source);
       existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
-        bangumiIds: {for (var e in selected) e.choice.chapterId: e.episode.id},
+        bangumiEpisodes: subjectEpisodes(),
         releases: {for (var e in selected) e.choice.chapterId: e.choice.torrent!});
       await removeReplacedEpisode(existing, selected.map((e) => e.episode.id),
         selected.map((e) => e.choice.chapterId));
@@ -472,9 +476,8 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     var task = VideoDownloadTask(source: source,
       videoId: details.id, comic: details,
       episodes: selected.map((e) => e.choice.chapterId).toList(),
-      bangumiSubjectId: widget.subjectId, bangumiEpisodeIds: {
-        for (var e in selected) e.choice.chapterId: e.episode.id,
-      }, torrentReleases: {
+      bangumiSubjectId: widget.subjectId, bangumiEpisodes: subjectEpisodes(),
+      torrentReleases: {
         for (var e in selected) e.choice.chapterId: e.choice.torrent!,
       });
     LocalManager().addTask(task);
@@ -507,7 +510,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       existing.bangumiSubjectId ??= widget.subjectId;
       existing.comic = details;
       existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
-        bangumiIds: {for (var e in selected) e.choice.chapterId: e.episode.id});
+        bangumiEpisodes: {for (var e in selected) e.choice.chapterId: e.episode});
       await removeReplacedEpisode(existing, selected.map((e) => e.episode.id),
         selected.map((e) => e.choice.chapterId));
       if (!mounted) {
@@ -520,8 +523,8 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       comic: details, quality: quality,
       episodes: details.chapters == null || details.chapters!.length == 0 ? null :
         selected.map((e) => e.choice.chapterId).toList(),
-      bangumiSubjectId: widget.subjectId, bangumiEpisodeIds: {
-        for (var e in selected) e.choice.chapterId: e.episode.id,
+      bangumiSubjectId: widget.subjectId, bangumiEpisodes: {
+        for (var e in selected) e.choice.chapterId: e.episode,
       });
     LocalManager().addTask(task);
     await removeReplacedEpisode(task, selected.map((e) => e.episode.id),

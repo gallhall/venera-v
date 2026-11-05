@@ -208,6 +208,17 @@ class BangumiEpisode {
       airdate: _string(json['airdate']),
     );
   }
+
+  /// In Bangumi's form, so [fromJson] reads it back.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type,
+    'ep': ep ?? 0,
+    'sort': sort,
+    'name': name,
+    'name_cn': nameCn,
+    'airdate': airdate,
+  };
 }
 
 /// A subject in a user's collection.

@@ -16,6 +16,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
@@ -326,6 +327,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     var existing = HistoryManager().find(
         bangumiHistoryId(subjectId), ComicType.bangumi);
+    var identity = binding == null ? DownloadIdentity.read(localVideo!.baseDir,
+        videoId: localVideo!.id,
+        chapters: localVideo!.chapters?.allChapters ?? const {}) : null;
     return BangumiLinkedVideo(
       subjectId: subjectId,
       title: existing?.title ?? binding?.name ?? details.title,
@@ -336,12 +340,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         if (e == null) {
           return null;
         }
+        if (identity != null) {
+          // A BT download stored under its subject: its chapters are the
+          // subject's episodes.
+          var episode = identity.episodeOf(e.id);
+          return episode == null || episode.type != 0 ? null : episode.number;
+        }
         var position = episodes.toHistory(index).ep;
         var title = e.id == null ? '' : e.title;
-        // BT downloads are titled "Episode n · name" from the subject.
-        return binding == null
-            ? BangumiEpisodeNumber.of(title.split(' · ').first, position)
-            : binding.subjectNumberOf(title, position);
+        return binding!.subjectNumberOf(title, position);
       },
     );
   }

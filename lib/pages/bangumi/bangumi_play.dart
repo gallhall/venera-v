@@ -379,36 +379,24 @@ Future<BangumiPlaybackContext> downloadPlaybackContext(
 }
 
 /// The episodes of [subjectId] known from its downloads. A BT download
-/// lists all of them, titled "Episode n · name"; another only those it
-/// downloaded.
+/// lists all of them; another only those it downloaded.
 List<BangumiEpisode> offlineSubjectEpisodes(int subjectId) {
   var result = <int, BangumiEpisode>{};
-  void add(int id, String title, int position) {
-    var parts = title.split(' · ');
-    var number = BangumiEpisodeNumber.of(parts.first, position) ?? position;
-    result.putIfAbsent(id, () => BangumiEpisode(id: id, ep: number,
-        sort: number.toDouble(),
-        name: parts.length > 1 ? parts.skip(1).join(' · ') : ''));
-  }
   var downloads = SubjectDownloads.of(subjectId);
   for (var download in downloads.values) {
-    var video = download.video;
-    var chapters = video.chapters?.allChapters ?? const <String, String>{};
-    var position = 0;
-    for (var e in chapters.entries) {
-      position++;
-      var id = int.tryParse(e.key);
-      if (video.id == 'bangumi:$subjectId' && id != null) {
-        add(id, e.value, position);
+    var identity = download.identity;
+    if (!identity.listsSubject || identity.subjectId != subjectId) {
+      continue;
+    }
+    for (var chapter in download.video.chapters?.allChapters.keys ?? const <String>[]) {
+      if (identity.episodeOf(chapter) case var episode?) {
+        result.putIfAbsent(episode.id, () => episode);
       }
     }
   }
   for (var e in downloads.entries) {
-    var video = e.value.video;
-    var chapters = video.chapters?.allChapters ?? const <String, String>{};
-    var keys = chapters.keys.toList();
-    add(e.key, chapters[e.value.chapterId] ?? '',
-        keys.indexOf(e.value.chapterId ?? '') + 1);
+    result.putIfAbsent(e.key, () => e.value.episode ??
+        BangumiEpisode(id: e.key, sort: 0));
   }
   return result.values.toList()..sort((a, b) => a.number.compareTo(b.number));
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/network/download.dart';
 
@@ -43,6 +44,20 @@ void main() {
     expect(restored.quality, '720');
     expect(restored.bangumiEpisodeIds, {'chapter': 101});
     expect(restored.torrentReleases, isEmpty);
+  });
+
+  test('Bangumi episodes round trip and also give their ids', () {
+    var task = VideoDownloadTask(source: source, videoId: 'online',
+      episodes: ['chapter'], bangumiSubjectId: 42, bangumiEpisodes: {
+        'chapter': const BangumiEpisode(id: 101, ep: 3, sort: 3, nameCn: '名字')});
+    expect(task.bangumiEpisodeIds, {'chapter': 101});
+    var restored = VideoDownloadTask.fromJson(
+      jsonDecode(jsonEncode(task.toJson())))!;
+    expect(restored.bangumiEpisodes['chapter']!.nameCn, '名字');
+    expect(restored.bangumiEpisodeIds, {'chapter': 101});
+    task.addEpisodes(['next'], bangumiEpisodes: {
+      'next': const BangumiEpisode(id: 102, ep: 4, sort: 4)});
+    expect(task.bangumiEpisodeIds, {'chapter': 101, 'next': 102});
   });
 
   test('old task JSON without new fields still loads', () {
