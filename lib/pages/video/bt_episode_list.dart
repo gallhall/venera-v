@@ -10,12 +10,17 @@ import 'package:venera/utils/translations.dart';
 class BtEpisodeList extends StatefulWidget {
   const BtEpisodeList({super.key, required this.releases,
     required this.currentNumber, required this.playingChapterId,
-    required this.isDownloaded, required this.onPlay});
+    required this.isDownloaded, required this.onPlay,
+    this.episodeDownloaded});
 
   final ReleaseChapterMap releases;
   final int currentNumber;
   final String? playingChapterId;
   final bool Function(EpisodeReleaseChapter) isDownloaded;
+
+  /// Whether the Bangumi episode is downloaded from any source: it plays
+  /// from the download, also without a resource on this line.
+  final bool Function(BangumiEpisode)? episodeDownloaded;
   final void Function(BangumiEpisode, ReleaseLine) onPlay;
 
   @override
@@ -126,7 +131,8 @@ class _BtEpisodeListState extends State<BtEpisodeList> {
 
   Widget episodeRow(BangumiEpisode episode, EpisodeReleaseChapter? match) {
     var colors = context.colorScheme;
-    var missing = match == null;
+    var downloaded = widget.episodeDownloaded?.call(episode) ?? false;
+    var missing = match == null && !downloaded;
     var selected = episode.number == widget.currentNumber;
     var foreground = missing ? colors.onSurface.withValues(alpha: 0.38)
         : colors.onSurface;
@@ -134,7 +140,9 @@ class _BtEpisodeListState extends State<BtEpisodeList> {
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.all(12),
       highlighted: selected,
-      onTap: match == null ? () => pickAlternative(episode)
+      onTap: downloaded && line != null
+          ? selected ? null : () => widget.onPlay(episode, line!)
+          : match == null ? () => pickAlternative(episode)
           : selected && widget.playingChapterId == match.chapterId
               ? null : () => widget.onPlay(episode, line!),
       child: Row(children: [
@@ -149,7 +157,7 @@ class _BtEpisodeListState extends State<BtEpisodeList> {
                   : colors.onSurfaceVariant)),
           ],
         )),
-        if (match != null && widget.isDownloaded(match)) ...[
+        if (downloaded || match != null && widget.isDownloaded(match)) ...[
           const SizedBox(width: 8),
           Icon(Icons.check_rounded, size: 18, color: colors.primary),
         ],

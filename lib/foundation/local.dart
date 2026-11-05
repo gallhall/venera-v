@@ -13,6 +13,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/download.dart';
+import 'package:venera/foundation/video/subject_downloads.dart';
+import 'package:venera/pages/bangumi/bangumi_play.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/pages/video/video_player_page.dart';
@@ -135,6 +137,17 @@ class LocalComic with HistoryMixin implements Comic {
     return (null, null);
   }
 
+  /// This video as the details the player shows.
+  ComicDetails videoDetails(String sourceKey) => ComicDetails.fromJson({
+    "title": title,
+    "subtitle": subtitle,
+    "cover": "file://${coverFile.path}",
+    "tags": <String, dynamic>{},
+    "chapters": chapters?.toJson(),
+    "sourceKey": sourceKey,
+    "comicId": id,
+  });
+
   /// The player for this video, downloaded from the source [sourceKey]
   /// or imported (`local`). Starts where the history is, or else with the
   /// first downloaded episode.
@@ -151,15 +164,7 @@ class LocalComic with HistoryMixin implements Comic {
     var (ep, group) = _firstDownloadedChapter();
     return VideoPlayerPage(
       sourceKey: sourceKey,
-      details: ComicDetails.fromJson({
-        "title": title,
-        "subtitle": subtitle,
-        "cover": "file://${coverFile.path}",
-        "tags": <String, dynamic>{},
-        "chapters": chapters?.toJson(),
-        "sourceKey": sourceKey,
-        "comicId": id,
-      }),
+      details: videoDetails(sourceKey),
       initialEp: history == null ? ep : null,
       initialGroup: history == null ? group : null,
       history: history ?? History.fromModel(model: this, ep: 0, page: 0),
@@ -170,6 +175,18 @@ class LocalComic with HistoryMixin implements Comic {
     // Also once the source of a downloaded video is gone: the player plays
     // the episodes downloaded without it.
     if (isLocalVideo(this)) {
+      // A download of a Bangumi subject plays as the subject does: the
+      // other episodes from their downloads or the sources.
+      var subjectId = SubjectDownloads.subjectOf(this);
+      if (subjectId != null) {
+        openDownloadedSubject(subjectId, title: title,
+            cover: 'file://${coverFile.path}').then((opened) {
+          if (!opened) {
+            App.rootContext.to(() => videoPlayer(sourceKey));
+          }
+        });
+        return;
+      }
       App.rootContext.to(() => videoPlayer(sourceKey));
       return;
     }

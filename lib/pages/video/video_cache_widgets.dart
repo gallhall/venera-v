@@ -9,6 +9,8 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/torrent/torrent_downloader.dart';
 import 'package:venera/foundation/video_cache.dart';
+import 'package:venera/foundation/video/subject_downloads.dart';
+import 'package:venera/pages/bangumi/bangumi_play.dart';
 import 'package:venera/pages/bangumi/bangumi_download_panel.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/video/video_player_page.dart';
@@ -26,6 +28,17 @@ Future<void> playCachedEpisode(BuildContext context, VideoCacheEntry entry) asyn
   }
   if (!context.mounted) {
     return;
+  }
+  if (entry.subjectId case var subjectId? when entry.bangumiEpisodeId != null) {
+    SubjectDownloads.invalidate();
+    if (await openDownloadedSubject(subjectId,
+        episodeId: entry.bangumiEpisodeId, title: entry.sourceTitle ?? '',
+        cover: 'file://${local.coverFile.path}')) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
   }
   int? episode, group;
   var chapters = local.chapters;
