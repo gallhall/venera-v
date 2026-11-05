@@ -490,6 +490,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void onStarted(PlaybackStarted event) {
     duration = event.duration;
     if (correspondence.memoryAt(current) case var line?) {
+      Log.info('Video', 'Remember line "$line" for $sourceKey');
       LineMemory.remember(appdata.implicitData, sourceKey, details.id, line);
       appdata.writeImplicitData();
     }
