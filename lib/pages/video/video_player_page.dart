@@ -16,6 +16,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/foundation/log.dart';
@@ -263,17 +264,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     sync: ({required sourceKey, required id, required title,
         required position}) {
       var b = bangumi;
-      if (b != null && btReleases != null) {
-        // A batch title (or an absolute release number) does not identify the
-        // Bangumi episode being watched. Convert the live context back through
-        // the binding so onFinished applies its offset exactly once.
-        var binding = BangumiManager().bindingOf(sourceKey, id);
-        var number = b.number - (binding?.offsetFor(b.subject.id) ?? 0);
-        title = 'EP$number';
-        position = number;
-      }
       return BangumiManager().onFinished(sourceKey: sourceKey, id: id,
-        title: title, position: position);
+        title: title, position: position,
+        // A batch title (or an absolute release number) does not identify
+        // the Bangumi episode being watched: the live context does.
+        subjectNumber: b != null && btReleases != null ? b.number : null);
     },
   );
 
@@ -346,9 +341,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           var episode = identity.episodeOf(e.id);
           return episode == null || episode.type != 0 ? null : episode.number;
         }
-        var position = episodes.toHistory(index).ep;
-        var title = e.id == null ? '' : e.title;
-        return binding!.subjectNumberOf(title, position);
+        return EpisodeCorrespondence(chapters: episodes,
+            offset: binding!.offsetFor(subjectId!)).numberAt(index);
       },
     );
   }

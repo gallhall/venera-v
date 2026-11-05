@@ -302,19 +302,21 @@ class BangumiManager with ChangeNotifier {
   /// Marks the episode or chapter titled [title] of a comic or video as
   /// finished on Bangumi if the comic or video is linked to a subject.
   /// [position] is its position in its group, from 1, used if the title
-  /// has no number.
+  /// has no number. [subjectNumber], if known (from the 集对应), is used
+  /// instead of the title.
   Future<BangumiSyncResult> onFinished({
     required String sourceKey,
     required String id,
     required String title,
     required int position,
+    int? subjectNumber,
   }) async {
     if (!autoSync || !isLoggedIn) {
       return const BangumiSyncSkipped();
     }
     var binding = bindingOf(sourceKey, id);
     if (binding == null) return const BangumiSyncSkipped();
-    var number = binding.subjectNumberOf(title, position);
+    var number = subjectNumber ?? binding.subjectNumberOf(title, position);
     if (number == null) return const BangumiSyncSkipped();
     // The number on Bangumi, as sources linked to a subject may number it
     // differently.

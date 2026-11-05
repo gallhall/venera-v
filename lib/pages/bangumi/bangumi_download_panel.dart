@@ -5,6 +5,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
@@ -388,27 +389,16 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       }
       groupIndex = chosen;
     }
+    // The same 集对应 as playing: the binding's offset, extras by name.
+    var correspondence = EpisodeCorrespondence.of(source, details,
+        subjectId: widget.subjectId, episodes: episodes);
     Map<int, _EpisodeChoice> choicesFor(int index) {
-      var entries = (chapters.isGrouped ? chapters.getGroupByIndex(index) :
-        chapters.allChapters).entries.toList();
-      int? chapterFor(BangumiEpisode episode) {
-        if (episode.type == 0) {
-          return bangumiSourceEpisode(episode, [
-            for (var (i, entry) in entries.indexed)
-              (title: entry.value, position: i + 1),
-          ]);
-        }
-        // Extras often restart at 1. A numeric match would cache main episode
-        // 1 as an SP/OP instead, so require its actual title to match.
-        var names = [episode.nameCn, episode.name].map((s) => s.trim().toLowerCase())
-            .where((s) => s.isNotEmpty).toSet();
-        var index = entries.indexWhere((entry) => names.contains(entry.value.trim().toLowerCase()));
-        return index < 0 ? null : index;
-      }
+      var group = chapters.isGrouped ? groups[index] : null;
       return {
         for (var e in episodes)
-          if (chapterFor(e) case var found?)
-            e.id: _EpisodeChoice(source, entries[found].key, entries[found].value),
+          if (correspondence.indexOf(e, group: group) case var found?)
+            e.id: _EpisodeChoice(source, correspondence.chapters[found].id!,
+                correspondence.chapters[found].title),
       };
     }
     var allLines = [for (var i = 0; i < groups.length; i++) choicesFor(i)];

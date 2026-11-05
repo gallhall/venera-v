@@ -113,12 +113,8 @@ Future<void> changeCachedEpisodeResource(BuildContext context, VideoCacheEntry e
   var episodeId = entry.bangumiEpisodeId;
   if (episodeId == null) {
     try {
-      var episodes = await manager.api.episodes(subjectId);
-      var chapters = task?.comic?.chapters;
-      var index = chapters?.ids.toList().indexOf(entry.chapterId ?? '') ?? -1;
-      var number = binding?.subjectNumberOf(entry.title, index + 1) ??
-          BangumiEpisodeNumber.of(entry.title, index + 1);
-      episodeId = number == null ? null : BangumiEpisodeNumber.match(episodes, number)?.id;
+      episodeId = entry.episodeIdIn(subjectId,
+          await manager.api.episodes(subjectId));
     } catch (e) {
       if (context.mounted) {
         context.showMessage(message: e.toString());

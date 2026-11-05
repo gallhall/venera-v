@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/bangumi/bangumi.dart';
+import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/torrent/torrent_download_state.dart';
 import 'package:venera/foundation/video/download_identity.dart';
+import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 
@@ -39,6 +42,26 @@ class VideoCacheEntry {
   TorrentDownloadStatus? get torrent => task?.torrentStatuses[chapterId ?? ''];
   String? get failure => task?.episodeErrors[chapterId ?? ''] ??
       (torrent?.failure == null ? null : TorrentDownloadException(torrent!.failure!).toString());
+  /// The episode of subject [subjectId] (listing [episodes]) this entry
+  /// is: as recorded, else by the 集对应 of the 作品 it was downloaded from.
+  int? episodeIdIn(int subjectId, List<BangumiEpisode> episodes) {
+    if (bangumiEpisodeId != null) {
+      return bangumiEpisodeId;
+    }
+    var comic = task?.comic;
+    var chapters = comic?.chapters ?? local?.chapters;
+    var sourceKey = task?.source.key ?? local?.sourceKey;
+    var id = task?.id ?? local?.id;
+    var binding = sourceKey == null || id == null ? null
+        : BangumiManager().bindingOf(sourceKey, id);
+    var correspondence = EpisodeCorrespondence(
+      chapters: VideoEpisode.fromChapters(chapters, comic?.title ?? local?.title ?? ''),
+      offset: binding?.offsetFor(subjectId) ?? 0,
+      episodes: episodes,
+    );
+    return correspondence.episodeAt(correspondence.indexOfChapter(chapterId))?.id;
+  }
+
   bool get paused => !completed && task?.episodePaused(chapterId) == true;
   double get progress => completed ? 1 : task?.episodeProgress(chapterId) ?? 0;
   int get speed => completed || paused || failure != null ? 0 : task?.episodeSpeed(chapterId) ?? 0;
