@@ -7,6 +7,7 @@ import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
@@ -124,6 +125,9 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   var target = BangumiEpisodeNumber.match(context.episodes, context.number);
   var index = target == null ? null : correspondence.indexOf(target,
       preferredLine: preferredReleaseLine);
+  Log.info('Bangumi', 'Episode ${context.number} of ${candidate.sourceKey}: '
+      'remembered line "${correspondence.rememberedGroup}", '
+      'chose ${index == null ? 'none' : correspondence.chapters[index].group}');
   if (index == null) {
     throw BangumiEpisodeUnavailable();
   }

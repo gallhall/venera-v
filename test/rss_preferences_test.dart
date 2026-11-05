@@ -269,8 +269,8 @@ void main() {
       const VideoEpisode('c', 'EP2', '[B] Series'),
     ];
     var data = <String, dynamic>{};
-    RssLineMemory.remember(data, 'source', 'subject', 'B');
-    var remembered = RssLineMemory.read(data, 'source', 'subject');
+    LineMemory.remember(data, 'source', 'subject', 'B');
+    var remembered = LineMemory.read(data, 'source', 'subject');
     var rows = [for (var i = 0; i < episodes.length; i++)
       (title: episodes[i].title, position: episodes.toHistory(i).ep)];
     var index = bangumiSourceEpisode(target, rows,
@@ -283,13 +283,13 @@ void main() {
     expect(bangumiSourceEpisode(target, [
       (title: 'EP2', position: 1), (title: 'EP14', position: 1),
     ], preferredIndices: [1]), 1);
-    expect(RssLineMemory.read(data, 'another', 'subject'), isNull);
+    expect(LineMemory.read(data, 'another', 'subject'), isNull);
     for (var i = 0; i < 501; i++) {
-      RssLineMemory.remember(data, 'source', '$i', 'A');
+      LineMemory.remember(data, 'source', '$i', 'A');
     }
     expect(data['rssPreferredLines'], hasLength(500));
-    expect(RssLineMemory.read(data, 'source', 'subject'), isNull);
-    expect(RssLineMemory.read(jsonDecode(jsonEncode(data)), 'source', '500'), 'A');
+    expect(LineMemory.read(data, 'source', 'subject'), isNull);
+    expect(LineMemory.read(jsonDecode(jsonEncode(data)), 'source', '500'), 'A');
   });
 
   test('metered upload caps treat zero as unlimited', () {

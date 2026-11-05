@@ -98,41 +98,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   ComicSource? get source => ComicSource.find(sourceKey);
 
-  ComicDetails? _releaseDetails;
-  List<BangumiEpisode>? _releaseEpisodes;
-  ReleaseChapterMap? _btReleases;
+  ComicDetails? _correspondenceDetails;
+  List<BangumiEpisode>? _correspondenceEpisodes;
+  EpisodeCorrespondence? _correspondence;
 
-  ReleaseChapterMap? get btReleases {
-    var b = bangumi;
-    // A BT download opened as such lists Bangumi episodes, not releases.
-    if (b == null || source?.animekoSource?.factoryId != 'rss' ||
-        details.id == bangumiHistoryId(b.subject.id)) {
-      return null;
+  /// The 集对应 and 线路 of the 作品 playing. A BT download opened as such
+  /// lists Bangumi episodes, not releases, so it has chapter lines.
+  EpisodeCorrespondence get correspondence {
+    var episodes = bangumi?.episodes ?? const <BangumiEpisode>[];
+    if (_correspondence == null || !identical(_correspondenceDetails, details) ||
+        !identical(_correspondenceEpisodes, episodes)) {
+      _correspondenceDetails = details;
+      _correspondenceEpisodes = episodes;
+      _correspondence = EpisodeCorrespondence.of(source, details,
+        subjectId: bangumi?.subject.id, episodes: episodes);
     }
-    if (!identical(_releaseDetails, details) ||
-        !identical(_releaseEpisodes, b.episodes)) {
-      _releaseDetails = details;
-      _releaseEpisodes = b.episodes;
-      _btReleases = ReleaseChapterMap(AnimekoSource.chapterReleases(details),
-        b.episodes);
-    }
-    return _btReleases;
+    return _correspondence!;
   }
 
-  String? get playbackChapterId {
-    var releases = btReleases;
-    var id = episode.id;
-    var release = releases?.chapters[id];
-    if (releases == null || id == null || release == null) {
-      return id;
-    }
-    var target = BangumiEpisodeNumber.match(releases.episodes, bangumi!.number);
-    // Match this exact release, even if another revision on its line would
-    // normally win. The chapter already playing must not change implicitly.
-    var match = target == null ? null : ReleaseChapterMap({id: release},
-      releases.episodes).forLine(ReleaseLine.of(release))[target.id];
-    return match == null ? id : AnimekoSource.playbackChapterId(match);
-  }
+  ReleaseChapterMap? get btReleases => correspondence.releases;
+
+  String? get playbackChapterId =>
+      correspondence.playbackIdAt(current, number: bangumi?.number);
 
   /// The media_kit player.
   PlayerService? player;
@@ -161,11 +148,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   late int current;
 
-  final triedLines = <String?>{};
-  final triedReleaseLines = <ReleaseLine>{};
+  final triedLines = <SourceLine>{};
   final triedCandidates = <AutoSwitchCandidate>{};
-  int? fallbackNumber;
-  int fallbackPosition = 1;
+
+  /// The chapter 自动换源 started from within this source.
+  int switchOrigin = 0;
   bool allSourcesFailed = false;
   final playbackSubscriptions = <StreamSubscription>[];
 
@@ -175,11 +162,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void resetAutoSwitch() {
     triedLines.clear();
-    triedReleaseLines.clear();
     triedCandidates.clear();
     allSourcesFailed = false;
-    fallbackPosition = episodes.toHistory(current).ep;
-    fallbackNumber = BangumiEpisodeNumber.of(episode.title, fallbackPosition);
+    switchOrigin = current;
   }
 
   /// Increased for page-level episode and Bangumi target lookups.
@@ -268,7 +253,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         title: title, position: position,
         // A batch title (or an absolute release number) does not identify
         // the Bangumi episode being watched: the live context does.
-        subjectNumber: b != null && btReleases != null ? b.number : null);
+        subjectNumber: b != null && correspondence.isBT ? b.number : null);
     },
   );
 
@@ -504,9 +489,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void onStarted(PlaybackStarted event) {
     duration = event.duration;
-    if (source?.animekoSource?.factoryId == 'rss' && episode.group != null) {
-      RssLineMemory.remember(appdata.implicitData, sourceKey, details.id,
-        rssLineGroup(episode.group)!);
+    if (correspondence.memoryAt(current) case var line?) {
+      Log.info('Video', 'Remember line "$line" for $sourceKey');
+      LineMemory.remember(appdata.implicitData, sourceKey, details.id, line);
       appdata.writeImplicitData();
     }
     var p = active;
@@ -627,11 +612,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!automatic) {
       resetAutoSwitch();
     }
-    triedLines.add(episode.group);
-    var releaseLine = btReleases?.lineOf(episode.id);
-    if (releaseLine != null) {
-      triedReleaseLines.add(releaseLine);
-    }
+    triedLines.add(correspondence.lineAt(index));
     triedCandidates.add(candidateKey);
     ignoringSession = false;
     var token = ++loadToken;
@@ -713,34 +694,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || token != loadToken) {
       return;
     }
-    triedLines.add(episode.group);
+    triedLines.add(correspondence.lineAt(current));
     triedCandidates.add(candidateKey);
-    int? line;
-    var releases = btReleases;
-    if (releases != null) {
-      var target = BangumiEpisodeNumber.match(releases.episodes, bangumi!.number);
-      var options = target == null ? const <Never>[] : releases.fallbacks(
-          target.id, releases.lineOf(episode.id), tried: triedReleaseLines);
-      for (var option in options) {
-        var index = episodes.indexWhere((e) => e.id == option.chapter.chapterId);
-        if (index >= 0) {
-          line = index;
-          break;
-        }
-      }
-    } else {
-      line = nextAutoSwitchLine(
-        episodes: [
-          for (var e in episodes) (title: e.title, group: e.group),
-        ],
-        current: current,
-        tried: triedLines,
-        number: fallbackNumber,
-        // BT release groups number their episodes their own way: the same
-        // position in another group is another episode.
-        position: playInfo?.isTorrent == true ? 0 : fallbackPosition,
-      );
-    }
+    var line = correspondence.fallbackAfter(current, tried: triedLines,
+      origin: switchOrigin, number: bangumi?.number,
+      // BT release groups number their episodes their own way: the same
+      // position in another group is another episode.
+      samePosition: playInfo?.isTorrent != true);
     if (line != null) {
       context.showMessage(
         message: "Auto switched to @name".tlParams({
@@ -1225,12 +1185,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       });
       if (automatic) {
         triedLines.clear();
-        triedReleaseLines.clear();
-        fallbackPosition = episodes.toHistory(current).ep;
-        fallbackNumber = BangumiEpisodeNumber.of(
-          episode.title,
-          fallbackPosition,
-        );
+        switchOrigin = current;
         context.showMessage(
           message: "Auto switched to @name".tlParams({'name': playingSource}),
         );
