@@ -71,6 +71,9 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   List<BangumiEpisode> episodes = [];
   BangumiEpisode? current;
   final releases = <_SheetRelease>[];
+
+  /// The titles and hashes of the copies merged into each row.
+  final _releaseIds = <_SheetRelease, Set<String>>{};
   final coverage = <_SheetRelease, Map<int, EpisodeRelease?>>{};
   final sourceErrors = <String, String>{};
   late final sources = ComicSource.enabled().where((s) =>
@@ -187,6 +190,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     setState(() {
       loadingReleases = true;
       releases.clear();
+      _releaseIds.clear();
       coverage.clear();
       sourceErrors.clear();
     });
@@ -216,26 +220,43 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   }
 
   /// Feeds overlap (Mikan and its mirrors list the same release): keep one
-  /// row per info hash, or per title without one, preferring a .torrent URL,
-  /// which needs no metadata download, over a magnet.
+  /// row per torrent, preferring a .torrent URL, which needs no metadata
+  /// download, over a magnet. A copy is the same torrent by hash, or by
+  /// title when it has none (acg.rip): each row keeps the titles of all its
+  /// copies, as Mikan converts titles to simplified Chinese while the others
+  /// keep the original ones.
   void addRelease(_SheetRelease item) {
-    // Magnets carry the hash, Mikan names its .torrent files by it.
-    String? hash(RssRelease r) => (r.infoHash ?? RegExp(
-        r'(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])', caseSensitive: false)
-        .firstMatch(r.url)?[0])?.toLowerCase();
-    String title(RssRelease r) =>
-        r.title.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
-    bool same(RssRelease a, RssRelease b) {
-      var x = hash(a), y = hash(b);
-      return x != null && y != null ? x == y : title(a) == title(b);
+    Set<String> ids(RssRelease r) => {
+      if (r.hexInfoHash case var hash?) 'hash:$hash',
+      'title:${r.title.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase()}',
+    };
+    var mine = ids(item.release);
+    bool hashed(Set<String> set) => set.any((e) => e.startsWith('hash:'));
+    bool same(_SheetRelease row) {
+      var theirs = _releaseIds[row]!;
+      // Different hashes are different torrents, whatever their titles.
+      if (hashed(mine) && hashed(theirs)) {
+        return mine.where((e) => e.startsWith('hash:')).any(theirs.contains);
+      }
+      return mine.any(theirs.contains);
     }
-    var index = releases.indexWhere((e) => same(e.release, item.release));
-    if (index < 0) {
+    var matching = releases.where(same).toList();
+    if (matching.isEmpty) {
       releases.add(item);
-    } else if (releases[index].release.url.startsWith('magnet:') &&
-        !item.release.url.startsWith('magnet:')) {
-      releases[index] = item;
+      _releaseIds[item] = mine;
+      return;
     }
+    // A hashed copy can join rows found by hash and by title alike.
+    var keep = [...matching, item].firstWhere(
+        (e) => !e.release.url.startsWith('magnet:'), orElse: () => matching.first);
+    var merged = {...mine, for (var row in matching) ..._releaseIds[row]!};
+    var at = releases.indexOf(matching.first);
+    for (var row in matching) {
+      releases.remove(row);
+      _releaseIds.remove(row);
+    }
+    releases.insert(at, keep);
+    _releaseIds[keep] = merged;
   }
 
   void switchMode(bool value) {

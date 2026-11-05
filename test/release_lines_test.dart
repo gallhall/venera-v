@@ -147,4 +147,17 @@ void main() {
     expect(restored.read(44).toJson(), const ReleaseFilters().toJson());
     expect(ReleaseFilters.fromJson(null).toJson(), const ReleaseFilters().toJson());
   });
+
+  test('base32 and hex info hashes of one torrent are the same', () {
+    const hex = '605d11e4a13d70cad310fefebf430a613c98b1f4';
+    expect(normalizeInfoHash('MBORDZFBHVYMVUYQ737L6QYKME6JRMPU'), hex);
+    expect(normalizeInfoHash(hex.toUpperCase()), hex);
+    expect(normalizeInfoHash('not a hash'), isNull);
+    const dmhy = RssRelease(title: 'a',
+        url: 'magnet:?xt=urn:btih:MBORDZFBHVYMVUYQ737L6QYKME6JRMPU&tr=x');
+    const mikan = RssRelease(title: 'b',
+        url: 'https://mikanani.me/Download/20251101/$hex.torrent');
+    expect(dmhy.hexInfoHash, hex);
+    expect(mikan.hexInfoHash, hex);
+  });
 }

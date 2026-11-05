@@ -284,4 +284,13 @@ void main() {
     expect(await Directory('${storage.directory}/batch').exists(), isFalse);
     expect(manager.localHave(0), isTrue);
   });
+
+  test('connected peers count only once data arrived after metadata', () {
+    expect(TorrentPeerDeadline.usable(peers: 3, metadata: true,
+        received: false), 3);
+    expect(TorrentPeerDeadline.usable(peers: 3, metadata: false,
+        received: false), 0);
+    expect(TorrentPeerDeadline.usable(peers: 3, metadata: false,
+        received: true), 3);
+  });
 }

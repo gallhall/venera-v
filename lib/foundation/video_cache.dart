@@ -159,6 +159,12 @@ class VideoCacheSnapshot {
         var ids = Map<String, dynamic>.from(data['bangumiEpisodeIds'] ?? {});
         var legacySubject = task.id.startsWith('bangumi:')
             ? int.tryParse(task.id.substring('bangumi:'.length)) : null;
+        var size = root == null ? 0 : await measure(
+          VideoDownloadTask.episodeDirectory(root, ep), stable: done);
+        // BT files are allocated at full size: count what has arrived.
+        if (!done && task.torrentReleases.containsKey(ep ?? '')) {
+          size = (size * task.episodeProgress(ep).clamp(0, 1)).round();
+        }
         var entry = VideoCacheEntry(task: task, chapterId: ep, root: root,
           subjectId: task.bangumiSubjectId ?? data['bangumiSubjectId'] as int? ?? legacySubject,
           bangumiEpisodeId: task.bangumiEpisodeIds[ep ?? ''] ?? ids[ep ?? ''] as int? ??
@@ -166,8 +172,7 @@ class VideoCacheSnapshot {
           sourceTitle: task.comic?.title ?? data['sourceTitle'] as String?,
           title: task.comic?.chapters?[ep ?? ''] ?? task.comic?.title ?? ep ?? '',
           cover: task.cover, completed: done,
-          size: root == null ? 0 : await measure(
-            VideoDownloadTask.episodeDirectory(root, ep), stable: done));
+          size: size);
         var local = entries[entry.key]?.local;
         entries[entry.key] = VideoCacheEntry(task: task, local: local,
           chapterId: ep, root: root, subjectId: entry.subjectId,
