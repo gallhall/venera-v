@@ -152,8 +152,10 @@ class RssPreferences {
   };
 }
 
-/// Stores group names, never line indices. Reads also accept persisted JSON maps.
-abstract final class RssLineMemory {
+/// The 线路 last played of each 作品: a BT 源's release group, or another
+/// source's chapter group. Stores group names, never line indices, under
+/// its old BT-only key. Reads also accept persisted JSON maps.
+abstract final class LineMemory {
   static String key(String source, String id) =>
       '${Uri.encodeComponent(source)}:${Uri.encodeComponent(id)}';
 
