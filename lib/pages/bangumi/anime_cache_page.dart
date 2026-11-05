@@ -121,15 +121,8 @@ class _AnimeCachePageState extends State<AnimeCachePage> {
   }
 
   Widget episodeRow(BangumiEpisode episode) {
-    var matches = entries.where((entry) {
-      if (entry.bangumiEpisodeId != null) {
-        return entry.bangumiEpisodeId == episode.id;
-      }
-      var chapters = entry.task?.comic?.chapters ?? entry.local?.chapters;
-      var index = chapters?.ids.toList().indexOf(entry.chapterId ?? '') ?? -1;
-      var number = BangumiEpisodeNumber.of(entry.title, index + 1);
-      return number != null && BangumiEpisodeNumber.match(episodes, number)?.id == episode.id;
-    }).toList();
+    var matches = entries.where((entry) =>
+        entry.episodeIdIn(widget.subjectId!, episodes) == episode.id).toList();
     var entry = matches.where((e) => e.completed).firstOrNull ?? matches.firstOrNull;
     var name = episode.nameCn.isEmpty ? episode.name : episode.nameCn;
     return AppCard(key: episodeKeys.putIfAbsent(episode.id, () => GlobalKey()),

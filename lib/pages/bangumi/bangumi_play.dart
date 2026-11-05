@@ -1,10 +1,9 @@
 import 'dart:async';
 
 import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
+import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 
-import 'package:venera/foundation/animeko/rss_preferences.dart';
-import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/appdata.dart';
@@ -118,42 +117,13 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   details ??= await loadBangumiDetails(candidate);
   // No episodes (e.g. only raw releases left) stays BangumiEpisodeUnavailable,
   // so automatic source switching still moves on to the next source.
-  var episodes = VideoEpisode.fromDetails(details);
+  var correspondence = EpisodeCorrespondence.of(source, details,
+      subjectId: context.subject.id, episodes: context.episodes);
+  var episodes = correspondence.chapters;
   var binding = BangumiManager().bindingOf(candidate.sourceKey, candidate.id);
-  var remembered = source.animekoSource?.factoryId == 'rss'
-      ? RssLineMemory.read(appdata.implicitData, candidate.sourceKey, candidate.id)
-      : null;
   var target = BangumiEpisodeNumber.match(context.episodes, context.number);
-  int? index;
-  if (target != null && AnimekoSource.isRssSource(source)) {
-    var releases = ReleaseChapterMap(AnimekoSource.chapterReleases(details),
-      context.episodes);
-    var match = releases.episode(target.id, preferredLine: preferredReleaseLine,
-      preferredGroup: remembered);
-    if (match != null) {
-      var found = episodes.indexWhere((e) => e.id == match.chapterId);
-      if (found >= 0) {
-        index = found;
-      }
-    }
-  } else {
-    index = target == null
-        ? null
-        : bangumiSourceEpisode(
-            target,
-            [
-              for (var i = 0; i < episodes.length; i++)
-                (
-                  title: episodes[i].id == null ? '' : episodes[i].title,
-                  position: episodes.toHistory(i).ep,
-                ),
-            ],
-            preferredIndices: [for (var i = 0; i < episodes.length; i++)
-              if (remembered != null &&
-                  rssLineGroup(episodes[i].group) == remembered) i],
-            offset: binding?.offsetFor(context.subject.id) ?? 0,
-          );
-  }
+  var index = target == null ? null : correspondence.indexOf(target,
+      preferredLine: preferredReleaseLine);
   if (index == null) {
     throw BangumiEpisodeUnavailable();
   }

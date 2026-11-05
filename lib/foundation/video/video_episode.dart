@@ -11,10 +11,13 @@ class VideoEpisode {
 
   const VideoEpisode(this.id, this.title, this.group);
 
-  static List<VideoEpisode> fromDetails(ComicDetails details) {
-    var chapters = details.chapters;
+  static List<VideoEpisode> fromDetails(ComicDetails details) =>
+      fromChapters(details.chapters, details.title);
+
+  /// The episodes of [chapters] of a video titled [title].
+  static List<VideoEpisode> fromChapters(ComicChapters? chapters, String title) {
     if (chapters == null || chapters.length == 0) {
-      return [VideoEpisode(null, details.title, null)];
+      return [VideoEpisode(null, title, null)];
     }
     if (!chapters.isGrouped) {
       return [
