@@ -10,6 +10,30 @@ class BangumiEpisodeUnavailable implements Exception {
       'This source has no matching episode. Try switching source.'.tl;
 }
 
+/// No source has the episode, as for one not out yet: trying other
+/// sources is pointless, so the player does not offer them.
+class BangumiEpisodeNotOut extends BangumiEpisodeUnavailable {
+  BangumiEpisodeNotOut(this.number, this.airdate);
+
+  final int number;
+
+  /// When Bangumi expects it, if later than today.
+  final DateTime? airdate;
+
+  @override
+  String toString() {
+    var date = airdate;
+    if (date == null) {
+      return 'No source has episode @n yet'.tlParams({'n': number});
+    }
+    String pad(int v) => v.toString().padLeft(2, '0');
+    return 'Episode @n is not out yet, expected on @date'.tlParams({
+      'n': number,
+      'date': '${date.year}-${pad(date.month)}-${pad(date.day)}',
+    });
+  }
+}
+
 class BangumiSourceLoadException implements Exception {
   BangumiSourceLoadException(this.candidate, this.error, {this.message});
   final Comic candidate;

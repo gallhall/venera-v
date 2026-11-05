@@ -1,3 +1,5 @@
+import 'dart:async';
+
 /// Pure subject-name and source-search rules. No network or settings access.
 List<String> bangumiNames(Iterable<String> names) => {
   for (var name in names)
@@ -276,20 +278,30 @@ List<String> bangumiKeywordChain(
 
 /// Only a missing episode on the preferred source starts automatic fallback.
 /// Once started, a broken alternative is skipped. Preserve the original error.
+/// Each source has [timeout], and the fallback together [budget]: a source
+/// that does not answer counts as one without the episode, so asking for
+/// an episode no source has yet ends instead of loading on.
 Future<R> bangumiLoadEpisode<T, R>(
   List<T> sources,
   Future<R> Function(T) load, {
   required bool Function(Object) missingEpisode,
   void Function(T)? onSwitch,
+  Duration timeout = const Duration(seconds: 15),
+  Duration budget = const Duration(seconds: 30),
 }) async {
   if (sources.isEmpty) throw ArgumentError.value(sources, 'sources');
   try {
-    return await load(sources.first);
+    return await load(sources.first).timeout(timeout);
   } catch (error, stack) {
-    if (!missingEpisode(error)) rethrow;
+    if (!missingEpisode(error) && error is! TimeoutException) rethrow;
+    var watch = Stopwatch()..start();
     for (var source in sources.skip(1)) {
+      var left = budget - watch.elapsed;
+      if (left <= Duration.zero) {
+        break;
+      }
       try {
-        var result = await load(source);
+        var result = await load(source).timeout(left < timeout ? left : timeout);
         onSwitch?.call(source);
         return result;
       } catch (_) {

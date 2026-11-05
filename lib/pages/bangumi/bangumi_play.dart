@@ -87,7 +87,19 @@ Future<BangumiPlayTarget> loadBangumiTarget(
     ),
     missingEpisode: (e) => e is BangumiEpisodeUnavailable,
     onSwitch: onSourceChanged,
-  );
+  ).catchError((Object e) {
+    if (!fallback || e is! BangumiEpisodeUnavailable && e is! TimeoutException) {
+      throw e;
+    }
+    // Every source was asked.
+    var episode = context.episodes
+        .where((e) => e.number == context.number).firstOrNull;
+    var airdate = DateTime.tryParse(episode?.airdate ?? '');
+    var today = DateTime.now();
+    throw BangumiEpisodeNotOut(context.number, airdate != null &&
+        airdate.isAfter(DateTime(today.year, today.month, today.day))
+        ? airdate : null);
+  });
 }
 
 Future<BangumiPlayTarget> _loadBangumiTarget(

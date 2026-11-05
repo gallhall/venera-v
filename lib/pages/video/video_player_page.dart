@@ -1259,10 +1259,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         }
         context.showMessage(message: '$e');
         changingBangumi = false;
-        await pickBangumiSource(
-          position: position ?? Duration.zero,
-          playback: playback,
-        );
+        // Every source was asked already.
+        if (e is! BangumiEpisodeNotOut) {
+          await pickBangumiSource(
+            position: position ?? Duration.zero,
+            playback: playback,
+          );
+        }
       }
     } finally {
       changingBangumi = false;

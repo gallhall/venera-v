@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -5,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
+import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
@@ -596,6 +599,42 @@ void main() {
         );
       },
     );
+
+    test('sources that never answer end the fallback', () async {
+      var calls = <String>[];
+      var never = Completer<String>();
+      var result = await bangumiLoadEpisode(
+        ['preferred', 'hanging', 'working'],
+        (source) {
+          calls.add(source);
+          if (source == 'preferred') throw const FormatException('missing');
+          if (source == 'hanging') return never.future;
+          return Future.value(source);
+        },
+        missingEpisode: (e) => e is FormatException,
+        timeout: const Duration(milliseconds: 20),
+      );
+      expect(result, 'working');
+      expect(calls, ['preferred', 'hanging', 'working']);
+      calls.clear();
+      await expectLater(
+        bangumiLoadEpisode(['slow', 'hanging', 'unused'], (source) {
+          calls.add(source);
+          return never.future;
+        }, missingEpisode: (e) => e is FormatException,
+            timeout: const Duration(milliseconds: 20),
+            budget: const Duration(milliseconds: 30)),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(calls.take(2), ['slow', 'hanging']);
+    });
+
+    test('an episode no source has says when it is expected', () {
+      var date = DateTime(2026, 12, 2);
+      expect('${BangumiEpisodeNotOut(9, date)}', contains('2026-12-02'));
+      expect('${BangumiEpisodeNotOut(9, null)}', contains('9'));
+      expect(BangumiEpisodeNotOut(9, null), isA<BangumiEpisodeUnavailable>());
+    });
   });
 
   group('Bangumi-first playback', () {
