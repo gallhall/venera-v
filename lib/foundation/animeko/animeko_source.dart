@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
@@ -81,6 +82,35 @@ abstract final class AnimekoSource {
 
   static bool isRssSource(ComicSource source) =>
       source.animekoSource?.factoryId == 'rss';
+
+  /// Recover the releases actually exposed by these BT chapters, without a
+  /// second search or parsing the decorated chapter labels in the UI.
+  static Map<String, RssRelease> chapterReleases(ComicDetails details) {
+    var releases = <String, RssRelease>{};
+    for (var id in details.chapters?.allChapters.keys ?? <String>[]) {
+      try {
+        var torrent = TorrentId.decode(id);
+        releases[id] = RssRelease(title: torrent.title, url: torrent.url,
+          infoHash: torrent.hash);
+      } on FormatException {
+        // Ignore stale/non-torrent chapters in a restored details object.
+      } on TypeError {
+        // A chapter from another source is not a torrent descriptor.
+      }
+    }
+    return releases;
+  }
+
+  /// Batches have one source chapter but require a different file per episode.
+  /// Keep single-release IDs unchanged for existing downloads and history.
+  static String playbackChapterId(EpisodeReleaseChapter match) {
+    var torrent = TorrentId.decode(match.chapterId);
+    if (torrent.episode == match.torrentEpisode) {
+      return match.chapterId;
+    }
+    return TorrentId(torrent.url, torrent.title, episode: match.torrentEpisode,
+      hash: torrent.hash).encode();
+  }
 
   /// Raw releases for the download sheet. Subject filters belong to that
   /// sheet, so global playback subtitle preferences must not remove lines.

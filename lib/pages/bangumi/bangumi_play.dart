@@ -4,6 +4,8 @@ import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 
 import 'package:venera/foundation/animeko/rss_preferences.dart';
+import 'package:venera/foundation/animeko/animeko_source.dart';
+import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:flutter/material.dart';
@@ -55,6 +57,7 @@ Future<BangumiPlayTarget> loadBangumiTarget(
   Comic candidate, {
   FutureOr<ComicDetails>? details,
   bool fallback = true,
+  ReleaseLine? preferredReleaseLine,
   void Function(Comic)? onSourceChanged,
 }) {
   var seen = <String>{candidate.sourceKey};
@@ -71,6 +74,7 @@ Future<BangumiPlayTarget> loadBangumiTarget(
       context,
       c,
       details: identical(c, candidate) ? await details : null,
+      preferredReleaseLine: identical(c, candidate) ? preferredReleaseLine : null,
     ),
     missingEpisode: (e) => e is BangumiEpisodeUnavailable,
     onSwitch: onSourceChanged,
@@ -81,6 +85,7 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
   BangumiPlaybackContext context,
   Comic candidate, {
   ComicDetails? details,
+  ReleaseLine? preferredReleaseLine,
 }) async {
   var source = ComicSource.find(candidate.sourceKey);
   if (source?.loadComicInfo == null) {
@@ -98,22 +103,36 @@ Future<BangumiPlayTarget> _loadBangumiTarget(
       ? RssLineMemory.read(appdata.implicitData, candidate.sourceKey, candidate.id)
       : null;
   var target = BangumiEpisodeNumber.match(context.episodes, context.number);
-  var index = target == null
-      ? null
-      : bangumiSourceEpisode(
-          target,
-          [
-            for (var i = 0; i < episodes.length; i++)
-              (
-                title: episodes[i].id == null ? '' : episodes[i].title,
-                position: episodes.toHistory(i).ep,
-              ),
-          ],
-          preferredIndices: [for (var i = 0; i < episodes.length; i++)
-            if (remembered != null &&
-                rssLineGroup(episodes[i].group) == remembered) i],
-          offset: binding?.offsetFor(context.subject.id) ?? 0,
-        );
+  int? index;
+  if (target != null && AnimekoSource.isRssSource(source)) {
+    var releases = ReleaseChapterMap(AnimekoSource.chapterReleases(details),
+      context.episodes);
+    var match = releases.episode(target.id, preferredLine: preferredReleaseLine,
+      preferredGroup: remembered);
+    if (match != null) {
+      var found = episodes.indexWhere((e) => e.id == match.chapterId);
+      if (found >= 0) {
+        index = found;
+      }
+    }
+  } else {
+    index = target == null
+        ? null
+        : bangumiSourceEpisode(
+            target,
+            [
+              for (var i = 0; i < episodes.length; i++)
+                (
+                  title: episodes[i].id == null ? '' : episodes[i].title,
+                  position: episodes.toHistory(i).ep,
+                ),
+            ],
+            preferredIndices: [for (var i = 0; i < episodes.length; i++)
+              if (remembered != null &&
+                  rssLineGroup(episodes[i].group) == remembered) i],
+            offset: binding?.offsetFor(context.subject.id) ?? 0,
+          );
+  }
   if (index == null) {
     throw BangumiEpisodeUnavailable();
   }
