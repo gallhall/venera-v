@@ -7,9 +7,9 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
-import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
 import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
+import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/local.dart';
@@ -77,8 +77,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   final _releaseIds = <_SheetRelease, Set<String>>{};
   final coverage = <_SheetRelease, Map<int, EpisodeRelease?>>{};
   final sourceErrors = <String, String>{};
-  late final sources = ComicSource.enabled().where((s) =>
-    s.isVideoSource && s.searchPageData != null).toList();
+  late final sources = appSubjectVideoSources(all: true);
   late Set<String> selectedSources;
   bool online = false, loading = true, loadingReleases = false;
   bool noPeers = false;
@@ -151,11 +150,8 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       current = episodes.where((e) => e.id == initialId).firstOrNull ??
           episodes.firstOrNull;
       search.text = subject!.displayName;
-      matcher = SubjectSourceMatcher(subjectId: widget.subjectId,
-        search: ComicSourceSearch(), memory: BangumiManagerMemory(BangumiManager()),
-        cache: BangumiMatchCache(appdata.implicitData),
-        loadDetails: loadBangumiDetails, showRaw: () => true,
-        saveCache: appdata.writeImplicitData)
+      // Raw releases download as well as any.
+      matcher = appSubjectSourceMatcher(widget.subjectId, showRaw: () => true)
         ..setSubject(subject!)
         ..addListener(changed);
       setState(() => loading = false);

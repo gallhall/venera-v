@@ -2,11 +2,9 @@ import 'dart:async';
 
 import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
-import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
+import 'package:venera/foundation/bangumi/playback_context.dart';
 
 import 'package:venera/foundation/bangumi/release_lines.dart';
-import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
-import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
@@ -157,29 +155,12 @@ Future<BangumiPlaybackContext?> linkedBangumiContext(
   String title,
   int number,
 ) async {
-  var manager = BangumiManager();
-  var binding = manager.bindingOf(sourceKey, id);
+  var binding = BangumiManager().bindingOf(sourceKey, id);
   if (binding == null || binding.isBook) return null;
-  var subjectId = binding.subjectId;
-  var subject = await manager.api.subject(subjectId);
-  var episodes = await manager.api.episodes(subjectId);
-  var cache = BangumiMatchCache(appdata.implicitData);
-  var configured = appdata.settings['searchSources'] as List? ?? [];
-  var cached = SubjectSourceMatcher.cached(
-    subject: subject,
+  return PlaybackContextLoader.app().load(binding.subjectId,
     opened: Comic(title, '', id, null, null, '', sourceKey, null, null),
-    enabled: ComicSource.enabled().where((s) => configured.contains(s.key)).toList(),
-    search: ComicSourceSearch(),
-    memory: BangumiManagerMemory(manager),
-    cache: cache,
-    showRaw: appdata.settings['btShowRaw'] == true,
-  );
-  return BangumiPlaybackContext(
-    subject: subject,
-    episodes: episodes,
-    candidates: cached.candidates,
-    matchedCandidates: cached.matched,
     number: binding.subjectNumber(number),
+    title: title,
   );
 }
 
@@ -309,71 +290,8 @@ Future<BangumiPlaybackContext> downloadPlaybackContext(
   int subjectId, {
   String title = '',
   String cover = '',
-}) async {
-  var manager = BangumiManager();
-  BangumiSubject subject;
-  List<BangumiEpisode> episodes;
-  try {
-    subject = await manager.api.subject(subjectId)
-        .timeout(const Duration(seconds: 8));
-    episodes = await manager.api.episodes(subjectId)
-        .timeout(const Duration(seconds: 8));
-  } catch (_) {
-    subject = BangumiSubject(id: subjectId, type: BangumiSubjectType.anime,
-        name: title, image: cover);
-    episodes = offlineSubjectEpisodes(subjectId);
-  }
-  var candidates = <Comic>[];
-  var matched = <Comic>[];
-  try {
-    var configured = appdata.settings['searchSources'] as List? ?? [];
-    var cached = SubjectSourceMatcher.cached(
-      subject: subject,
-      // Not a source: removed below.
-      opened: Comic(subject.displayName, '', '', null, null, '', '', null, null),
-      enabled: ComicSource.enabled()
-          .where((s) => configured.contains(s.key)).toList(),
-      search: ComicSourceSearch(),
-      memory: BangumiManagerMemory(manager),
-      cache: BangumiMatchCache(appdata.implicitData),
-      showRaw: appdata.settings['btShowRaw'] == true,
-    );
-    candidates = cached.candidates.where((c) => c.sourceKey.isNotEmpty).toList();
-    matched = cached.matched.where((c) => c.sourceKey.isNotEmpty).toList();
-  } catch (_) {
-    // Without matched sources only the downloads play.
-  }
-  return BangumiPlaybackContext(
-    subject: subject,
-    episodes: episodes,
-    candidates: candidates,
-    matchedCandidates: matched,
-    number: episodes.firstOrNull?.number ?? 1,
-  );
-}
-
-/// The episodes of [subjectId] known from its downloads. A BT download
-/// lists all of them; another only those it downloaded.
-List<BangumiEpisode> offlineSubjectEpisodes(int subjectId) {
-  var result = <int, BangumiEpisode>{};
-  var downloads = SubjectDownloads.of(subjectId);
-  for (var download in downloads.values) {
-    var identity = download.identity;
-    if (!identity.listsSubject || identity.subjectId != subjectId) {
-      continue;
-    }
-    for (var chapter in download.video.chapters?.allChapters.keys ?? const <String>[]) {
-      if (identity.episodeOf(chapter) case var episode?) {
-        result.putIfAbsent(episode.id, () => episode);
-      }
-    }
-  }
-  for (var e in downloads.entries) {
-    result.putIfAbsent(e.key, () => e.value.episode ??
-        BangumiEpisode(id: e.key, sort: 0));
-  }
-  return result.values.toList()..sort((a, b) => a.number.compareTo(b.number));
-}
+}) => PlaybackContextLoader.app().load(subjectId, title: title,
+    cover: cover);
 
 /// Opens the player on a download of [subjectId]: episode [episodeId], or
 /// else where its history is if downloaded, or else the first downloaded

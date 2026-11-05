@@ -163,6 +163,17 @@ class SubjectSourceMatcher extends ChangeNotifier {
   List<SubjectSourceRow> get rows => UnmodifiableListView(_rows);
   List<Comic> get candidates => UnmodifiableListView(_candidates);
   List<Comic> get matchedCandidates => UnmodifiableListView(_matchedCandidates);
+
+  /// The 播放上下文 of episode [number] of [subject], played from the
+  /// sources found here.
+  BangumiPlaybackContext playbackContext(BangumiSubject subject,
+      List<BangumiEpisode> episodes, int number) => BangumiPlaybackContext(
+    subject: subject,
+    episodes: episodes,
+    candidates: candidates,
+    matchedCandidates: matchedCandidates,
+    number: number,
+  );
   Comic? get current => _current;
   bool get allSettled => _rows.every((row) => !row._loading);
   Future<ComicDetails>? detailsOf(Comic comic) =>
