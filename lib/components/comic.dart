@@ -1026,79 +1026,58 @@ class ComicList extends StatefulWidget {
 }
 
 class ComicListState extends State<ComicList> {
-  int? _maxPage;
+  late final pager = ComicPager(loadPage: widget.loadPage, loadNext: widget.loadNext)
+    ..addListener(_changed);
 
-  final Map<int, List<Comic>> _data = {};
-
+  /// The page shown in paging mode.
   int _page = 1;
-
-  String? _error;
-
-  Object? _errorCause;
-
-  final Map<int, bool> _loading = {};
-
-  String? _nextUrl;
 
   late bool enablePageStorage = widget.enablePageStorage;
 
-  Map<String, dynamic> get state => {
-        'maxPage': _maxPage,
-        'data': _data,
-        'page': _page,
-        'error': _error,
-        'loading': _loading,
-        'nextUrl': _nextUrl,
-      };
+  int? get _maxPage => pager.maxPage;
+  String? get _error => pager.error;
 
-  void restoreState(Map<String, dynamic>? state) {
-    if (state == null || !enablePageStorage) {
-      return;
+  void _changed() {
+    if (mounted) {
+      setState(() {});
+      storeState();
     }
-    _maxPage = state['maxPage'];
-    _data.clear();
-    _data.addAll(state['data']);
-    _page = state['page'];
-    _error = state['error'];
-    _loading.clear();
-    _loading.addAll(state['loading']);
-    _nextUrl = state['nextUrl'];
   }
 
   void storeState() {
     // A page may finish loading after the list was closed.
     if (enablePageStorage && mounted) {
-      PageStorage.of(context).writeState(context, state);
+      PageStorage.of(context).writeState(context, {...pager.state, 'page': _page});
     }
   }
 
   void refresh() {
-    _data.clear();
     _page = 1;
-    _maxPage = null;
-    _error = null;
-    _nextUrl = null;
-    _loading.clear();
-    storeState();
-    setState(() {});
+    pager.refresh();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    restoreState(PageStorage.of(context).readState(context));
+    var state = PageStorage.of(context).readState(context);
+    if (state is Map<String, dynamic> && enablePageStorage) {
+      pager.restore(state);
+      _page = state['page'] ?? 1;
+    }
     widget.refreshHandlerCallback?.call(refresh);
   }
 
-  void remove(Comic c) {
-    if (_data[_page] == null || !_data[_page]!.remove(c)) {
-      for (var page in _data.values) {
-        if (page.remove(c)) {
-          break;
-        }
-      }
-    }
-    setState(() {});
+  @override
+  void dispose() {
+    pager.removeListener(_changed);
+    super.dispose();
+  }
+
+  void remove(Comic c) => pager.remove(c, near: _page);
+
+  void _goTo(int page) {
+    pager.clearError();
+    setState(() => _page = page);
   }
 
   Widget _buildPageSelector() {
@@ -1106,12 +1085,7 @@ class ComicListState extends State<ComicList> {
       children: [
         IconButton.filledTonal(
           onPressed: _page > 1
-              ? () {
-                  setState(() {
-                    _error = null;
-                    _page--;
-                  });
-                }
+              ? () => _goTo(_page - 1)
               : null,
           tooltip: "Back".tl,
           icon: const Icon(Icons.chevron_left),
@@ -1152,10 +1126,7 @@ class ComicListState extends State<ComicList> {
                               } else {
                                 if (page > 0 &&
                                     (_maxPage == null || page <= _maxPage!)) {
-                                  setState(() {
-                                    _error = null;
-                                    _page = page;
-                                  });
+                                  _goTo(page);
                                 } else {
                                   context.showMessage(
                                       message: "Invalid page".tl);
@@ -1180,12 +1151,7 @@ class ComicListState extends State<ComicList> {
         ),
         IconButton.filledTonal(
           onPressed: _page < (_maxPage ?? (_page + 1))
-              ? () {
-                  setState(() {
-                    _error = null;
-                    _page++;
-                  });
-                }
+              ? () => _goTo(_page + 1)
               : null,
           tooltip: "Next".tl,
           icon: const Icon(Icons.chevron_right),
@@ -1198,82 +1164,6 @@ class ComicListState extends State<ComicList> {
     return SliverToBoxAdapter(
       child: _buildPageSelector(),
     );
-  }
-
-  Future<void> _loadPage(int page) async {
-    if (widget.loadPage == null && widget.loadNext == null) {
-      _error = "loadPage and loadNext can't be null at the same time";
-      Future.microtask(() {
-        setState(() {});
-      });
-    }
-    if (_data[page] != null || _loading[page] == true) {
-      return;
-    }
-    _loading[page] = true;
-    _errorCause = null;
-    try {
-      if (widget.loadPage != null) {
-        var res = await widget.loadPage!(page);
-        if (!mounted) {
-          return;
-        }
-        if (res.success) {
-          if (res.data.isEmpty) {
-            setState(() {
-              _data[page] = const [];
-              _maxPage = page;
-            });
-          } else {
-            setState(() {
-              _data[page] = res.data;
-              if (res.subData != null && res.subData is int) {
-                _maxPage = res.subData;
-              }
-            });
-          }
-        } else {
-          setState(() {
-            _error = res.errorMessage ?? "Unknown error".tl;
-            _errorCause = res.errorCause;
-          });
-        }
-      } else {
-        try {
-          while (_data[page] == null) {
-            await _fetchNext();
-          }
-          if (mounted) {
-            setState(() {});
-          }
-        } catch (e) {
-          if (mounted) {
-            setState(() {
-              _error ??= e.toString();
-              _errorCause ??= e;
-            });
-          }
-        }
-      }
-    } finally {
-      _loading[page] = false;
-      storeState();
-    }
-  }
-
-  Future<void> _fetchNext() async {
-    var res = await widget.loadNext!(_nextUrl);
-    if (res.error) {
-      _error = res.errorMessage;
-      _errorCause = res.errorCause;
-      throw Exception(res.errorMessage);
-    }
-    _data[_data.length + 1] = res.data;
-    if (res.subData == null || res.data.isEmpty) {
-      _maxPage = _data.length;
-    } else {
-      _nextUrl = res.subData;
-    }
   }
 
   @override
@@ -1302,19 +1192,20 @@ class ComicListState extends State<ComicList> {
             child: AppErrorView(
               withAppbar: false,
               message: _error!,
-              cause: _errorCause,
-              retry: () {
-                setState(() {
-                  _error = null;
-                });
-              },
+              cause: pager.errorCause,
+              retry: pager.clearError,
             ),
           ),
         ],
       );
     }
-    if (_data[_page] == null) {
-      _loadPage(_page);
+    // A next-link source may end before the page asked for.
+    if (pager.page(_page) == null && !pager.hasMore && _maxPage != null &&
+        _page > _maxPage!) {
+      _page = _maxPage! < 1 ? 1 : _maxPage!;
+    }
+    if (pager.page(_page) == null) {
+      pager.load(_page);
       return Column(
         children: [
           if (widget.errorLeading != null) widget.errorLeading!,
@@ -1330,14 +1221,14 @@ class ComicListState extends State<ComicList> {
       slivers: [
         if (widget.leadingSliver != null) widget.leadingSliver!,
         if (_maxPage != 1) _buildSliverPageSelector(),
-        if (_page == 1 && _data[_page]!.isEmpty)
+        if (_page == 1 && pager.page(_page)!.isEmpty)
           _buildEmptySliver()
         else
           SliverGridComics(
-            comics: _data[_page] ?? const [],
+            comics: pager.page(_page) ?? const [],
             menuBuilder: widget.menuBuilder,
           ),
-        if (_data[_page]!.length > 6 && _maxPage != 1)
+        if (pager.page(_page)!.length > 6 && _maxPage != 1)
           _buildSliverPageSelector(),
         if (widget.trailingSliver != null) widget.trailingSliver!,
       ],
@@ -1345,7 +1236,7 @@ class ComicListState extends State<ComicList> {
   }
 
   Widget buildContinuousMode() {
-    if (_error != null && _data.isEmpty) {
+    if (_error != null && pager.loadedPages == 0) {
       return Column(
         children: [
           if (widget.errorLeading != null) widget.errorLeading!,
@@ -1354,19 +1245,15 @@ class ComicListState extends State<ComicList> {
             child: AppErrorView(
               withAppbar: false,
               message: _error!,
-              cause: _errorCause,
-              retry: () {
-                setState(() {
-                  _error = null;
-                });
-              },
+              cause: pager.errorCause,
+              retry: pager.clearError,
             ),
           ),
         ],
       );
     }
-    if (_data[1] == null) {
-      _loadPage(1);
+    if (pager.page(1) == null) {
+      pager.load(1);
       return Column(
         children: [
           if (widget.errorLeading != null) widget.errorLeading!,
@@ -1376,42 +1263,36 @@ class ComicListState extends State<ComicList> {
         ],
       );
     }
-    if (_error == null && _data.values.every((page) => page.isEmpty) &&
-        (_maxPage == null || _data.length < _maxPage!)) {
-      _loadPage(_data.length + 1);
+    if (_error == null && pager.allEmpty && pager.hasMore) {
+      pager.load(pager.loadedPages + 1);
     }
     return SmoothCustomScrollView(
       key: enablePageStorage ? PageStorageKey('scroll$_page') : null,
       controller: widget.controller,
       slivers: [
         if (widget.leadingSliver != null) widget.leadingSliver!,
-        if (_data.values.every((page) => page.isEmpty) &&
-            _maxPage != null && _data.length >= _maxPage!)
+        if (pager.allEmpty && !pager.hasMore)
           _buildEmptySliver()
         else
           SliverGridComics(
-            comics: _data.values.expand((element) => element).toList(),
+            comics: pager.all,
             menuBuilder: widget.menuBuilder,
             onLastItemBuild: () {
-              if (_error == null &&
-                  (_maxPage == null || _data.length < _maxPage!)) {
-                _loadPage(_data.length + 1);
+              if (_error == null && pager.hasMore) {
+                pager.load(pager.loadedPages + 1);
               }
             },
           ),
         if (_error != null)
           SliverListFooter.error(
             message: _error!,
-            cause: _errorCause,
+            cause: pager.errorCause,
             retry: () {
-              setState(() {
-                _error = null;
-                _errorCause = null;
-              });
-              _loadPage(_data.length + 1);
+              pager.clearError();
+              pager.load(pager.loadedPages + 1);
             },
           )
-        else if (_maxPage == null || _data.length < _maxPage!)
+        else if (pager.hasMore)
           const SliverListFooter.loading(),
         if (widget.trailingSliver != null) widget.trailingSliver!,
       ],
