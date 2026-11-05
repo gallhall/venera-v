@@ -86,13 +86,26 @@ class TorrentPeerDeadline {
 
 /// Counts torrent sessions, including metadata discovery, rather than episodes.
 class TorrentDownloadQueue {
-  final int limit;
+  int _limit;
+  int get limit => _limit;
+  set limit(int value) {
+    assert(value > 0);
+    _limit = value;
+    _drain();
+  }
   int _active = 0;
   final _waiting = <Completer<void>>[];
-  TorrentDownloadQueue({this.limit = 2}) : assert(limit > 0);
+  TorrentDownloadQueue({int limit = 2}) : _limit = limit, assert(limit > 0);
 
   int get active => _active;
   int get queued => _waiting.length;
+
+  void _drain() {
+    while (_active < limit && _waiting.isNotEmpty) {
+      _active++;
+      _waiting.removeAt(0).complete();
+    }
+  }
 
   Future<void Function()> acquire({Future<void>? cancelled}) async {
     if (_active >= limit) {
@@ -113,11 +126,8 @@ class TorrentDownloadQueue {
         return;
       }
       released = true;
-      if (_waiting.isEmpty) {
-        _active--;
-      } else {
-        _waiting.removeAt(0).complete();
-      }
+      _active--;
+      _drain();
     };
   }
 }

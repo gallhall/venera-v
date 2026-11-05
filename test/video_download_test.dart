@@ -6,6 +6,8 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rhttp/rhttp.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/torrent/torrent_download_state.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
@@ -283,6 +285,7 @@ class TestVideo extends ComicSource {
       cover: "${server.base}/cover.png",
       tags: {},
       chapters: ["slow", "fallback", "race", "hlsa", "ads"].includes(id) ? null
+        : ["episode_controls", "episode_failure"].includes(id) ? {one: "First", two: "Second"}
         : id === "dash" ? {dash: "DASH", webm: "WebM", split: "Split"}
         : {mp4: "MP4", hls: "HLS"},
     }),
@@ -291,6 +294,10 @@ class TestVideo extends ComicSource {
     loadPlayInfo: async (id, epId) => id === "race"
       ? await new Promise((r) => setTimeout(
           () => r({url: "${server.base}/race", type: "mp4"}), 800))
+      : id === "episode_controls"
+      ? {url: "${server.base}/" + (epId === "one" ? "slow" : "clip"), type: "mp4"}
+      : id === "episode_failure"
+      ? {url: "${server.base}/" + (epId === "one" ? "missing" : "clip"), type: "mp4"}
       : epId === "split"
       ? {url: "${server.base}/split/v.mp4", audioUrl: "${server.base}/split/a.m4a"}
       : id === "dash"
@@ -468,6 +475,98 @@ class TestVideo extends ComicSource {
       RegExp(r'bytes=(\d+)-').firstMatch(server.ranges.last!)!.group(1)!,
     );
     expect(resumedFrom, greaterThanOrEqualTo(saved));
+  }, skip: skip);
+
+  test('pausing an online episode skips it, downloads its sibling, and resumes only that file', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'episode_controls');
+    LocalManager().addTask(task);
+    Future<void> waitFor(bool Function() done) async {
+      var deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!done()) {
+        expect(task.episodeErrors, isEmpty);
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+    File part() => File(FilePath.join(
+      VideoDownloadTask.episodeDirectory(task.path!, 'one'), 'video.mp4.part'));
+    await waitFor(() => task.path != null && part().existsSync() &&
+      part().lengthSync() >= 64 * 1024);
+    task.pauseEpisode('one');
+    await waitFor(() => task.episodeCompleted('two') && task.isPaused);
+    expect(task.episodeCompleted('one'), isFalse);
+    expect(task.episodePaused('one'), isTrue);
+    var second = DownloadedEpisode.load(VideoDownloadTask.episodeDirectory(task.path!, 'two'))!;
+    expect(File(second.sources.single.url).readAsBytesSync(), server.clip);
+    var saved = part().lengthSync();
+    task.resumeEpisode('one');
+    await waitFor(() => !LocalManager().downloadingTasks.contains(task));
+    var first = DownloadedEpisode.load(VideoDownloadTask.episodeDirectory(task.path!, 'one'))!;
+    expect(File(first.sources.single.url).readAsBytesSync(), server.clip);
+    expect(saved, greaterThan(0));
+    expect(task.episodeCompleted('two'), isTrue);
+  }, skip: skip);
+
+  test('BT episode controls cancel and restart one handle while its batch sibling stays active', () async {
+    var previousWifiOnly = appdata.settings['btDownloadWifiOnly'];
+    appdata.settings['btDownloadWifiOnly'] = true;
+    addTearDown(() => appdata.settings['btDownloadWifiOnly'] = previousWifiOnly);
+    const magnet = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789';
+    var task = VideoDownloadTask.fromJson({
+      'source': source.key, 'videoId': 'bt_controls', 'quality': 'highest',
+      'cover': 'file:///cover.jpg', 'episodes': ['one', 'two'],
+      'comic': {
+        'comicId': 'bt_controls', 'sourceKey': source.key,
+        'title': 'BT controls', 'cover': '', 'tags': <String, List<String>>{},
+        'chapters': {'one': 'First', 'two': 'Second'},
+      },
+      'torrentReleases': {
+        'one': const VideoDownloadRelease(url: magnet, title: 'Batch', episode: 1).toJson(),
+        'two': const VideoDownloadRelease(url: magnet, title: 'Batch', episode: 2).toJson(),
+      },
+    })!;
+    LocalManager().addTask(task);
+    addTearDown(task.pause);
+    Future<void> waitFor(bool Function() done) async {
+      var deadline = DateTime.now().add(const Duration(seconds: 15));
+      while (!done()) {
+        expect(task.episodeErrors, isEmpty);
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+    await waitFor(() => task.torrentStatuses.length == 2 &&
+      task.torrentStatuses.values.every((s) => s.phase == TorrentDownloadPhase.waitingForWifi));
+    task.pauseEpisode('one');
+    expect(task.episodePaused('one'), isTrue);
+    expect(task.episodePaused('two'), isFalse);
+    expect(task.isPaused, isFalse);
+    task.resumeEpisode('one');
+    await waitFor(() => task.torrentStatuses['one']?.phase == TorrentDownloadPhase.waitingForWifi);
+    expect(task.episodePaused('one'), isFalse);
+    await task.deleteEpisode('one');
+    expect(task.episodeIds, ['two']);
+    expect(task.episodePaused('two'), isFalse);
+    expect(task.torrentStatuses['two']?.phase, TorrentDownloadPhase.waitingForWifi);
+    await task.deleteEpisode('two');
+    expect(LocalManager().downloadingTasks.contains(task), isFalse);
+  }, skip: skip);
+
+  test('an online episode failure does not prevent its sibling from completing', () async {
+    var task = VideoDownloadTask(source: source, videoId: 'episode_failure');
+    LocalManager().addTask(task);
+    var deadline = DateTime.now().add(const Duration(seconds: 60));
+    while (!task.isError || !task.episodeCompleted('two')) {
+      expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(task.episodeErrors['one'], contains('404'));
+    expect(task.episodeErrors.containsKey('two'), isFalse);
+    await task.deleteEpisode('one');
+    expect(task.episodeIds, ['two']);
+    expect(LocalManager().downloadingTasks.contains(task), isFalse);
+    expect(Directory(VideoDownloadTask.episodeDirectory(task.path!, 'one')).existsSync(), isFalse);
+    expect(DownloadedEpisode.load(VideoDownloadTask.episodeDirectory(task.path!, 'two')), isNotNull);
   }, skip: skip);
 
   test('downloads the audio an HLS master serves apart', () async {

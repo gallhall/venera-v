@@ -89,7 +89,8 @@ class TorrentDownloader {
   TorrentDownloader({TorrentDownloadQueue? queue,
     Future<bool> Function()? isWifi, bool Function()? wifiOnly,
     DateTime Function()? clock})
-      : queue = queue ?? TorrentDownloadQueue(),
+      : queue = queue ?? TorrentDownloadQueue(limit:
+          (appdata.settings['btConcurrentDownloads'] as num? ?? 2).toInt().clamp(1, 8).toInt()),
         isWifi = isWifi ?? _platformWifi,
         wifiOnly = wifiOnly ?? (() => appdata.settings['btDownloadWifiOnly'] == true),
         clock = clock ?? DateTime.now;
@@ -279,7 +280,7 @@ class _DownloadSession {
             if (interrupted.isCompleted) {
               throw StateError('Metadata operation interrupted');
             }
-          }, timeout: const Duration(minutes: 30), restartWhenStalled: false,
+          }, timeout: const Duration(minutes: 30),
           onStatus: (s) { metadataPeers = s.peers; });
         timer = Timer.periodic(const Duration(seconds: 1), (_) async {
           await _checkWifi();

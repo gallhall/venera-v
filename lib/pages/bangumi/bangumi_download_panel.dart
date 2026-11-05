@@ -20,11 +20,14 @@ import 'package:venera/utils/translations.dart';
 /// No state or matcher from BangumiSubjectPage is required.
 class BangumiDownloadPanel extends StatefulWidget {
   const BangumiDownloadPanel({super.key, required this.subjectId,
-    this.initiallySelectedEpisode, this.initiallySelectedEpisodeId});
+    this.initiallySelectedEpisode, this.initiallySelectedEpisodeId,
+    this.replacingTask, this.replacingChapterId});
 
   final int subjectId;
   final BangumiEpisode? initiallySelectedEpisode;
   final int? initiallySelectedEpisodeId;
+  final VideoDownloadTask? replacingTask;
+  final String? replacingChapterId;
 
   @override
   State<BangumiDownloadPanel> createState() => _BangumiDownloadPanelState();
@@ -134,8 +137,11 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       }
       subject = data[0] as BangumiSubject;
       episodes = (data[1] as List<BangumiEpisode>)
-          .where((e) => e.type == 0).toList()
-        ..sort((a, b) => a.sort.compareTo(b.sort));
+          .toList()
+        ..sort((a, b) {
+          var type = a.type.compareTo(b.type);
+          return type == 0 ? a.sort.compareTo(b.sort) : type;
+        });
       var initialId = widget.initiallySelectedEpisode?.id ??
           widget.initiallySelectedEpisodeId;
       current = episodes.where((e) => e.id == initialId).firstOrNull ??
@@ -192,7 +198,11 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
             ? subject!.allNames : [query],
           useSubjectLookup: query == subject!.displayName);
         if (mounted && run == generation) {
-          setState(() => releases.addAll(items.map((r) => _SheetRelease(source, r))));
+          setState(() {
+            for (var r in items) {
+              addRelease(_SheetRelease(source, r));
+            }
+          });
         }
       } catch (e) {
         if (mounted && run == generation) {
@@ -202,6 +212,29 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     }));
     if (mounted && run == generation) {
       setState(() => loadingReleases = false);
+    }
+  }
+
+  /// Feeds overlap (Mikan and its mirrors list the same release): keep one
+  /// row per info hash, or per title without one, preferring a .torrent URL,
+  /// which needs no metadata download, over a magnet.
+  void addRelease(_SheetRelease item) {
+    // Magnets carry the hash, Mikan names its .torrent files by it.
+    String? hash(RssRelease r) => (r.infoHash ?? RegExp(
+        r'(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])', caseSensitive: false)
+        .firstMatch(r.url)?[0])?.toLowerCase();
+    String title(RssRelease r) =>
+        r.title.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
+    bool same(RssRelease a, RssRelease b) {
+      var x = hash(a), y = hash(b);
+      return x != null && y != null ? x == y : title(a) == title(b);
+    }
+    var index = releases.indexWhere((e) => same(e.release, item.release));
+    if (index < 0) {
+      releases.add(item);
+    } else if (releases[index].release.url.startsWith('magnet:') &&
+        !item.release.url.startsWith('magnet:')) {
+      releases[index] = item;
     }
   }
 
@@ -337,12 +370,23 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     Map<int, _EpisodeChoice> choicesFor(int index) {
       var entries = (chapters.isGrouped ? chapters.getGroupByIndex(index) :
         chapters.allChapters).entries.toList();
-      return {
-        for (var e in episodes)
-          if (bangumiSourceEpisode(e, [
+      int? chapterFor(BangumiEpisode episode) {
+        if (episode.type == 0) {
+          return bangumiSourceEpisode(episode, [
             for (var (i, entry) in entries.indexed)
               (title: entry.value, position: i + 1),
-          ]) case var found?)
+          ]);
+        }
+        // Extras often restart at 1. A numeric match would cache main episode
+        // 1 as an SP/OP instead, so require its actual title to match.
+        var names = [episode.nameCn, episode.name].map((s) => s.trim().toLowerCase())
+            .where((s) => s.isNotEmpty).toSet();
+        var index = entries.indexWhere((entry) => names.contains(entry.value.trim().toLowerCase()));
+        return index < 0 ? null : index;
+      }
+      return {
+        for (var e in episodes)
+          if (chapterFor(e) case var found?)
             e.id: _EpisodeChoice(source, entries[found].key, entries[found].value),
       };
     }
@@ -367,38 +411,67 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     },
   });
 
+  Future<void> removeReplacedEpisode(VideoDownloadTask target,
+      Iterable<int> selected, Iterable<String> chapters) async {
+    var previous = widget.replacingTask;
+    var episodeId = widget.initiallySelectedEpisode?.id ?? widget.initiallySelectedEpisodeId ?? current?.id;
+    if (previous == null || !selected.contains(episodeId)) {
+      return;
+    }
+    if (identical(previous, target) && chapters.contains(widget.replacingChapterId ?? '')) {
+      return;
+    }
+    await previous.deleteEpisode(widget.replacingChapterId);
+  }
+
   Future<bool> startBT(List<({BangumiEpisode episode, _EpisodeChoice choice})> selected) async {
     var source = selected.first.choice.source;
     var details = btDetails(source);
-    if (LocalManager().isDownloading(details.id, details.comicType) ||
-        LocalManager().downloadingTasks.whereType<VideoDownloadTask>().any((t) =>
-          t.bangumiSubjectId == widget.subjectId && t.torrentReleases.isNotEmpty)) {
-      context.showMessage(message: 'The video is downloading'.tl);
-      return false;
+    var existing = LocalManager().downloadingTasks.whereType<VideoDownloadTask>()
+        .where((t) => (t.bangumiSubjectId == widget.subjectId &&
+          t.torrentReleases.isNotEmpty) ||
+          (t.id == details.id && t.source.key == source.key)).firstOrNull;
+    if (existing != null) {
+      existing.bangumiSubjectId ??= widget.subjectId;
+      existing.comic = btDetails(existing.source);
+      existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
+        bangumiIds: {for (var e in selected) e.choice.chapterId: e.episode.id},
+        releases: {for (var e in selected) e.choice.chapterId: e.choice.torrent!});
+      await removeReplacedEpisode(existing, selected.map((e) => e.episode.id),
+        selected.map((e) => e.choice.chapterId));
+      if (!mounted) {
+        return true;
+      }
+      context.showMessage(message: 'Download started'.tl);
+      return true;
     }
     // All choices use the exact persisted URL, including cross-source line
     // overrides. One task submits them together; TorrentDownloader groups by
     // URL/hash so a failed batch file cannot block a sibling in another feed.
-    LocalManager().addTask(VideoDownloadTask(source: source,
+    var task = VideoDownloadTask(source: source,
       videoId: details.id, comic: details,
       episodes: selected.map((e) => e.choice.chapterId).toList(),
       bangumiSubjectId: widget.subjectId, bangumiEpisodeIds: {
         for (var e in selected) e.choice.chapterId: e.episode.id,
       }, torrentReleases: {
         for (var e in selected) e.choice.chapterId: e.choice.torrent!,
-      }));
+      });
+    LocalManager().addTask(task);
+    await removeReplacedEpisode(task, selected.map((e) => e.episode.id),
+      selected.map((e) => e.choice.chapterId));
+    if (!mounted) {
+      return true;
+    }
     context.showMessage(message: 'Download started'.tl);
     return true;
   }
 
   Future<bool> startOnline(Comic candidate, ComicDetails details,
       List<({BangumiEpisode episode, _EpisodeChoice choice})> selected) async {
-    if (LocalManager().isDownloading(details.id, details.comicType)) {
-      context.showMessage(message: 'The video is downloading'.tl);
-      return false;
-    }
     var source = selected.first.choice.source;
-    var quality = await selectDownloadQuality(source, details.id,
+    var existing = LocalManager().downloadingTasks.whereType<VideoDownloadTask>()
+        .where((t) => t.id == details.id && t.source.key == source.key).firstOrNull;
+    var quality = existing?.quality ?? await selectDownloadQuality(source, details.id,
       selected.first.choice.chapterId.isEmpty ? null : selected.first.choice.chapterId);
     if (quality == null || !mounted) {
       return false;
@@ -409,13 +482,32 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       details = ComicDetails.fromJson({...details.toJson(), 'cover': cover,
         'subtitle': details.subTitle, 'chapters': details.chapters?.toJson()});
     }
-    LocalManager().addTask(VideoDownloadTask(source: source, videoId: details.id,
+    if (existing != null) {
+      existing.bangumiSubjectId ??= widget.subjectId;
+      existing.comic = details;
+      existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
+        bangumiIds: {for (var e in selected) e.choice.chapterId: e.episode.id});
+      await removeReplacedEpisode(existing, selected.map((e) => e.episode.id),
+        selected.map((e) => e.choice.chapterId));
+      if (!mounted) {
+        return true;
+      }
+      context.showMessage(message: 'Download started'.tl);
+      return true;
+    }
+    var task = VideoDownloadTask(source: source, videoId: details.id,
       comic: details, quality: quality,
       episodes: details.chapters == null || details.chapters!.length == 0 ? null :
         selected.map((e) => e.choice.chapterId).toList(),
       bangumiSubjectId: widget.subjectId, bangumiEpisodeIds: {
         for (var e in selected) e.choice.chapterId: e.episode.id,
-      }));
+      });
+    LocalManager().addTask(task);
+    await removeReplacedEpisode(task, selected.map((e) => e.episode.id),
+      selected.map((e) => e.choice.chapterId));
+    if (!mounted) {
+      return true;
+    }
     context.showMessage(message: 'Download started'.tl);
     return true;
   }
@@ -445,7 +537,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
           ])),
           const SizedBox(width: AppSpacing.sm),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            if (size != null) Text(size >= 1024 * 1024 * 1024
+            if (size != null && size > 0) Text(size >= 1024 * 1024 * 1024
               ? '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GiB'
               : '${(size / (1024 * 1024)).toStringAsFixed(0)} MiB', style: ts.s12),
             if (date != null) Text(date, style: ts.s12),

@@ -147,4 +147,27 @@ void main() {
     var finish = calls.singleWhere((c) => c.method == "finish");
     expect((finish.arguments as Map)["title"], isNull);
   });
+
+  test('another active anime keeps the service running when the first task pauses', () async {
+    var a = _FakeTask('parallel-a');
+    var b = _FakeTask('parallel-b');
+    LocalManager().addTask(a);
+    LocalManager().addTask(b);
+    b.resume();
+    await settle();
+    calls.clear();
+    a.pause();
+    await settle();
+    expect(DownloadNotification.keepAppOpen.value, isTrue);
+    var update = calls.lastWhere((call) => call.method == 'update');
+    expect((update.arguments as Map)['state'], 'running');
+    expect((update.arguments as Map)['title'], 'Task parallel-b');
+    b.pause();
+    await settle();
+    expect(DownloadNotification.keepAppOpen.value, isFalse);
+    expect(states().last, 'paused');
+    a.cancel();
+    b.cancel();
+    await settle();
+  });
 }
