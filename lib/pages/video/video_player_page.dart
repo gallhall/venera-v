@@ -22,6 +22,7 @@ import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/foundation/video/auto_switch.dart';
+import 'package:venera/foundation/video/auto_switcher.dart';
 import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/foundation/video/watch_progress.dart';
 import 'package:venera/foundation/video/anime4k.dart';
@@ -148,24 +149,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   late int current;
 
-  final triedLines = <SourceLine>{};
-  final triedCandidates = <AutoSwitchCandidate>{};
-
-  /// The chapter 自动换源 started from within this source.
-  int switchOrigin = 0;
-  bool allSourcesFailed = false;
+  final switcher = AutoSwitcher();
   final playbackSubscriptions = <StreamSubscription>[];
 
   bool get autoSwitch => appdata.settings['videoAutoSwitch'] != false;
 
   AutoSwitchCandidate get candidateKey => (source: sourceKey, id: details.id);
 
-  void resetAutoSwitch() {
-    triedLines.clear();
-    triedCandidates.clear();
-    allSourcesFailed = false;
-    switchOrigin = current;
-  }
+  void resetAutoSwitch() => switcher.chosen(current);
 
   /// Increased for page-level episode and Bangumi target lookups.
   int loadToken = 0;
@@ -612,8 +603,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!automatic) {
       resetAutoSwitch();
     }
-    triedLines.add(correspondence.lineAt(index));
-    triedCandidates.add(candidateKey);
+    switcher.loading(correspondence, index, candidateKey);
     ignoringSession = false;
     var token = ++loadToken;
     var start = position ?? watchProgress.resumeAt(index);
@@ -683,63 +673,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       setState(() => pageError = message);
       return;
     }
-    if (playingDownload != null && bangumi != null) {
-      // A broken download falls back to the sources.
-      onlineChosen.add(bangumi!.number);
-      await changeBangumi(bangumi!, automatic: true, position: position);
-      return;
-    }
     var token = ++loadToken;
     await session?.pause();
     if (!mounted || token != loadToken) {
       return;
     }
-    triedLines.add(correspondence.lineAt(current));
-    triedCandidates.add(candidateKey);
-    var line = correspondence.fallbackAfter(current, tried: triedLines,
-      origin: switchOrigin, number: bangumi?.number,
-      // BT release groups number their episodes their own way: the same
-      // position in another group is another episode.
-      samePosition: playInfo?.isTorrent != true);
-    if (line != null) {
-      context.showMessage(
-        message: "Auto switched to @name".tlParams({
-          'name': episodes[line].group ?? episodes[line].title,
-        }),
-      );
-      await loadEpisode(line, automatic: true, position: position);
-      return;
-    }
-    var b = bangumi;
-    if (b != null) {
-      AutoSwitchCandidate key(Comic c) => (source: c.sourceKey, id: c.id);
-      var next = nextAutoSwitchCandidate(
-        current: candidateKey,
-        matched: b.matchedCandidates.map(key),
-        candidates: b.candidates.map(key),
-        tried: triedCandidates,
-        enabled: {
-          for (var c in [...b.matchedCandidates, ...b.candidates])
-            if (ComicSource.find(c.sourceKey)?.isEnabled == true) c.sourceKey,
-        },
-      );
-      if (next != null) {
-        triedCandidates.add(next);
-        var candidate = [...b.matchedCandidates, ...b.candidates]
-            .firstWhere((c) => key(c) == next);
+    var step = switcher.next(
+      correspondence: correspondence,
+      current: current,
+      candidate: candidateKey,
+      bangumi: bangumi,
+      playingDownload: playingDownload != null,
+      torrent: playInfo?.isTorrent == true,
+      enabled: (key) => ComicSource.find(key)?.isEnabled == true,
+    );
+    switch (step) {
+      case SwitchToSources():
+        onlineChosen.add(bangumi!.number);
+        await changeBangumi(bangumi!, automatic: true, position: position);
+        return;
+      case SwitchToLine(:var index):
+        context.showMessage(
+          message: "Auto switched to @name".tlParams({
+            'name': episodes[index].group ?? episodes[index].title,
+          }),
+        );
+        await loadEpisode(index, automatic: true, position: position);
+        return;
+      case SwitchToCandidate(:var candidate):
         await changeBangumi(
-          b,
+          bangumi!,
           candidate: candidate,
           position: position,
           automatic: true,
         );
         return;
-      }
+      case SwitchExhausted():
     }
     unawaited(session?.finishFailure(message));
     setState(() {
       pageLoading = false;
-      allSourcesFailed = true;
       pageError = message;
     });
   }
@@ -1184,8 +1157,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         current = episodes.fromHistory(target.ep, target.group) ?? 0;
       });
       if (automatic) {
-        triedLines.clear();
-        switchOrigin = current;
+        switcher.sourceChanged(current);
         context.showMessage(
           message: "Auto switched to @name".tlParams({'name': playingSource}),
         );
@@ -1849,7 +1821,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var untried = session?.nextUntriedStream;
     return MediaErrorView(
       message: error!,
-      title: (allSourcesFailed
+      title: (switcher.exhausted
           ? 'All sources failed'
           : session?.hasRecovery == true
               ? 'Playback interrupted'
