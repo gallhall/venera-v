@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -13,10 +14,30 @@ import 'package:venera/utils/ugoira.dart';
 import 'app_dio.dart';
 import 'bangumi_network.dart';
 
+/// The file a `file://` image url points at, or null for a remote url.
+///
+/// Downloaded comics and anime store their cover as `file://<path>`; these
+/// must be read from disk, never handed to the HTTP client.
+File? localImageFile(String url) {
+  if (!url.startsWith('file://')) return null;
+  return File(url.substring('file://'.length));
+}
+
 abstract class ImageDownloader {
   static Stream<ImageDownloadProgress> loadThumbnail(
       String url, String? sourceKey,
       [String? cid]) async* {
+    final localFile = localImageFile(url);
+    if (localFile != null) {
+      final data = await localFile.readAsBytes();
+      yield ImageDownloadProgress(
+        currentBytes: data.length,
+        totalBytes: data.length,
+        imageBytes: data,
+      );
+      return;
+    }
+
     final cacheKey = "$url@$sourceKey${cid != null ? '@$cid' : ''}";
     final cache = await CacheManager().findCache(cacheKey);
 

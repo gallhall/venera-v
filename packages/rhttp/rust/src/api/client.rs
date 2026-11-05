@@ -1,5 +1,6 @@
 use crate::api::error::RhttpError;
 use crate::api::http::HttpVersionPref;
+use crate::utils::dart_callback::call_dart;
 use crate::utils::socket_addr::SocketAddrDigester;
 use chrono::Duration;
 use flutter_rust_bridge::{frb, DartFnFuture};
@@ -338,7 +339,7 @@ impl Resolve for DynamicResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let resolver = self.resolver.clone();
         Box::pin(async move {
-            let ip = resolver(name.as_str().to_owned()).await;
+            let ip = call_dart(resolver(name.as_str().to_owned())).await;
             let ip = ip
                 .into_iter()
                 .map(|ip| {
