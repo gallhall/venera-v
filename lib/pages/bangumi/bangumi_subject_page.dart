@@ -16,7 +16,7 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/network/cloudflare.dart';
-import 'package:venera/foundation/bangumi/bangumi_match_cache.dart';
+import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
@@ -91,15 +91,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   final manager = BangumiManager();
   BangumiSubject? subject;
   List<BangumiEpisode> episodes = [];
-  late final matcher = SubjectSourceMatcher(
-    subjectId: widget.subjectId,
-    search: ComicSourceSearch(),
-    memory: BangumiManagerMemory(manager),
-    cache: BangumiMatchCache(appdata.implicitData),
-    loadDetails: loadBangumiDetails,
-    showRaw: () => appdata.settings['btShowRaw'] == true,
-    saveCache: appdata.writeImplicitData,
-  );
+  late final matcher = appSubjectSourceMatcher(widget.subjectId);
   List<SubjectSourceRow> get sources => matcher.rows;
   Comic? get current => matcher.current;
   List<Comic> get candidates => matcher.candidates;
@@ -274,16 +266,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   void syncSources() {
-    var configured = appdata.settings['searchSources'] as List? ?? [];
-    var enabled = ComicSource.enabled()
-        .where(
-          (s) =>
-              s.isVideoSource &&
-              s.searchPageData != null &&
-              configured.contains(s.key),
-        )
-        .toList();
-    matcher.syncSources(enabled);
+    matcher.syncSources(appSubjectVideoSources());
   }
 
   Widget resultTile(Comic comic, VoidCallback onTap) => Builder(
@@ -353,13 +336,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
       // Downloaded: played at once, from whichever source it came.
       var progress = manager.localProgress(widget.subjectId);
       await App.rootContext.to(() => downloadedBangumiPlayer(
-        BangumiPlaybackContext(
-          subject: subject!,
-          episodes: episodes,
-          candidates: candidates,
-          matchedCandidates: matchedCandidates,
-          number: episode.number,
-        ),
+        matcher.playbackContext(subject!, episodes, episode.number),
         download,
         position: progress.episode == episode.number && !progress.finished
             ? Duration(seconds: progress.position)
@@ -377,13 +354,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     try {
       await openBangumiPlayer(
         context,
-        BangumiPlaybackContext(
-          subject: subject!,
-          episodes: episodes,
-          candidates: candidates,
-          matchedCandidates: matchedCandidates,
-          number: episode.number,
-        ),
+        matcher.playbackContext(subject!, episodes, episode.number),
         candidate,
         details: refreshedDetails,
         position: progress.episode == episode.number && !progress.finished
