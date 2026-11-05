@@ -41,9 +41,10 @@ class _Torrents implements TorrentStreamer {
   ValueListenable<TorrentStatus>? status(String url, {int? episode}) =>
       statuses[(url, episode)];
 
-  void speed(double value, {int peers = 0}) {
+  void speed(double value, {int peers = 0, bool metadata = true}) {
     for (var status in statuses.values) {
-      status.value = TorrentStatus(bytesPerSecond: value, peers: peers);
+      status.value = TorrentStatus(
+          bytesPerSecond: value, peers: peers, metadata: metadata);
     }
   }
 
@@ -200,6 +201,34 @@ void main() {
     lease.watchStartup(const Duration(seconds: 45), () => calls++);
     await lease.ready;
     torrents.speed(0, peers: 3);
+    clock.elapse(134);
+    expect(calls, 0);
+    clock.elapse(1);
+    expect(calls, 1);
+    await lease.release();
+  });
+
+  test('peers that never send data count as no peers', () async {
+    var lease = opener.open(_info, 0);
+    var calls = 0;
+    lease.watchStartup(const Duration(seconds: 45), () => calls++);
+    await lease.ready;
+    torrents.speed(0, peers: 3, metadata: false);
+    clock.elapse(44);
+    expect(calls, 0);
+    clock.elapse(1);
+    expect(calls, 1);
+    await lease.release();
+  });
+
+  test('a torrent that once sent data keeps the idle rule', () async {
+    var lease = opener.open(_info, 0);
+    var calls = 0;
+    lease.watchStartup(const Duration(seconds: 45), () => calls++);
+    await lease.ready;
+    torrents.speed(100, peers: 3, metadata: false);
+    clock.elapse(1);
+    torrents.speed(0, peers: 3, metadata: false);
     clock.elapse(134);
     expect(calls, 0);
     clock.elapse(1);

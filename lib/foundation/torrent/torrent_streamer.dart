@@ -18,6 +18,7 @@ import 'torrent_metadata.dart';
 export 'torrent_metadata.dart' show publicTorrentTrackers;
 
 class TorrentStatus {
+  /// Still fetching the torrent's metadata.
   final bool metadata;
   final double progress;
   final int peers;
@@ -31,6 +32,15 @@ class TorrentStatus {
     this.bytesPerSecond = 0,
     this.buffered = 0,
   });
+
+  /// Whether data is arriving. Once the metadata is in, a connected peer
+  /// that sends nothing is no better than none. Progress may be left over
+  /// from an earlier session, so it does not count.
+  bool get receiving => bytesPerSecond > 0;
+
+  /// Whether the swarm is usable: while fetching metadata a connected peer
+  /// counts, afterwards only one that delivers data.
+  bool get usable => receiving || metadata && peers > 0;
 }
 
 /// The player owns one lease, released on stream changes and disposal.
