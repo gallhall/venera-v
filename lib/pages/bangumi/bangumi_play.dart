@@ -14,6 +14,7 @@ import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/pages/video/video_player_page.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -27,6 +28,14 @@ Future<VideoPlayerPage> bangumiPlayer(
   bool startFullscreen = false,
   void Function(Comic)? onSourceChanged,
 }) {
+  var episode = context.episodes
+      .where((e) => e.number == context.number).firstOrNull;
+  var download = episode == null
+      ? null : SubjectDownloads.find(context.subject.id, episode.id);
+  if (download != null) {
+    return Future.value(downloadedBangumiPlayer(context, download,
+        position: position, startFullscreen: startFullscreen));
+  }
   return loadBangumiTarget(
     context,
     candidate,
@@ -286,4 +295,145 @@ class BangumiCandidateCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Plays Bangumi episode [BangumiPlaybackContext.number] from [download]
+/// without asking any source; the other episodes play from their
+/// downloads, else from the sources of [playback].
+VideoPlayerPage downloadedBangumiPlayer(
+  BangumiPlaybackContext playback,
+  SubjectDownload download, {
+  Duration? position,
+  bool startFullscreen = false,
+}) {
+  var video = download.video;
+  return VideoPlayerPage(
+    sourceKey: video.sourceKey,
+    details: video.videoDetails(video.sourceKey),
+    bangumi: playback,
+    initialPosition: position ?? Duration.zero,
+    startFullscreen: startFullscreen,
+  );
+}
+
+/// The context for playing the downloads of [subjectId]: from Bangumi, or
+/// made from the downloads themselves while offline. Its sources are those
+/// matched before on the subject page.
+Future<BangumiPlaybackContext> downloadPlaybackContext(
+  int subjectId, {
+  String title = '',
+  String cover = '',
+}) async {
+  var manager = BangumiManager();
+  BangumiSubject subject;
+  List<BangumiEpisode> episodes;
+  try {
+    subject = await manager.api.subject(subjectId)
+        .timeout(const Duration(seconds: 8));
+    episodes = await manager.api.episodes(subjectId)
+        .timeout(const Duration(seconds: 8));
+  } catch (_) {
+    subject = BangumiSubject(id: subjectId, type: BangumiSubjectType.anime,
+        name: title, image: cover);
+    episodes = offlineSubjectEpisodes(subjectId);
+  }
+  var candidates = <Comic>[];
+  var matched = <Comic>[];
+  try {
+    var configured = appdata.settings['searchSources'] as List? ?? [];
+    var cached = SubjectSourceMatcher.cached(
+      subject: subject,
+      // Not a source: removed below.
+      opened: Comic(subject.displayName, '', '', null, null, '', '', null, null),
+      enabled: ComicSource.enabled()
+          .where((s) => configured.contains(s.key)).toList(),
+      search: ComicSourceSearch(),
+      memory: BangumiManagerMemory(manager),
+      cache: BangumiMatchCache(appdata.implicitData),
+      showRaw: appdata.settings['btShowRaw'] == true,
+    );
+    candidates = cached.candidates.where((c) => c.sourceKey.isNotEmpty).toList();
+    matched = cached.matched.where((c) => c.sourceKey.isNotEmpty).toList();
+  } catch (_) {
+    // Without matched sources only the downloads play.
+  }
+  return BangumiPlaybackContext(
+    subject: subject,
+    episodes: episodes,
+    candidates: candidates,
+    matchedCandidates: matched,
+    number: episodes.firstOrNull?.number ?? 1,
+  );
+}
+
+/// The episodes of [subjectId] known from its downloads. A BT download
+/// lists all of them, titled "Episode n · name"; another only those it
+/// downloaded.
+List<BangumiEpisode> offlineSubjectEpisodes(int subjectId) {
+  var result = <int, BangumiEpisode>{};
+  void add(int id, String title, int position) {
+    var parts = title.split(' · ');
+    var number = BangumiEpisodeNumber.of(parts.first, position) ?? position;
+    result.putIfAbsent(id, () => BangumiEpisode(id: id, ep: number,
+        sort: number.toDouble(),
+        name: parts.length > 1 ? parts.skip(1).join(' · ') : ''));
+  }
+  var downloads = SubjectDownloads.of(subjectId);
+  for (var download in downloads.values) {
+    var video = download.video;
+    var chapters = video.chapters?.allChapters ?? const <String, String>{};
+    var position = 0;
+    for (var e in chapters.entries) {
+      position++;
+      var id = int.tryParse(e.key);
+      if (video.id == 'bangumi:$subjectId' && id != null) {
+        add(id, e.value, position);
+      }
+    }
+  }
+  for (var e in downloads.entries) {
+    var video = e.value.video;
+    var chapters = video.chapters?.allChapters ?? const <String, String>{};
+    var keys = chapters.keys.toList();
+    add(e.key, chapters[e.value.chapterId] ?? '',
+        keys.indexOf(e.value.chapterId ?? '') + 1);
+  }
+  return result.values.toList()..sort((a, b) => a.number.compareTo(b.number));
+}
+
+/// Opens the player on a download of [subjectId]: episode [episodeId], or
+/// else where its history is if downloaded, or else the first downloaded
+/// episode. False if nothing of the subject is downloaded.
+Future<bool> openDownloadedSubject(
+  int subjectId, {
+  int? episodeId,
+  String title = '',
+  String cover = '',
+}) async {
+  var downloads = SubjectDownloads.of(subjectId);
+  if (downloads.isEmpty) {
+    return false;
+  }
+  var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
+  BangumiPlaybackContext playback;
+  try {
+    playback = await downloadPlaybackContext(subjectId,
+        title: title, cover: cover);
+  } finally {
+    dialog.close();
+  }
+  var progress = BangumiManager().localProgress(subjectId);
+  var episodes = playback.episodes.where((e) => downloads.containsKey(e.id));
+  var target = (episodeId == null ? null
+          : episodes.where((e) => e.id == episodeId).firstOrNull) ??
+      episodes.where((e) => e.number == progress.episode).firstOrNull ??
+      episodes.firstOrNull;
+  if (target == null) {
+    return false;
+  }
+  var position = progress.episode == target.number && !progress.finished
+      ? Duration(seconds: progress.position) : Duration.zero;
+  await App.rootContext.to(() => downloadedBangumiPlayer(
+      playback.at(target.number), downloads[target.id]!, position: position));
+  return true;
 }

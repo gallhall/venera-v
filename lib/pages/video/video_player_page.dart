@@ -16,6 +16,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/foundation/video/auto_switch.dart';
@@ -101,7 +102,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   ReleaseChapterMap? get btReleases {
     var b = bangumi;
-    if (b == null || source?.animekoSource?.factoryId != 'rss') {
+    // A BT download opened as such lists Bangumi episodes, not releases.
+    if (b == null || source?.animekoSource?.factoryId != 'rss' ||
+        details.id == bangumiHistoryId(b.subject.id)) {
       return null;
     }
     if (!identical(_releaseDetails, details) ||
@@ -275,6 +278,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   History get history => watchProgress.history;
 
+  /// The download playing for the current Bangumi episode in place of the
+  /// source: a downloaded episode plays from it whichever source it came
+  /// from, unless a source was chosen for it.
+  SubjectDownload? playingDownload;
+
+  /// Bangumi episodes for which a source was chosen over the download.
+  final onlineChosen = <int>{};
+
+  /// The download of [playback]'s current episode, if any.
+  SubjectDownload? _downloadOf(BangumiPlaybackContext playback) {
+    var e = playback.episodes
+        .where((e) => e.number == playback.number).firstOrNull;
+    return e == null ? null : SubjectDownloads.find(playback.subject.id, e.id);
+  }
+
+  /// The Bangumi episode playing, while there is a subject.
+  BangumiEpisode? get bangumiEpisode => bangumi?.episodes
+      .where((e) => e.number == bangumi!.number).firstOrNull;
+
   (String, String)? _linkedFor;
   BangumiLinkedVideo? _linkedVideo;
 
@@ -378,6 +400,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       index = episodes.fromHistory(history.ep, history.group);
     }
     current = index ?? 0;
+    if (widget.bangumi case var b?) {
+      playingDownload = _downloadOf(b);
+    }
     danmaku.addListener(updateDanmakuControls);
     var savedRate = appdata.settings['videoPlaybackRate'];
     if (savedRate is num) rate = savedRate.toDouble();
@@ -632,7 +657,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     var next = PlaybackSession(
-      loader: episodePlayInfo(
+      loader: playingDownload?.playInfo() ?? episodePlayInfo(
         video: localVideo,
         source: source,
         videoId: details.id,
@@ -674,6 +699,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!autoSwitch) {
       unawaited(session?.finishFailure(message));
       setState(() => pageError = message);
+      return;
+    }
+    if (playingDownload != null && bangumi != null) {
+      // A broken download falls back to the sources.
+      onlineChosen.add(bangumi!.number);
+      await changeBangumi(bangumi!, automatic: true, position: position);
       return;
     }
     var token = ++loadToken;
@@ -1078,13 +1109,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ? videoResolutionLabel(videoSize?.width, videoSize?.height)
       : null;
 
-  String get playingSource => source?.name ?? sourceKey;
+  String get playingSource => playingDownload != null
+      ? 'Local cache'.tl : source?.name ?? sourceKey;
 
   String get playerTitle => bangumi != null
-      ? '${bangumi!.subject.displayName} \u00b7 ${episode.title} \u00b7 $playingSource'
+      ? '${bangumi!.subject.displayName} \u00b7 ${playingDownload == null
+          ? episode.title : bangumiEpisodeTitle} \u00b7 $playingSource'
       : episode.id == null
       ? details.title
       : '${details.title} · ${episode.title}';
+
+  String get bangumiEpisodeTitle {
+    var e = bangumiEpisode;
+    var name = e == null ? '' : e.nameCn.isNotEmpty ? e.nameCn : e.name;
+    var label = 'Episode @n'.tlParams({'n': bangumi!.number});
+    return name.isEmpty ? label : '$label · $name';
+  }
 
   bool changingBangumi = false;
 
@@ -1102,6 +1142,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       resetAutoSwitch();
     }
     saveHistory();
+    if (candidate != null) {
+      onlineChosen.add(playback.number);
+    }
+    var download = candidate != null ||
+        onlineChosen.contains(playback.number)
+        ? null : _downloadOf(playback);
+    if (download != null) {
+      // Downloaded: played without asking any source, also offline.
+      setState(() {
+        bangumi = playback;
+        playingDownload = download;
+        initialPosition = position ?? Duration.zero;
+      });
+      loadDanmaku();
+      await loadEpisode(current, automatic: automatic, position: position);
+      return;
+    }
     var oldActive = active;
     changingBangumi = true;
     ignoringSession = true;
@@ -1161,6 +1218,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         details = target.details;
         episodes = VideoEpisode.fromDetails(details);
         bangumi = playback;
+        playingDownload = null;
         initialPosition = position ?? Duration.zero;
         current = episodes.fromHistory(target.ep, target.group) ?? 0;
       });
@@ -1301,6 +1359,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         initialPosition ??
         Duration.zero;
     Comic? candidate;
+    var useDownload = false;
+    var download = _downloadOf(b);
+    var local = playingDownload != null;
     await showSubPage(
       App.rootContext,
       SubPage(
@@ -1308,14 +1369,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         body: Builder(builder: (sheetContext) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
+            if (download != null)
+              AppCard(
+                highlighted: local,
+                onTap: () {
+                  useDownload = !local;
+                  Navigator.pop(sheetContext);
+                },
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  const AppIconBox(Icons.download_done_rounded, size: 36),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Local cache'.tl, style: ts.s14)),
+                  if (local)
+                    Text('Playing'.tl, style: ts.s12.copyWith(
+                        color: sheetContext.colorScheme.primary)),
+                ]),
+              ),
             for (var c in b.candidates.where(
               (c) => ComicSource.find(c.sourceKey)?.isEnabled == true,
             ))
               BangumiCandidateCard(
                 candidate: c,
-                playing: c.sourceKey == sourceKey && c.id == details.id,
+                playing: !local && c.sourceKey == sourceKey &&
+                    c.id == details.id,
                 onTap: () {
-                  if (c.sourceKey != sourceKey || c.id != details.id) {
+                  if (local || c.sourceKey != sourceKey ||
+                      c.id != details.id) {
                     candidate = c;
                   }
                   Navigator.pop(sheetContext);
@@ -1325,7 +1405,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         )),
       ),
     );
-    if (!mounted || candidate == null) {
+    if (!mounted) {
+      return;
+    }
+    if (useDownload) {
+      onlineChosen.remove(b.number);
+      await changeBangumi(b, position: savedPosition);
+      return;
+    }
+    if (candidate == null) {
       return;
     }
     await changeBangumi(b, candidate: candidate, position: savedPosition);
@@ -1833,12 +1921,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              details.title,
+              playingDownload != null
+                  ? bangumi!.subject.displayName : details.title,
               style: ts.s18.copyWith(fontWeight: FontWeight.w600),
             ),
-            if (episode.id != null)
+            if (playingDownload != null || episode.id != null)
               Text(
-                episodeLabel(episode),
+                playingDownload != null
+                    ? bangumiEpisodeTitle : episodeLabel(episode),
                 style: ts.s14.copyWith(
                   color: context.colorScheme.onSurfaceVariant,
                 ),
@@ -1927,6 +2017,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               playingChapterId: episode.id,
               isDownloaded: (match) => DownloadedPlayInfo.isDownloaded(
                 localVideo, AnimekoSource.playbackChapterId(match)),
+              episodeDownloaded: (e) =>
+                  SubjectDownloads.find(bangumi!.subject.id, e.id) != null,
               onPlay: (target, line) => changeBangumi(
                 bangumi!.at(target.number),
                 releaseLine: line,
@@ -1945,6 +2037,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     label: '${e.number}',
                     selected: e.number == bangumi!.number,
                     watched: watchProgress.isWatched('${e.number}'),
+                    downloaded: SubjectDownloads.find(
+                        bangumi!.subject.id, e.id) != null,
                     onTap: e.number == bangumi!.number
                         ? null
                         : () => changeBangumi(bangumi!.at(e.number)),

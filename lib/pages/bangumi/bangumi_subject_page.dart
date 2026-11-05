@@ -22,6 +22,8 @@ import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
 import 'bangumi_panel.dart';
 import 'anime_cache_page.dart';
+import 'package:venera/foundation/video/subject_downloads.dart';
+
 import 'bangumi_play.dart';
 import 'bangumi_search_page.dart';
 
@@ -345,7 +347,26 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Future<void> play(BangumiEpisode episode, {bool retryCached = true}) async {
-    if (!canPlay) return;
+    if (!canPlayEpisode(episode)) return;
+    var download = SubjectDownloads.find(widget.subjectId, episode.id);
+    if (download != null) {
+      // Downloaded: played at once, from whichever source it came.
+      var progress = manager.localProgress(widget.subjectId);
+      await App.rootContext.to(() => downloadedBangumiPlayer(
+        BangumiPlaybackContext(
+          subject: subject!,
+          episodes: episodes,
+          candidates: candidates,
+          matchedCandidates: matchedCandidates,
+          number: episode.number,
+        ),
+        download,
+        position: progress.episode == episode.number && !progress.finished
+            ? Duration(seconds: progress.position)
+            : Duration.zero,
+      ));
+      return;
+    }
     setState(() {
       playing = true;
       playError = null;
@@ -399,6 +420,14 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
         episodes.firstOrNull;
   }
 
+  bool isDownloaded(BangumiEpisode episode) =>
+      SubjectDownloads.find(widget.subjectId, episode.id) != null;
+
+  /// A downloaded episode plays before any source is matched, also offline.
+  bool canPlayEpisode(BangumiEpisode? episode) =>
+      canPlay || episode != null && !playing && subject != null &&
+          isDownloaded(episode);
+
   bool get canPlay =>
       current != null &&
       ComicSource.find(current!.sourceKey)?.isEnabled == true &&
@@ -412,7 +441,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     if (!_autoContinuePending) {
       return;
     }
-    if (canPlay) {
+    if (canPlayEpisode(continueEpisode)) {
       _autoContinuePending = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -426,12 +455,12 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
 
   void playFirst() {
     var episode = episodes.firstOrNull;
-    if (canPlay && episode != null) play(episode);
+    if (canPlayEpisode(episode)) play(episode!);
   }
 
   void continueWatching() {
     var episode = continueEpisode;
-    if (canPlay && episode != null) play(episode);
+    if (canPlayEpisode(episode)) play(episode!);
   }
 
   void copy(String text) {
@@ -718,7 +747,9 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     var mobile = context.width < changePoint;
     var progress = manager.localProgress(widget.subjectId);
     var hasHistory = progress.episode > 0;
-    final playLoading = playing || (!canPlay && sources.any((s) => s.loading));
+    var continueDownloaded = !canPlay && canPlayEpisode(continueEpisode);
+    final playLoading = playing ||
+        (!canPlay && !continueDownloaded && sources.any((s) => s.loading));
     var playLabel = hasHistory
         ? '${'Continue'.tl} \u00b7 ${'Episode @ep'.tlParams({'ep': progress.episode})}'
         : 'Play'.tl;
@@ -731,14 +762,16 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 ActionPill(
                   icon: const Icon(Icons.play_arrow_outlined),
                   text: playLabel,
-                  onPressed: canPlay ? continueWatching : pickSource,
+                  onPressed: canPlayEpisode(continueEpisode)
+                      ? continueWatching : pickSource,
                   isLoading: playLoading,
                 ),
               if (!mobile || hasHistory)
                 ActionPill(
                   icon: const Icon(Icons.play_circle_outline),
                   text: 'Play'.tl,
-                  onPressed: canPlay ? playFirst : pickSource,
+                  onPressed: canPlayEpisode(episodes.firstOrNull)
+                      ? playFirst : pickSource,
                   isLoading: playLoading,
                 ),
               ActionPill(
@@ -815,7 +848,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       fixedSize: const Size.fromHeight(48),
                       shape: const StadiumBorder(),
                     ),
-                    onPressed: playLoading || !canPlay
+                    onPressed: playLoading || !canPlayEpisode(continueEpisode)
                         ? null
                         : continueWatching,
                     child: playLoading
@@ -838,7 +871,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
             ).paddingHorizontal(16).paddingVertical(8),
           if (history != null)
             AppCard(
-              onTap: canPlay ? continueWatching : null,
+              onTap: canPlayEpisode(continueEpisode) ? continueWatching : null,
               padding: const EdgeInsets.all(12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1003,7 +1036,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
               label: title,
               selected: progress.episode == episode.number,
               watched: progress.watched.contains(episode.number),
-              onTap: canPlay ? () => play(episode) : null,
+              downloaded: isDownloaded(episode),
+              onTap: canPlayEpisode(episode) ? () => play(episode) : null,
             );
           },
         ),
