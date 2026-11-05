@@ -8,6 +8,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
+import 'package:venera/foundation/bangumi/release_catalogue.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
@@ -34,11 +35,7 @@ class BangumiDownloadPanel extends StatefulWidget {
   State<BangumiDownloadPanel> createState() => _BangumiDownloadPanelState();
 }
 
-class _SheetRelease {
-  final ComicSource source;
-  final RssRelease release;
-  const _SheetRelease(this.source, this.release);
-}
+typedef _SheetRelease = CatalogueRelease<ComicSource>;
 
 String _languageName(ReleaseLanguage language) => switch (language) {
   ReleaseLanguage.simplified => 'Simplified Chinese'.tl,
@@ -71,11 +68,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
   BangumiSubject? subject;
   List<BangumiEpisode> episodes = [];
   BangumiEpisode? current;
-  final releases = <_SheetRelease>[];
-
-  /// The titles and hashes of the copies merged into each row.
-  final _releaseIds = <_SheetRelease, Set<String>>{};
-  final coverage = <_SheetRelease, Map<int, EpisodeRelease?>>{};
+  final catalogue = ReleaseCatalogue<ComicSource>();
   final sourceErrors = <String, String>{};
   late final sources = appSubjectVideoSources(all: true);
   late Set<String> selectedSources;
@@ -186,9 +179,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     var run = ++generation;
     setState(() {
       loadingReleases = true;
-      releases.clear();
-      _releaseIds.clear();
-      coverage.clear();
+      catalogue.clear();
       sourceErrors.clear();
     });
     await Future.wait(btSources.where((s) => selectedSources.contains(s.key))
@@ -201,7 +192,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
         if (mounted && run == generation) {
           setState(() {
             for (var r in items) {
-              addRelease(_SheetRelease(source, r));
+              catalogue.add(source, r);
             }
           });
         }
@@ -216,55 +207,13 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     }
   }
 
-  /// Feeds overlap (Mikan and its mirrors list the same release): keep one
-  /// row per torrent, preferring a .torrent URL, which needs no metadata
-  /// download, over a magnet. A copy is the same torrent by hash, or by
-  /// title when it has none (acg.rip): each row keeps the titles of all its
-  /// copies, as Mikan converts titles to simplified Chinese while the others
-  /// keep the original ones.
-  void addRelease(_SheetRelease item) {
-    Set<String> ids(RssRelease r) => {
-      if (r.hexInfoHash case var hash?) 'hash:$hash',
-      'title:${r.title.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase()}',
-    };
-    var mine = ids(item.release);
-    bool hashed(Set<String> set) => set.any((e) => e.startsWith('hash:'));
-    bool same(_SheetRelease row) {
-      var theirs = _releaseIds[row]!;
-      // Different hashes are different torrents, whatever their titles.
-      if (hashed(mine) && hashed(theirs)) {
-        return mine.where((e) => e.startsWith('hash:')).any(theirs.contains);
-      }
-      return mine.any(theirs.contains);
-    }
-    var matching = releases.where(same).toList();
-    if (matching.isEmpty) {
-      releases.add(item);
-      _releaseIds[item] = mine;
-      return;
-    }
-    // A hashed copy can join rows found by hash and by title alike.
-    var keep = [...matching, item].firstWhere(
-        (e) => !e.release.url.startsWith('magnet:'), orElse: () => matching.first);
-    var merged = {...mine, for (var row in matching) ..._releaseIds[row]!};
-    var at = releases.indexOf(matching.first);
-    for (var row in matching) {
-      releases.remove(row);
-      _releaseIds.remove(row);
-    }
-    releases.insert(at, keep);
-    _releaseIds[keep] = merged;
-  }
-
   void switchMode(bool value) {
     setState(() => online = value);
     refresh();
   }
 
   EpisodeRelease? match(_SheetRelease item, BangumiEpisode episode) =>
-      coverage.putIfAbsent(item, () => matchReleaseLine(
-        releases: [item.release], episodes: episodes,
-        line: ReleaseLine.of(item.release)))[episode.id];
+      catalogue.match(item, episode, episodes);
 
   Future<void> pickEpisode() async {
     var chosen = await showSidePicker<int>(context,
@@ -296,7 +245,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     var value = await showSubPage<ReleaseFilters>(context,
       _ReleaseFilterPanel(filters: filters, groups: {
         ...filters.groups,
-        for (var r in releases) RssReleaseName.parse(r.release.title).group,
+        ...catalogue.groups,
       }));
     if (value != null && mounted) {
       setState(() => filters = value);
@@ -317,25 +266,18 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
 
   Future<void> pickBT(_SheetRelease item) async {
     var line = ReleaseLine.of(item.release);
-    // The release the user tapped wins for the focused episode. The rest of
-    // the line uses single-episode preference and revision/date ranking.
-    var matches = matchReleaseLine(releases: releases.map((r) => r.release),
-      episodes: episodes, line: line);
-    var choices = <int, _EpisodeChoice>{};
-    var alternatives = <int, List<_EpisodeChoice>>{};
-    for (var episode in episodes) {
-      var best = episode.id == current?.id ? match(item, episode) : matches[episode.id];
-      if (best != null) {
-        var owner = identical(best.release, item.release) ? item : releases.firstWhere(
-          (r) => identical(r.release, best.release));
-        choices[episode.id] = btChoice(owner, best, episode);
-      }
-      alternatives[episode.id] = [
-        for (var candidate in releases)
-          if (match(candidate, episode) case var found?)
-            btChoice(candidate, found, episode),
-      ];
-    }
+    var found = catalogue.lineChoices(item, episodes, focused: current?.id);
+    var choices = {
+      for (var MapEntry(:key, :value) in found.chosen.entries)
+        key: btChoice(value.row, value.match, episodes.firstWhere((e) => e.id == key)),
+    };
+    var alternatives = {
+      for (var MapEntry(:key, :value) in found.alternatives.entries)
+        key: [
+          for (var m in value)
+            btChoice(m.row, m.match, episodes.firstWhere((e) => e.id == key)),
+        ],
+    };
     await showSubPage(context, _DownloadEpisodePicker(episodes: episodes,
       currentId: current?.id, line: line.group.isEmpty ? 'Unknown group'.tl : line.group,
       choices: choices, alternatives: alternatives, onDownload: startBT));
@@ -557,13 +499,9 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
 
   @override
   Widget build(BuildContext context) {
-    var visible = releases.where((r) => filters.accepts(r.release) &&
-      (current == null || match(r, current!) != null)).toList();
-    // Unknown counts keep feed order; only confirmed zero-seeder rows move.
-    visible = [for (var r in visible) if (r.release.seeders != 0) r,
-      for (var r in visible) if (r.release.seeders == 0) r];
-    var hint = noPeers || (releases.isNotEmpty &&
-      releases.every((r) => r.release.seeders == 0));
+    var visible = catalogue.visible(accepts: filters.accepts,
+        episode: current, episodes: episodes);
+    var hint = noPeers || catalogue.allWithoutSeeders;
     var candidates = onlineQuery == subject?.displayName
         ? matcher?.candidates ?? <Comic>[]
         : [for (var row in matcher?.rows ?? <SubjectSourceRow>[]) ...row.results];
