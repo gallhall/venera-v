@@ -59,6 +59,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   int? bangumiSubjectId;
   /// Source chapter id -> Bangumi episode id (also for online tasks).
   final Map<String, int> bangumiEpisodeIds;
+  /// Source chapter id -> the Bangumi episode as the subject listed it when
+  /// the download was added; written to the 下载身份 sidecar so its number
+  /// and name need not be parsed back from chapter titles.
+  final Map<String, BangumiEpisode> bangumiEpisodes;
   /// Source chapter id -> exact BT release selected in the download sheet.
   final Map<String, VideoDownloadRelease> torrentReleases;
   final _episodeErrors = <String, String>{};
@@ -72,8 +76,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     this.quality = 'highest',
     this.bangumiSubjectId,
     Map<String, int> bangumiEpisodeIds = const {},
+    Map<String, BangumiEpisode> bangumiEpisodes = const {},
     Map<String, VideoDownloadRelease> torrentReleases = const {},
-  }) : bangumiEpisodeIds = {...bangumiEpisodeIds},
+  }) : bangumiEpisodeIds = {
+         ...bangumiEpisodeIds,
+         for (var e in bangumiEpisodes.entries) e.key: e.value.id,
+       },
+       bangumiEpisodes = {...bangumiEpisodes},
        torrentReleases = {...torrentReleases};
 
   static const manifestName = 'episode.json';
@@ -253,12 +262,17 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   /// Extend an existing selection without interrupting its current episodes.
   void addEpisodes(List<String> ids, {Map<String, int> bangumiIds = const {},
+      Map<String, BangumiEpisode> bangumiEpisodes = const {},
       Map<String, VideoDownloadRelease> releases = const {}}) {
     var singleVideo = comic != null && (comic!.chapters == null || comic!.chapters!.length == 0);
     if (!singleVideo) {
       episodes = {..._targets.whereType<String>(), ...ids}.toList();
     }
     bangumiEpisodeIds.addAll(bangumiIds);
+    this.bangumiEpisodes.addAll(bangumiEpisodes);
+    bangumiEpisodeIds.addAll({
+      for (var e in bangumiEpisodes.entries) e.key: e.value.id,
+    });
     for (var ep in ids) {
       _deletedEpisodes.remove(ep);
       if (releases[ep] case var release?) {
@@ -276,22 +290,19 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _saveEpisodeState();
   }
 
-  static const cacheMetadataName = 'video_cache.json';
+  static const cacheMetadataName = DownloadIdentity.fileName;
 
   Future<void> _saveCacheMetadata() async {
     var file = File(FilePath.join(path!, cacheMetadataName));
-    var ids = <String, int>{};
-    int? previousSubject;
+    Object? previous;
     try {
-      var previous = jsonDecode(await file.readAsString()) as Map;
-      ids.addAll(Map<String, int>.from(previous['bangumiEpisodeIds'] ?? {}));
-      previousSubject = previous['bangumiSubjectId'] as int?;
+      previous = jsonDecode(await file.readAsString());
     } catch (_) {
       // Older local videos have no cache identity sidecar.
     }
-    ids.addAll(bangumiEpisodeIds);
-    await file.writeAsString(jsonEncode({'bangumiSubjectId': bangumiSubjectId ?? previousSubject,
-      'sourceTitle': comic?.title, 'bangumiEpisodeIds': ids}));
+    await file.writeAsString(jsonEncode(DownloadIdentity.merged(previous,
+      subjectId: bangumiSubjectId, sourceTitle: comic?.title,
+      episodeIds: bangumiEpisodeIds, episodes: bangumiEpisodes)));
   }
 
   bool _isError = false;
@@ -1354,6 +1365,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "quality": quality,
       "bangumiSubjectId": bangumiSubjectId,
       "bangumiEpisodeIds": bangumiEpisodeIds,
+      "bangumiEpisodes": bangumiEpisodes.map((k, v) => MapEntry(k, v.toJson())),
       "torrentReleases": torrentReleases.map((k, v) => MapEntry(k, v.toJson())),
       "episodeErrors": _episodeErrors,
       "pausedEpisodes": _pausedEpisodes.toList(),
@@ -1381,6 +1393,11 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
             "highest",
         bangumiSubjectId: json['bangumiSubjectId'],
         bangumiEpisodeIds: Map<String, int>.from(json['bangumiEpisodeIds'] ?? {}),
+        bangumiEpisodes: {
+          for (var e in (json['bangumiEpisodes'] as Map? ?? {}).entries)
+            if (BangumiEpisode.fromJson(e.value) case var episode?)
+              e.key as String: episode,
+        },
         torrentReleases: {
           for (var e in (json['torrentReleases'] as Map? ?? {}).entries)
             e.key as String: VideoDownloadRelease.fromJson(

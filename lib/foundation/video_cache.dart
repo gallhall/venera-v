@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/torrent/torrent_download_state.dart';
+import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 
@@ -110,19 +110,11 @@ class VideoCacheSnapshot {
       return size;
     }
     var entries = <String, VideoCacheEntry>{};
-    var metadata = <String, Map<String, dynamic>>{};
-    Future<Map<String, dynamic>> identity(String root) async {
-      if (metadata.containsKey(root)) {
-        return metadata[root]!;
-      }
-      try {
-        metadata[root] = Map<String, dynamic>.from(jsonDecode(
-          await File(FilePath.join(root, VideoDownloadTask.cacheMetadataName)).readAsString()));
-      } catch (_) {
-        metadata[root] = {};
-      }
-      return metadata[root]!;
-    }
+    var identities = <String, DownloadIdentity>{};
+    Future<DownloadIdentity> identity(String root, String videoId,
+        Map<String, String>? chapters) async =>
+      identities[root] ??= await DownloadIdentity.load(root, videoId: videoId,
+          chapters: chapters ?? const {});
     Future<bool> completed(String root, String? ep) => File(FilePath.join(
       VideoDownloadTask.episodeDirectory(root, ep), VideoDownloadTask.manifestName)).exists();
     for (var local in locals) {
@@ -131,20 +123,16 @@ class VideoCacheSnapshot {
       }
       var root = local.baseDir;
       var ids = await completed(root, null) ? <String?>[null] : local.downloadedChapters;
-      var data = await identity(root);
-      var legacySubject = local.id.startsWith('bangumi:')
-          ? int.tryParse(local.id.substring('bangumi:'.length)) : null;
-      var mapping = Map<String, dynamic>.from(data['bangumiEpisodeIds'] ?? {});
+      var known = await identity(root, local.id, local.chapters?.allChapters);
       for (var ep in ids.toSet()) {
         if (!await completed(root, ep)) {
           continue;
         }
         var entry = VideoCacheEntry(local: local, chapterId: ep, root: root,
-          subjectId: data['bangumiSubjectId'] as int? ?? legacySubject,
-          bangumiEpisodeId: mapping[ep ?? ''] as int? ??
-              (legacySubject == null ? null : int.tryParse(ep ?? '')),
+          subjectId: known.subjectId,
+          bangumiEpisodeId: known.episodeIdOf(ep),
           // Existing source downloads have a library title even without a sidecar.
-          sourceTitle: data['sourceTitle'] as String? ?? local.title,
+          sourceTitle: known.sourceTitle ?? local.title,
           title: local.chapters?[ep ?? ''] ?? local.title,
           cover: 'file://${local.coverFile.path}', completed: true,
           size: await measure(VideoDownloadTask.episodeDirectory(root, ep), stable: true));
@@ -155,10 +143,8 @@ class VideoCacheSnapshot {
       for (var ep in task.episodeIds) {
         var root = task.path;
         var done = task.episodeCompleted(ep) || (root != null && await completed(root, ep));
-        var data = root == null ? <String, dynamic>{} : await identity(root);
-        var ids = Map<String, dynamic>.from(data['bangumiEpisodeIds'] ?? {});
-        var legacySubject = task.id.startsWith('bangumi:')
-            ? int.tryParse(task.id.substring('bangumi:'.length)) : null;
+        var known = root == null ? DownloadIdentity.of(videoId: task.id)
+            : await identity(root, task.id, task.comic?.chapters?.allChapters);
         var size = root == null ? 0 : await measure(
           VideoDownloadTask.episodeDirectory(root, ep), stable: done);
         // BT files are allocated at full size: count what has arrived.
@@ -166,10 +152,9 @@ class VideoCacheSnapshot {
           size = (size * task.episodeProgress(ep).clamp(0, 1)).round();
         }
         var entry = VideoCacheEntry(task: task, chapterId: ep, root: root,
-          subjectId: task.bangumiSubjectId ?? data['bangumiSubjectId'] as int? ?? legacySubject,
-          bangumiEpisodeId: task.bangumiEpisodeIds[ep ?? ''] ?? ids[ep ?? ''] as int? ??
-              (legacySubject == null ? null : int.tryParse(ep ?? '')),
-          sourceTitle: task.comic?.title ?? data['sourceTitle'] as String?,
+          subjectId: task.bangumiSubjectId ?? known.subjectId,
+          bangumiEpisodeId: task.bangumiEpisodeIds[ep ?? ''] ?? known.episodeIdOf(ep),
+          sourceTitle: task.comic?.title ?? known.sourceTitle,
           title: task.comic?.chapters?[ep ?? ''] ?? task.comic?.title ?? ep ?? '',
           cover: task.cover, completed: done,
           size: size);

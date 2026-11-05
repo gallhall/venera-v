@@ -1,17 +1,21 @@
-import 'dart:convert';
-
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/foundation/video/play_info_source.dart';
 import 'package:venera/network/download.dart';
+import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/utils/io.dart';
 
 /// A downloaded episode of a Bangumi subject: [chapterId] of [video].
 class SubjectDownload {
   final LocalComic video;
   final String? chapterId;
+  final DownloadIdentity identity;
 
-  const SubjectDownload(this.video, this.chapterId);
+  const SubjectDownload(this.video, this.chapterId, this.identity);
+
+  /// The Bangumi episode it is, as far as the download knows.
+  BangumiEpisode? get episode => identity.episodeOf(chapterId);
 
   DownloadedPlayInfo? playInfo() => DownloadedPlayInfo.find(video, chapterId);
 }
@@ -67,23 +71,14 @@ class SubjectDownloads {
         continue;
       }
       var root = video.baseDir;
-      Map<String, dynamic> data;
-      try {
-        data = Map<String, dynamic>.from(jsonDecode(File(FilePath.join(
-            root, VideoDownloadTask.cacheMetadataName)).readAsStringSync()));
-      } catch (_) {
-        data = {};
-      }
-      var legacySubject = video.id.startsWith('bangumi:')
-          ? int.tryParse(video.id.substring('bangumi:'.length)) : null;
-      var subjectId = data['bangumiSubjectId'] as int? ?? legacySubject;
+      var identity = DownloadIdentity.read(root, videoId: video.id,
+          chapters: video.chapters?.allChapters ?? const {});
+      var subjectId = identity.subjectId;
       if (subjectId == null) {
         continue;
       }
-      var mapping = Map<String, dynamic>.from(data['bangumiEpisodeIds'] ?? {});
       for (var chapter in video.downloadedChapters.toSet()) {
-        var episodeId = mapping[chapter] as int? ??
-            (legacySubject == null ? null : int.tryParse(chapter));
+        var episodeId = identity.episodeIdOf(chapter);
         if (episodeId == null) {
           continue;
         }
@@ -94,7 +89,7 @@ class SubjectDownloads {
           continue;
         }
         result.putIfAbsent(subjectId, () => {})[episodeId] =
-            SubjectDownload(video, chapter);
+            SubjectDownload(video, chapter, identity);
       }
     }
     return result;
