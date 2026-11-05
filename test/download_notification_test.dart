@@ -7,6 +7,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/download_notification.dart';
+import 'package:venera/network/download_queue.dart';
 import 'package:venera/utils/translations.dart';
 
 class _FakeTask extends DownloadTask {
@@ -42,7 +43,7 @@ class _FakeTask extends DownloadTask {
   String get message => "1/2";
 
   @override
-  void cancel() => LocalManager().removeTask(this);
+  void cancel() => DownloadQueue().remove(this);
 
   @override
   void pause() {
@@ -99,17 +100,17 @@ void main() {
   test("keeps the service running from one task to the next", () async {
     var a = _FakeTask("a");
     var b = _FakeTask("b");
-    LocalManager().addTask(a);
-    LocalManager().addTask(b);
+    DownloadQueue().add(a);
+    DownloadQueue().add(b);
     await settle();
     var update = calls.lastWhere((c) => c.method == "update");
     expect((update.arguments as Map)["state"], "running");
     expect((update.arguments as Map)["title"], "Task a");
     expect((update.arguments as Map)["subText"], isNotNull);
 
-    // What LocalManager.completeTask does: the next task starts at once.
+    // The next task starts at once, as when a task completes.
     calls.clear();
-    LocalManager().removeTask(a);
+    DownloadQueue().remove(a);
     b.resume();
     await Future.delayed(const Duration(milliseconds: 1500));
     expect(calls.where((c) => c.method == "finish"), isEmpty);
@@ -124,25 +125,25 @@ void main() {
     await fromNotification("pause");
     await settle();
     expect(states().last, "paused");
-    expect(LocalManager().downloadingTasks.first.isPaused, isTrue);
+    expect(DownloadQueue().tasks.first.isPaused, isTrue);
 
     calls.clear();
     await fromNotification("resume");
     await settle();
     expect(states().last, "running");
-    expect(LocalManager().downloadingTasks.first.isPaused, isFalse);
+    expect(DownloadQueue().tasks.first.isPaused, isFalse);
   });
 
   test("a paused task stops the service", () async {
     calls.clear();
-    LocalManager().downloadingTasks.first.pause();
+    DownloadQueue().tasks.first.pause();
     await settle();
     expect(states().toList(), ["paused"]);
   });
 
   test("an empty queue finishes, without completed tasks to show", () async {
     calls.clear();
-    LocalManager().downloadingTasks.first.cancel();
+    DownloadQueue().tasks.first.cancel();
     await settle();
     var finish = calls.singleWhere((c) => c.method == "finish");
     expect((finish.arguments as Map)["title"], isNull);
@@ -151,8 +152,8 @@ void main() {
   test('another active anime keeps the service running when the first task pauses', () async {
     var a = _FakeTask('parallel-a');
     var b = _FakeTask('parallel-b');
-    LocalManager().addTask(a);
-    LocalManager().addTask(b);
+    DownloadQueue().add(a);
+    DownloadQueue().add(b);
     b.resume();
     await settle();
     calls.clear();

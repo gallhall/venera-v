@@ -25,6 +25,7 @@ import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'local_comics_page.dart';
+import 'package:venera/network/download_queue.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -40,6 +41,7 @@ class _HomePageState extends State<HomePage> {
   int imageRequest = 0;
   late final changes = Listenable.merge([
     LocalManager(),
+    DownloadQueue(),
     ComicSourceManager(),
     appdata.settings,
     HistoryManager(),
@@ -425,7 +427,7 @@ class _HomeBentoGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colorScheme;
     final updates = _availableUpdates;
-    final tasks = LocalManager().downloadingTasks;
+    final tasks = DownloadQueue().tasks;
     final tiles =
         <
           ({

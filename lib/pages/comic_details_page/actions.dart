@@ -153,7 +153,7 @@ abstract mixin class _ComicPageActions {
 
   void download() async {
     if (comicSource.isVideoSource) return downloadVideo();
-    if (LocalManager().isDownloading(comic.id, comic.comicType)) {
+    if (DownloadQueue().isDownloading(comic.id, comic.comicType)) {
       App.rootContext.showMessage(message: "The comic is downloading".tl);
       return;
     }
@@ -200,7 +200,7 @@ abstract mixin class _ComicPageActions {
         if (res.error) {
           App.rootContext.showMessage(message: res.errorMessage!);
         } else if (res.data.isNotEmpty) {
-          LocalManager().addTask(ArchiveDownloadTask(res.data, comic));
+          DownloadQueue().add(ArchiveDownloadTask(res.data, comic));
           App.rootContext.showMessage(message: "Download started".tl);
         }
         return;
@@ -208,7 +208,7 @@ abstract mixin class _ComicPageActions {
     }
 
     if (comic.chapters == null) {
-      LocalManager().addTask(ImagesDownloadTask(
+      DownloadQueue().add(ImagesDownloadTask(
         source: comicSource,
         comicId: comic.id,
         comic: comic,
@@ -234,7 +234,7 @@ abstract mixin class _ComicPageActions {
         ),
       );
       if (selected == null) return;
-      LocalManager().addTask(ImagesDownloadTask(
+      DownloadQueue().add(ImagesDownloadTask(
         source: comicSource,
         comicId: comic.id,
         comic: comic,

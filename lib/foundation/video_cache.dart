@@ -9,6 +9,7 @@ import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/network/download_queue.dart';
 
 /// Stable grouping for both live tasks and persisted cache identities.
 String videoCacheGroupKey({int? subjectId, String? sourceTitle}) {
@@ -218,13 +219,14 @@ class VideoCacheController extends ChangeNotifier {
 
   VideoCacheController() {
     LocalManager().addListener(_managerChanged);
+    DownloadQueue().addListener(_managerChanged);
     _syncTasks();
     unawaited(refresh());
     _timer = Timer.periodic(const Duration(seconds: 2), (_) => refresh());
   }
 
   void _syncTasks() {
-    var current = LocalManager().downloadingTasks.whereType<VideoDownloadTask>().toSet();
+    var current = DownloadQueue().tasks.whereType<VideoDownloadTask>().toSet();
     for (var task in _tasks.difference(current)) {
       task.removeListener(_taskChanged);
     }
@@ -288,6 +290,7 @@ class VideoCacheController extends ChangeNotifier {
     _disposed = true;
     _timer.cancel();
     LocalManager().removeListener(_managerChanged);
+    DownloadQueue().removeListener(_managerChanged);
     for (var task in _tasks) {
       task.removeListener(_taskChanged);
     }

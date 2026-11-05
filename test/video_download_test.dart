@@ -12,6 +12,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
+import 'package:venera/network/download_queue.dart';
 import 'package:venera/utils/io.dart' show FilePath;
 
 import 'fmp4_builder.dart';
@@ -335,7 +336,7 @@ class TestVideo extends ComicSource {
 
   test('downloads mp4 and HLS episodes', () async {
     var task = VideoDownloadTask(source: source, videoId: 'v1');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (LocalManager().find('v1', task.comicType) == null) {
       expect(task.isError, isFalse, reason: task.message);
@@ -384,7 +385,7 @@ class TestVideo extends ComicSource {
 
   test('downloads DASH: merges MP4 tracks, keeps WebM tracks apart', () async {
     var task = VideoDownloadTask(source: source, videoId: 'dash');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (LocalManager().find('dash', task.comicType) == null) {
       expect(task.isError, isFalse, reason: task.message);
@@ -441,7 +442,7 @@ class TestVideo extends ComicSource {
 
   test('resumes a paused download with a range request', () async {
     var task = VideoDownloadTask(source: source, videoId: 'slow');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     Future<void> waitFor(bool Function() done) async {
       var deadline = DateTime.now().add(const Duration(seconds: 60));
       while (!done()) {
@@ -479,7 +480,7 @@ class TestVideo extends ComicSource {
 
   test('pausing an online episode skips it, downloads its sibling, and resumes only that file', () async {
     var task = VideoDownloadTask(source: source, videoId: 'episode_controls');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     Future<void> waitFor(bool Function() done) async {
       var deadline = DateTime.now().add(const Duration(seconds: 60));
       while (!done()) {
@@ -500,7 +501,7 @@ class TestVideo extends ComicSource {
     expect(File(second.sources.single.url).readAsBytesSync(), server.clip);
     var saved = part().lengthSync();
     task.resumeEpisode('one');
-    await waitFor(() => !LocalManager().downloadingTasks.contains(task));
+    await waitFor(() => !DownloadQueue().tasks.contains(task));
     var first = DownloadedEpisode.load(VideoDownloadTask.episodeDirectory(task.path!, 'one'))!;
     expect(File(first.sources.single.url).readAsBytesSync(), server.clip);
     expect(saved, greaterThan(0));
@@ -525,7 +526,7 @@ class TestVideo extends ComicSource {
         'two': const VideoDownloadRelease(url: magnet, title: 'Batch', episode: 2).toJson(),
       },
     })!;
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     addTearDown(task.pause);
     Future<void> waitFor(bool Function() done) async {
       var deadline = DateTime.now().add(const Duration(seconds: 15));
@@ -549,12 +550,12 @@ class TestVideo extends ComicSource {
     expect(task.episodePaused('two'), isFalse);
     expect(task.torrentStatuses['two']?.phase, TorrentDownloadPhase.waitingForWifi);
     await task.deleteEpisode('two');
-    expect(LocalManager().downloadingTasks.contains(task), isFalse);
+    expect(DownloadQueue().tasks.contains(task), isFalse);
   }, skip: skip);
 
   test('an online episode failure does not prevent its sibling from completing', () async {
     var task = VideoDownloadTask(source: source, videoId: 'episode_failure');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (!task.isError || !task.episodeCompleted('two')) {
       expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
@@ -564,14 +565,14 @@ class TestVideo extends ComicSource {
     expect(task.episodeErrors.containsKey('two'), isFalse);
     await task.deleteEpisode('one');
     expect(task.episodeIds, ['two']);
-    expect(LocalManager().downloadingTasks.contains(task), isFalse);
+    expect(DownloadQueue().tasks.contains(task), isFalse);
     expect(Directory(VideoDownloadTask.episodeDirectory(task.path!, 'one')).existsSync(), isFalse);
     expect(DownloadedEpisode.load(VideoDownloadTask.episodeDirectory(task.path!, 'two')), isNotNull);
   }, skip: skip);
 
   test('downloads the audio an HLS master serves apart', () async {
     var task = VideoDownloadTask(source: source, videoId: 'hlsa');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (LocalManager().find('hlsa', task.comicType) == null) {
       expect(task.isError, isFalse, reason: task.message);
@@ -598,7 +599,7 @@ class TestVideo extends ComicSource {
 
   test('downloads an HLS stream without its ads', () async {
     var task = VideoDownloadTask(source: source, videoId: 'ads');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (LocalManager().find('ads', task.comicType) == null) {
       expect(task.isError, isFalse, reason: task.message);
@@ -627,7 +628,7 @@ class TestVideo extends ComicSource {
 
   test('a pause and a quick resume do not download twice', () async {
     var task = VideoDownloadTask(source: source, videoId: 'race');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     Future<void> waitFor(bool Function() done) async {
       while (!done()) {
@@ -652,7 +653,7 @@ class TestVideo extends ComicSource {
 
   test('the source tried after a failed one starts over', () async {
     var task = VideoDownloadTask(source: source, videoId: 'fallback');
-    LocalManager().addTask(task);
+    DownloadQueue().add(task);
     var deadline = DateTime.now().add(const Duration(seconds: 60));
     while (LocalManager().find('fallback', task.comicType) == null) {
       expect(task.isError, isFalse, reason: task.message);

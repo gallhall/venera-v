@@ -243,7 +243,7 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
       if (isDownloaded) {
         return false;
       }
-      LocalManager().addTask(ImagesDownloadTask(
+      DownloadQueue().add(ImagesDownloadTask(
         source: source,
         comicId: c.id,
         comicTitle: c.title,
