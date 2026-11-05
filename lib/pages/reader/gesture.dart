@@ -161,7 +161,7 @@ class _ReaderGestureDetectorState extends AutomaticGlobalState<_ReaderGestureDet
   bool _dragInProgress = false;
 
   bool get _enableDoubleTapToZoom =>
-      appdata.settings.getReaderSetting(reader.cid, reader.type.sourceKey, 'enableDoubleTapToZoom');
+      reader.settings.enableDoubleTapToZoom;
 
   void onTapUp(TapUpDetails event) {
     if (event.globalPosition == Offset.zero &&
@@ -208,8 +208,7 @@ class _ReaderGestureDetectorState extends AutomaticGlobalState<_ReaderGestureDet
       if (reader.isOnChapterCommentsPage) {
         return;
       }
-      if (appdata.settings.getReaderSetting(
-          reader.cid, reader.type.sourceKey, 'enableTapToTurnPages')) {
+      if (reader.settings.enableTapToTurnPages) {
         bool isLeft = false, isRight = false, isTop = false, isBottom = false;
         final width = context.width;
         final height = context.height;
@@ -228,8 +227,7 @@ class _ReaderGestureDetectorState extends AutomaticGlobalState<_ReaderGestureDet
         bool isCenter = false;
         var prev = () => context.reader.toPrevPage();
         var next = () => context.reader.toNextPage();
-        if (appdata.settings.getReaderSetting(
-            reader.cid, reader.type.sourceKey, 'reverseTapToTurnPages')) {
+        if (reader.settings.reverseTapToTurnPages) {
           prev = () => context.reader.toNextPage();
           next = () => context.reader.toPrevPage();
         }
