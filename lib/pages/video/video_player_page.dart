@@ -1113,8 +1113,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ? 'Local cache'.tl : source?.name ?? sourceKey;
 
   String get playerTitle => bangumi != null
-      ? '${bangumi!.subject.displayName} \u00b7 ${playingDownload == null
-          ? episode.title : bangumiEpisodeTitle} \u00b7 $playingSource'
+      ? '${bangumi!.subject.displayName} \u00b7 $bangumiEpisodeTitle'
+          ' \u00b7 $playingSource'
       : episode.id == null
       ? details.title
       : '${details.title} · ${episode.title}';
@@ -1920,15 +1920,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // With a subject, its names: sources often title their pages
+            // with ids or site names.
             Text(
-              playingDownload != null
-                  ? bangumi!.subject.displayName : details.title,
+              bangumi != null ? bangumi!.subject.displayName : details.title,
               style: ts.s18.copyWith(fontWeight: FontWeight.w600),
             ),
-            if (playingDownload != null || episode.id != null)
+            if (bangumi != null || episode.id != null)
               Text(
-                playingDownload != null
-                    ? bangumiEpisodeTitle : episodeLabel(episode),
+                bangumi != null ? bangumiEpisodeTitle : episodeLabel(episode),
                 style: ts.s14.copyWith(
                   color: context.colorScheme.onSurfaceVariant,
                 ),
