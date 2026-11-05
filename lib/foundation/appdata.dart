@@ -5,11 +5,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/reader_settings.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/init.dart';
 import 'package:venera/utils/io.dart';
 
 import 'animeko/rss_preferences.dart';
+
+export 'package:venera/foundation/reader_settings.dart';
 
 class Appdata with Init {
   Appdata._create();
@@ -313,88 +316,11 @@ class Settings with ChangeNotifier {
     }
   }
 
-  void setEnabledComicSpecificSettings(
-    String comicId,
-    String sourceKey,
-    bool enabled,
-  ) {
-    setReaderSetting(comicId, sourceKey, "enabled", enabled);
-  }
-
-  bool isComicSpecificSettingsEnabled(String? comicId, String? sourceKey) {
-    if (comicId == null || sourceKey == null) {
-      return false;
-    }
-    return _data['comicSpecificSettings']["$comicId@$sourceKey"]?["enabled"] ==
-        true;
-  }
-
-  dynamic getReaderSetting(String comicId, String sourceKey, String key) {
-    if (isComicSpecificSettingsEnabled(comicId, sourceKey)) {
-      var comicValue =
-          _data['comicSpecificSettings']["$comicId@$sourceKey"]?[key];
-      if (comicValue != null) {
-        return comicValue;
-      }
-    }
-    return getDeviceReaderSetting(key);
-  }
-
-  void setReaderSetting(
-    String comicId,
-    String sourceKey,
-    String key,
-    dynamic value,
-  ) {
-    (_data['comicSpecificSettings'] as Map<String, dynamic>).putIfAbsent(
-      "$comicId@$sourceKey",
-      () => <String, dynamic>{},
-    )[key] = value;
-    notifyListeners();
-  }
-
-  void resetComicReaderSettings(String key) {
-    (_data['comicSpecificSettings'] as Map).remove(key);
-    notifyListeners();
-  }
-
-  void setEnabledDeviceSpecificSettings(bool enabled) {
-    setDeviceReaderSetting("enabled", enabled);
-  }
-
-  bool isDeviceSpecificSettingsEnabled() {
-    var deviceId = _data['deviceId'] as String;
-    if (deviceId.isEmpty) {
-      return false;
-    }
-    return _data['deviceSpecificSettings'][deviceId]?["enabled"] == true;
-  }
-
-  dynamic getDeviceReaderSetting(String key) {
-    if (!isDeviceSpecificSettingsEnabled()) {
-      return _data[key];
-    }
-    var deviceId = _data['deviceId'] as String;
-    return _data['deviceSpecificSettings'][deviceId]?[key] ?? _data[key];
-  }
-
-  void setDeviceReaderSetting(String key, dynamic value) {
-    var deviceId = _getOrCreateDeviceId();
-    (_data['deviceSpecificSettings'] as Map<String, dynamic>).putIfAbsent(
-      deviceId,
-      () => <String, dynamic>{},
-    )[key] = value;
-    notifyListeners();
-  }
-
-  void resetDeviceReaderSettings() {
-    var deviceId = _data['deviceId'] as String;
-    if (deviceId.isEmpty) {
-      return;
-    }
-    (_data['deviceSpecificSettings'] as Map).remove(deviceId);
-    notifyListeners();
-  }
+  /// The 阅读器设置 of comic [comicId] of [sourceKey], or with neither
+  /// the device and global ones.
+  ReaderSettings reader([String? comicId, String? sourceKey]) =>
+      ReaderSettings(_data, comicId: comicId, sourceKey: sourceKey,
+          deviceId: _getOrCreateDeviceId, changed: notifyListeners);
 
   String _getOrCreateDeviceId() {
     var deviceId = _data['deviceId'] as String;

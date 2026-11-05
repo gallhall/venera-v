@@ -116,9 +116,7 @@ class _ReaderState extends State<Reader>
   int _chapterViewGeneration = 0;
 
   bool get seamlessChapters => mode.isContinuous &&
-      appdata.settings.getReaderSetting(
-        cid, type.sourceKey, 'seamlessChapters',
-      ) != false;
+      settings.seamlessChapters != false;
 
   @override
   bool toChapter(int c, {bool toLastPage = false}) {
@@ -201,17 +199,9 @@ class _ReaderState extends State<Reader>
     if (widget.chapters == null) return false;
     var source = ComicSource.find(type.sourceKey);
     if (source?.chapterCommentsLoader == null) return false;
-    return appdata.settings.getReaderSetting(
-              cid,
-              type.sourceKey,
-              'showChapterComments',
-            ) ==
+    return settings.showChapterComments ==
             true &&
-        appdata.settings.getReaderSetting(
-              cid,
-              type.sourceKey,
-              'showChapterCommentsAtEnd',
-            ) ==
+        settings.showChapterCommentsAtEnd ==
             true;
   }
 
@@ -220,6 +210,10 @@ class _ReaderState extends State<Reader>
 
   @override
   String get cid => widget.cid;
+
+  /// The 阅读器设置 of this comic.
+  @override
+  ReaderSettings get settings => appdata.settings.reader(cid, type.sourceKey);
 
   String get eid => widget.chapters?.ids.elementAtOrNull(chapter - 1) ?? '0';
 
@@ -261,23 +255,14 @@ class _ReaderState extends State<Reader>
         page = 1;
       }
     }
-    // mode = ReaderMode.fromKey(appdata.settings['readerMode']);
     mode = ReaderMode.fromKey(
-      appdata.settings.getReaderSetting(cid, type.sourceKey, 'readerMode'),
+      settings.readerMode,
     );
     history = widget.history;
-    if (!appdata.settings.getReaderSetting(
-      cid,
-      type.sourceKey,
-      'showSystemStatusBar',
-    )) {
+    if (!settings.showSystemStatusBar) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     }
-    if (appdata.settings.getReaderSetting(
-      cid,
-      type.sourceKey,
-      'enableTurnPageByVolumeKey',
-    )) {
+    if (settings.enableTurnPageByVolumeKey) {
       handleVolumeEvent();
     }
     setImageCacheSize();
@@ -491,6 +476,8 @@ abstract mixin class _ImagePerPageHandler {
 
   ReaderMode get mode;
 
+  ReaderSettings get settings;
+
   String get cid;
 
   ComicType get type;
@@ -517,29 +504,15 @@ abstract mixin class _ImagePerPageHandler {
     }
   }
 
-  bool showSingleImageOnFirstPage() => appdata.settings.getReaderSetting(
-    cid,
-    type.sourceKey,
-    'showSingleImageOnFirstPage',
-  );
+  bool showSingleImageOnFirstPage() => settings.showSingleImageOnFirstPage;
 
   /// The number of images displayed on one screen
   int get imagesPerPage {
     if (mode.isContinuous) return 1;
     if (isPortrait) {
-      return appdata.settings.getReaderSetting(
-            cid,
-            type.sourceKey,
-            'readerScreenPicNumberForPortrait',
-          ) ??
-          1;
+      return settings.readerScreenPicNumberForPortrait;
     } else {
-      return appdata.settings.getReaderSetting(
-            cid,
-            type.sourceKey,
-            'readerScreenPicNumberForLandscape',
-          ) ??
-          1;
+      return settings.readerScreenPicNumberForLandscape;
     }
   }
   
@@ -684,8 +657,8 @@ abstract mixin class _ReaderLocation {
 
   void update();
 
-  bool enablePageAnimation(String cid, ComicType type) => appdata.settings
-      .getReaderSetting(cid, type.sourceKey, 'enablePageAnimation');
+  bool enablePageAnimation(String cid, ComicType type) =>
+      appdata.settings.reader(cid, type.sourceKey).enablePageAnimation;
 
   _ImageViewController? _imageViewController;
 
@@ -777,11 +750,8 @@ abstract mixin class _ReaderLocation {
       autoPageTurningTimer!.cancel();
       autoPageTurningTimer = null;
     } else {
-      int interval = appdata.settings.getReaderSetting(
-        cid,
-        type.sourceKey,
-        'autoPageTurningInterval',
-      );
+      int interval = appdata.settings.reader(cid, type.sourceKey)
+          .autoPageTurningInterval;
       autoPageTurningTimer = Timer.periodic(Duration(seconds: interval), (_) {
         if (page == maxPage) {
           autoPageTurningTimer!.cancel();

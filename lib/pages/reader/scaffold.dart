@@ -52,7 +52,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     var readerMode = context.reader.mode;
 
     // 横向阅读的时候, 如果纵向滑就触发收藏, 纵向阅读的时候, 如果横向滑动就触发收藏
-    if (appdata.settings['quickCollectImage'] == 'Swipe') {
+    if (context.reader.settings.quickCollectImage == 'Swipe') {
       if (_imageFavoriteDragListener == null) {
         double distance = 0;
         _imageFavoriteDragListener = _DragListener(
@@ -108,7 +108,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     if (!_isOpen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     } else {
-      if (!appdata.settings['showSystemStatusBar']) {
+      if (!context.reader.settings.showSystemStatusBar) {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -136,7 +136,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
             child: widget.child,
           ),
         ),
-        if (appdata.settings['showPageNumberInReader'] == true && !isOnChapterCommentsPage)
+        if (context.reader.settings.showPageNumberInReader == true && !isOnChapterCommentsPage)
           buildPageInfoText(),
         if (!isOnChapterCommentsPage)
           buildStatusInfo(),
@@ -629,7 +629,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
   }
 
   Widget buildStatusInfo() {
-    if (appdata.settings['enableClockAndBatteryInfoInReader']) {
+    if (context.reader.settings.enableClockAndBatteryInfoInReader) {
       return Positioned(
         bottom: 13 + MediaQuery.paddingOf(context).bottom,
         right: 25 + MediaQuery.paddingOf(context).right,
@@ -686,25 +686,17 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
 
   void openSetting() {
     _openSubPage(
-      ReaderSettings(
+      ReaderSettingsPage(
         comicId: context.reader.cid,
         comicSource: context.reader.type.sourceKey,
         onChanged: (key) {
           if (key == "readerMode") {
             context.reader.mode = ReaderMode.fromKey(
-              appdata.settings.getReaderSetting(
-                context.reader.cid,
-                context.reader.type.sourceKey,
-                key,
-              ),
+              context.reader.settings[key],
             );
           }
           if (key == "enableTurnPageByVolumeKey") {
-            if (appdata.settings.getReaderSetting(
-              context.reader.cid,
-              context.reader.type.sourceKey,
-              key,
-            )) {
+            if (context.reader.settings[key]) {
               context.reader.handleVolumeEvent();
             } else {
               context.reader.stopVolumeEvent();
@@ -742,11 +734,7 @@ class _ReaderScaffoldState extends State<_ReaderScaffold> {
     if (context.reader.widget.chapters == null) return false;
 
     // Check if setting is enabled
-    var showChapterComments = appdata.settings.getReaderSetting(
-      context.reader.cid,
-      context.reader.type.sourceKey,
-      'showChapterComments',
-    );
+    var showChapterComments = context.reader.settings.showChapterComments;
     if (showChapterComments != true) return false;
 
     // Check if comic source supports chapter comments

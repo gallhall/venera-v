@@ -272,7 +272,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildSettingsContent(int pageIndex) {
     return switch (pageIndex) {
       0 => const ExploreSettings(),
-      1 => const ReaderSettings(),
+      1 => const ReaderSettingsPage(),
       2 => const AppearanceSettings(),
       3 => const LocalFavoritesSettings(),
       4 => const AppSettings(),
@@ -301,7 +301,7 @@ class _SettingsDetailPage extends StatelessWidget {
   Widget _buildPage() {
     return switch (pageIndex) {
       0 => const ExploreSettings(),
-      1 => const ReaderSettings(),
+      1 => const ReaderSettingsPage(),
       2 => const AppearanceSettings(),
       3 => const LocalFavoritesSettings(),
       4 => const AppSettings(),

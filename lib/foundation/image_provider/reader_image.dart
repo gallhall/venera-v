@@ -56,7 +56,7 @@ class ReaderImageProvider
       throw "Error: Empty response body.";
     }
     // A ugoira is a zip of frames, which image processing scripts can't handle.
-    if (appdata.settings['enableCustomImageProcessing'] &&
+    if (appdata.settings.reader(cid, sourceKey).enableCustomImageProcessing &&
         !isUgoiraData(imageBytes)) {
       var script = appdata.settings['customImageProcessing'].toString();
       if (!script.contains('function processImage')) {
