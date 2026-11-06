@@ -14,7 +14,10 @@ dependencies:
   path_provider: any
   intl: any
   window_manager: ^0.5.1
-  tray_manager: 0.5.3 # Last stable API line compatible with Flutter 3.41.
+  # Vendored 0.5.3 (the last line for Dart 3.11) with its macOS Swift
+  # package raised to 10.15: Flutter's SPM build requires it.
+  tray_manager:
+    path: packages/tray_manager
   local_notifier: 0.1.6
   sqlite3: ^2.7.4
   sqlite3_flutter_libs: ^0.5.30
