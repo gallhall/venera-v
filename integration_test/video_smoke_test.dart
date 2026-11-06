@@ -146,6 +146,9 @@ void main() {
     await windowManager.ensureInitialized();
     // Under Xvfb (Linux CI) the window is 1x1 at first, and the window
     // frame's resize areas overflow at that size: wait for the real size.
+    // The Linux runner keeps its window hidden until main() shows it.
+    await windowManager.setSize(const Size(1280, 800));
+    await windowManager.show();
     // No frame is scheduled yet, so this waits without pumping.
     for (var i = 0; i < 100 && tester.view.physicalSize.width < 200; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
