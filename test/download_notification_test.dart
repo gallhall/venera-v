@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/platform/android_capabilities.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/download_notification.dart';
 import 'package:venera/network/download_queue.dart';
@@ -86,6 +88,11 @@ void main() {
       .where((c) => c.method == "update")
       .map((c) => (c.arguments as Map)["state"] as String);
 
+  final previousCapabilities = PlatformCapabilities.instance;
+  tearDownAll(() {
+    PlatformCapabilities.instance = previousCapabilities;
+  });
+
   setUpAll(() async {
     App.dataPath = Directory.systemTemp.createTempSync("venera_dn").path;
     await AppTranslation.init();
@@ -94,6 +101,9 @@ void main() {
       calls.add(call);
       return call.method == "takeResumeRequest" ? false : null;
     });
+    PlatformCapabilities.instance = const PlatformCapabilities(
+      backgroundDownload: AndroidBackgroundDownload(),
+    );
     await DownloadNotification.attach();
   });
 

@@ -13,6 +13,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/anime4k_assets.dart';
 import 'package:venera/foundation/video/stream_failures.dart';
@@ -589,11 +590,9 @@ class PlayerService implements VideoPlayback {
       var thermal = Anime4kThermal.normal;
       int status = -1;
       double? headroom;
-      if (App.isAndroid) {
+      if (PlatformCapabilities.instance.thermal.isSupported) {
         try {
-          final data = await const MethodChannel('venera/thermal')
-              .invokeMapMethod<String, dynamic>('sample')
-              .timeout(const Duration(seconds: 2));
+          final data = await PlatformCapabilities.instance.thermal.sample();
           status = (data?['status'] as num?)?.toInt() ?? -1;
           headroom = (data?['headroom'] as num?)?.toDouble();
           thermal = anime4kThermal(status: status, headroom: headroom);

@@ -10,6 +10,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -263,10 +264,9 @@ class DartTorrentStreamer implements TorrentStreamer {
     session.checkingLimits = true;
     try {
       var metered = false;
-      if (Platform.isAndroid) {
+      if (PlatformCapabilities.instance.networkType.isSupported) {
         try {
-          metered = await const MethodChannel('venera/method_channel')
-              .invokeMethod<bool>('isActiveNetworkMetered') ?? false;
+          metered = await PlatformCapabilities.instance.networkType.isMetered();
         } on PlatformException catch (e) {
           Log.warning('Torrent', 'Unable to check metered network: $e');
         } on MissingPluginException {

@@ -5,16 +5,11 @@
 #include <Windows.h>
 #include <winbase.h>
 #include <flutter/method_channel.h>
-#include <flutter/event_channel.h>
-#include <flutter/event_sink.h>
-#include <flutter/event_stream_handler_functions.h>
 #include <flutter/standard_method_codec.h>
 #include "flutter/generated_plugin_registrant.h"
 #include <thread>
 
 #define _CRT_SECURE_NO_WARNINGS
-
-std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& mouseEvents = nullptr;
 
 std::atomic<bool> mainThreadAlive(true);
 std::atomic<std::chrono::steady_clock::time_point> lastHeartbeat(std::chrono::steady_clock::now());
@@ -100,41 +95,19 @@ bool FlutterWindow::OnCreate() {
         delete(res);
         return;
       }
-#ifdef NDEBUG
       else if (call.method_name() == "heartBeat") {
+#ifdef NDEBUG
 
           if (monitorThread == nullptr) {
               monitorThread = new std::thread{ monitorUIThread };
           }
           lastHeartbeat = std::chrono::steady_clock::now();
+#endif
           result->Success();
           return;
       }
-#endif
-      result->Success(); // Default response for unhandled method calls
+      result->NotImplemented();
   });
-
-  flutter::EventChannel<> channel2(
-    flutter_controller_->engine()->messenger(), "venera/mouse",
-    &flutter::StandardMethodCodec::GetInstance()
-  );
-
-  auto eventHandler = std::make_unique<
-    flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
-    [](
-      const flutter::EncodableValue* arguments,
-      std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events){
-        mouseEvents = std::move(events);
-        return nullptr;
-    },
-    [](const flutter::EncodableValue* arguments)
-      -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
-        mouseEvents = nullptr;
-        return nullptr;
-    }
-  );
-
-  channel2.SetStreamHandler(std::move(eventHandler));
 
   const flutter::MethodChannel<> channel3(
     flutter_controller_->engine()->messenger(), "venera/clipboard",
@@ -203,28 +176,11 @@ void FlutterWindow::OnDestroy() {
   }
 }
 
-void mouse_side_button_listener(unsigned int input)
-{
-    if(mouseEvents != nullptr)
-    {
-        mouseEvents->Success(static_cast<int>(input));
-    }
-}
-
 LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   // Give Flutter, including plugins, an opportunity to handle window messages.
-    UINT button = GET_XBUTTON_WPARAM(wparam);
-    if (button == XBUTTON1 && message == 528)
-    {
-        mouse_side_button_listener(0);
-    }
-    else if (button == XBUTTON2 && message == 528)
-    {
-        mouse_side_button_listener(1);
-    }
     if (flutter_controller_) {
         std::optional<LRESULT> result =
             flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
