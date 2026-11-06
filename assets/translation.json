@@ -941,7 +941,8 @@
     "Only when a video source is installed": "仅在安装了视频源时显示",
     "Bangumi comments": "Bangumi 吐槽",
     "Delete the cached files of this episode?": "删除这一集的缓存文件？",
-    "Delete all cached files of this anime?": "删除这部番的全部缓存文件？"
+    "Delete all cached files of this anime?": "删除这部番的全部缓存文件？",
+    "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk).": "未检测到中文字体，ASS 字幕中的中文可能显示为方块。请安装 Noto Sans CJK（例如 fonts-noto-cjk）。"
   },
   "zh_TW": {
     "Select anime": "選擇番劇",
@@ -1885,6 +1886,10 @@
     "Only when a video source is installed": "僅在安裝了影片源時顯示",
     "Bangumi comments": "Bangumi 吐槽",
     "Delete the cached files of this episode?": "刪除這一集的快取檔案？",
-    "Delete all cached files of this anime?": "刪除這部番的全部快取檔案？"
+    "Delete all cached files of this anime?": "刪除這部番的全部快取檔案？",
+    "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk).": "未偵測到中文字型，ASS 字幕中的中文可能顯示為方塊。請安裝 Noto Sans CJK（例如 fonts-noto-cjk）。"
+  },
+  "en_US": {
+    "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk).": "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk)."
   }
 }
