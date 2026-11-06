@@ -1353,7 +1353,7 @@ class PlayerService implements VideoPlayback {
   Future<void> _applyProxy(String url) async {
     var host = Uri.tryParse(url)?.host;
     var proxy = host == '127.0.0.1' || host == '::1'
-        ? null : await getProxy();
+        ? null : await getProxy(host: host);
     if (proxy != null && !proxy.contains('://')) {
       proxy = 'http://$proxy';
     }
