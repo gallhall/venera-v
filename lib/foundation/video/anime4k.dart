@@ -1,7 +1,17 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-enum Anime4kState { off, checking, active, inactive, unknown, playToVerify }
+/// [applied]: the shaders are set, but the video output cannot report its
+/// render passes, as with media_kit's `vo=libmpv` on Windows.
+enum Anime4kState {
+  off,
+  checking,
+  active,
+  inactive,
+  unknown,
+  playToVerify,
+  applied,
+}
 
 /// Fits the physical video area inside a 4K render target without stretching.
 ({int width, int height})? anime4kRenderSize({

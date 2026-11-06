@@ -215,6 +215,7 @@ abstract interface class VideoPlayback {
 /// without touching the UI.
 class PlayerService implements VideoPlayback {
   PlayerService._(this._player, this._controller) {
+    _controller?.rect.addListener(_onOutputRect);
     _subscriptions.addAll([
       _player.stream.log.listen(
         (e) {
@@ -420,8 +421,10 @@ class PlayerService implements VideoPlayback {
       h = swap;
     }
     final area = _videoArea;
+    // The original is shown at the source size, as with Anime4K off: mpv's
+    // bilinear upscale to the screen size would make it look worse.
     final size = _videoViewActive && area != null &&
-            _effectiveAnime4kPreset != Anime4kPreset.off
+            _effectiveAnime4kPreset != Anime4kPreset.off && !_showingOriginal
         ? anime4kRenderSize(
             logicalWidth: area.width,
             logicalHeight: area.height,
@@ -492,9 +495,43 @@ class PlayerService implements VideoPlayback {
         return;
       }
       _anime4kRenderSize = size;
+      await _redrawIfPaused();
       _checkAnime4k();
     } catch (e) {
       Log.warning('Video', 'Failed to resize Anime4K output: $e');
+    }
+  }
+
+  Timer? _redrawTimer;
+
+  /// On Windows `setSize` returns before the output's new texture exists:
+  /// it is created at the next draw and reported through the rect. Draw the
+  /// paused frame again once it is there, after quick changes settle.
+  void _onOutputRect() {
+    if (_disposed || isPlaying) {
+      return;
+    }
+    _redrawTimer?.cancel();
+    _redrawTimer = Timer(const Duration(milliseconds: 60), () {
+      unawaited(_redrawIfPaused());
+    });
+  }
+
+  /// A resized output stays black while paused (seen on Windows): mpv draws
+  /// only for new frames. An exact seek to the same position draws one.
+  Future<void> _redrawIfPaused() async {
+    final platform = _player.platform;
+    if (_disposed || isPlaying || platform is! NativePlayer) {
+      return;
+    }
+    try {
+      final position = await platform.getProperty('time-pos');
+      if (double.tryParse(position) == null) {
+        return;
+      }
+      await platform.command(['seek', position, 'absolute+exact']);
+    } catch (e) {
+      Log.warning('Video', 'Failed to redraw the paused frame: $e');
     }
   }
 
@@ -715,14 +752,24 @@ class PlayerService implements VideoPlayback {
       return;
     }
     final check = ++_anime4kCheck;
-    _anime4kStatus.value = const Anime4kStatus(Anime4kState.checking);
+    // An output that cannot report passes will not start to: keep showing
+    // "applied" and only refresh the sizes, instead of checking again.
+    if (!_anime4kPassesUnreadable) {
+      _anime4kStatus.value = const Anime4kStatus(Anime4kState.checking);
+    }
     unawaited(_readAnime4kPasses(check));
   }
+
+  /// Set once the video output turns out to be `libmpv`, see
+  /// [Anime4kState.applied].
+  bool _anime4kPassesUnreadable = false;
 
   Future<void> _readAnime4kPasses(int check) async {
     var status = const Anime4kStatus(Anime4kState.unknown);
     final descs = <String>{};
-    for (var attempt = 0; attempt < 6; attempt++) {
+    String? videoOutput;
+    final attempts = _anime4kPassesUnreadable ? 1 : 6;
+    for (var attempt = 0; attempt < attempts; attempt++) {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       if (_disposed || check != _anime4kCheck || _showingOriginal) {
         return;
@@ -734,7 +781,9 @@ class PlayerService implements VideoPlayback {
         _anime4kProperty('video-params/h'),
         _anime4kProperty('osd-dimensions/w'),
         _anime4kProperty('osd-dimensions/h'),
+        _anime4kProperty('current-vo'),
       ]);
+      videoOutput = values[6];
       int? dimension(String? value) {
         final number = int.tryParse(value ?? '');
         return number != null && number > 0 ? number : null;
@@ -752,12 +801,27 @@ class PlayerService implements VideoPlayback {
         break;
       }
     }
+    // The render API output (media_kit on Windows) never reports its passes,
+    // though it runs the shaders: say they are applied rather than unknown.
+    if (status.state == Anime4kState.unknown && videoOutput == 'libmpv') {
+      _anime4kPassesUnreadable = true;
+      status = Anime4kStatus(
+        Anime4kState.applied,
+        hwdec: status.hwdec,
+        videoWidth: status.videoWidth,
+        videoHeight: status.videoHeight,
+        outputWidth: status.outputWidth,
+        outputHeight: status.outputHeight,
+      );
+    }
     if (!_disposed && check == _anime4kCheck && !_showingOriginal) {
-      Log.info('Video', 'Anime4K render passes: ${descs.toList()}');
+      Log.info('Video', 'Anime4K render passes: ${descs.toList()}, '
+          'vo $videoOutput');
       if (isPlaying && status.state == Anime4kState.inactive) {
         _fallbackAnime4kPrecision('no Anime4K render passes');
       }
-      _anime4kStatus.value = !isPlaying && status.descs.isEmpty
+      _anime4kStatus.value = !isPlaying && status.descs.isEmpty &&
+              status.state != Anime4kState.applied
           ? Anime4kStatus(
               Anime4kState.playToVerify,
               hwdec: status.hwdec,
@@ -800,6 +864,7 @@ class PlayerService implements VideoPlayback {
           'glsl-shaders',
           Anime4k.pathList(paths, windows: Platform.isWindows),
         );
+        await _resizeAnime4k();
         if (!_disposed && _showingOriginal == original) {
           _anime4kOriginal.value = original;
         }
@@ -1366,6 +1431,8 @@ class PlayerService implements VideoPlayback {
     _anime4kRenderTimer?.cancel();
     _stallTimer?.cancel();
     await _anime4kPending;
+    _controller?.rect.removeListener(_onOutputRect);
+    _redrawTimer?.cancel();
     _anime4kAndroid?.rect.removeListener(_onAnime4kAndroidRect);
     for (var s in _subscriptions) {
       await s.cancel();
