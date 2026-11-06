@@ -220,14 +220,15 @@ void main() {
     FileSelectorPlatform.instance = picker;
     var imported = ImportVideo().files();
     // The home page's Local card has an Import button too, under the
-    // dialog: the dialog's own one is the last.
-    var importButton = find.widgetWithText(FilledButton, "Import".tl).last;
+    // dialog, and the dialog's button is not a plain FilledButton any more:
+    // tap the topmost "Import" text once the dialog is up.
     await pumpUntil(
       tester,
-      () => importButton.evaluate().isNotEmpty,
+      () => find.text("Import Video".tl).evaluate().isNotEmpty,
       reason: 'the import dialog',
     );
-    await tester.tap(importButton);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text("Import".tl).last);
     expect(await pumpFuture(tester, imported, reason: 'the import'), isTrue);
     var video = LocalManager().findByName(_title);
     expect(video, isNotNull, reason: 'the imported video');
