@@ -13,6 +13,76 @@ import 'package:venera/utils/ugoira.dart';
 
 import 'app_dio.dart';
 import 'bangumi_network.dart';
+import 'ios_http_downloads.dart';
+
+/// Resolves source scripts while Dart can run, then lets native code drain the
+/// raw HTTP queue independently. Response transforms are applied by the normal
+/// image loader, using exactly the configurations that produced these requests.
+class IosComicDownloadSession {
+  final String directory;
+  final token = CancelToken();
+  final configs = <String, Map<String, dynamic>>{};
+  final void Function(int bytes)? onData;
+  final _writes = <Future<void>>{};
+  IosComicDownloadSession(String root, {this.onData}) : directory = '$root/.http-images';
+
+  static String key(String image, String source, String cid, String eid) =>
+      '$image@$source@$cid@$eid';
+
+  Future<void> prepare(ComicSource source, String cid,
+      Map<String, List<String>> chapters) async {
+    final client = AppDio();
+    client.httpClientAdapter = IosDownloadAdapter(directory, token);
+    try {
+      for (final chapter in chapters.entries) {
+        for (final image in chapter.value) {
+          token.throwIfCancellationRequested();
+          final cacheKey = key(image, source.key, cid, chapter.key);
+          if (await CacheManager().findCache(cacheKey) != null) {
+            continue;
+          }
+          final config = await source.getImageLoadingConfig
+              ?.call(image, cid, chapter.key) ?? <String, dynamic>{};
+          config['headers'] ??= {'user-agent': webUA};
+          configs[cacheKey] = config;
+          await client.request<dynamic>(config['url'] ?? image,
+            data: config['data'], cancelToken: token,
+            options: Options(method: config['method'] ?? 'GET',
+              headers: Map<String, dynamic>.from(config['headers']),
+              extra: {'iosEnqueueOnly': true}));
+        }
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> stop({bool remove = false}) async {
+    token.cancel();
+    await IosHttpDownloads.instance.control(directory, remove: remove);
+    await Future.wait(_writes.toList());
+  }
+
+  Future<void> write(File file, List<int> bytes) async {
+    token.throwIfCancellationRequested();
+    final writing = file.writeAsBytes(bytes).then<void>((_) {});
+    _writes.add(writing);
+    try {
+      await writing;
+    } finally {
+      _writes.remove(writing);
+    }
+  }
+
+  Future<void> finish() async {
+    await stop(remove: true);
+    await IosHttpDownloads.instance.forgetTree(directory);
+    final folder = Directory(directory);
+    if (await folder.exists()) {
+      await folder.delete(recursive: true);
+    }
+  }
+}
 
 /// The file a `file://` image url points at, or null for a remote url.
 ///
@@ -26,7 +96,14 @@ File? localImageFile(String url) {
 abstract class ImageDownloader {
   static Stream<ImageDownloadProgress> loadThumbnail(
       String url, String? sourceKey,
-      [String? cid]) async* {
+      [String? cid]) => _loadThumbnail(url, sourceKey, cid: cid);
+
+  static Stream<ImageDownloadProgress> loadDownloadThumbnail(String url,
+      String? sourceKey, IosComicDownloadSession session) =>
+      _loadThumbnail(url, sourceKey, iosSession: session);
+
+  static Stream<ImageDownloadProgress> _loadThumbnail(String url, String? sourceKey,
+      {String? cid, IosComicDownloadSession? iosSession}) async* {
     final localFile = localImageFile(url);
     if (localFile != null) {
       final data = await localFile.readAsBytes();
@@ -48,6 +125,9 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
+      if (iosSession != null) {
+        return;
+      }
     }
 
     var configs = <String, dynamic>{};
@@ -66,7 +146,7 @@ abstract class ImageDownloader {
       var comicSource = ComicSource.find(sourceKey);
       if(comicSource != null) {
         var comicInfo = await comicSource.loadComicInfo!(cid!);
-        yield* loadThumbnail(comicInfo.data.cover, sourceKey);
+        yield* _loadThumbnail(comicInfo.data.cover, sourceKey, iosSession: iosSession);
         return;
       }
     }
@@ -87,6 +167,10 @@ abstract class ImageDownloader {
     if (imageBase.trim().isNotEmpty &&
         Uri.tryParse(originalRequestUrl)?.host.toLowerCase() == 'lain.bgm.tv') {
       dio.httpClientAdapter = RHttpAdapter();
+    }
+    if (iosSession != null) {
+      dio.httpClientAdapter = IosDownloadAdapter(iosSession.directory, iosSession.token,
+        onData: iosSession.onData);
     }
     try {
       Response<ResponseBody> req;
@@ -167,12 +251,14 @@ abstract class ImageDownloader {
   }
 
   static Stream<ImageDownloadProgress> loadComicImageUnwrapped(
-      String imageKey, String? sourceKey, String cid, String eid) {
-    return _loadComicImage(imageKey, sourceKey, cid, eid);
+      String imageKey, String? sourceKey, String cid, String eid,
+      {IosComicDownloadSession? iosSession}) {
+    return _loadComicImage(imageKey, sourceKey, cid, eid, iosSession: iosSession);
   }
 
   static Stream<ImageDownloadProgress> _loadComicImage(
-      String imageKey, String? sourceKey, String cid, String eid) async* {
+      String imageKey, String? sourceKey, String cid, String eid,
+      {IosComicDownloadSession? iosSession}) async* {
     final cacheKey = "$imageKey@$sourceKey@$cid@$eid";
     final cache = await CacheManager().findCache(cacheKey);
 
@@ -183,6 +269,9 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
+      if (iosSession != null) {
+        return;
+      }
     }
 
     Future<Map<String, dynamic>?> Function()? onLoadFailed;
@@ -190,7 +279,7 @@ abstract class ImageDownloader {
     var configs = <String, dynamic>{};
     if (sourceKey != null) {
       var comicSource = ComicSource.find(sourceKey);
-      configs = (await comicSource!.getImageLoadingConfig
+      configs = iosSession?.configs[cacheKey] ?? (await comicSource!.getImageLoadingConfig
               ?.call(imageKey, cid, eid)) ??
           {};
     }
@@ -217,6 +306,11 @@ abstract class ImageDownloader {
           method: configs['method'] ?? 'GET',
           responseType: ResponseType.stream,
         ));
+        if (iosSession != null) {
+          iosSession.token.throwIfCancellationRequested();
+          dio.httpClientAdapter = IosDownloadAdapter(iosSession.directory, iosSession.token,
+            onData: iosSession.onData);
+        }
 
         var req = await dio.request<ResponseBody>(configs['url'] ?? imageKey,
             data: configs['data']);

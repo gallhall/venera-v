@@ -1,5 +1,6 @@
 {
   "zh_CN": {
+    "Keep the app in the foreground on iOS for BT downloads": "iOS ????????",
     "Web page sniffing is not supported on Linux; this source is unavailable": "Linux 不支持网页嗅探，此源不可用",
     "Show window": "显示窗口",
     "Continue all": "全部继续",
@@ -957,6 +958,7 @@
     "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk).": "未检测到中文字体，ASS 字幕中的中文可能显示为方块。请安装 Noto Sans CJK（例如 fonts-noto-cjk）。"
   },
   "zh_TW": {
+    "Keep the app in the foreground on iOS for BT downloads": "iOS ??????????",
     "Web page sniffing is not supported on Linux; this source is unavailable": "Linux 不支援網頁嗅探，此來源無法使用",
     "Show window": "顯示視窗",
     "Continue all": "全部繼續",

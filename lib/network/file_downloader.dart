@@ -5,6 +5,7 @@ import 'package:dio/io.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/ext.dart';
+import 'ios_http_downloads.dart';
 
 class FileDownloader {
   final String url;
@@ -28,6 +29,7 @@ class FileDownloader {
   int _kChunkSize = 16 * 1024 * 1024;
 
   bool _canceled = false;
+  final _iosToken = CancelToken();
 
   late List<_DownloadBlock> _blocks;
 
@@ -105,6 +107,10 @@ class FileDownloader {
   }
 
   void _download(StreamController<DownloadingStatus> resultStream) async {
+    if (Platform.isIOS) {
+      await _downloadIos(resultStream);
+      return;
+    }
     try {
       var proxy = await getProxy();
       _dio.httpClientAdapter = IOHttpClientAdapter(
@@ -252,8 +258,45 @@ class FileDownloader {
 
   Future<void> stop() async {
     _canceled = true;
+    if (Platform.isIOS) {
+      _iosToken.cancel();
+      await IosHttpDownloads.instance.control(savePath);
+    }
     await _file?.close();
     _file = null;
+  }
+
+  Future<void> _downloadIos(StreamController<DownloadingStatus> output) async {
+    final id = '$savePath:${IosHttpDownloads.identity(url)}';
+    final clock = Stopwatch()..start();
+    var lastAt = 0;
+    var lastBytes = 0;
+    try {
+      if (_canceled) {
+        return;
+      }
+      await IosHttpDownloads.instance.enqueue([
+        {'id': id, 'path': savePath, 'url': url},
+      ]);
+      await IosHttpDownloads.instance.wait(id, cancelToken: _iosToken,
+        onProgress: (received, total) {
+          final elapsed = clock.elapsedMilliseconds - lastAt;
+          final speed = elapsed > 0 ? ((received - lastBytes) * 1000 / elapsed).round() : 0;
+          output.add(DownloadingStatus(received, total > 0 ? total : 0, speed));
+          lastAt = clock.elapsedMilliseconds;
+          lastBytes = received;
+        });
+      if (!_canceled) {
+        final length = await File(savePath).length();
+        output.add(DownloadingStatus(length, length, 0, true));
+      }
+    } catch (e, s) {
+      if (!_canceled) {
+        output.addError(e, s);
+      }
+    } finally {
+      await output.close();
+    }
   }
 }
 

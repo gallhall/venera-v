@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
 import 'package:venera/network/app_dio.dart';
 
 import 'torrent_download_state.dart';
@@ -130,6 +131,8 @@ class TorrentDownloader {
 }
 
 class _DownloadSession {
+  void Function()? _foregroundSubscription;
+  bool get foreground => !Platform.isIOS || IosDownloadLifecycle.gate.isForeground;
   final TorrentDownloader owner;
   final String key;
   final String source;
@@ -182,7 +185,7 @@ class _DownloadSession {
   }
 
   void retry() {
-    if (onWifi && !closing) {
+    if (onWifi && !closing && foreground) {
       operation?.retry();
       task?.retryPeerDiscovery();
     }
@@ -220,7 +223,7 @@ class _DownloadSession {
     var peers = current?.connectedPeersNumber ?? metadataPeers;
     received = received || (current?.currentDownloadSpeed ?? 0) > 0;
     deadline.observe(TorrentPeerDeadline.usable(peers: peers,
-        metadata: current == null, received: received), waiting: !onWifi);
+        metadata: current == null, received: received), waiting: !onWifi || !foreground);
     if (failure == null && deadline.expired) {
       failure = TorrentDownloadFailure.noPeers;
       storageError = TorrentDownloadException(failure);
@@ -251,7 +254,7 @@ class _DownloadSession {
           : TorrentDownloadPhase.downloading,
         progress: progress, peers: peers,
         seeders: current?.seederNumber ?? 0,
-        bytesPerSecond: onWifi ? (current?.currentDownloadSpeed ?? 0) * 1024 : 0,
+        bytesPerSecond: onWifi && foreground ? (current?.currentDownloadSpeed ?? 0) * 1024 : 0,
         noPeersHint: deadline.hint, failure: failure,
         session: metadata?.model.infoHash ?? key,
       );
@@ -263,6 +266,21 @@ class _DownloadSession {
     try {
       release = await owner.queue.acquire(cancelled: cancelled.future);
       checkCancelled();
+      if (Platform.isIOS) {
+        IosDownloadLifecycle.init();
+        _foregroundSubscription = IosDownloadLifecycle.gate.listen((visible) {
+          // Reset the wall-clock sample even during metadata/Wi-Fi waits,
+          // before iOS freezes timers for an arbitrary amount of time.
+          deadline.observe(0, waiting: true);
+          if (!visible) {
+            task?.pause();
+          } else if (onWifi && !closing && !cancelled.isCompleted) {
+            task?.resume();
+          }
+        });
+        await IosDownloadLifecycle.gate.wait(cancelled.future);
+        checkCancelled();
+      }
       await _checkWifi();
       deadline.observe(0, waiting: !onWifi);
       await _readSavedMetadata();
@@ -351,7 +369,14 @@ class _DownloadSession {
       var listener = task!.createListener()
         ..on<TaskStorageFailed>((e) { storageError = e.error; });
       try {
+        if (Platform.isIOS) {
+          await IosDownloadLifecycle.gate.wait(cancelled.future);
+          checkCancelled();
+        }
         await task!.start();
+        if (!foreground) {
+          task!.pause();
+        }
         checkCancelled();
         deadline.observe(task!.connectedPeersNumber);
         for (var peer in metadata!.peers) {
@@ -364,7 +389,7 @@ class _DownloadSession {
         while (handles.any((h) => !h.cancelled && !h._done.isCompleted)) {
           checkCancelled();
           await _checkWifi();
-          if (onWifi) {
+          if (onWifi && foreground) {
             task!.resume();
             task!.setTransferLimits(download:
               (int.tryParse('${appdata.settings['btDownloadLimitKB']}') ?? 0) * 1024);
@@ -500,6 +525,8 @@ class _DownloadSession {
   }
 
   Future<void> _closeTask() => _closing ??= () async {
+    _foregroundSubscription?.call();
+    _foregroundSubscription = null;
     task?.pause();
     try {
       await task?.stop();
