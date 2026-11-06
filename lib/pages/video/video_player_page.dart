@@ -1069,6 +1069,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   String get playingSource => playingDownload != null
       ? 'Local cache'.tl : source?.name ?? sourceKey;
 
+  /// The app bar's title: some sources' details have only an id as title.
+  String get pageTitle => bangumi?.subject.displayName ?? details.title;
+
   String get playerTitle => bangumi != null
       ? '${bangumi!.subject.displayName} \u00b7 $bangumiEpisodeTitle'
           ' \u00b7 $playingSource'
@@ -1501,7 +1504,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Widget build(BuildContext context) {
     if (engineError != null) {
       return Scaffold(
-        appBar: Appbar(title: Text(details.title)),
+        appBar: Appbar(title: Text(pageTitle)),
         body: Center(
           child: Text(
             "${"Failed to load the video engine".tl}\n\n$engineError",
@@ -1533,7 +1536,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         showPlayerBack = !isWide && isEdgeToEdge;
         if (isWide) {
           return Scaffold(
-            appBar: Appbar(title: Text(details.title)),
+            appBar: Appbar(title: Text(pageTitle)),
             body: Row(
               children: [
                 Expanded(child: buildPlayer()),
@@ -1549,7 +1552,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           // The desktop window frame draws its title bar over the page, so
           // keep the app bar instead of a black area up to the top.
           return Scaffold(
-            appBar: Appbar(title: Text(details.title)),
+            appBar: Appbar(title: Text(pageTitle)),
             body: Column(
               children: [
                 AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
