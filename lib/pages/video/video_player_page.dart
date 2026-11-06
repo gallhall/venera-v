@@ -30,6 +30,7 @@ import 'package:venera/foundation/video/play_info_source.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
 import 'package:venera/foundation/video/stream_lease.dart';
+import 'package:venera/foundation/video/system_subtitle_fonts.dart';
 import 'package:venera/foundation/video/playback_session.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
@@ -843,6 +844,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         builder: (context, setDialogState) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 16),
           children: [
+            if (App.isLinux)
+              FutureBuilder<String?>(
+                future: SystemSubtitleFonts.linuxFamily,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done ||
+                      snapshot.data != null) {
+                    return const SizedBox.shrink();
+                  }
+                  return AppCard(
+                    child: ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: Text('No Chinese font detected. Chinese text in ASS '
+                          'subtitles may appear as boxes. Install Noto Sans CJK '
+                          '(e.g. fonts-noto-cjk).'.tl),
+                    ),
+                  );
+                },
+              ),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

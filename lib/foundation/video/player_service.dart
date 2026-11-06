@@ -16,6 +16,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/anime4k_assets.dart';
 import 'package:venera/foundation/video/stream_failures.dart';
+import 'package:venera/foundation/video/system_subtitle_fonts.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/io.dart';
@@ -1240,15 +1241,25 @@ class PlayerService implements VideoPlayback {
     ('/system/fonts/DroidSansFallback.ttf', 'Droid Sans Fallback'),
   ];
 
-  /// libass on Android has no font provider, so it finds no system font and
-  /// draws no text unless the subtitle file embeds its fonts. Give it a
-  /// system CJK font as the fallback for fonts it cannot find.
+  /// Set a default family without overriding fonts named in ASS styles.
   Future<void> _applySubtitleFont() async {
-    if (_subtitleFontApplied || !Platform.isAndroid) return;
+    if (_subtitleFontApplied) {
+      return;
+    }
     var platform = _player.platform;
-    if (platform is! NativePlayer) return;
+    if (platform is! NativePlayer) {
+      return;
+    }
     _subtitleFontApplied = true;
     try {
+      if (!Platform.isAndroid) {
+        final family = await SystemSubtitleFonts.family();
+        if (family != null) {
+          await platform.setProperty('sub-font', family);
+        }
+        return;
+      }
+      // Android has no libass font provider, so expose a system font directly.
       String? path, family;
       for (var (p, f) in _androidSubtitleFonts) {
         if (await File(p).exists()) {
