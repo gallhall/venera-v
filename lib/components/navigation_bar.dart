@@ -281,7 +281,12 @@ class NaviPaneState extends State<NaviPane>
                 _canPop = nextCanPop;
               });
             }
-            return false;
+            // The PopScope above speaks for this navigator: it also blocks
+            // the pop while a download runs. Letting the notification of the
+            // inner navigator through would tell Android that the app does
+            // not handle Back, and Android would then close the activity
+            // itself, without asking the PopScope.
+            return true;
           },
           child: Navigator(
             observers: [widget.observer],
