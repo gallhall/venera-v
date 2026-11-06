@@ -140,10 +140,9 @@ packages:
   connectivity_plus:
     dependency: "direct main"
     description:
-      name: connectivity_plus
-      sha256: "762c99f890ca8bf87f7337236f99edd42793843bc6c3631da294a76653a54bd0"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/connectivity_plus"
+      relative: true
+    source: path
     version: "7.3.1"
   connectivity_plus_platform_interface:
     dependency: transitive
@@ -1323,10 +1322,9 @@ packages:
   tray_manager:
     dependency: "direct main"
     description:
-      name: tray_manager
-      sha256: "1a659b08baa6e9b91ef8ce16eda37740de398be1c4cf322b8a1ddfef25c68c5a"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/tray_manager"
+      relative: true
+    source: path
     version: "0.5.3"
   typed_data:
     dependency: transitive
