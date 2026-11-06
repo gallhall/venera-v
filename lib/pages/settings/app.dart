@@ -338,7 +338,8 @@ class _AppSettingsState extends State<AppSettings> {
             for (var entry in {
               'btDownloadLimitKB': 'BT download limit',
               'btUploadLimitKB': 'BT upload limit',
-              'btMeteredUploadLimitKB': 'BT metered upload limit',
+              if (PlatformCapabilities.instance.networkType.isSupported)
+                'btMeteredUploadLimitKB': 'BT metered upload limit',
             }.entries)
               SelectSetting(
                 title: entry.value.tl,

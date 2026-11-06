@@ -7,6 +7,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/torrent/torrent_downloader.dart';
 import 'package:venera/foundation/video_cache.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
@@ -307,12 +308,13 @@ class _VideoCacheSettingsPageState extends State<VideoCacheSettingsPage> {
   @override
   Widget build(BuildContext context) => SubPage(title: 'Download settings'.tl,
     body: ListView(children: [
-      AppCard(child: SwitchListTile(title: Text('Download BT only on Wi-Fi'.tl, style: ts.s14),
-        value: appdata.settings['btDownloadWifiOnly'] == true,
-        onChanged: (value) {
-          setState(() => appdata.settings['btDownloadWifiOnly'] = value);
-          appdata.saveData();
-        })),
+      if (PlatformCapabilities.instance.networkType.isSupported)
+        AppCard(child: SwitchListTile(title: Text('Download BT only on Wi-Fi'.tl, style: ts.s14),
+          value: appdata.settings['btDownloadWifiOnly'] == true,
+          onChanged: (value) {
+            setState(() => appdata.settings['btDownloadWifiOnly'] = value);
+            appdata.saveData();
+          })),
       AppCard(padding: const EdgeInsets.all(AppSpacing.md), child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Concurrent downloads'.tl, style: ts.s14),

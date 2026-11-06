@@ -36,6 +36,11 @@ add_definitions(-DUNICODE -D_UNICODE)
 # <experimental/coroutine>, an error rather than a warning since MSVC 14.5.
 add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 
+# Read sources as UTF-8. On a Chinese (code page 936) system, plugin sources
+# with non-ASCII characters (connectivity_plus) otherwise raise C4819, which
+# /WX turns into an error.
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

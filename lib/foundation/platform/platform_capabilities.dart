@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'android_capabilities.dart';
 import 'capabilities.dart';
+import 'ios_capabilities.dart';
 import 'unsupported_capabilities.dart';
 
 export 'capabilities.dart';
@@ -30,7 +31,9 @@ class PlatformCapabilities {
           filePicker: AndroidNativeFilePicker(),
           sharedText: AndroidSharedText(),
         )
-      : const PlatformCapabilities();
+      : Platform.isIOS
+          ? const PlatformCapabilities(networkType: IosNetworkType())
+          : const PlatformCapabilities();
 
   static PlatformCapabilities get instance => _instance;
 
