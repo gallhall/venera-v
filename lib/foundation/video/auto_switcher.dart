@@ -85,15 +85,18 @@ class AutoSwitcher {
     bool playingDownload = false,
     bool torrent = false,
     required bool Function(String sourceKey) enabled,
+    bool currentSourceSupported = true,
   }) {
     if (playingDownload && bangumi != null) {
       return const SwitchToSources();
     }
-    loading(correspondence, current, candidate);
-    var line = correspondence.fallbackAfter(current, tried: _lines,
-        origin: _origin, number: bangumi?.number, samePosition: !torrent);
-    if (line != null) {
-      return SwitchToLine(line);
+    if (currentSourceSupported) {
+      loading(correspondence, current, candidate);
+      var line = correspondence.fallbackAfter(current, tried: _lines,
+          origin: _origin, number: bangumi?.number, samePosition: !torrent);
+      if (line != null) {
+        return SwitchToLine(line);
+      }
     }
     if (bangumi != null) {
       AutoSwitchCandidate key(Comic c) => (source: c.sourceKey, id: c.id);
@@ -103,6 +106,9 @@ class AutoSwitcher {
         matched: bangumi.matchedCandidates.map(key),
         candidates: bangumi.candidates.map(key),
         tried: _candidates,
+        unavailable: unavailableAutoSwitchSources(
+          all.map((c) => ComicSource.find(c.sourceKey)).whereType<ComicSource>(),
+        ),
         enabled: {
           for (var c in all)
             if (enabled(c.sourceKey)) c.sourceKey,

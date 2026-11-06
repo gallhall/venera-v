@@ -28,13 +28,14 @@ class SourceScript {
 
   /// [body] as a result: a failure is logged under [tag] and becomes an
   /// error, with its message and the failure itself as the cause.
+  /// [describeError] can remove bridge wrappers from user-facing errors.
   static Future<Res<T>> guard<T>(Future<Res<T>> Function() body,
-      {String tag = 'Network'}) async {
+      {String tag = 'Network', String Function(Object)? describeError}) async {
     try {
       return await body();
     } catch (e, s) {
       Log.error(tag, '$e\n$s');
-      return Res.error(e.toString(), errorCause: e);
+      return Res.error(describeError?.call(e) ?? e.toString(), errorCause: e);
     }
   }
 

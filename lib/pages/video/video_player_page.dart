@@ -11,6 +11,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
+import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
@@ -604,7 +605,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!automatic) {
       resetAutoSwitch();
     }
-    switcher.loading(correspondence, index, candidateKey);
+    if (source?.isPlaybackSupported != false) {
+      switcher.loading(correspondence, index, candidateKey);
+    }
     ignoringSession = false;
     var token = ++loadToken;
     var start = position ?? watchProgress.resumeAt(index);
@@ -687,6 +690,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       playingDownload: playingDownload != null,
       torrent: playInfo?.isTorrent == true,
       enabled: (key) => ComicSource.find(key)?.isEnabled == true,
+      currentSourceSupported: source?.isPlaybackSupported ?? true,
     );
     switch (step) {
       case SwitchToSources():
@@ -1065,6 +1069,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   String get playingSource => playingDownload != null
       ? 'Local cache'.tl : source?.name ?? sourceKey;
 
+  /// The app bar's title: some sources' details have only an id as title.
+  String get pageTitle => bangumi?.subject.displayName ?? details.title;
+
   String get playerTitle => bangumi != null
       ? '${bangumi!.subject.displayName} \u00b7 $bangumiEpisodeTitle'
           ' \u00b7 $playingSource'
@@ -1134,11 +1141,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           .where(
             (c) => c.sourceKey == sourceKey &&
                 c.id == details.id &&
-                ComicSource.find(c.sourceKey)?.isEnabled == true,
+                ComicSource.find(c.sourceKey)?.isEnabled == true &&
+                ComicSource.find(c.sourceKey)?.isPlaybackSupported == true,
           )
           .firstOrNull;
       candidate ??= playback.candidates
-          .where((c) => ComicSource.find(c.sourceKey)?.isEnabled == true)
+          .where((c) => ComicSource.find(c.sourceKey)?.isEnabled == true &&
+              ComicSource.find(c.sourceKey)?.isPlaybackSupported == true)
           .firstOrNull;
       if (candidate == null) {
         throw Exception('Video source not found'.tl);
@@ -1336,6 +1345,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         color: sheetContext.colorScheme.primary)),
                 ]),
               ),
+            for (var unavailable in appSubjectVideoSources().where((s) =>
+                !s.isPlaybackSupported &&
+                !b.candidates.any((c) => c.sourceKey == s.key)))
+              AppCard(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: ListTile(
+                  enabled: false,
+                  leading: const Icon(Icons.live_tv_outlined),
+                  title: Text(unavailable.name),
+                  subtitle: Text(
+                    'Web page sniffing is not supported on Linux; this source is unavailable'.tl,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
             for (var c in b.candidates.where(
               (c) => ComicSource.find(c.sourceKey)?.isEnabled == true,
             ))
@@ -1479,7 +1504,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Widget build(BuildContext context) {
     if (engineError != null) {
       return Scaffold(
-        appBar: Appbar(title: Text(details.title)),
+        appBar: Appbar(title: Text(pageTitle)),
         body: Center(
           child: Text(
             "${"Failed to load the video engine".tl}\n\n$engineError",
@@ -1511,7 +1536,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         showPlayerBack = !isWide && isEdgeToEdge;
         if (isWide) {
           return Scaffold(
-            appBar: Appbar(title: Text(details.title)),
+            appBar: Appbar(title: Text(pageTitle)),
             body: Row(
               children: [
                 Expanded(child: buildPlayer()),
@@ -1527,7 +1552,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           // The desktop window frame draws its title bar over the page, so
           // keep the app bar instead of a black area up to the top.
           return Scaffold(
-            appBar: Appbar(title: Text(details.title)),
+            appBar: Appbar(title: Text(pageTitle)),
             body: Column(
               children: [
                 AspectRatio(aspectRatio: 16 / 9, child: buildTopPlayer()),
@@ -2003,6 +2028,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (source?.isPlaybackSupported == false && playingDownload == null)
+                Text(
+                  'Web page sniffing is not supported on Linux; this source is unavailable'.tl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant),
+                ),
               for (var group in groups) ...[
                 if (group != null)
                   Text(
@@ -2023,7 +2055,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                             local,
                             episodes[i].id,
                           ),
-                          onTap: current == i ? null : () => loadEpisode(i),
+                          onTap: current == i ||
+                              (source?.isPlaybackSupported == false &&
+                                  !DownloadedPlayInfo.isDownloaded(local, episodes[i].id))
+                              ? null : () => loadEpisode(i),
                         ),
                   ],
                 ),

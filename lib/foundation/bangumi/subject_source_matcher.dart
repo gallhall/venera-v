@@ -13,14 +13,14 @@ import 'bangumi_source_load.dart';
 
 class SubjectSourceRow {
   final ComicSource source;
-  SubjectSourceRow._(this.source);
+  SubjectSourceRow._(this.source) : _loading = source.isPlaybackSupported;
   List<Comic> _results = [];
   Comic? _chosen, _matched;
   String? _error;
   String _keyword = '';
   final _resultKeywords = <String, String>{};
   final _exactIds = <String>{};
-  bool _loading = true;
+  bool _loading;
   int _generation = 0;
   bool _fromCache = false;
   Future<void>? _recovery;
@@ -341,7 +341,8 @@ class SubjectSourceMatcher extends ChangeNotifier {
   }
 
   Future<void> _searchRow(SubjectSourceRow row, {String? keyword, bool useCache = false}) async {
-    if (_disposed || !row.source.isEnabled || !_rows.contains(row)) {
+    if (_disposed || !row.source.isEnabled ||
+        !row.source.isPlaybackSupported || !_rows.contains(row)) {
       return;
     }
     // Recorded with the results: the setting may change while searching.
@@ -631,7 +632,9 @@ class SubjectSourceMatcher extends ChangeNotifier {
     _matchedCandidates.clear();
     var names = allNames;
     for (var row in _rows) {
-      if (!row.source.isEnabled) continue;
+      if (!row.source.isEnabled || !row.source.isPlaybackSupported) {
+        continue;
+      }
       if (row._matched != null) _matchedCandidates.add(row._matched!);
       var seen = <String>{};
       for (var comic in [

@@ -750,7 +750,7 @@ class ComicSourceParser {
           return (url: r.url, headers: r.headers, type: r.type);
         });
         return Res(info);
-      });
+      }, describeError: WebSniffingUnsupportedException.describe);
     };
   }
 

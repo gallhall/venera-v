@@ -8,17 +8,19 @@ import 'package:venera/foundation/bangumi/bangumi_source_load.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/animeko/animeko_source_config.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/utils/translations.dart';
 
 const subject = BangumiSubject(id: 42, type: BangumiSubjectType.anime,
   name: 'Original Series', nameCn: '中文名字', aliases: ['Alias Series']);
 
-ComicSource source(String key) => ComicSource(
+ComicSource source(String key, {AnimekoSourceConfig? animeko}) => ComicSource(
   key, key, null, null, null, null, const [],
   SearchPageData(null, (query, page, options) async => const Res([]), null),
   null, null, null, null, null, null, '', '', '',
   null, null, null, null, null, null, null, null, null, null, null, null,
-  false, false, null, null, SourceMediaType.video,
+  false, false, null, null, SourceMediaType.video, null, null, animeko,
 );
 
 Comic comic(String key, [String id = 'item', String title = 'Original Series']) =>
@@ -161,6 +163,29 @@ void main() {
   late Fixture f;
   setUp(() { f = Fixture(); });
   tearDown(() { f.matcher.dispose(); });
+
+  test('unavailable sniffing sources stay visible and settled without searching', () async {
+    var previous = PlatformCapabilities.instance;
+    addTearDown(() {
+      PlatformCapabilities.instance = previous;
+    });
+    PlatformCapabilities.instance = const PlatformCapabilities();
+    var web = source('web', animeko: AnimekoSourceConfig({
+      'id': 'web', 'factoryId': 'web-selector',
+    }));
+    f.seed('web');
+    f.matcher.syncSources([web]);
+    await flush();
+    expect(f.matcher.rows.single.source, same(web));
+    expect(f.matcher.rows.single.loading, isFalse);
+    expect(f.matcher.allSettled, isTrue);
+    expect(f.search.calls, isEmpty);
+    expect(f.loads, isEmpty);
+    expect(f.matcher.candidates, isEmpty);
+    expect(f.matcher.current, isNull);
+    await f.matcher.searchRow(f.matcher.rows.single);
+    expect(f.search.calls, isEmpty);
+  });
 
   test('fresh cache skips searching, restores metadata and refreshes details', () async {
     f.seed('a');

@@ -110,7 +110,9 @@ class FileDownloader {
       _dio.httpClientAdapter = IOHttpClientAdapter(
         createHttpClient: () {
           return HttpClient()
-            ..findProxy = (uri) => proxy == null ? "DIRECT" : "PROXY $proxy";
+            ..findProxy = (uri) =>
+                proxy == null || bypassesSystemProxy(uri.host)
+                    ? "DIRECT" : "PROXY $proxy";
         },
       );
 

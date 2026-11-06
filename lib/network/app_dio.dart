@@ -248,8 +248,8 @@ class RHttpAdapter implements HttpClientAdapter {
   Future<rhttp.ClientSettings> get settings => settingsFor(null);
 
   Future<rhttp.ClientSettings> settingsFor(Duration? connectTimeout,
-      {bool followRedirects = true}) async {
-    var proxy = await getProxy();
+      {bool followRedirects = true, String? host}) async {
+    var proxy = await getProxy(host: host);
 
     return rhttp.ClientSettings(
       proxySettings: proxy == null
@@ -317,7 +317,9 @@ class RHttpAdapter implements HttpClientAdapter {
     if (token != null) {
       unawaited(cancelFuture?.then((_) => token.cancel()));
     }
-    final pending = client != null
+    // A persistent client's proxy is fixed at creation. Use a direct request
+    // for bypassed hosts, preserving its TLS (including ECH), DNS and timeouts.
+    final pending = client != null && !bypassesSystemProxy(options.uri.host)
         ? client!.request(
             method: method,
             url: url,
@@ -329,8 +331,15 @@ class RHttpAdapter implements HttpClientAdapter {
         : rhttp.Rhttp.request(
             method: method,
             url: url,
-            settings: await settingsFor(options.extra['connectTimeout'] as Duration?,
-              followRedirects: options.followRedirects),
+            settings: client != null
+                ? client!.settings.copyWith(
+                    proxySettings: const rhttp.ProxySettings.noProxy(),
+                  )
+                : await settingsFor(
+                    options.extra['connectTimeout'] as Duration?,
+                    followRedirects: options.followRedirects,
+                    host: options.uri.host,
+                  ),
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,

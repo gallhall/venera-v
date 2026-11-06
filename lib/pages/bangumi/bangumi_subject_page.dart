@@ -1028,6 +1028,21 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   Widget sourceCard(SubjectSourceRow row, void Function(Comic) onPick) {
+    if (!row.source.isPlaybackSupported) {
+      return AppCard(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          enabled: false,
+          leading: const Icon(Icons.live_tv_outlined),
+          title: Text(row.source.name),
+          subtitle: Text(
+            'Web page sniffing is not supported on Linux; this source is unavailable'.tl,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
     var chosen = row.chosen;
     return _PlaySourceCard(
       key: ValueKey(row.source.key),
@@ -1085,7 +1100,8 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   List<Widget> sourceList(void Function(Comic) onPick) {
-    var unmatched = sources.where((row) => row.chosen == null && !row.loading);
+    var unmatched = sources.where((row) =>
+        row.source.isPlaybackSupported && row.chosen == null && !row.loading);
     return [
       SectionCard(
         icon: Icons.live_tv_outlined,
@@ -1119,10 +1135,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                   ),
                 ),
               ),
-            for (var row in sources.where((row) => row.chosen != null))
+            for (var row in sources.where((row) => !row.source.isPlaybackSupported))
+              sourceCard(row, onPick),
+            for (var row in sources.where((row) =>
+                row.source.isPlaybackSupported && row.chosen != null))
               sourceCard(row, onPick),
             for (var row in sources.where(
-              (row) => row.chosen == null && row.loading,
+              (row) => row.source.isPlaybackSupported && row.chosen == null && row.loading,
             ))
               sourceCard(row, onPick),
             if (unmatched.isNotEmpty)

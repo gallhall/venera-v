@@ -17,6 +17,9 @@ class _Source implements ComicSource {
   final LoadVideoPlayInfoFunc? loadVideoPlayInfo;
 
   @override
+  bool get isPlaybackSupported => true;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

@@ -310,7 +310,9 @@ class DesktopWebview {
       useWindowPositionAndSize: true,
       userDataFolderWindows: "${App.dataPath}\\webview",
       title: "webview",
-      proxy: await getProxy(),
+      // The desktop plugin fixes the proxy for the whole window. Evaluate
+      // Linux environment bypass rules against its initial URL only.
+      proxy: await getProxy(host: Uri.tryParse(initialUrl)?.host),
     ));
     _webview!.addOnWebMessageReceivedCallback(onMessage);
     _webview!.setOnNavigation((s) {

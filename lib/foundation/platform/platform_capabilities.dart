@@ -15,6 +15,7 @@ export 'unsupported_capabilities.dart';
 /// let tests replace only the capabilities they exercise, without channels.
 class PlatformCapabilities {
   const PlatformCapabilities({
+    this.webSniffing = const UnsupportedWebSniffing(),
     this.networkType = const UnsupportedNetworkType(),
     this.thermal = const UnsupportedThermal(),
     this.volumeKeys = const UnsupportedVolumeKeys(),
@@ -25,6 +26,7 @@ class PlatformCapabilities {
 
   static PlatformCapabilities _instance = Platform.isAndroid
       ? const PlatformCapabilities(
+          webSniffing: SupportedWebSniffing(),
           networkType: AndroidNetworkType(),
           thermal: AndroidThermal(),
           volumeKeys: AndroidVolumeKeys(),
@@ -33,10 +35,18 @@ class PlatformCapabilities {
           sharedText: AndroidSharedText(),
         )
       : Platform.isIOS
-          ? const PlatformCapabilities(networkType: IosNetworkType())
+          ? const PlatformCapabilities(
+              webSniffing: SupportedWebSniffing(),
+              networkType: IosNetworkType(),
+            )
           : Platform.isWindows || Platform.isLinux || Platform.isMacOS
-              ? PlatformCapabilities(backgroundDownload: DesktopBackgroundDownload())
-              : const PlatformCapabilities();
+              ? PlatformCapabilities(
+                  webSniffing: Platform.isLinux
+                      ? const UnsupportedWebSniffing()
+                      : const SupportedWebSniffing(),
+                  backgroundDownload: DesktopBackgroundDownload(),
+                )
+              : const PlatformCapabilities(webSniffing: SupportedWebSniffing());
 
   static PlatformCapabilities get instance => _instance;
 
@@ -46,6 +56,7 @@ class PlatformCapabilities {
     _instance = value;
   }
 
+  final WebSniffingCapability webSniffing;
   final NetworkTypeCapability networkType;
   final ThermalCapability thermal;
   final VolumeKeysCapability volumeKeys;

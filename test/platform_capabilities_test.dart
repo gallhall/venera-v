@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 
@@ -13,7 +15,13 @@ class _WifiNetwork implements NetworkTypeCapability {
 void main() {
   const unsupported = PlatformCapabilities();
 
+  test('native web sniffing selection excludes only Linux', () {
+    expect(PlatformCapabilities.instance.webSniffing.isSupported, !Platform.isLinux);
+    expect(const SupportedWebSniffing().isSupported, isTrue);
+  });
+
   test('unsupported capabilities are explicitly unavailable', () {
+    expect(unsupported.webSniffing.isSupported, isFalse);
     expect(unsupported.networkType.isSupported, isFalse);
     expect(unsupported.thermal.isSupported, isFalse);
     expect(unsupported.volumeKeys.isSupported, isFalse);
