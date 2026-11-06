@@ -38,6 +38,7 @@ class PlatformCapabilities {
           ? const PlatformCapabilities(
               webSniffing: SupportedWebSniffing(),
               networkType: IosNetworkType(),
+              thermal: IosThermal(),
             )
           : Platform.isWindows || Platform.isLinux || Platform.isMacOS
               ? PlatformCapabilities(

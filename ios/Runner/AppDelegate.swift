@@ -1,5 +1,7 @@
 import Flutter
 import UIKit
+import AVFoundation
+import MediaPlayer
 import UniformTypeIdentifiers
 import Foundation // 添加此行
 
@@ -10,6 +12,7 @@ import Foundation // 添加此行
 
   // 定义插件通道名称
   private var directoryPicker: DirectoryPicker?
+  private var nowPlaying: NowPlayingBridge?
 
   override func application(
     _ application: UIApplication,
@@ -22,6 +25,23 @@ import Foundation // 添加此行
     }
 
     let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
+    let thermalChannel = FlutterMethodChannel(name: "venera/thermal", binaryMessenger: controller.binaryMessenger)
+    thermalChannel.setMethodCallHandler { call, result in
+      guard call.method == "sample" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let status: Int
+      switch ProcessInfo.processInfo.thermalState {
+      case .nominal: status = 0
+      case .fair: status = 1
+      case .serious: status = 2
+      case .critical: status = 3
+      @unknown default: status = -1
+      }
+      result(["status": status])
+    }
+    nowPlaying = NowPlayingBridge(messenger: controller.binaryMessenger)
     methodChannel.setMethodCallHandler { (call, result) in
       if call.method == "getProxy" {
         if let proxySettings = CFNetworkCopySystemProxySettings()?.takeUnretainedValue() as NSDictionary?,
@@ -106,6 +126,122 @@ import Foundation // 添加此行
     picker.delegate = task
     picker.allowsMultipleSelection = false
     top.present(picker, animated: true)
+  }
+}
+
+/// Metadata and remote commands for the media_kit player. Owns no player.
+private final class NowPlayingBridge {
+  private let channel: FlutterMethodChannel
+  private var installedCommands = false
+  private var active = false
+  private var artworkPath: String?
+  private var artwork: MPMediaItemArtwork?
+
+  init(messenger: FlutterBinaryMessenger) {
+    channel = FlutterMethodChannel(name: "venera/now_playing", binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else {
+        result(nil)
+        return
+      }
+      switch call.method {
+      case "update":
+        guard let args = call.arguments as? [String: Any] else {
+          result(FlutterError(code: "arguments", message: "Expected Now Playing metadata", details: nil))
+          return
+        }
+        do {
+          if !self.active {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+          }
+          self.update(args)
+          result(nil)
+        } catch {
+          result(FlutterError(code: "audio_session", message: error.localizedDescription, details: nil))
+        }
+      case "clear":
+        self.active = false
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        self.setCommandsEnabled(false, previous: false, next: false)
+        self.artworkPath = nil
+        self.artwork = nil
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func update(_ args: [String: Any]) {
+    installCommands()
+    active = true
+    setCommandsEnabled(true, previous: args["canPrevious"] as? Bool ?? false,
+                       next: args["canNext"] as? Bool ?? false)
+    var info: [String: Any] = [
+      MPMediaItemPropertyTitle: args["title"] as? String ?? "",
+      MPMediaItemPropertyArtist: args["artist"] as? String ?? "",
+      MPMediaItemPropertyPlaybackDuration: (args["duration"] as? NSNumber)?.doubleValue ?? 0,
+      MPNowPlayingInfoPropertyElapsedPlaybackTime: (args["position"] as? NSNumber)?.doubleValue ?? 0,
+      MPNowPlayingInfoPropertyPlaybackRate: (args["rate"] as? NSNumber)?.doubleValue ?? 0
+    ]
+    if let album = args["album"] as? String {
+      info[MPMediaItemPropertyAlbumTitle] = album
+    }
+    let path = args["artworkPath"] as? String
+    if path != artworkPath || artwork == nil {
+      artworkPath = path
+      artwork = nil
+      if let path = path, let image = UIImage(contentsOfFile: path) {
+        artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+      }
+    }
+    if let artwork = artwork {
+      info[MPMediaItemPropertyArtwork] = artwork
+    }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+  }
+
+  private func setCommandsEnabled(_ enabled: Bool, previous: Bool, next: Bool) {
+    let center = MPRemoteCommandCenter.shared()
+    let commands: [MPRemoteCommand] = [
+      center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
+      center.changePlaybackPositionCommand, center.skipForwardCommand,
+      center.skipBackwardCommand
+    ]
+    for command in commands {
+      command.isEnabled = enabled
+    }
+    center.previousTrackCommand.isEnabled = enabled && previous
+    center.nextTrackCommand.isEnabled = enabled && next
+  }
+
+  private func installCommands() {
+    guard !installedCommands else { return }
+    installedCommands = true
+    let center = MPRemoteCommandCenter.shared()
+    center.skipForwardCommand.preferredIntervals = [10]
+    center.skipBackwardCommand.preferredIntervals = [10]
+    let commands: [(MPRemoteCommand, String)] = [
+      (center.playCommand, "play"), (center.pauseCommand, "pause"),
+      (center.togglePlayPauseCommand, "toggle"), (center.changePlaybackPositionCommand, "seek"),
+      (center.skipForwardCommand, "forward"), (center.skipBackwardCommand, "backward"),
+      (center.nextTrackCommand, "next"), (center.previousTrackCommand, "previous")
+    ]
+    for (command, name) in commands {
+      command.addTarget { [weak self] event in
+        var args: [String: Any] = ["name": name]
+        if let seek = event as? MPChangePlaybackPositionCommandEvent {
+          args["position"] = seek.positionTime
+        }
+        DispatchQueue.main.async { [weak self] in
+          guard let self = self, self.active else { return }
+          self.channel.invokeMethod("command", arguments: args)
+        }
+        return .success
+      }
+    }
   }
 }
 
