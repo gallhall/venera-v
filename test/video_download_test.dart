@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rhttp/rhttp.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/torrent/torrent_download_state.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
@@ -16,6 +17,15 @@ import 'package:venera/network/download_queue.dart';
 import 'package:venera/utils/io.dart' show FilePath;
 
 import 'fmp4_builder.dart';
+
+class _CellularNetwork implements NetworkTypeCapability {
+  @override
+  bool get isSupported => true;
+  @override
+  Future<bool> isWifi() async => false;
+  @override
+  Future<bool> isMetered() async => true;
+}
 
 /// Runs a [VideoDownloadTask] for a test video source against a local
 /// server. Needs flutter_qjs_plugin.dll on PATH, like video_source_test.
@@ -509,6 +519,12 @@ class TestVideo extends ComicSource {
   }, skip: skip);
 
   test('BT episode controls cancel and restart one handle while its batch sibling stays active', () async {
+    final previousCapabilities = PlatformCapabilities.instance;
+    PlatformCapabilities.instance = PlatformCapabilities(
+      networkType: _CellularNetwork());
+    addTearDown(() {
+      PlatformCapabilities.instance = previousCapabilities;
+    });
     var previousWifiOnly = appdata.settings['btDownloadWifiOnly'];
     appdata.settings['btDownloadWifiOnly'] = true;
     addTearDown(() => appdata.settings['btDownloadWifiOnly'] = previousWifiOnly);

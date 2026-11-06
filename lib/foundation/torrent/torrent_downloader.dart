@@ -79,8 +79,8 @@ class TorrentDownloadHandle extends ValueNotifier<TorrentDownloadStatus> {
 class TorrentDownloader {
   static final instance = TorrentDownloader();
   final TorrentDownloadQueue queue;
-  /// No connectivity dependency is installed. Hosts/tests can supply a check;
-  /// Android uses the app's existing platform channel. Unknown networks wait.
+  /// Hosts/tests can supply a check; supported platforms use their network
+  /// capability. Unknown networks wait only when Wi-Fi-only is enabled.
   final Future<bool> Function() isWifi;
   final bool Function() wifiOnly;
   final DateTime Function() clock;
@@ -93,7 +93,9 @@ class TorrentDownloader {
       : queue = queue ?? TorrentDownloadQueue(limit:
           (appdata.settings['btConcurrentDownloads'] as num? ?? 2).toInt().clamp(1, 8).toInt()),
         isWifi = isWifi ?? _platformWifi,
-        wifiOnly = wifiOnly ?? (() => appdata.settings['btDownloadWifiOnly'] == true),
+        wifiOnly = wifiOnly ?? (() =>
+          PlatformCapabilities.instance.networkType.isSupported &&
+          appdata.settings['btDownloadWifiOnly'] == true),
         clock = clock ?? DateTime.now;
 
   static Future<bool> _platformWifi() async {

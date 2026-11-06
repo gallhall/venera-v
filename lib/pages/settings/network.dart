@@ -23,10 +23,11 @@ class _NetworkSettingsState extends State<NetworkSettings> {
               title: "DNS Overrides".tl,
               builder: () => const _DNSOverrides(),
             ),
-            _SwitchSetting(
-              title: 'Download BT only on Wi-Fi'.tl,
-              settingKey: 'btDownloadWifiOnly',
-            ),
+            if (PlatformCapabilities.instance.networkType.isSupported)
+              _SwitchSetting(
+                title: 'Download BT only on Wi-Fi'.tl,
+                settingKey: 'btDownloadWifiOnly',
+              ),
             _SliderSetting(
               title: "Download Threads".tl,
               settingsIndex: 'downloadThreads',
