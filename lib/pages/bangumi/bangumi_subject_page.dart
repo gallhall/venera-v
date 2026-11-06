@@ -749,6 +749,13 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                       ? playFirst : pickSource,
                   isLoading: playLoading,
                 ),
+              // Narrow layouts have a Download button below these instead.
+              if (!mobile)
+                ActionPill(
+                  icon: const Icon(Icons.download_outlined),
+                  text: 'Download'.tl,
+                  onPressed: download,
+                ),
               ActionPill(
                 icon: const Icon(Icons.favorite_border),
                 activeIcon: const Icon(Icons.favorite),

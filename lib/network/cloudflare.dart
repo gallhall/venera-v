@@ -138,9 +138,12 @@ final _failedRenewals = <String, DateTime>{};
 /// hour) and they stop matching when the IP changes. A challenge that the
 /// browser passes on its own is passed again here; one that needs the user
 /// fails after a while, and the user verifies as before.
+///
+/// Linux has no hidden webview (flutter_inappwebview does not support it),
+/// so the user verifies every time there.
 Future<bool> renewCloudflare(String url) {
   var uri = Uri.tryParse(url);
-  if (uri == null || !(App.isAndroid || App.isIOS || App.isMacOS)) {
+  if (uri == null || App.isLinux) {
     return Future.value(false);
   }
   var host = uri.host;
@@ -225,8 +228,9 @@ void passCloudflare(CloudflareException e, void Function() onFinished) async {
     );
   }
 
-  // windows version of package `flutter_inappwebview` cannot get some cookies
-  // Using DesktopWebview instead
+  // flutter_inappwebview does not support Linux: use DesktopWebview there.
+  // (Windows reads every cookie, HttpOnly cf_clearance included, through
+  // CookieManager: checked on WebView2 on 2026-11-06.)
   if (App.isLinux) {
     var webview = DesktopWebview(
       initialUrl: url,

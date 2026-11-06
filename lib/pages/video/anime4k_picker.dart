@@ -30,6 +30,8 @@ class Anime4kStatusView extends StatelessWidget {
         'Inactive: no Anime4K render passes detected'.tl,
       Anime4kState.unknown => 'Unable to verify Anime4K'.tl,
       Anime4kState.playToVerify => 'Play to verify Anime4K'.tl,
+      Anime4kState.applied =>
+        'Anime4K applied (this platform cannot report render passes; hold to compare with the original)'.tl,
       Anime4kState.active when status.hasUpscale =>
         'Active: @n Anime4K render passes (including upscale)'.tlParams({
           'n': status.passCount,
