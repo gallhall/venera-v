@@ -6,11 +6,47 @@ import 'package:crypto/crypto.dart';
 import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:dtorrent_task_v2/src/piece/base_piece_selector.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/torrent/torrent_downloader.dart';
 import 'package:venera/foundation/torrent/torrent_metadata.dart';
 import 'package:venera/utils/translations.dart';
 
 import 'torrent_piece_selector_test.dart' show TestPeer, TestPieces;
+
+class _NetworkType implements NetworkTypeCapability {
+  bool wifi = false;
+  int checks = 0;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<bool> isWifi() async {
+    checks++;
+    return wifi;
+  }
+
+  @override
+  Future<bool> isMetered() async => !wifi;
+}
+
+const _savedSource = 'https://example.invalid/network-test.torrent';
+
+Future<Directory> _savedNetworkMetadata() async {
+  await Directory('build').create(recursive: true);
+  final root = await Directory('build').createTemp('bt-network-');
+  addTearDown(() => root.delete(recursive: true));
+  final resume = await Directory('${root.path}/.bt-resume')
+      .create(recursive: true);
+  await File('${resume.path}/source.txt').writeAsString(_savedSource);
+  await File('${resume.path}/metadata.torrent').writeAsBytes([
+    ...'d4:infod6:lengthi1e4:name5:a.mkv12:piece lengthi16384e6:pieces20:'
+        .codeUnits,
+    ...List.filled(20, 0), 101, 101,
+  ]);
+  return root;
+}
 
 TorrentModel batch() {
   // Shared pieces at both ends of episode 02, with one wholly skipped piece.
@@ -28,6 +64,71 @@ TorrentModel batch() {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(AppTranslation.init);
+  setUp(() {
+    final previousCapabilities = PlatformCapabilities.instance;
+    final previousWifiOnly = appdata.settings['btDownloadWifiOnly'];
+    addTearDown(() {
+      PlatformCapabilities.instance = previousCapabilities;
+      appdata.settings['btDownloadWifiOnly'] = previousWifiOnly;
+    });
+  });
+
+  test('unsupported network starts file selection despite stored Wi-Fi-only', () async {
+    PlatformCapabilities.instance = const PlatformCapabilities();
+    appdata.settings['btDownloadWifiOnly'] = true;
+    final root = await _savedNetworkMetadata();
+    final downloader = TorrentDownloader();
+    final handle = downloader.download(_savedSource, TorrentDownloadFile(
+      path: 'missing.mkv', directory: root));
+    addTearDown(() async {
+      await handle.cancel();
+      handle.dispose();
+    });
+
+    // Reaching file selection proves the download passed the Wi-Fi gate.
+    // A missing file stops it before opening peer/tracker connections.
+    await expectLater(handle.done.timeout(const Duration(seconds: 5)),
+      throwsA(isA<TorrentDownloadException>().having((e) => e.reason,
+        'reason', TorrentDownloadFailure.fileNotFound)));
+    expect(downloader.wifiOnly(), isFalse);
+    expect(handle.value.phase, TorrentDownloadPhase.failed);
+    expect(appdata.settings['btDownloadWifiOnly'], isTrue);
+  });
+
+  test('supported network waits for Wi-Fi and resumes on the next poll', () async {
+    final network = _NetworkType();
+    PlatformCapabilities.instance = PlatformCapabilities(networkType: network);
+    appdata.settings['btDownloadWifiOnly'] = true;
+    final root = await _savedNetworkMetadata();
+    final downloader = TorrentDownloader();
+    final handle = downloader.download(_savedSource, TorrentDownloadFile(
+      path: 'missing.mkv', directory: root));
+    final result = expectLater(handle.done,
+      throwsA(isA<TorrentDownloadException>().having((e) => e.reason,
+        'reason', TorrentDownloadFailure.fileNotFound)));
+    addTearDown(() async {
+      await handle.cancel();
+      handle.dispose();
+    });
+    final waiting = Completer<void>();
+    handle.addListener(() {
+      if (handle.value.phase == TorrentDownloadPhase.waitingForWifi &&
+          !waiting.isCompleted) {
+        waiting.complete();
+      }
+    });
+    await waiting.future.timeout(const Duration(seconds: 5));
+    expect(downloader.wifiOnly(), isTrue);
+    expect(handle.value.phase, TorrentDownloadPhase.waitingForWifi);
+    expect(handle.index, isNull);
+    expect(downloader.queue.active, 1);
+    final checks = network.checks;
+    network.wifi = true;
+    await result.timeout(const Duration(seconds: 5));
+    expect(network.checks, greaterThan(checks));
+    expect(appdata.settings['btDownloadWifiOnly'], isTrue);
+  });
+
   test('only two torrents acquire slots, released slots serve FIFO once', () async {
     var queue = TorrentDownloadQueue();
     var first = await queue.acquire();
