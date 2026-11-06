@@ -1,5 +1,15 @@
 {
   "zh_CN": {
+    "Show window": "显示窗口",
+    "Continue all": "全部继续",
+    "Quit": "退出",
+    "Download failed": "下载失败",
+    "Downloads are in progress": "正在下载",
+    "Minimize to tray": "最小化到托盘",
+    "Quit (pause downloads)": "退出（暂停下载）",
+    "Remember my choice": "记住我的选择",
+    "Closing window during downloads": "下载时关闭窗口",
+    "Ask": "每次询问",
     "Select anime": "选择番剧",
     "Anime": "动漫",
     "Anime information": "番剧信息",
@@ -945,6 +955,16 @@
     "No Chinese font detected. Chinese text in ASS subtitles may appear as boxes. Install Noto Sans CJK (e.g. fonts-noto-cjk).": "未检测到中文字体，ASS 字幕中的中文可能显示为方块。请安装 Noto Sans CJK（例如 fonts-noto-cjk）。"
   },
   "zh_TW": {
+    "Show window": "顯示視窗",
+    "Continue all": "全部繼續",
+    "Quit": "退出",
+    "Download failed": "下載失敗",
+    "Downloads are in progress": "正在下載",
+    "Minimize to tray": "最小化到系統匣",
+    "Quit (pause downloads)": "退出（暫停下載）",
+    "Remember my choice": "記住我的選擇",
+    "Closing window during downloads": "下載時關閉視窗",
+    "Ask": "每次詢問",
     "Select anime": "選擇番劇",
     "Anime": "動漫",
     "Anime information": "番劇資訊",

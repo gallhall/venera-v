@@ -19,6 +19,12 @@ class _FakeTask extends DownloadTask {
   final String id;
 
   bool _running = false;
+  bool _error = false;
+
+  void setFailed(bool value) {
+    _error = value;
+    notifyListeners();
+  }
 
   @override
   ComicType get comicType => ComicType.local;
@@ -27,7 +33,7 @@ class _FakeTask extends DownloadTask {
   double get progress => 0.5;
 
   @override
-  bool get isError => false;
+  bool get isError => _error;
 
   @override
   bool get isPaused => !_running;
@@ -64,6 +70,19 @@ class _FakeTask extends DownloadTask {
 
   @override
   LocalComic toLocalComic() => throw UnimplementedError();
+}
+
+class _FailureService extends UnsupportedBackgroundDownload
+    implements DownloadFailureCapability {
+  final failures = <String>[];
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<void> notifyFailure(String title, String text) async {
+    failures.add(title);
+  }
 }
 
 void main() {
@@ -177,6 +196,28 @@ void main() {
     await settle();
     expect(DownloadNotification.keepAppOpen.value, isFalse);
     expect(states().last, 'paused');
+    a.cancel();
+    b.cancel();
+    await settle();
+  });
+
+  test('reports a non-representative failure once, and again after retry', () async {
+    final previous = PlatformCapabilities.instance;
+    final service = _FailureService();
+    PlatformCapabilities.instance = PlatformCapabilities(backgroundDownload: service);
+    addTearDown(() {
+      PlatformCapabilities.instance = previous;
+    });
+    final a = _FakeTask('running');
+    final b = _FakeTask('failed');
+    DownloadQueue()..add(a)..add(b);
+    b.resume();
+    b.setFailed(true);
+    b.setFailed(true);
+    expect(service.failures, ['Task failed']);
+    b.setFailed(false);
+    b.setFailed(true);
+    expect(service.failures, ['Task failed', 'Task failed']);
     a.cancel();
     b.cancel();
     await settle();

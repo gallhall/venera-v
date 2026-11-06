@@ -211,6 +211,7 @@ class Settings with ChangeNotifier {
     'language': 'system', // system, zh-CN, zh-TW, en-US
     'cacheSize': 2048, // in MB
     'downloadThreads': 5,
+    'desktopDownloadClose': 'ask', // unset choice: ask, minimize, quit
     'videoDownloadQuality': 'highest', // last picked, [VideoQuality.options]
     'enableLongPressToZoom': true,
     'longPressZoomPosition': "press", // press, center

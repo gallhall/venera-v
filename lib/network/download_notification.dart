@@ -12,6 +12,8 @@ import 'package:venera/network/download_queue.dart';
 /// foreground service `DownloadService` of the app. Its notification shows
 /// the progress of an active task and pauses or resumes it, and it holds a
 /// wake lock while any task runs.
+/// Desktop capabilities use these updates for the tray and the queue-drained
+/// completion event for a single local notification.
 ///
 /// The service runs while at least one task runs. It is sent the state of
 /// the task once a second: without updates for two minutes it stops, as the
@@ -21,6 +23,7 @@ abstract final class DownloadNotification {
       PlatformCapabilities.instance.backgroundDownload;
 
   static final _tasks = <DownloadTask>{};
+  static final _failedTasks = <DownloadTask>{};
 
   static DownloadTask? get _currentTask {
     var tasks = DownloadQueue().tasks;
@@ -92,6 +95,16 @@ abstract final class DownloadNotification {
   /// before the next one starts, and the service must not stop between them,
   /// as Android does not start it again from the background.
   static void _schedule() {
+    // Observe every task, including failures hidden behind a running task.
+    if (_service case DownloadFailureCapability failures) {
+      final current = DownloadQueue().tasks.toSet();
+      _failedTasks.removeWhere((task) => !current.contains(task) || !task.isError);
+      for (final task in current) {
+        if (task.isError && _failedTasks.add(task)) {
+          _invoke('notifyFailure', failures.notifyFailure(task.title, task.message));
+        }
+      }
+    }
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), _sync);
   }

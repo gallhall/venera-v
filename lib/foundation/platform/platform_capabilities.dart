@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'android_capabilities.dart';
 import 'capabilities.dart';
+import 'desktop_background_download.dart';
 import 'unsupported_capabilities.dart';
 
 export 'capabilities.dart';
@@ -30,7 +31,9 @@ class PlatformCapabilities {
           filePicker: AndroidNativeFilePicker(),
           sharedText: AndroidSharedText(),
         )
-      : const PlatformCapabilities();
+      : Platform.isWindows || Platform.isLinux || Platform.isMacOS
+          ? PlatformCapabilities(backgroundDownload: DesktopBackgroundDownload())
+          : const PlatformCapabilities();
 
   static PlatformCapabilities get instance => _instance;
 

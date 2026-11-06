@@ -14,6 +14,8 @@ dependencies:
   path_provider: any
   intl: any
   window_manager: ^0.5.1
+  tray_manager: 0.5.3 # Last stable API line compatible with Flutter 3.41.
+  local_notifier: 0.1.6
   sqlite3: ^2.7.4
   sqlite3_flutter_libs: ^0.5.30
   flutter_qjs:
@@ -132,6 +134,7 @@ flutter:
     - assets/translation.json
     - assets/init.js
     - assets/app_icon.png
+    - assets/app_icon.ico
     - assets/tags.json
     - assets/tags_tw.json
     - assets/opencc.txt
@@ -149,6 +152,8 @@ flutter_to_arch:
     - webkit2gtk-4.1
     - libepoxy
     - alsa-lib
+    - libayatana-appindicator
+    - libnotify
     # Libraries the bundled libmpv links.
     - fontconfig
     - harfbuzz

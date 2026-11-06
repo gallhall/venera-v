@@ -13,9 +13,43 @@ struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
   FlMethodChannel* clipboard_channel;
+  FlMethodChannel* desktop_tray_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// Creating an AppIndicator succeeds even without a panel hosting it. Do not
+// let Dart hide the only window unless a StatusNotifier host is registered.
+static void handle_desktop_tray_call(FlMethodChannel* channel,
+                                     FlMethodCall* call, gpointer user_data) {
+  if (strcmp(fl_method_call_get_name(call), "hasTrayHost") != 0) {
+    fl_method_call_respond_not_implemented(call, nullptr);
+    return;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusConnection) bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+  gboolean available = FALSE;
+  if (bus != nullptr) {
+    g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+        bus, "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+        "org.freedesktop.DBus.Properties", "Get",
+        g_variant_new("(ss)", "org.kde.StatusNotifierWatcher",
+                      "IsStatusNotifierHostRegistered"),
+        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error);
+    if (reply != nullptr) {
+      g_autoptr(GVariant) value = nullptr;
+      g_variant_get(reply, "(v)", &value);
+      if (g_variant_is_of_type(value, G_VARIANT_TYPE_BOOLEAN)) {
+        available = g_variant_get_boolean(value);
+      }
+    }
+  }
+  if (!available) {
+    g_warning("Desktop tray host unavailable: %s",
+              error != nullptr ? error->message : "no registered panel host");
+  }
+  fl_method_call_respond_success(call, fl_value_new_bool(available), nullptr);
+}
 
 static void handle_clipboard_call(FlMethodChannel* channel, FlMethodCall* call, gpointer user_data) {
   if (strcmp(fl_method_call_get_name(call), "writeImageToClipboard") == 0) {
@@ -97,6 +131,11 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->desktop_tray_channel = fl_method_channel_new(
+    fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+    "venera/desktop_tray", FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(
+    self->desktop_tray_channel, handle_desktop_tray_call, self, nullptr);
   self->clipboard_channel = fl_method_channel_new(
     fl_engine_get_binary_messenger(fl_view_get_engine(view)),
     "venera/clipboard", FL_METHOD_CODEC(codec));
@@ -150,6 +189,7 @@ static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->clipboard_channel);
+  g_clear_object(&self->desktop_tray_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

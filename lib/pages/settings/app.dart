@@ -43,6 +43,22 @@ class _AppSettingsState extends State<AppSettings> {
     return AppContentWidth(maxWidth: 800, child: SmoothCustomScrollView(
       slivers: [
         SliverAppbar(title: Text("App".tl)),
+        if (App.isDesktop)
+          _SettingsGroup(
+            title: 'Download settings'.tl,
+            icon: Icons.download_outlined,
+            children: [
+              SelectSetting(
+                title: 'Closing window during downloads'.tl,
+                settingKey: 'desktopDownloadClose',
+                optionTranslation: {
+                  'ask': 'Ask'.tl,
+                  'minimize': 'Minimize to tray'.tl,
+                  'quit': 'Quit (pause downloads)'.tl,
+                },
+              ),
+            ],
+          ),
         _SettingsGroup(
           title: "Data".tl,
           icon: Icons.storage_outlined,

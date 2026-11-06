@@ -15,13 +15,14 @@ class FakeTask extends DownloadTask {
   final bool video;
 
   bool running = false;
+  bool error = false;
 
   @override
   ComicType get comicType => ComicType.local;
   @override
   double get progress => 0;
   @override
-  bool get isError => false;
+  bool get isError => error;
   @override
   bool get isPaused => !running;
   @override
@@ -85,6 +86,35 @@ void main() {
     expect(q.isDownloading('b', ComicType.local), isTrue);
   });
 
+  test('pause and continue all keep comic ordering and parallel videos', () {
+    var a = task('a'), b = task('b'), v = task('v', video: true);
+    q..add(a)..add(b)..add(v);
+    expect(q.hasActiveDownloads, isTrue);
+    q.pauseAll();
+    expect(running(), isEmpty);
+    expect(q.hasActiveDownloads, isFalse);
+    q.resumeAll();
+    expect(running(), ['a', 'v']);
+    expect(q.hasActiveDownloads, isTrue);
+    q.complete(a);
+    expect(running(), ['b', 'v']);
+  });
+
+  test('paused and failed tasks are idle, waiting comics are active', () {
+    var a = task('a');
+    q.add(a);
+    a.error = true;
+    expect(q.hasActiveDownloads, isFalse);
+    a.error = false;
+    a.pause();
+    expect(q.hasActiveDownloads, isFalse);
+    q.add(task('b'));
+    a..pause()..error = true;
+    expect(q.hasActiveDownloads, isTrue);
+    q.pauseAll();
+    expect(q.hasActiveDownloads, isFalse);
+  });
+
   test('a completed comic goes to the library and the next one starts', () {
     var a = task('a'), b = task('b');
     q..add(a)..add(b);
@@ -131,6 +161,7 @@ void main() {
     q..add(task('a'))..add(task('v', video: true));
     await q.save();
     var restored = make(stored: saved)..restore();
+    expect(restored.hasActiveDownloads, isFalse);
     expect([for (var t in restored.tasks) t.id], ['a', 'v']);
     expect(restored.tasks.every((t) => t.isPaused), isTrue);
     expect(jsonDecode(saved!), hasLength(2));

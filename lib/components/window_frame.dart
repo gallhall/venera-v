@@ -4,7 +4,15 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/platform/desktop_background_download.dart';
+import 'package:venera/foundation/platform/desktop_download_policy.dart';
+import 'package:venera/network/download_queue.dart';
+import 'package:venera/utils/translations.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -53,10 +61,58 @@ class WindowFrame extends StatefulWidget {
 
 typedef WindowCloseListener = bool Function();
 
-class _WindowFrameState extends State<WindowFrame> {
+class _WindowFrameState extends State<WindowFrame> with WindowListener {
   bool isWindowFrameHidden = false;
   bool useDarkTheme = false;
   var closeListeners = <WindowCloseListener>[];
+  static const _closeChannel = MethodChannel('venera/desktop_close');
+  bool _closing = false;
+
+  DesktopBackgroundDownload? get _desktop {
+    final service = PlatformCapabilities.instance.backgroundDownload;
+    return service is DesktopBackgroundDownload ? service : null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (App.isDesktop) {
+      windowManager.addListener(this);
+      _desktop?.onQuit = () async {
+        await _desktop?.showWindow();
+        await _onClose(quit: true);
+      };
+      if (App.isMacOS) {
+        _closeChannel.setMethodCallHandler((call) async {
+          if (call.method == 'requestClose') {
+            await _onClose();
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    if (App.isDesktop) {
+      windowManager.removeListener(this);
+      _desktop?.onQuit = null;
+      if (App.isMacOS) {
+        _closeChannel.setMethodCallHandler(null);
+      }
+    }
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() {
+    unawaited(_onClose());
+  }
+
+  @override
+  void onWindowFocus() {
+    _desktop?.windowShown();
+  }
 
   /// Sets the visibility of the window frame.
   void setWindowFrame(bool show) {
@@ -76,13 +132,92 @@ class _WindowFrameState extends State<WindowFrame> {
     closeListeners.remove(listener);
   }
 
-  void _onClose() {
-    for (var listener in closeListeners) {
-      if (!listener()) {
+  Future<void> _onClose({bool quit = false}) async {
+    if (_closing) {
+      return;
+    }
+    _closing = true;
+    try {
+      final queue = DownloadQueue();
+      final desktop = _desktop;
+      var trayAvailable = false;
+      if (!quit && queue.hasActiveDownloads && desktop != null) {
+        trayAvailable = await desktop.ensureTray();
+      }
+      var decision = desktopCloseDecision(
+        hasActiveDownloads: queue.hasActiveDownloads,
+        trayAvailable: trayAvailable,
+        preference: quit ? 'quit' : appdata.settings['desktopDownloadClose'] as String?,
+      );
+      var remember = false;
+      if (decision == DesktopCloseDecision.ask) {
+        // A native close request can also arrive while the window is hidden.
+        await desktop?.showWindow();
+        if (!mounted) {
+          return;
+        }
+        decision = await showDialog<DesktopCloseDecision>(
+          context: App.rootContext,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+              title: Text('Downloads are in progress'.tl),
+              content: CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Remember my choice'.tl),
+                value: remember,
+                onChanged: (value) {
+                  setDialogState(() {
+                    remember = value ?? false;
+                  });
+                },
+              ),
+              actions: [
+                for (final option in desktopCloseOptions(trayAvailable))
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, option),
+                    child: Text(switch (option) {
+                      DesktopCloseDecision.minimize => 'Minimize to tray'.tl,
+                      DesktopCloseDecision.quit => 'Quit (pause downloads)'.tl,
+                      _ => 'Cancel'.tl,
+                    }),
+                  ),
+              ],
+            ),
+          ),
+        ) ?? DesktopCloseDecision.cancel;
+      }
+      if (decision == DesktopCloseDecision.cancel) {
         return;
       }
+      if (decision == DesktopCloseDecision.minimize) {
+        await desktop!.moveToBackground();
+      } else {
+        // Preserve the existing listener order and veto (e.g. the reader).
+        for (final listener in List<WindowCloseListener>.of(closeListeners)) {
+          if (!listener()) {
+            return;
+          }
+        }
+        if (decision == DesktopCloseDecision.quit || quit) {
+          queue.pauseAll();
+          await queue.save();
+        }
+      }
+      final preference = rememberedDesktopCloseChoice(
+        decision, remember: remember, trayAvailable: trayAvailable,
+      );
+      if (preference != null) {
+        appdata.settings['desktopDownloadClose'] = preference;
+        await appdata.saveData();
+      }
+      if (decision != DesktopCloseDecision.minimize) {
+        exit(0);
+      }
+    } catch (e, stack) {
+      Log.error('Window', 'Cannot complete close request: $e', stack);
+    } finally {
+      _closing = false;
     }
-    exit(0);
   }
 
   @override
@@ -148,7 +283,9 @@ class _WindowFrameState extends State<WindowFrame> {
                           ),
                         if (!App.isMacOS)
                           _WindowButtons(
-                            onClose: _onClose,
+                            onClose: () {
+                              unawaited(_onClose());
+                            },
                           )
                       ],
                     ),
