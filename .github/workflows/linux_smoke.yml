@@ -1,0 +1,70 @@
+name: Linux smoke test
+on:
+  workflow_dispatch: {}
+  # Checks changes to the workflow itself. Other branches run it by hand:
+  # gh workflow run linux_smoke.yml --ref <branch>
+  pull_request:
+    paths:
+      - .github/workflows/linux_smoke.yml
+
+# Builds the Linux app, runs the video smoke test in it under a virtual X
+# display, and uploads the release bundle, which runs without installing
+# (for instance in WSLg: extract it and start ./venera-v).
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write build-time credentials
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: python3 .github/scripts/dart_defines.py
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+          architecture: x64
+      - run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev webkit2gtk-4.1 libepoxy-dev libasound2-dev libayatana-appindicator3-dev libnotify-dev xvfb imagemagick fonts-noto-cjk
+      # As in the release packages (main.yml): bundles a Chinese font.
+      - run: |
+          flutter pub get
+          dart run patch/font.dart
+      - name: Release bundle
+        run: |
+          flutter build linux --release --dart-define-from-file=dart_defines.json
+          tar -C build/linux/x64/release -czf venera-v-linux-x64-bundle.tar.gz bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux_bundle
+          path: venera-v-linux-x64-bundle.tar.gz
+      # The test built as the app, as on macOS (see macos_smoke.yml). Web
+      # page sniffing is skipped on Linux: flutter_inappwebview has none.
+      - run: flutter build linux --debug -t integration_test/video_smoke_test.dart --dart-define-from-file=dart_defines.json
+      - name: Video smoke test
+        run: |
+          mkdir -p smoke
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x800x24 &
+          xvfb=$!
+          sleep 2
+          (while true; do import -display :99 -window root smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 3; done) &
+          shots=$!
+          build/linux/x64/debug/bundle/venera-v > smoke/test.log 2>&1 &
+          app=$!
+          for i in $(seq 1 180); do
+            grep -qE "All tests passed|Some tests failed" smoke/test.log && break
+            kill -0 $app 2>/dev/null || break
+            sleep 5
+          done
+          kill $app $shots $xvfb || true
+          cat smoke/test.log
+          grep -q "All tests passed" smoke/test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux_smoke
+          path: smoke/
