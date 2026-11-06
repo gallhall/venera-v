@@ -146,9 +146,11 @@ void main() {
     await windowManager.ensureInitialized();
     // Under Xvfb (Linux CI) the window is 1x1 at first, and the window
     // frame's resize areas overflow at that size: wait for the real size.
+    // No frame is scheduled yet, so this waits without pumping.
     for (var i = 0; i < 100 && tester.view.physicalSize.width < 200; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
+    debugPrint('SMOKE: window ${tester.view.physicalSize}');
     runApp(const app.MyApp());
     await pumpUntil(
       tester,
