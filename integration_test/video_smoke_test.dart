@@ -144,6 +144,11 @@ void main() {
     await init();
     FlutterError.onError = onError;
     await windowManager.ensureInitialized();
+    // Under Xvfb (Linux CI) the window is 1x1 at first, and the window
+    // frame's resize areas overflow at that size: wait for the real size.
+    for (var i = 0; i < 100 && tester.view.physicalSize.width < 200; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     runApp(const app.MyApp());
     await pumpUntil(
       tester,
