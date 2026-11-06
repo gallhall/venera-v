@@ -29,7 +29,7 @@ jobs:
           architecture: x64
       - run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev webkit2gtk-4.1 libepoxy-dev libasound2-dev libayatana-appindicator3-dev libnotify-dev xvfb imagemagick fonts-noto-cjk
+          sudo apt-get install -y ninja-build libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev libasound2-dev libayatana-appindicator3-dev libnotify-dev xvfb imagemagick fonts-noto-cjk
           # What the deb depends on, e.g. the libraries the bundled libmpv
           # links: the test runs the built app, not the installed package.
           deps=$(grep -m1 'Depends:' debian/debian.yaml | sed 's/.*Depends://; s/|[^,]*//g; s/([^)]*)//g; s/,/ /g')
