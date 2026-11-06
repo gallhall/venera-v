@@ -11,7 +11,8 @@ control:
   Priority: optional
   # Includes desktop tray/notification and bundled libmpv runtime libraries.
   # flutter_to_debian does not support Recommends; require one CJK font.
-  Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libepoxy0, libasound2, libayatana-appindicator3-1, libnotify4, libfontconfig1, libharfbuzz0b, libfribidi0, libfreetype6, liblzma5, zlib1g, libva2, libva-drm2, libva-x11-2, libva-wayland2, libvdpau1, libdrm2, libgbm1, libegl1, libx11-6, libxcb1, libxext6, libxfixes3, libxrandr2, libxss1, libxv1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libgnutls30, libunwind8, liblcms2-2, libarchive13, libpulse0, fonts-noto-cjk | fonts-wqy-microhei
+  # The bundled libmpv needs GLIBCXX_3.4.32: libstdc++ from GCC 13 or newer.
+  Depends: libstdc++6 (>= 13), libwebkit2gtk-4.1-0, libgtk-3-0, libepoxy0, libasound2, libayatana-appindicator3-1, libnotify4, libfontconfig1, libharfbuzz0b, libfribidi0, libfreetype6, liblzma5, zlib1g, libva2, libva-drm2, libva-x11-2, libva-wayland2, libvdpau1, libdrm2, libgbm1, libegl1, libx11-6, libxcb1, libxext6, libxfixes3, libxrandr2, libxss1, libxv1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libgnutls30, libunwind8, liblcms2-2, libarchive13, libpulse0, fonts-noto-cjk | fonts-wqy-microhei
   Maintainer: gallhall
   Description: venera-v
   

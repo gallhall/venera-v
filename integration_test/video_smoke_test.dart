@@ -144,6 +144,16 @@ void main() {
     await init();
     FlutterError.onError = onError;
     await windowManager.ensureInitialized();
+    // Under Xvfb (Linux CI) the window is 1x1 at first, and the window
+    // frame's resize areas overflow at that size: wait for the real size.
+    // The Linux runner keeps its window hidden until main() shows it.
+    await windowManager.setSize(const Size(1280, 800));
+    await windowManager.show();
+    // No frame is scheduled yet, so this waits without pumping.
+    for (var i = 0; i < 100 && tester.view.physicalSize.width < 200; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    debugPrint('SMOKE: window ${tester.view.physicalSize}');
     runApp(const app.MyApp());
     await pumpUntil(
       tester,
@@ -209,13 +219,16 @@ void main() {
     var picker = _FakeFileSelector([sample.path]);
     FileSelectorPlatform.instance = picker;
     var imported = ImportVideo().files();
-    var importButton = find.widgetWithText(FilledButton, "Import".tl);
+    // The home page's Local card has an Import button too, under the
+    // dialog, and the dialog's button is not a plain FilledButton any more:
+    // tap the topmost "Import" text once the dialog is up.
     await pumpUntil(
       tester,
-      () => importButton.evaluate().isNotEmpty,
+      () => find.text("Import Video".tl).evaluate().isNotEmpty,
       reason: 'the import dialog',
     );
-    await tester.tap(importButton);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text("Import".tl).last);
     expect(await pumpFuture(tester, imported, reason: 'the import'), isTrue);
     var video = LocalManager().findByName(_title);
     expect(video, isNotNull, reason: 'the imported video');
