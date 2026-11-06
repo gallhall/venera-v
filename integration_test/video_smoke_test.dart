@@ -219,7 +219,9 @@ void main() {
     var picker = _FakeFileSelector([sample.path]);
     FileSelectorPlatform.instance = picker;
     var imported = ImportVideo().files();
-    var importButton = find.widgetWithText(FilledButton, "Import".tl);
+    // The home page's Local card has an Import button too, under the
+    // dialog: the dialog's own one is the last.
+    var importButton = find.widgetWithText(FilledButton, "Import".tl).last;
     await pumpUntil(
       tester,
       () => importButton.evaluate().isNotEmpty,
