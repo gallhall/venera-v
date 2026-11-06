@@ -12,7 +12,8 @@ on:
 # (for instance in WSLg: extract it and start ./venera-v).
 jobs:
   smoke:
-    runs-on: ubuntu-22.04
+    # The bundled libmpv needs GLIBCXX_3.4.32 (GCC 13), newer than 22.04 has.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Write build-time credentials
@@ -31,7 +32,7 @@ jobs:
           sudo apt-get install -y ninja-build libgtk-3-dev webkit2gtk-4.1 libepoxy-dev libasound2-dev libayatana-appindicator3-dev libnotify-dev xvfb imagemagick fonts-noto-cjk
           # What the deb depends on, e.g. the libraries the bundled libmpv
           # links: the test runs the built app, not the installed package.
-          deps=$(grep -m1 'Depends:' debian/debian.yaml | sed 's/.*Depends://; s/|[^,]*//g; s/,/ /g')
+          deps=$(grep -m1 'Depends:' debian/debian.yaml | sed 's/.*Depends://; s/|[^,]*//g; s/([^)]*)//g; s/,/ /g')
           sudo apt-get install -y $deps
       # As in the release packages (main.yml): bundles a Chinese font.
       - run: |
