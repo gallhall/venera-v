@@ -5,6 +5,8 @@ import 'package:venera/foundation/video/playback_session.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'web_sniffing_unsupported_exception.dart';
+
 /// An episode downloaded with its manifest: plays from its files, has no links
 /// to load again.
 class DownloadedPlayInfo implements PlayInfoLoader {
@@ -51,6 +53,10 @@ class SourcePlayInfo implements PlayInfoLoader {
 
   @override
   Future<Res<VideoPlayInfo>> load() async {
+    if (source?.isPlaybackSupported == false) {
+      var error = const WebSniffingUnsupportedException();
+      return Res.error(error.message, errorCause: error);
+    }
     var load = source?.loadVideoPlayInfo;
     if (load == null) {
       return Res.error("Video source not found".tl);

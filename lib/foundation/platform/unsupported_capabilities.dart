@@ -2,6 +2,12 @@ import 'dart:typed_data';
 
 import 'capabilities.dart';
 
+class UnsupportedWebSniffing implements WebSniffingCapability {
+  const UnsupportedWebSniffing();
+  @override
+  bool get isSupported => false;
+}
+
 /// False preserves the current non-Android torrent policy; it is not a probe.
 class UnsupportedNetworkType implements NetworkTypeCapability {
   const UnsupportedNetworkType();

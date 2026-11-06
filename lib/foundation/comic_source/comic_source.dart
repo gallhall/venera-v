@@ -24,6 +24,7 @@ import 'package:venera/utils/translations.dart';
 
 import '../js_engine.dart';
 import '../kazumi/kazumi_source.dart';
+import '../platform/platform_capabilities.dart';
 import '../animeko/animeko_source.dart';
 import '../log.dart';
 import '../video/video_sniffer.dart';
@@ -263,6 +264,12 @@ class ComicSource {
   final AnimekoSourceConfig? animekoSource;
 
   bool get isAnimeko => animekoSource != null;
+
+  bool get needsWebSniffing =>
+      isKazumi || (animekoSource?.needsWebSniffing ?? false);
+
+  bool get isPlaybackSupported =>
+      !needsWebSniffing || PlatformCapabilities.instance.webSniffing.isSupported;
 
   bool get isSubscriptionSource => isKazumi || isAnimeko;
 

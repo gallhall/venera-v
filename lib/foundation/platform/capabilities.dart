@@ -1,5 +1,16 @@
 import 'dart:typed_data';
 
+abstract class WebSniffingCapability {
+  bool get isSupported;
+}
+
+/// Webviews are available on all supported platforms except Linux.
+class SupportedWebSniffing implements WebSniffingCapability {
+  const SupportedWebSniffing();
+  @override
+  bool get isSupported => true;
+}
+
 abstract class NetworkTypeCapability {
   bool get isSupported;
   Future<bool> isWifi();

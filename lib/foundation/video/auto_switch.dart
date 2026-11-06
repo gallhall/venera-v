@@ -1,7 +1,14 @@
 import '../bangumi/bangumi_models.dart';
+import '../comic_source/comic_source.dart';
 
 typedef AutoSwitchEpisode = ({String title, String? group});
 typedef AutoSwitchCandidate = ({String source, String id});
+
+/// Known sniffing sources cannot be tried when the platform lacks webviews.
+Set<String> unavailableAutoSwitchSources(Iterable<ComicSource> sources) => {
+  for (var source in sources)
+    if (!source.isPlaybackSupported) source.key,
+};
 
 /// One matching episode per untried line, in chapter group order.
 int? nextAutoSwitchLine({
@@ -51,11 +58,13 @@ AutoSwitchCandidate? nextAutoSwitchCandidate({
   required Iterable<AutoSwitchCandidate> candidates,
   required Set<AutoSwitchCandidate> tried,
   required Set<String> enabled,
+  Set<String> unavailable = const {},
 }) {
   for (var candidate in [...matched, ...candidates]) {
     if (candidate != current &&
         !tried.contains(candidate) &&
-        enabled.contains(candidate.source)) {
+        enabled.contains(candidate.source) &&
+        !unavailable.contains(candidate.source)) {
       return candidate;
     }
   }

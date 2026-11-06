@@ -5,7 +5,12 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/pages/webview.dart';
+
+import 'web_sniffing_unsupported_exception.dart';
+
+export 'web_sniffing_unsupported_exception.dart';
 
 /// A stream found by [VideoSniffer], with the headers the page used.
 class VideoSniffResult {
@@ -43,7 +48,8 @@ class VideoSniffResult {
 /// often reject a foreign referer, which players avoid with
 /// `<meta name="referrer" content="never">`.
 class VideoSniffer {
-  static bool get isSupported => !App.isLinux;
+  static bool get isSupported =>
+      PlatformCapabilities.instance.webSniffing.isSupported;
 
   /// Stream urls, by extension: HLS, DASH and common files. Segments
   /// (`.ts`, `.m4s`) are not streams.
@@ -332,7 +338,7 @@ class VideoSniffer {
     RegExp? nested,
   }) async {
     if (!isSupported) {
-      throw "Web page sniffing is not supported on this platform";
+      throw const WebSniffingUnsupportedException();
     }
     await AppWebview.prepareEnvironment();
     var completer = Completer<VideoSniffResult>();

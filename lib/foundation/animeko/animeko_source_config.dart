@@ -31,6 +31,10 @@ class AnimekoSourceConfig {
       .toString()
       .substring(0, 8);
   bool get isJsonApi => factoryId == 'json-api';
+
+  /// Web selectors use matchVideo and sniff when an episode URL is not
+  /// already a matching stream. JSON API and RSS playback never sniff.
+  bool get needsWebSniffing => factoryId == 'web-selector';
   bool get supportsClient =>
       acceptsClient(source['clientVersions']?.toString());
   bool get isSupported => unsupportedReason == null;

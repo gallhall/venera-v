@@ -210,6 +210,22 @@ class BangumiCandidateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var colors = context.colorScheme;
+    var source = ComicSource.find(candidate.sourceKey);
+    if (source?.isPlaybackSupported == false) {
+      return AppCard(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          enabled: false,
+          leading: const Icon(Icons.live_tv_outlined),
+          title: Text(source!.name),
+          subtitle: Text(
+            'Web page sniffing is not supported on Linux; this source is unavailable'.tl,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
     return AppCard(
       highlighted: playing,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
