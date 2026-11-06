@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'android_capabilities.dart';
 import 'capabilities.dart';
+import 'desktop_background_download.dart';
 import 'ios_capabilities.dart';
 import 'unsupported_capabilities.dart';
 
@@ -33,7 +34,9 @@ class PlatformCapabilities {
         )
       : Platform.isIOS
           ? const PlatformCapabilities(networkType: IosNetworkType())
-          : const PlatformCapabilities();
+          : Platform.isWindows || Platform.isLinux || Platform.isMacOS
+              ? PlatformCapabilities(backgroundDownload: DesktopBackgroundDownload())
+              : const PlatformCapabilities();
 
   static PlatformCapabilities get instance => _instance;
 

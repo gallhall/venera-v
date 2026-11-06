@@ -27,6 +27,12 @@ abstract class BackgroundDownloadCapability {
   Future<void> moveToBackground();
 }
 
+/// Optional desktop event: errors can belong to a task other than the one
+/// currently represented by the progress notification.
+abstract class DownloadFailureCapability {
+  Future<void> notifyFailure(String title, String text);
+}
+
 /// The Android native picker. Other platforms use the callers' existing pickers.
 abstract class NativeFilePickerCapability {
   bool get isSupported;

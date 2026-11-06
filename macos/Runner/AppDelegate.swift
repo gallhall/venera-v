@@ -5,9 +5,12 @@ import FlutterMacOS
 class AppDelegate: FlutterAppDelegate {
   var flutterResult: FlutterResult?
   var directoryPath: URL!
+  var desktopCloseChannel: FlutterMethodChannel?
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
       let controller: FlutterViewController = mainFlutterWindow?.contentViewController as! FlutterViewController
+      desktopCloseChannel = FlutterMethodChannel(
+        name: "venera/desktop_close", binaryMessenger: controller.engine.binaryMessenger)
       let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.engine.binaryMessenger)
 
       methodChannel.setMethodCallHandler { (call, result) in
@@ -87,5 +90,16 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
+  }
+
+  // Cmd+Q and Dock > Quit terminate NSApplication without asking NSWindow's
+  // delegate. Cancel native termination and use the same Dart close guard.
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    // Without the channel nothing could ever quit the app, so let it go.
+    guard let channel = desktopCloseChannel else {
+      return .terminateNow
+    }
+    channel.invokeMethod("requestClose", arguments: nil)
+    return .terminateCancel
   }
 }

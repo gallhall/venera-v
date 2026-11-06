@@ -58,6 +58,31 @@ class DownloadQueue with ChangeNotifier {
   final bool Function(DownloadTask task) _parallel;
 
   final _tasks = <DownloadTask>[];
+  final _queued = <DownloadTask>{};
+
+  /// Serial tasks waiting their turn are paused internally, but still queued.
+  bool get hasActiveDownloads => _tasks.any((task) =>
+      !task.isError && (!task.isPaused || _queued.contains(task)));
+
+  void pauseAll() {
+    _queued.clear();
+    for (final task in tasks) {
+      task.pause();
+    }
+    notifyListeners();
+  }
+
+  void resumeAll() {
+    for (final task in tasks) {
+      if (_parallel(task) || identical(task, _firstInLine)) {
+        _queued.remove(task);
+        task.resume();
+      } else {
+        _queued.add(task);
+      }
+    }
+    notifyListeners();
+  }
 
   /// The tasks, in order.
   List<DownloadTask> get tasks => UnmodifiableListView(_tasks);
@@ -76,6 +101,9 @@ class DownloadQueue with ChangeNotifier {
   /// Queues [task] and starts the queue.
   void add(DownloadTask task) {
     _tasks.add(task);
+    if (!_parallel(task) && !identical(task, _firstInLine)) {
+      _queued.add(task);
+    }
     _changed();
     if (_parallel(task)) {
       task.resume();
@@ -99,8 +127,10 @@ class DownloadQueue with ChangeNotifier {
   void _leave(DownloadTask task) {
     var wasFirst = identical(_firstInLine, task);
     _tasks.remove(task);
+    _queued.remove(task);
     _changed();
     if (wasFirst) {
+      _queued.remove(_firstInLine);
       _firstInLine?.resume();
     }
   }
@@ -116,6 +146,10 @@ class DownloadQueue with ChangeNotifier {
     var shouldResume = serial && first?.isPaused == false;
     if (serial && !identical(first, task)) {
       first?.pause();
+      _queued.remove(task);
+      if (shouldResume && first != null) {
+        _queued.add(first);
+      }
     }
     _tasks.remove(task);
     _tasks.insert(0, task);
