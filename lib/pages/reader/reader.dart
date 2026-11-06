@@ -29,6 +29,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_provider/reader_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/res.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/network/network_error.dart';
@@ -608,8 +609,7 @@ abstract mixin class _VolumeListener {
   }
 
   void handleVolumeEvent() {
-    if (!App.isAndroid) {
-      // Currently only support Android
+    if (!PlatformCapabilities.instance.volumeKeys.isSupported) {
       return;
     }
     if (volumeListener != null) {

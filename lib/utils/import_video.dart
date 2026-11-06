@@ -1,6 +1,5 @@
 import 'package:file_selector/file_selector.dart' as file_selector;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
@@ -8,6 +7,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
@@ -59,21 +59,19 @@ class _UriFile implements _PickedFile {
   @override
   Future<void> copyTo(String path) async {
     if (!path.startsWith('android://')) {
-      await _channel.invokeMethod('copyUri', {'uri': uri, 'path': path});
+      await PlatformCapabilities.instance.filePicker.copyUri(uri, path);
       return;
     }
     // The local path is itself a picked folder: go through the cache.
     var tmp = FilePath.join(App.cachePath, 'import_$name');
     try {
-      await _channel.invokeMethod('copyUri', {'uri': uri, 'path': tmp});
+      await PlatformCapabilities.instance.filePicker.copyUri(uri, tmp);
       await _PathFile(File(tmp)).copyTo(path);
     } finally {
       await File(tmp).deleteIgnoreError();
     }
   }
 }
-
-const _channel = MethodChannel("venera/select_file");
 
 /// Imports local video files and their subtitles as a local video, stored
 /// like a downloaded one (see [VideoDownloadTask]) so that it plays the
@@ -101,7 +99,9 @@ class ImportVideo {
 
   /// Picks a folder whose videos are the episodes of one video.
   Future<bool> folder() async {
-    if (App.isAndroid) return _androidFolder();
+    if (PlatformCapabilities.instance.filePicker.isSupported) {
+      return _androidFolder();
+    }
     if (App.isIOS) return _iosFolder();
     // Kept alive until the import ends, see [DirectoryPicker].
     var picker = DirectoryPicker();
@@ -153,7 +153,7 @@ class ImportVideo {
   Future<bool> _androidFolder() async {
     Map? folder;
     try {
-      folder = await _channel.invokeMethod<Map>('selectFolder');
+      folder = await PlatformCapabilities.instance.filePicker.selectFolder();
     } catch (e, s) {
       Log.error("Import Video", e.toString(), s);
       App.rootContext.showMessage(message: e.toString());
@@ -175,8 +175,9 @@ class ImportVideo {
   }
 
   static Future<List<_PickedFile>?> _pickFiles(List<String> ext) async {
-    if (App.isAndroid) {
-      var result = await _channel.invokeMethod<List>('selectFiles', '*/*');
+    if (PlatformCapabilities.instance.filePicker.isSupported) {
+      var result =
+          await PlatformCapabilities.instance.filePicker.selectFiles('*/*');
       if (result == null) return null;
       var files = [
         for (var e in result.cast<Map>())
@@ -332,8 +333,8 @@ class ImportVideo {
     if (video != null && !video.startsWith('android://')) {
       try {
         // The player only draws frames into a view on screen on Android.
-        var data = App.isAndroid
-            ? await _channel.invokeMethod<Uint8List>('videoThumbnail', video)
+        var data = PlatformCapabilities.instance.filePicker.isSupported
+            ? await PlatformCapabilities.instance.filePicker.videoThumbnail(video)
             : await PlayerService.thumbnail(video);
         if (data != null) {
           await root.joinFile('cover.jpg').writeAsBytes(data);

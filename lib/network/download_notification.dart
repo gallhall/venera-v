@@ -1,9 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -18,7 +17,8 @@ import 'package:venera/network/download_queue.dart';
 /// the task once a second: without updates for two minutes it stops, as the
 /// downloads are then gone or stuck.
 abstract final class DownloadNotification {
-  static const _channel = MethodChannel("venera/download_service");
+  static BackgroundDownloadCapability get _service =>
+      PlatformCapabilities.instance.backgroundDownload;
 
   static final _tasks = <DownloadTask>{};
 
@@ -42,14 +42,16 @@ abstract final class DownloadNotification {
   static bool _askedPermission = false;
 
   static Future<void> init() async {
-    if (!App.isAndroid) return;
+    if (!_service.isSupported) {
+      return;
+    }
     await attach();
   }
 
   /// [init] on any platform.
   @visibleForTesting
   static Future<void> attach() async {
-    _channel.setMethodCallHandler(_onAction);
+    _service.setActionHandler(_onAction);
     DownloadQueue().completed.listen((task) {
       _completed++;
       _lastCompleted = task.title;
@@ -57,7 +59,7 @@ abstract final class DownloadNotification {
     DownloadQueue().addListener(_onTasksChanged);
     _onTasksChanged();
     try {
-      if (await _channel.invokeMethod<bool>("takeResumeRequest") == true) {
+      if (await _service.takeResumeRequest()) {
         _currentTask?.resume();
       }
     } catch (e) {
@@ -71,7 +73,8 @@ abstract final class DownloadNotification {
   static final keepAppOpen = ValueNotifier(false);
 
   /// Moves the app to the background, where the downloads go on.
-  static void moveToBackground() => _invoke("moveTaskToBack");
+  static void moveToBackground() =>
+      _invoke("moveTaskToBack", _service.moveToBackground());
 
   static void _onTasksChanged() {
     var current = DownloadQueue().tasks.toSet();
@@ -136,15 +139,18 @@ abstract final class DownloadNotification {
       _ => task.message,
     };
     var queued = DownloadQueue().tasks.length - 1;
-    _invoke("update", {
-      "state": _state,
-      "title": task.title,
-      "text": text,
-      "subText": queued > 0 ? "@a more tasks".tlParams({"a": queued}) : null,
-      "progress": task.progress > 0 ? task.progress.toDouble() : -1.0,
-      "pause": "Pause".tl,
-      "resume": _state == "error" ? "Retry".tl : "Continue".tl,
-    });
+    _invoke(
+      "update",
+      _service.update({
+        "state": _state,
+        "title": task.title,
+        "text": text,
+        "subText": queued > 0 ? "@a more tasks".tlParams({"a": queued}) : null,
+        "progress": task.progress > 0 ? task.progress.toDouble() : -1.0,
+        "pause": "Pause".tl,
+        "resume": _state == "error" ? "Retry".tl : "Continue".tl,
+      }),
+    );
   }
 
   static void _finish() {
@@ -158,13 +164,13 @@ abstract final class DownloadNotification {
     }
     _completed = 0;
     _lastCompleted = null;
-    _invoke("finish", {"title": title, "text": text});
+    _invoke("finish", _service.finish({"title": title, "text": text}));
   }
 
   /// Pause or resume from the notification.
-  static Future<void> _onAction(MethodCall call) async {
+  static Future<void> _onAction(String action) async {
     var task = _currentTask;
-    switch (call.method) {
+    switch (action) {
       case "pause":
         task?.pause();
       case "resume":
@@ -184,11 +190,11 @@ abstract final class DownloadNotification {
       return;
     }
     _askedPermission = true;
-    _invoke("requestPermission");
+    _invoke("requestPermission", _service.requestPermission());
   }
 
-  static void _invoke(String method, [Map<String, Object?>? arguments]) {
-    _channel.invokeMethod(method, arguments).catchError((Object e) {
+  static void _invoke(String method, Future<void> operation) {
+    operation.catchError((Object e) {
       Log.error("Download", "Download service: $method failed: $e");
     });
   }

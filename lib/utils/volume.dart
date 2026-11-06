@@ -1,10 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 
 class VolumeListener {
-  static const channel = EventChannel('venera/volume');
-
   void Function()? onUp;
 
   void Function()? onDown;
@@ -14,7 +12,7 @@ class VolumeListener {
   StreamSubscription? stream;
 
   void listen() {
-    stream = channel.receiveBroadcastStream().listen(onEvent);
+    stream = PlatformCapabilities.instance.volumeKeys.events.listen(onEvent);
   }
 
   void onEvent(event) {

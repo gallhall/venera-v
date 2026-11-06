@@ -10,6 +10,7 @@ import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/video/player_service.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/utils/translations.dart';
@@ -84,7 +85,7 @@ class _VideoControlsState extends State<VideoControls> {
   /// the plugin sets the app's audio session to mix with others while it
   /// listens and deactivates it when it stops, which interrupts playback.
   /// The volume is read when a swipe starts instead.
-  final listensVolumeKeys = App.isAndroid;
+  final listensVolumeKeys = PlatformCapabilities.instance.volumeKeys.isSupported;
 
   final focusNode = FocusNode();
 

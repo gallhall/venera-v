@@ -15,6 +15,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
 import 'package:venera/pages/video/video_test_page.dart';

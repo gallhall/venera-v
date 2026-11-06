@@ -161,16 +161,6 @@ class MainActivity : FlutterFragmentActivity() {
                     val connectivity = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
                     res.success(connectivity.isActiveNetworkMetered)
                 }
-                "setScreenOn" -> {
-                    val set = call.argument<Boolean>("set") ?: false
-                    if (set) {
-                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    } else {
-                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    }
-                    res.success(null)
-                }
-
                 "getDirectoryPath" -> {
                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)

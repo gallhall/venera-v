@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart' as s;
@@ -275,8 +276,7 @@ Future<FileSelectResult?> selectFile({required List<String> ext}) async {
       extensions: extensions,
     );
     FileSelectResult? file;
-    if (App.isAndroid) {
-      const selectFileChannel = MethodChannel("venera/select_file");
+    if (PlatformCapabilities.instance.filePicker.isSupported) {
       String mimeType = "*/*";
       if (ext.length == 1) {
         mimeType = FileType.fromExtension(ext[0]).mime;
@@ -284,10 +284,8 @@ Future<FileSelectResult?> selectFile({required List<String> ext}) async {
           mimeType = "*/*";
         }
       }
-      var filePath = await selectFileChannel.invokeMethod(
-        "selectFile",
-        mimeType,
-      );
+      var filePath =
+          await PlatformCapabilities.instance.filePicker.selectFile(mimeType);
       if (filePath == null) return null;
       file = FileSelectResult(filePath);
     } else {

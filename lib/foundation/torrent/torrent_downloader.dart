@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 
 import 'torrent_download_state.dart';
@@ -96,12 +97,8 @@ class TorrentDownloader {
         clock = clock ?? DateTime.now;
 
   static Future<bool> _platformWifi() async {
-    if (!Platform.isAndroid) {
-      return false;
-    }
     try {
-      return await const MethodChannel('venera/method_channel')
-        .invokeMethod<bool>('isActiveNetworkWifi') ?? false;
+      return await PlatformCapabilities.instance.networkType.isWifi();
     } on PlatformException {
       return false;
     } on MissingPluginException {

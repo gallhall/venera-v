@@ -33,12 +33,6 @@ import Foundation // 添加此行
         } else {
           result("")
         }
-      } else if call.method == "setScreenOn" {
-        if let arguments = call.arguments as? Bool {
-          let screenOn = arguments
-          UIApplication.shared.isIdleTimerDisabled = screenOn
-        }
-        result(nil)
       } else if call.method == "getDirectoryPath" {
         self.flutterResult = result
         self.getDirectoryPath()
