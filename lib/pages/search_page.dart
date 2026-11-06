@@ -47,6 +47,13 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void search([String? text]) {
+    // A pasted link a comic source knows opens its comic, as the link
+    // suggestion does: other platforms cannot open these links in the app.
+    var query = (text ?? controller.text).trim();
+    if (canHandleUrl(query)) {
+      handleAppLink(Uri.parse(query));
+      return;
+    }
     if (searchSources.isEmpty) {
       if (!ComicSource.enabled().any((s) => s.isVideoSource)) {
         return;
