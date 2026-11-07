@@ -107,7 +107,7 @@ class FileDownloader {
   }
 
   void _download(StreamController<DownloadingStatus> resultStream) async {
-    if (Platform.isIOS) {
+    if (Platform.isIOS && !IosHttpDownloads.directOnly) {
       await _downloadIos(resultStream);
       return;
     }

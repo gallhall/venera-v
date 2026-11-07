@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/ios_download_policy.dart';
 
@@ -22,6 +23,28 @@ class IosHttpDownloads {
         _changes.add(null);
       }
     });
+  }
+
+  static const _directOnlyKey = 'iosBackgroundDownloadUnavailable';
+
+  /// Whether downloads skip the background session and are made directly,
+  /// as on the other platforms. Set the first time the session fails to hand
+  /// over a finished file (NSURLErrorCannotCreateFile and its siblings, seen
+  /// on a re-signed app): it downloads the whole file before failing, so
+  /// trying it again would download every file twice.
+  static bool get directOnly => appdata.implicitData[_directOnlyKey] == true;
+
+  static final _fileErrors = RegExp(r'\(NSURLErrorDomain -300[0-7]\)');
+
+  Future<void> _giveUp(String error) async {
+    if (directOnly) return;
+    Log.warning('Download', 'iOS background downloads cannot hand over '
+        'files on this device, downloading directly from now on: $error');
+    appdata.implicitData[_directOnlyKey] = true;
+    appdata.writeImplicitData();
+    // Jobs already queued would fail the same way after a full download.
+    // Their waiters see them cancelled and continue directly.
+    await channel.invokeMethod<void>('remove', '');
   }
 
   static String identity(Object request) {
@@ -72,7 +95,13 @@ class IosHttpDownloads {
           case BackgroundFileState.complete:
             return state;
           case BackgroundFileState.failed:
-            throw HttpException(state['error'] as String? ?? 'iOS download failed');
+            final error = state['error'] as String? ?? 'iOS download failed';
+            if (_fileErrors.hasMatch(error)) {
+              await _giveUp(error);
+            }
+            throw HttpException(error);
+          case BackgroundFileState.cancelled when directOnly:
+            throw const HttpException('iOS background downloads are unavailable');
           case BackgroundFileState.paused:
           case BackgroundFileState.cancelled:
             throw StateError('iOS download paused');
@@ -111,6 +140,12 @@ class IosDownloadAdapter implements HttpClientAdapter {
   @override
   Future<ResponseBody> fetch(RequestOptions options,
       Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    if (IosHttpDownloads.directOnly) {
+      if (options.extra['iosEnqueueOnly'] == true) {
+        return ResponseBody.fromString('', 200);
+      }
+      return _fallback.fetch(options, requestStream, cancelFuture);
+    }
     final body = <int>[];
     if (requestStream != null) {
       await for (final chunk in requestStream) {
