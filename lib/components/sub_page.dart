@@ -111,7 +111,7 @@ class SubPageRoute<T> extends PopupRoute<T> {
     if (App.isIOS) {
       body = IOSBackGestureDetector(
         enabledCallback: () =>
-            animation!.status == AnimationStatus.completed &&
+            animation.status == AnimationStatus.completed &&
             !navigator!.userGestureInProgress,
         gestureWidth: 20.0,
         onStartPopGesture: () =>
