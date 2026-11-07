@@ -182,6 +182,12 @@ class IOSBackGestureController {
         controller.animateBack(0.0,
             duration: Duration(milliseconds: droppedPageBackAnimationTime),
             curve: animationCurve);
+      } else if (controller.value < 1.0) {
+        // The page refused to pop (e.g. a PopScope): bring it back instead
+        // of leaving it half swiped away over a dimmed page below.
+        controller.animateTo(1.0,
+            duration: const Duration(milliseconds: _kMaxPageBackAnimationTime),
+            curve: animationCurve);
       }
     }
 
@@ -268,6 +274,9 @@ class _IOSBackGestureDetectorState extends State<IOSBackGestureDetector> {
 
     for (final entry in result.path) {
       final target = entry.target;
+      if (target is RenderMetaData && target.metaData == NoBackSwipe.marker) {
+        return true;
+      }
       if (target is RenderViewport) {
         if (target.axisDirection == AxisDirection.left || 
             target.axisDirection == AxisDirection.right) {
@@ -483,6 +492,26 @@ class SlidePageTransitionBuilder extends PageTransitionsBuilder {
           child: Material(child: child),
         ),
       ),
+    );
+  }
+}
+
+/// Keeps the iOS full-screen back swipe off its child, like a horizontal
+/// list: the swipe then only starts at the screen's left edge. For areas
+/// with horizontal drags of their own, such as a video player's seek bar.
+class NoBackSwipe extends StatelessWidget {
+  const NoBackSwipe({super.key, required this.child});
+
+  final Widget child;
+
+  static const marker = #venera_no_back_swipe;
+
+  @override
+  Widget build(BuildContext context) {
+    return MetaData(
+      metaData: marker,
+      behavior: HitTestBehavior.translucent,
+      child: child,
     );
   }
 }

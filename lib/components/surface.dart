@@ -443,6 +443,10 @@ Future<T?> showSidePanel<T>(
       ),
     );
   }
+  // The panel sits at the right edge: only the right inset (a landscape
+  // iPhone's notch or home indicator side) is its own. It is added to the
+  // width rather than taken from the 360 of content.
+  final panelWidth = 360 + media.padding.right;
   return showDialog<T>(
     context: context,
     useSafeArea: false,
@@ -450,14 +454,14 @@ Future<T?> showSidePanel<T>(
       elevation: 0,
       alignment: Alignment.centerRight,
       insetPadding: EdgeInsets.zero,
-      constraints: const BoxConstraints(maxWidth: 360),
+      constraints: BoxConstraints(maxWidth: panelWidth),
       backgroundColor: context.colorScheme.surfaceContainerLow,
       surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl))),
       clipBehavior: Clip.antiAlias,
-      child: SizedBox(width: 360, height: double.infinity,
-        child: SafeArea(child: Column(
+      child: SizedBox(width: panelWidth, height: double.infinity,
+        child: SafeArea(left: false, child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [header(context), Expanded(child: Builder(builder: builder))],
         )),
