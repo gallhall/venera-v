@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/ios_download_policy.dart';
 
 /// Persistent native jobs are identified by destination AND request identity.
@@ -103,6 +105,9 @@ class IosDownloadAdapter implements HttpClientAdapter {
   final void Function(int bytes)? onData;
   IosDownloadAdapter(this.directory, this.token, {this.onData});
 
+  /// dio's default transport, for requests the background session fails.
+  final HttpClientAdapter _fallback = HttpClientAdapter();
+
   @override
   Future<ResponseBody> fetch(RequestOptions options,
       Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
@@ -127,11 +132,26 @@ class IosDownloadAdapter implements HttpClientAdapter {
       return ResponseBody.fromString('', 200);
     }
     var lastBytes = 0;
-    final result = await IosHttpDownloads.instance.wait(id, cancelToken: token,
-      onProgress: (received, total) {
-        onData?.call(received - lastBytes);
-        lastBytes = received;
-      });
+    final Map result;
+    try {
+      result = await IosHttpDownloads.instance.wait(id, cancelToken: token,
+        onProgress: (received, total) {
+          onData?.call(received - lastBytes);
+          lastBytes = received;
+        });
+    } on HttpException catch (e) {
+      if (!shouldRetryIosDirectly(token)) {
+        rethrow;
+      }
+      Log.warning('Download', 'iOS background request failed, retrying '
+          'directly: ${options.uri}: ${e.message}');
+      await IosHttpDownloads.instance.control(id, remove: true);
+      return _fallback.fetch(
+        options,
+        body.isEmpty ? null : Stream.value(Uint8List.fromList(body)),
+        cancelFuture,
+      );
+    }
     final responseHeaders = (result['headers'] as Map? ?? {}).map(
       (k, v) => MapEntry('$k', <String>[for (final h in v as List) '$h']),
     );
@@ -158,3 +178,11 @@ extension CancelTokenCheck on CancelToken {
     }
   }
 }
+
+/// The background session can fail where a plain request works (seen on a
+/// device: NSURLErrorCannotCreateFile for covers and video files). In the
+/// foreground the request is then made directly instead, as on the other
+/// platforms, rather than failing the download.
+bool shouldRetryIosDirectly(CancelToken? token) =>
+    !(token?.isCancelled ?? false) &&
+    WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;

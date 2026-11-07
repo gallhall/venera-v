@@ -653,7 +653,8 @@ private final class IosBackgroundDownloads: NSObject, URLSessionDownloadDelegate
         jobs[id]?.state = "queued"
       } else {
         jobs[id]?.state = "failed"
-        jobs[id]?.error = error.localizedDescription
+        // Domain and code too: the description alone is localized and vague.
+        jobs[id]?.error = "\(error.localizedDescription) (\(error.domain) \(error.code))"
         jobs[id]?.resumeData = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
       }
     } else if jobs[id]?.state == "running" {

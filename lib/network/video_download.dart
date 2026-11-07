@@ -1319,18 +1319,29 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       final job = _iosJob(url, file, headers, range: range);
       await IosHttpDownloads.instance.enqueue([job]);
       var lastBytes = 0;
-      await IosHttpDownloads.instance.wait(job['id'] as String,
-        cancelToken: _episodeTokens[run], onProgress: (received, total) {
-          if (!_isCurrent(run)) {
-            return;
-          }
-          onData(received - lastBytes);
-          lastBytes = received;
-          if (total > 0) {
-            onProgress?.call(received / total);
-          }
-        });
-      return;
+      try {
+        await IosHttpDownloads.instance.wait(job['id'] as String,
+          cancelToken: _episodeTokens[run], onProgress: (received, total) {
+            if (!_isCurrent(run)) {
+              return;
+            }
+            onData(received - lastBytes);
+            lastBytes = received;
+            if (total > 0) {
+              onProgress?.call(received / total);
+            }
+          });
+        return;
+      } on HttpException catch (e) {
+        if (!_isCurrent(run) || !shouldRetryIosDirectly(_episodeTokens[run])) {
+          rethrow;
+        }
+        // Continue below with the downloader the other platforms use.
+        Log.warning('Download', 'iOS background download failed, '
+            'downloading directly: $url: ${e.message}');
+        await IosHttpDownloads.instance.control(job['id'] as String,
+            remove: true);
+      }
     }
     // Paused: do not start a new request.
     if (!_isCurrent(run)) return;
