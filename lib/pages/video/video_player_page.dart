@@ -1949,7 +1949,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               tooltip: 'Unlock'.tl,
               icon: Icons.lock_open_rounded,
               onTap: () => setState(() => isLocked = false),
-            ).paddingLeft(24),
+              // Clear of a landscape iPhone's Dynamic Island or notch.
+            ).paddingLeft(24 + MediaQuery.paddingOf(context).left),
           ),
         ),
       ),
