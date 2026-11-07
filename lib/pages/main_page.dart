@@ -45,7 +45,10 @@ class _MainPageState extends State<MainPage> {
   }
 
   final _pages = [
-    const HomePage(),
+    // Like the others: keeps its scroll position across tab switches.
+    const HomePage(
+      key: PageStorageKey('home'),
+    ),
     const FavoritesPage(
       key: PageStorageKey('favorites'),
     ),
