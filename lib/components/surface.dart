@@ -443,10 +443,12 @@ Future<T?> showSidePanel<T>(
       ),
     );
   }
-  // The panel sits at the right edge: only the right inset (a landscape
-  // iPhone's notch or home indicator side) is its own. It is added to the
-  // width rather than taken from the 360 of content.
-  final panelWidth = 360 + media.padding.right;
+  // Half the screen, within 360-480: on a landscape phone 360 wraps most
+  // setting texts. The panel sits at the right edge: only the right inset
+  // (a landscape iPhone's notch or home indicator side) is its own. It is
+  // added to the width rather than taken from the content.
+  final contentWidth = (media.size.width / 2).clamp(360.0, 480.0);
+  final panelWidth = contentWidth + media.padding.right;
   return showDialog<T>(
     context: context,
     useSafeArea: false,
