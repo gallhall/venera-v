@@ -78,11 +78,11 @@ class ComicPage extends StatefulWidget {
 
   @override
   // Bangumi history entries open their subject page wherever a history
-  // opens ComicPage.
+  // opens ComicPage. So do downloads named by their Bangumi subject (a BT
+  // download keeps its source's key): no source can load such an id.
   // ignore: no_logic_in_create_state
   State<ComicPage> createState() {
-    if (ComicType.fromKey(sourceKey).isBangumi &&
-        bangumiSubjectIdFromHistory(id) != null) {
+    if (bangumiSubjectIdFromHistory(id) != null) {
       return _BangumiComicPageState();
     }
     return _ComicPageState();
