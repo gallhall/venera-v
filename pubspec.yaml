@@ -14,7 +14,10 @@ dependencies:
   path_provider: any
   intl: any
   window_manager: ^0.5.1
-  tray_manager: 0.5.3 # Last stable API line compatible with Flutter 3.41.
+  # Vendored 0.5.3 (the last line for Dart 3.11) with its macOS Swift
+  # package raised to 10.15: Flutter's SPM build requires it.
+  tray_manager:
+    path: packages/tray_manager
   local_notifier: 0.1.6
   sqlite3: ^2.7.4
   sqlite3_flutter_libs: ^0.5.30
@@ -71,8 +74,11 @@ dependencies:
       url: https://github.com/venera-app/webdav_client
       ref: 2f669c98fb81cff1c64fee93466a1475c77e4273
   battery_plus: ^7.0.0
-  # 7.3.2+ needs dbus ^0.8, which the media_kit_video fork cannot resolve with.
-  connectivity_plus: ">=7.0.0 <7.3.2"
+  # Vendored 7.3.1: 7.3.2+ needs dbus ^0.8, which the media_kit_video fork
+  # cannot resolve with, and its iOS/macOS code uses NWPath.isUltraConstrained
+  # (26 SDK), now behind `#if compiler(>=6.2)` for the Xcode 16.4 CI.
+  connectivity_plus:
+    path: packages/connectivity_plus
   local_auth: ^3.0.1
   flutter_saf:
     git: 
