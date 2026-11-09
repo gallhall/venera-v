@@ -1212,7 +1212,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String label,
     int run,
   ) async {
-    if (Platform.isIOS && !IosHttpDownloads.directOnly) {
+    if (Platform.isIOS && await IosHttpDownloads.useBackground()) {
       await IosHttpDownloads.instance.enqueue([
         for (final (url, range, file) in items)
           if (!file.existsSync()) _iosJob(url, file, headers, range: range),
@@ -1312,7 +1312,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String? range,
     Duration stallTimeout = const Duration(seconds: 30),
   }) async {
-    if (Platform.isIOS && !IosHttpDownloads.directOnly) {
+    if (Platform.isIOS && await IosHttpDownloads.useBackground()) {
       if (!_isCurrent(run)) {
         return;
       }
@@ -1407,7 +1407,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     int? maxBytes,
     int? run,
   }) async {
-    if (Platform.isIOS && !IosHttpDownloads.directOnly && run != null &&
+    if (Platform.isIOS && await IosHttpDownloads.useBackground() && run != null &&
         path != null && maxBytes == null) {
       if (!_isCurrent(run)) {
         throw StateError('Episode paused');

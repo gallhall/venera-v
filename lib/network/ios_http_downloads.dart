@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/ios_download_policy.dart';
@@ -34,7 +35,60 @@ class IosHttpDownloads {
   /// trying it again would download every file twice.
   static bool get directOnly => appdata.implicitData[_directOnlyKey] == true;
 
-  static final _fileErrors = RegExp(r'\(NSURLErrorDomain -300[0-7]\)');
+  static const _verifiedKey = 'iosBackgroundDownloadVerified';
+  static Future<bool>? _probe;
+
+  /// Whether downloads use the background session. The first time, a tiny
+  /// file is downloaded through it: a session that cannot hand over files
+  /// fails only after a full download, so finding out with a real file
+  /// would download that file twice.
+  static Future<bool> useBackground() async {
+    if (directOnly) return false;
+    if (appdata.implicitData[_verifiedKey] == true) return true;
+    return _probe ??= instance._runProbe();
+  }
+
+  Future<bool> _runProbe() async {
+    final path = '${App.cachePath}/ios-download-probe/success.html';
+    final id = '$path:probe';
+    try {
+      await enqueue([{'id': id, 'path': path,
+        'url': 'https://www.apple.com/library/test/success.html'}]);
+      await wait(id).timeout(const Duration(seconds: 30));
+      appdata.implicitData[_verifiedKey] = true;
+      appdata.writeImplicitData();
+      return true;
+    } on HttpException catch (e) {
+      // A small https file from Apple: any failure but the network's own
+      // (NSURLErrorDomain -1xxx) or the server's means the session itself.
+      final network = e.message.contains('(NSURLErrorDomain -1') ||
+          e.message.contains('venera.download');
+      if (!network) {
+        await _giveUp(e.message);
+        return false;
+      }
+      Log.warning('Download', 'iOS background download probe: $e');
+      _probe = null;
+      return true;
+    } catch (e) {
+      if (directOnly) return false;
+      // Offline or slow: undecided. Use the session (failures still fall
+      // back to a direct request) and probe again next time.
+      Log.warning('Download', 'iOS background download probe: $e');
+      _probe = null;
+      return true;
+    } finally {
+      try {
+        await control(path, remove: true);
+        await forget(id);
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+  }
+
+  static final _fileErrors =
+      RegExp(r'\(NSURLErrorDomain -300[0-7]\)|NSCocoaErrorDomain');
 
   Future<void> _giveUp(String error) async {
     if (directOnly) return;
@@ -140,7 +194,7 @@ class IosDownloadAdapter implements HttpClientAdapter {
   @override
   Future<ResponseBody> fetch(RequestOptions options,
       Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
-    if (IosHttpDownloads.directOnly) {
+    if (!await IosHttpDownloads.useBackground()) {
       if (options.extra['iosEnqueueOnly'] == true) {
         return ResponseBody.fromString('', 200);
       }
