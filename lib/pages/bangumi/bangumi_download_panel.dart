@@ -386,6 +386,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
           (t.id == details.id && t.source.key == source.key)).firstOrNull;
     if (existing != null) {
       existing.bangumiSubjectId ??= widget.subjectId;
+      existing.bangumiTitle = subject!.displayName;
       existing.comic = btDetails(existing.source);
       existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
         bangumiEpisodes: subjectEpisodes(),
@@ -404,7 +405,8 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     var task = VideoDownloadTask(source: source,
       videoId: details.id, comic: details,
       episodes: selected.map((e) => e.choice.chapterId).toList(),
-      bangumiSubjectId: widget.subjectId, bangumiEpisodes: subjectEpisodes(),
+      bangumiSubjectId: widget.subjectId, bangumiTitle: subject!.displayName,
+      bangumiEpisodes: subjectEpisodes(),
       torrentReleases: {
         for (var e in selected) e.choice.chapterId: e.choice.torrent!,
       });
@@ -436,6 +438,7 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
     }
     if (existing != null) {
       existing.bangumiSubjectId ??= widget.subjectId;
+      existing.bangumiTitle = subject!.displayName;
       existing.comic = details;
       existing.addEpisodes(selected.map((e) => e.choice.chapterId).toList(),
         bangumiEpisodes: {for (var e in selected) e.choice.chapterId: e.episode});
@@ -451,7 +454,8 @@ class _BangumiDownloadPanelState extends State<BangumiDownloadPanel> {
       comic: details, quality: quality,
       episodes: details.chapters == null || details.chapters!.length == 0 ? null :
         selected.map((e) => e.choice.chapterId).toList(),
-      bangumiSubjectId: widget.subjectId, bangumiEpisodes: {
+      bangumiSubjectId: widget.subjectId, bangumiTitle: subject!.displayName,
+      bangumiEpisodes: {
         for (var e in selected) e.choice.chapterId: e.episode,
       });
     DownloadQueue().add(task);
