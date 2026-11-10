@@ -71,8 +71,10 @@ class _FavoritesPageState extends State<FavoritesPage> {
       folder = data['name'];
       isNetwork = data['isNetwork'] ?? false;
     }
+    // "All" is a label, not a folder: keep it selected too.
     if (folder != null
         && !isNetwork
+        && folder != _localAllFolderLabel
         && !LocalFavoritesManager().existsFolder(folder!)) {
       folder = null;
     }

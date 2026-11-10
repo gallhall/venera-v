@@ -48,7 +48,9 @@ class SubPageRoute<T> extends PopupRoute<T> {
       return const SizedBox.shrink();
     }
     // Ignore the tap that opened the page, which may end on the barrier.
-    return Listener(
+    // Fades with the page, so a back swipe uncovers the page below instead
+    // of a fully dimmed one.
+    return FadeTransition(opacity: animation!, child: Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (event) {
         if (event.position == Offset.zero) {
@@ -65,7 +67,7 @@ class SubPageRoute<T> extends PopupRoute<T> {
         color: barrierColor,
         semanticsLabel: barrierLabel,
       ),
-    );
+    ));
   }
 
   @override
@@ -108,7 +110,9 @@ class SubPageRoute<T> extends PopupRoute<T> {
 
     if (App.isIOS) {
       body = IOSBackGestureDetector(
-        enabledCallback: () => true,
+        enabledCallback: () =>
+            animation.status == AnimationStatus.completed &&
+            !navigator!.userGestureInProgress,
         gestureWidth: 20.0,
         onStartPopGesture: () =>
             IOSBackGestureController(controller!, navigator!),
@@ -131,12 +135,13 @@ class SubPageRoute<T> extends PopupRoute<T> {
   @override
   Widget buildTransitions(BuildContext context, Animation<double> animation,
       Animation<double> secondaryAnimation, Widget child) {
+    // Linear while a back swipe drags the page, so it follows the finger.
+    final dragging = navigator?.userGestureInProgress ?? false;
     return SlideTransition(
       position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-          .animate(CurvedAnimation(
-        parent: animation,
-        curve: Curves.fastOutSlowIn,
-      )),
+          .animate(dragging
+              ? animation
+              : CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn)),
       child: child,
     );
   }

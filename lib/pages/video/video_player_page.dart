@@ -8,6 +8,7 @@ import 'package:venera/components/window_frame.dart';
 import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/animeko/rss_preferences.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
@@ -1640,7 +1641,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  Widget buildPlayer() {
+  // The player has horizontal drags of its own (seek bar, swipe to seek):
+  // on iOS only the screen edge swipes back.
+  Widget buildPlayer() => NoBackSwipe(child: buildPlayerContent());
+
+  Widget buildPlayerContent() {
     var p = active;
     var peerHint = ignoringSession
         ? PeerHint.none : session?.peerHint ?? PeerHint.none;

@@ -57,6 +57,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   final String quality;
 
   int? bangumiSubjectId;
+  /// The Bangumi subject's name: the download's title. A source's own title
+  /// can be a search keyword or a release name.
+  String? bangumiTitle;
   /// Source chapter id -> Bangumi episode id (also for online tasks).
   final Map<String, int> bangumiEpisodeIds;
   /// Source chapter id -> the Bangumi episode as the subject listed it when
@@ -75,6 +78,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     this.episodes,
     this.quality = 'highest',
     this.bangumiSubjectId,
+    this.bangumiTitle,
     Map<String, int> bangumiEpisodeIds = const {},
     Map<String, BangumiEpisode> bangumiEpisodes = const {},
     Map<String, VideoDownloadRelease> torrentReleases = const {},
@@ -101,7 +105,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   ComicType get comicType => ComicType(source.key.hashCode);
 
   @override
-  String get title => comic?.title ?? "Loading...";
+  String get title => bangumiTitle ?? comic?.title ?? "Loading...";
 
   @override
   String? get cover => _cover ?? comic?.cover;
@@ -1364,6 +1368,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       "episodes": episodes,
       "quality": quality,
       "bangumiSubjectId": bangumiSubjectId,
+      "bangumiTitle": bangumiTitle,
       "bangumiEpisodeIds": bangumiEpisodeIds,
       "bangumiEpisodes": bangumiEpisodes.map((k, v) => MapEntry(k, v.toJson())),
       "torrentReleases": torrentReleases.map((k, v) => MapEntry(k, v.toJson())),
@@ -1392,6 +1397,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
             appdata.settings["videoDownloadQuality"] ??
             "highest",
         bangumiSubjectId: json['bangumiSubjectId'],
+        bangumiTitle: json['bangumiTitle'],
         bangumiEpisodeIds: Map<String, int>.from(json['bangumiEpisodeIds'] ?? {}),
         bangumiEpisodes: {
           for (var e in (json['bangumiEpisodes'] as Map? ?? {}).entries)

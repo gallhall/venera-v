@@ -411,7 +411,8 @@ Future<T?> showSidePanel<T>(
   Widget header(BuildContext context) => Padding(
     padding: portraitPhone
         ? const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, AppSpacing.sm)
-        : const EdgeInsets.all(AppSpacing.xl),
+        : const EdgeInsets.fromLTRB(
+            AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.sm),
     child: Row(children: [
       Expanded(child: Text(title, style: ts.s18)),
       ...?actions,
@@ -446,23 +447,37 @@ Future<T?> showSidePanel<T>(
   return showDialog<T>(
     context: context,
     useSafeArea: false,
-    builder: (context) => Dialog(
-      elevation: 0,
-      alignment: Alignment.centerRight,
-      insetPadding: EdgeInsets.zero,
-      constraints: const BoxConstraints(maxWidth: 360),
-      backgroundColor: context.colorScheme.surfaceContainerLow,
-      surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl))),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(width: 360, height: double.infinity,
-        child: SafeArea(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [header(context), Expanded(child: Builder(builder: builder))],
-        )),
-      ),
-    ),
+    builder: (context) {
+      // The dialog's own insets: a caller inside a SafeArea (the player's
+      // controls) sees none.
+      final media = MediaQuery.of(context);
+      // Half the screen, within 360-480: on a landscape phone 360 wraps most
+      // setting texts. The panel sits at the right edge: only the right
+      // inset (a landscape iPhone's notch side) is its own. It is added to
+      // the width rather than taken from the content.
+      final contentWidth = (media.size.width / 2).clamp(360.0, 480.0);
+      final panelWidth = contentWidth + media.padding.right;
+      return Dialog(
+        elevation: 0,
+        alignment: Alignment.centerRight,
+        insetPadding: EdgeInsets.zero,
+        constraints: BoxConstraints(maxWidth: panelWidth),
+        backgroundColor: context.colorScheme.surfaceContainerLow,
+        surfaceTintColor: context.colorScheme.surface.withValues(alpha: 0),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(left: Radius.circular(AppRadius.xl))),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(width: panelWidth, height: double.infinity,
+          // The left inset is the other side of the screen: removed, so
+          // content with a SafeArea of its own leaves no notch-wide gap.
+          child: MediaQuery.removePadding(context: context, removeLeft: true,
+            child: SafeArea(left: false, child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [header(context), Expanded(child: Builder(builder: builder))],
+            ))),
+        ),
+      );
+    },
   );
 }
 
