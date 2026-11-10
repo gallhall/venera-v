@@ -415,13 +415,19 @@ Style: Default,$assFont,30,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,1
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:00.00,0:01:00.00,Default,,0,0,0,,中文测试：星空与漫画 ASS 字幕
 ''');
+    final subtitleLogs = <String>{};
+    final missingGlyphs = <String>{};
     final subtitlePlayer = PlayerService.create(
       onLog: (entry) {
+        final message = entry.text.trim();
+        if (message.contains('failed to find any fallback with glyph')) {
+          missingGlyphs.add(message);
+        }
         if (entry.prefix.contains('ass') ||
             entry.text.toLowerCase().contains('font')) {
-          debugPrint(
-            'SMOKE: ASS mpv ${entry.level} ${entry.prefix}: ${entry.text.trim()}',
-          );
+          final line =
+              'SMOKE: ASS mpv ${entry.level} ${entry.prefix}: $message';
+          if (subtitleLogs.add(line)) debugPrint(line);
         }
       },
     );
@@ -460,7 +466,15 @@ Dialogue: 0,0:00:00.00,0:01:00.00,Default,,0,0,0,,中文测试：星空与漫画
       final screenshot = File('${artifacts.path}/ass-chinese.png');
       await screenshot.writeAsBytes(png);
       debugPrint(
-        'SMOKE: ASS PASS track=${subtitlePlayer.currentSubtitleTrack}, subtitle screenshot ${screenshot.path} (${png.length} bytes); inspect Chinese glyphs manually',
+        'SMOKE: ASS subtitle screenshot ${screenshot.path} (${png.length} bytes); inspect Chinese glyphs manually',
+      );
+      expect(
+        missingGlyphs,
+        isEmpty,
+        reason: 'SMOKE: ASS missing glyphs: ${missingGlyphs.join('; ')}',
+      );
+      debugPrint(
+        'SMOKE: ASS PASS track=${subtitlePlayer.currentSubtitleTrack}, font=$assFont, no missing glyphs reported',
       );
     } finally {
       await subtitlePlayer.dispose();
