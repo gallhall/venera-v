@@ -401,6 +401,8 @@ https://test-streams.mux.dev/x36xhzz/url_0/url_464/193039199_mp4_h264_aac_hd_7.t
 
     // libass rasterizes Chinese text; capture its output, not a Flutter overlay.
     // ASS styles name their own font and override mpv's sub-font default.
+    // Fansub styles often name fonts the system lacks: the second line must
+    // fall back to sub-font, not to a font libass cannot read (boxes).
     final assFont = await SystemSubtitleFonts.family() ?? 'sans-serif';
     debugPrint('SMOKE: ASS style font family $assFont');
     final ass = File('${artifacts.path}/chinese.ass');
@@ -411,9 +413,11 @@ PlayResY: 360
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,$assFont,30,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,30,1
+Style: Fansub,方正准圆_GBK,30,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,30,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:00.00,0:01:00.00,Default,,0,0,0,,中文测试：星空与漫画 ASS 字幕
+Dialogue: 0,0:00:00.00,0:01:00.00,Fansub,,0,0,0,,字幕组字体未安装：回退到系统中文字体
 ''');
     final subtitleLogs = <String>{};
     final missingGlyphs = <String>{};
