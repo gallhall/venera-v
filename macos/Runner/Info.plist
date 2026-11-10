@@ -28,5 +28,7 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Venera-V uses the local network to discover and connect to BitTorrent peers and request router port mappings for torrent downloads and playback.</string>
 </dict>
 </plist>

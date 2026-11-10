@@ -16,7 +16,10 @@ class SubtitleFontPolicy {
   static String? familyFor(String platform, {String fcListOutput = ''}) {
     return switch (platform) {
       'windows' => 'Microsoft YaHei',
-      'macos' || 'ios' => 'PingFang SC',
+      // macOS 15's PingFangUI is not a standard TTC readable by FreeType.
+      // Heiti SC is a standard system TTC; see libass/libass#845.
+      'macos' => 'Heiti SC',
+      'ios' => 'PingFang SC',
       'linux' => linuxFamily(fcListOutput),
       _ => null,
     };

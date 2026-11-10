@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +10,11 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
+import 'package:venera/foundation/torrent/torrent_streamer.dart';
+import 'package:venera/foundation/video/ad_free_stream.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/foundation/video/system_subtitle_fonts.dart';
 import 'package:venera/foundation/video/video_sniffer.dart';
 import 'package:venera/init.dart';
 import 'package:venera/main.dart' as app;
@@ -64,6 +69,13 @@ class _FakeFileSelector extends FileSelectorPlatform {
 }
 
 void main() {
+  debugPrint(
+    'SMOKE: build mode ${const bool.fromEnvironment('dart.vm.product')
+        ? 'release'
+        : const bool.fromEnvironment('dart.vm.profile')
+        ? 'profile'
+        : 'debug'}',
+  );
   // Frames are drawn as the app asks for them, like outside of tests: the
   // test waits without pumping (see pumpUntil) while the player runs.
   IntegrationTestWidgetsFlutterBinding.ensureInitialized().framePolicy =
@@ -162,6 +174,100 @@ void main() {
     );
     debugPrint('SMOKE: app started on ${Platform.operatingSystem}');
     temp = await Directory.systemTemp.createTemp('venera_smoke');
+    final artifacts = await Directory(
+      '${App.cachePath}/smoke',
+    ).create(recursive: true);
+    debugPrint('SMOKE: artifacts ${artifacts.path}');
+    addTearDown(() async {
+      ErrorWidget.builder = errorWidgetBuilder;
+      if (await temp.exists()) await temp.delete(recursive: true);
+    });
+
+    Future<void> playStream(VideoStreamRequest request, String label) async {
+      debugPrint('SMOKE: $label opening ${request.url}');
+      final player = PlayerService.create();
+      final decoded = player.videoSize.firstWhere((s) => s != null);
+      final errors = player.errors.listen(
+        (e) => debugPrint('SMOKE: $label player error: $e'),
+      );
+      try {
+        await pumpFuture(tester, player.setVolume(0), reason: '$label volume');
+        await pumpFuture(tester, player.open(request), reason: '$label open');
+        await pumpUntil(
+          tester,
+          () => player.currentPosition > const Duration(seconds: 3),
+          reason: '$label playback (position=${player.currentPosition})',
+        );
+        expect(
+          await pumpFuture(tester, decoded, reason: '$label decoded video'),
+          isNotNull,
+        );
+        debugPrint('SMOKE: $label PASS played ${player.currentPosition}');
+      } finally {
+        await errors.cancel();
+        await player.dispose();
+      }
+    }
+
+    // A short foreign-directory group between discontinuities is an ad.
+    // The invalid ad URL makes accidental unfiltered playback observable.
+    var adRequests = 0;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    File? torrentFile;
+    final playlist = '''#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:2,
+/ads/must-not-play.ts
+#EXT-X-DISCONTINUITY
+#EXTINF:10,
+https://test-streams.mux.dev/x36xhzz/url_0/url_462/193039199_mp4_h264_aac_hd_7.ts
+#EXTINF:10,
+https://test-streams.mux.dev/x36xhzz/url_0/url_463/193039199_mp4_h264_aac_hd_7.ts
+#EXTINF:10,
+https://test-streams.mux.dev/x36xhzz/url_0/url_464/193039199_mp4_h264_aac_hd_7.ts
+#EXT-X-ENDLIST
+''';
+    server.listen((request) async {
+      if (request.uri.path == '/playlist.m3u8') {
+        request.response.headers.contentType = ContentType(
+          'application',
+          'vnd.apple.mpegurl',
+        );
+        request.response.write(playlist);
+      } else if (request.uri.path == '/sample.torrent' && torrentFile != null) {
+        request.response.add(await torrentFile.readAsBytes());
+      } else {
+        if (request.uri.path.startsWith('/ads/')) adRequests++;
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
+    final origin = 'http://127.0.0.1:${server.port}';
+    debugPrint('SMOKE: HLS ad filter preparing deterministic playlist');
+    final filtered = await pumpFuture(
+      tester,
+      AdFreeStream.prepare(
+        VideoStreamRequest('$origin/playlist.m3u8', filterAds: true),
+      ),
+      reason: 'HLS ad filter',
+    );
+    expect(
+      filtered.url,
+      isNot(startsWith('http')),
+      reason: 'AdFreeStream must produce a local playlist',
+    );
+    final filteredText = await File(filtered.url).readAsString();
+    expect(filteredText, isNot(contains('/ads/')));
+    expect(RegExp(r'#EXTINF:').allMatches(filteredText).length, 3);
+    await File('${artifacts.path}/filtered.m3u8').writeAsString(filteredText);
+    await playStream(filtered, 'HLS ad filter');
+    expect(adRequests, 0, reason: 'mpv must never request an ad segment');
+    debugPrint(
+      'SMOKE: HLS ad filter PASS removed 1 ad segment, kept 3, ad requests=$adRequests',
+    );
 
     // Online playback: an HLS stream decodes and plays.
     {
@@ -196,7 +302,16 @@ void main() {
       );
       expect(result.url, contains('.m3u8'));
       debugPrint('SMOKE: sniffed ${result.url}');
+      await playStream(VideoStreamRequest(result.url), 'sniffed HLS');
+      debugPrint('SMOKE: sniffing PASS');
+    } else {
+      debugPrint(
+        'SMOKE: sniffing SKIP: VideoSniffer is unsupported on ${Platform.operatingSystem}',
+      );
     }
+    debugPrint(
+      'SMOKE: Cloudflare silent renewal SKIP: no stable controlled challenge/cookie-expiry target',
+    );
 
     // Import a local video through the import dialog.
     debugPrint('SMOKE: importing a sample video');
@@ -216,6 +331,158 @@ void main() {
     }
     expect(sample, isNotNull, reason: 'a sample video');
     var sampleSize = sample!.lengthSync();
+
+    // Share a complete local file through the real engine and loopback server.
+    // Use a LAN IPv4: dtorrent deliberately rejects loopback peers.
+    InternetAddress? local;
+    for (final interface in await NetworkInterface.list(
+      type: InternetAddressType.IPv4,
+    )) {
+      for (final address in interface.addresses) {
+        if (!address.isLoopback && !address.isLinkLocal) local ??= address;
+      }
+    }
+    expect(
+      local,
+      isNotNull,
+      reason: 'SMOKE: BT needs a non-loopback IPv4 for its local seeder',
+    );
+    const pieceLength = 256 * 1024;
+    final sep = Platform.pathSeparator;
+    final seedDir = await Directory('${temp.path}${sep}seed').create();
+    final seedVideo = await sample.copy('${seedDir.path}${sep}sample.mp4');
+    final seedHandle = await seedVideo.open(mode: FileMode.append);
+    await seedHandle.truncate(
+      ((sampleSize + pieceLength - 1) ~/ pieceLength) * pieceLength,
+    );
+    await seedHandle.close();
+    final model = await TorrentCreator.createTorrent(
+      seedVideo.path,
+      TorrentCreationOptions(pieceLength: pieceLength),
+    );
+    torrentFile = File('${temp.path}/sample.torrent');
+    await TorrentCreator.saveTorrent(model.rawData!, torrentFile.path);
+    final seedState = await StateFileV2.getStateFile(seedDir.path, model);
+    for (var i = 0; i < model.pieces!.length; i++) {
+      await seedState.updateBitfield(i);
+    }
+    await seedState.close();
+    final seeder = TorrentTask.newTask(model, seedDir.path);
+    final torrentUrl = '$origin/sample.torrent';
+    DartTorrentStreamer? streamer;
+    try {
+      final port =
+          (await pumpFuture(
+                tester,
+                seeder.start(),
+                reason: 'BT seeder start',
+              ))['tcp_socket']
+              as int;
+      debugPrint(
+        'SMOKE: BT local seeder ${local!.address}:$port, ${model.pieces!.length} whole pieces',
+      );
+      streamer = DartTorrentStreamer.withInitialPeers([
+        CompactAddress(local, port),
+      ]);
+      final url = await pumpFuture(
+        tester,
+        streamer.open(torrentUrl),
+        reason: 'BT TorrentStreamer.open',
+      );
+      expect(Uri.parse(url).host, '127.0.0.1');
+      await playStream(VideoStreamRequest(url), 'BT loopback');
+      debugPrint(
+        'SMOKE: BT PASS local seeder -> TorrentStreamer -> loopback HTTP -> mpv',
+      );
+    } finally {
+      await streamer?.release(torrentUrl);
+      await seeder.stop();
+    }
+
+    // libass rasterizes Chinese text; capture its output, not a Flutter overlay.
+    // ASS styles name their own font and override mpv's sub-font default.
+    // Fansub styles often name fonts the system lacks: the second line must
+    // fall back to sub-font, not to a font libass cannot read (boxes).
+    final assFont = await SystemSubtitleFonts.family() ?? 'sans-serif';
+    debugPrint('SMOKE: ASS style font family $assFont');
+    final ass = File('${artifacts.path}/chinese.ass');
+    await ass.writeAsString('''[Script Info]
+ScriptType: v4.00+
+PlayResX: 640
+PlayResY: 360
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,$assFont,30,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,30,1
+Style: Fansub,方正准圆_GBK,30,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,30,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:01:00.00,Default,,0,0,0,,中文测试：星空与漫画 ASS 字幕
+Dialogue: 0,0:00:00.00,0:01:00.00,Fansub,,0,0,0,,字幕组字体未安装：回退到系统中文字体
+''');
+    final subtitleLogs = <String>{};
+    final missingGlyphs = <String>{};
+    final subtitlePlayer = PlayerService.create(
+      onLog: (entry) {
+        final message = entry.text.trim();
+        if (message.contains('failed to find any fallback with glyph')) {
+          missingGlyphs.add(message);
+        }
+        if (entry.prefix.contains('ass') ||
+            entry.text.toLowerCase().contains('font')) {
+          final line =
+              'SMOKE: ASS mpv ${entry.level} ${entry.prefix}: $message';
+          if (subtitleLogs.add(line)) debugPrint(line);
+        }
+      },
+    );
+    try {
+      await subtitlePlayer.setVolume(0);
+      await pumpFuture(
+        tester,
+        subtitlePlayer.open(
+          VideoStreamRequest(
+            sample.path,
+            subtitles: [
+              VideoSubtitle(
+                url: ass.path,
+                name: 'Chinese smoke',
+                language: 'zh',
+              ),
+            ],
+          ),
+        ),
+        reason: 'ASS open',
+      );
+      await pumpUntil(
+        tester,
+        () => subtitlePlayer.currentPosition >= const Duration(seconds: 2),
+        reason: 'ASS playback',
+      );
+      await subtitlePlayer.pause();
+      expect(subtitlePlayer.currentSubtitleTrack, isNot('no'));
+      final png = await pumpFuture(
+        tester,
+        subtitlePlayer.screenshotWithSubtitles(),
+        reason: 'libass screenshot',
+      );
+      expect(png, isNotNull, reason: 'mpv screenshot with subtitles');
+      expect(png!.length, greaterThan(1000));
+      final screenshot = File('${artifacts.path}/ass-chinese.png');
+      await screenshot.writeAsBytes(png);
+      debugPrint(
+        'SMOKE: ASS subtitle screenshot ${screenshot.path} (${png.length} bytes); inspect Chinese glyphs manually',
+      );
+      expect(
+        missingGlyphs,
+        isEmpty,
+        reason: 'SMOKE: ASS missing glyphs: ${missingGlyphs.join('; ')}',
+      );
+      debugPrint(
+        'SMOKE: ASS PASS track=${subtitlePlayer.currentSubtitleTrack}, font=$assFont, no missing glyphs reported',
+      );
+    } finally {
+      await subtitlePlayer.dispose();
+    }
     var picker = _FakeFileSelector([sample.path]);
     FileSelectorPlatform.instance = picker;
     var imported = ImportVideo().files();

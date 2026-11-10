@@ -260,19 +260,24 @@ class PlayerService implements VideoPlayback {
     _initialized = true;
   }
 
-  static PlayerService create() {
+  /// [onLog] enables verbose engine diagnostics for integration artifacts.
+  static PlayerService create({void Function(PlayerLog)? onLog}) {
     ensureInitialized();
     var player = Player(
-      configuration: const PlayerConfiguration(
+      configuration: PlayerConfiguration(
         title: 'venera-v',
         bufferSize: 64 * 1024 * 1024,
-        logLevel: MPVLogLevel.warn,
+        logLevel: onLog == null ? MPVLogLevel.warn : MPVLogLevel.v,
         // mpv draws subtitles with libass, keeping ASS/SSA styles, positions
         // and effects; media_kit's own overlay only shows plain text.
         libass: true,
       ),
     );
-    return PlayerService._(player, VideoController(player));
+    final service = PlayerService._(player, VideoController(player));
+    if (onLog != null) {
+      service._subscriptions.add(player.stream.log.listen(onLog));
+    }
+    return service;
   }
 
   /// A service on [player] that has no view to show the video in, for
@@ -317,6 +322,12 @@ class PlayerService implements VideoPlayback {
   }
 
   final Player _player;
+
+  /// Captures libass output as well as the decoded video for smoke artifacts.
+  @visibleForTesting
+  Future<Uint8List?> screenshotWithSubtitles() => _player.screenshot(
+    format: 'image/png', includeLibassSubtitles: true,
+  );
 
   /// Null without a view, see [PlayerService.withoutView].
   final VideoController? _controller;

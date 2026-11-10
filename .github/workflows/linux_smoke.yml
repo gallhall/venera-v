@@ -73,7 +73,10 @@ jobs:
           done
           kill $app $shots $xvfb || true
           cat smoke/test.log
+          artifacts=$(sed -n 's/^.*SMOKE: artifacts //p' smoke/test.log | head -1 | tr -d '\r')
+          if [ -n "$artifacts" ] && [ -d "$artifacts" ]; then cp -R "$artifacts"/. smoke/; fi
           grep -q "All tests passed" smoke/test.log
+          test -s smoke/ass-chinese.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -8,5 +8,8 @@
   <true/>
  	<key>com.apple.security.network.client</key>
   <true/>
+  <!-- BT TCP/UDP listeners and the loopback HTTP playback server. -->
+  <key>com.apple.security.network.server</key>
+  <true/>
 </dict>
 </plist>

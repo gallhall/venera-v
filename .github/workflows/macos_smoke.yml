@@ -5,6 +5,7 @@ on:
 jobs:
   smoke:
     runs-on: macos-15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -13,10 +14,27 @@ jobs:
           flutter-version-file: pubspec.yaml
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
       - run: flutter pub get
+      - name: Collect system font diagnostics
+        run: |
+          mkdir -p smoke
+          system_profiler SPFontsDataType -json > smoke/system-fonts.json
       # The test built as the app. `flutter test -d macos` starts it with
       # `open`, which fails on the runner: the app then has no window and
       # draws nothing. Started directly, it does.
-      - run: flutter build macos --debug -t integration_test/video_smoke_test.dart
+      - run: flutter build macos --release -t integration_test/video_smoke_test.dart
+      - name: Verify signed release entitlements
+        run: |
+          mkdir -p smoke
+          codesign -d --entitlements - --xml build/macos/Build/Products/Release/venera-v.app > smoke/entitlements.plist
+          cat smoke/entitlements.plist
+          python3 - <<'PY'
+          import plistlib
+          with open('smoke/entitlements.plist', 'rb') as f:
+              entitlements = plistlib.load(f)
+          for key in ('app-sandbox', 'network.client', 'network.server', 'files.user-selected.read-write'):
+              assert entitlements.get('com.apple.security.' + key) is True, key
+          assert not entitlements.get('com.apple.security.cs.allow-jit'), entitlements
+          PY
       # The video features in the running app, see the test. Screenshots
       # are taken meanwhile, to see what the app drew.
       - name: Video smoke test
@@ -24,7 +42,7 @@ jobs:
           mkdir -p smoke
           (while true; do screencapture -x smoke/test_$(date +%H%M%S).png 2>/dev/null; sleep 2; done) &
           shots=$!
-          build/macos/Build/Products/Debug/venera-v.app/Contents/MacOS/venera-v > smoke/test.log 2>&1 &
+          build/macos/Build/Products/Release/venera-v.app/Contents/MacOS/venera-v > smoke/test.log 2>&1 &
           app=$!
           for i in $(seq 1 180); do
             grep -qE "All tests passed|Some tests failed" smoke/test.log && break
@@ -33,7 +51,10 @@ jobs:
           done
           kill $app $shots || true
           cat smoke/test.log
+          artifacts=$(sed -n 's/^.*SMOKE: artifacts //p' smoke/test.log | head -1 | tr -d '\r')
+          if [ -n "$artifacts" ] && [ -d "$artifacts" ]; then cp -R "$artifacts"/. smoke/; fi
           grep -q "All tests passed" smoke/test.log
+          test -s smoke/ass-chinese.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:

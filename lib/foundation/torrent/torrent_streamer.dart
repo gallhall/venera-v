@@ -66,6 +66,15 @@ abstract interface class TorrentStreamer {
 }
 
 class DartTorrentStreamer implements TorrentStreamer {
+  DartTorrentStreamer() : _initialPeers = const [];
+
+  /// Deterministic local swarms for integration tests; normal discovery is
+  /// unchanged for the application's default constructor.
+  @visibleForTesting
+  DartTorrentStreamer.withInitialPeers(List<CompactAddress> peers)
+      : _initialPeers = List.unmodifiable(peers);
+
+  final List<CompactAddress> _initialPeers;
   final _server = TorrentLoopbackServer();
   final _sessions = <String, _TorrentSession>{};
   Future<void> _cacheTail = Future.value();
@@ -217,7 +226,7 @@ class DartTorrentStreamer implements TorrentStreamer {
               ? selector.criticalPieces.toList() : 'none'}');
       // DHT starts with TorrentTask.start(); request another discovery pass
       // after handing off the metadata peers.
-      for (var peer in peers) {
+      for (var peer in [...peers, ..._initialPeers]) {
         task.addPeer(peer, PeerSource.manual, type: PeerType.tcp);
       }
       var trackers = {

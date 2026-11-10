@@ -23,7 +23,16 @@ class NATPMPClient {
   /// Request timeout
   final Duration timeout;
 
-  NATPMPClient({this.timeout = const Duration(seconds: 5)});
+  /// [bindSocket] supplies a datagram socket for deterministic network tests.
+  NATPMPClient(
+      {this.timeout = const Duration(seconds: 5),
+      Future<RawDatagramSocket> Function()? bindSocket})
+      : _bindSocket = bindSocket;
+
+  final Future<RawDatagramSocket> Function()? _bindSocket;
+
+  Future<RawDatagramSocket> _bind() =>
+      _bindSocket?.call() ?? RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
 
   /// Discover NAT-PMP gateway (router)
   ///
@@ -127,7 +136,7 @@ class NATPMPClient {
       final testTimeout = timeout ?? this.timeout;
 
       // Send public address request (version 0, opcode 0)
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final socket = await _bind();
       try {
         final request = ByteData(2);
         request.setUint8(0, 0); // Version
@@ -160,6 +169,12 @@ class NATPMPClient {
               }
             }
           }
+        }, onError: (Object error, StackTrace stack) {
+          // UDP route failures are asynchronous socket events on macOS.
+          _log.warning('NAT-PMP socket failed', error, stack);
+          timeoutTimer?.cancel();
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete(false);
         });
 
         timeoutTimer = Timer(testTimeout, () {
@@ -209,7 +224,7 @@ class NATPMPClient {
       _log.info(
           'Adding NAT-PMP port mapping: $externalPort -> $internalPort (protocol: $protocol)');
 
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final socket = await _bind();
       try {
         // Build NAT-PMP request (version 0, opcode 1 for TCP or 2 for UDP)
         final request = ByteData(12);
@@ -264,6 +279,12 @@ class NATPMPClient {
               }
             }
           }
+        }, onError: (Object error, StackTrace stack) {
+          // UDP route failures are asynchronous socket events on macOS.
+          _log.warning('NAT-PMP socket failed', error, stack);
+          timeoutTimer?.cancel();
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete(false);
         });
 
         timeoutTimer = Timer(timeout, () {
@@ -311,7 +332,7 @@ class NATPMPClient {
         }
       }
 
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final socket = await _bind();
       try {
         // Request public IP (version 0, opcode 0)
         final request = ByteData(2);
@@ -357,6 +378,12 @@ class NATPMPClient {
               }
             }
           }
+        }, onError: (Object error, StackTrace stack) {
+          // UDP route failures are asynchronous socket events on macOS.
+          _log.warning('NAT-PMP socket failed', error, stack);
+          timeoutTimer?.cancel();
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete(null);
         });
 
         timeoutTimer = Timer(timeout, () {

@@ -4,7 +4,7 @@ import 'package:venera/foundation/video/subtitle_font_policy.dart';
 void main() {
   test('platform defaults leave Android font-directory handling to the player', () {
     expect(SubtitleFontPolicy.familyFor('windows'), 'Microsoft YaHei');
-    expect(SubtitleFontPolicy.familyFor('macos'), 'PingFang SC');
+    expect(SubtitleFontPolicy.familyFor('macos'), 'Heiti SC');
     expect(SubtitleFontPolicy.familyFor('ios'), 'PingFang SC');
     expect(SubtitleFontPolicy.familyFor('android'), isNull);
     expect(SubtitleFontPolicy.familyFor('unknown'), isNull);
