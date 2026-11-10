@@ -13,6 +13,7 @@ import 'package:venera/utils/ugoira.dart';
 
 import 'app_dio.dart';
 import 'bangumi_network.dart';
+import 'file_transfer.dart';
 import 'ios_http_downloads.dart';
 
 /// Resolves source scripts while Dart can run, then lets native code drain the
@@ -32,7 +33,8 @@ class IosComicDownloadSession {
   Future<void> prepare(ComicSource source, String cid,
       Map<String, List<String>> chapters) async {
     final client = AppDio();
-    client.httpClientAdapter = IosDownloadAdapter(directory, token);
+    client.httpClientAdapter =
+        BackgroundTransfers.instance.requestAdapter(directory, token);
     try {
       for (final chapter in chapters.entries) {
         for (final image in chapter.value) {
@@ -59,7 +61,11 @@ class IosComicDownloadSession {
 
   Future<void> stop({bool remove = false}) async {
     token.cancel();
-    await IosHttpDownloads.instance.control(directory, remove: remove);
+    if (remove) {
+      await BackgroundTransfers.instance.remove(directory);
+    } else {
+      await BackgroundTransfers.instance.pause(directory);
+    }
     await Future.wait(_writes.toList());
   }
 
@@ -76,7 +82,7 @@ class IosComicDownloadSession {
 
   Future<void> finish() async {
     await stop(remove: true);
-    await IosHttpDownloads.instance.forgetTree(directory);
+    await BackgroundTransfers.instance.forget(directory);
     final folder = Directory(directory);
     if (await folder.exists()) {
       await folder.delete(recursive: true);
@@ -169,7 +175,7 @@ abstract class ImageDownloader {
       dio.httpClientAdapter = RHttpAdapter();
     }
     if (iosSession != null) {
-      dio.httpClientAdapter = IosDownloadAdapter(iosSession.directory, iosSession.token,
+      dio.httpClientAdapter = BackgroundTransfers.instance.requestAdapter(iosSession.directory, iosSession.token,
         onData: iosSession.onData);
     }
     try {
@@ -308,7 +314,7 @@ abstract class ImageDownloader {
         ));
         if (iosSession != null) {
           iosSession.token.throwIfCancellationRequested();
-          dio.httpClientAdapter = IosDownloadAdapter(iosSession.directory, iosSession.token,
+          dio.httpClientAdapter = BackgroundTransfers.instance.requestAdapter(iosSession.directory, iosSession.token,
             onData: iosSession.onData);
         }
 

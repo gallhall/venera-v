@@ -5,7 +5,7 @@ import 'package:dio/io.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/proxy.dart';
 import 'package:venera/utils/ext.dart';
-import 'ios_http_downloads.dart';
+import 'file_transfer.dart';
 
 class FileDownloader {
   final String url;
@@ -107,8 +107,8 @@ class FileDownloader {
   }
 
   void _download(StreamController<DownloadingStatus> resultStream) async {
-    if (Platform.isIOS && await IosHttpDownloads.useBackground()) {
-      await _downloadIos(resultStream);
+    if (await BackgroundTransfers.instance.available) {
+      await _downloadInBackground(resultStream);
       return;
     }
     try {
@@ -258,16 +258,14 @@ class FileDownloader {
 
   Future<void> stop() async {
     _canceled = true;
-    if (Platform.isIOS) {
-      _iosToken.cancel();
-      await IosHttpDownloads.instance.control(savePath);
-    }
+    _iosToken.cancel();
+    await BackgroundTransfers.instance.pause(savePath);
     await _file?.close();
     _file = null;
   }
 
-  Future<void> _downloadIos(StreamController<DownloadingStatus> output) async {
-    final id = '$savePath:${IosHttpDownloads.identity(url)}';
+  Future<void> _downloadInBackground(StreamController<DownloadingStatus> output) async {
+    final id = '$savePath:${transferIdentity(url)}';
     final clock = Stopwatch()..start();
     var lastAt = 0;
     var lastBytes = 0;
@@ -275,10 +273,9 @@ class FileDownloader {
       if (_canceled) {
         return;
       }
-      await IosHttpDownloads.instance.enqueue([
-        {'id': id, 'path': savePath, 'url': url},
-      ]);
-      await IosHttpDownloads.instance.wait(id, cancelToken: _iosToken,
+      final transferred = await BackgroundTransfers.instance.fetch(
+        () => {'id': id, 'path': savePath, 'url': url},
+        cancelToken: _iosToken, retryDirectly: false,
         onProgress: (received, total) {
           final elapsed = clock.elapsedMilliseconds - lastAt;
           final speed = elapsed > 0 ? ((received - lastBytes) * 1000 / elapsed).round() : 0;
@@ -286,6 +283,9 @@ class FileDownloader {
           lastAt = clock.elapsedMilliseconds;
           lastBytes = received;
         });
+      if (!transferred) {
+        throw const HttpException('Background transfers are unavailable');
+      }
       if (!_canceled) {
         final length = await File(savePath).length();
         output.add(DownloadingStatus(length, length, 0, true));

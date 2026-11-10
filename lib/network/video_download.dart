@@ -172,8 +172,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _pausedEpisodes.add(key);
     var run = _episodeRuns.remove(key);
     _episodeTokens.remove(run)?.cancel();
-    if (Platform.isIOS && path != null) {
-      unawaited(IosHttpDownloads.instance.control(episodeDirectory(path!, ep)));
+    if (path != null) {
+      unawaited(BackgroundTransfers.instance.pause(episodeDirectory(path!, ep)));
     }
     var handle = _torrentHandles.remove(key);
     if (handle != null) {
@@ -443,8 +443,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       }
     }
     _isRunning = false;
-    if (Platform.isIOS && path != null) {
-      unawaited(IosHttpDownloads.instance.control(path!));
+    if (path != null) {
+      unawaited(BackgroundTransfers.instance.pause(path!));
     }
     _episodeRuns.clear();
     for (var token in _episodeTokens.values) {
@@ -468,9 +468,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     DownloadQueue().remove(this);
     var dir = path;
     if (dir == null) return;
-    if (Platform.isIOS) {
-      await IosHttpDownloads.instance.control(dir, remove: true);
-    }
+    await BackgroundTransfers.instance.remove(dir);
     if (LocalManager().find(id, comicType) == null) {
       Directory(dir).deleteIgnoreError(recursive: true);
     } else {
@@ -580,7 +578,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         notifyListeners();
         var res = await _runWithRetry(() async {
           Uint8List? data;
-          final coverStream = Platform.isIOS
+          final coverStream = BackgroundTransfers.instance.supported
               ? ImageDownloader.loadDownloadThumbnail(comic!.cover, source.key,
                   IosComicDownloadSession(path!, onData: onData))
               : ImageDownloader.loadThumbnail(comic!.cover, source.key);
@@ -625,9 +623,9 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
         await LocalManager().add(toLocalComic());
       }
       if (_targets.isNotEmpty && _targets.every(episodeCompleted)) {
-        if (Platform.isIOS) {
-          await IosHttpDownloads.instance.control(path!, remove: true);
-          await IosHttpDownloads.instance.forgetTree(path!);
+        if (BackgroundTransfers.instance.supported) {
+          await BackgroundTransfers.instance.remove(path!);
+          await BackgroundTransfers.instance.forget(path!);
           await Directory('$path/.http-images').deleteIgnoreError(recursive: true);
           for (final ep in _targets) {
             await Directory('${episodeDirectory(path!, ep)}/.http-meta')
@@ -936,17 +934,13 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   Future<void> _claimDirectory(Directory dir, String source) async {
     var marker = dir.joinFile(_sourceMarkerName);
     if (await marker.exists() && await marker.readAsString() == source) {
-      if (Platform.isIOS) {
-        // A restored Dart task may resolve a fresh signed URL while native
-        // transfers from before the OS relaunch still own these destinations.
-        await IosHttpDownloads.instance.control(dir.path);
-      }
+      // A restored Dart task may resolve a fresh signed URL while background
+      // transfers from before the OS relaunch still own these destinations.
+      await BackgroundTransfers.instance.pause(dir.path);
       return;
     }
-    if (Platform.isIOS) {
-      await IosHttpDownloads.instance.control(dir.path, remove: true);
-      await IosHttpDownloads.instance.forgetTree(dir.path);
-    }
+    await BackgroundTransfers.instance.remove(dir.path);
+    await BackgroundTransfers.instance.forget(dir.path);
     await for (var entry in dir.list()) {
       // The cover of a video without episodes, which shares its directory.
       if (entry is File && (entry.name.startsWith('cover.') ||
@@ -1216,12 +1210,10 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String label,
     int run,
   ) async {
-    if (Platform.isIOS && await IosHttpDownloads.useBackground()) {
-      await IosHttpDownloads.instance.enqueue([
-        for (final (url, range, file) in items)
-          if (!file.existsSync()) _iosJob(url, file, headers, range: range),
-      ], isCurrent: () => _isCurrent(run));
-    }
+    await BackgroundTransfers.instance.enqueue(() => [
+      for (final (url, range, file) in items)
+        if (!file.existsSync()) transferJob(url, file, headers, range: range),
+    ], isCurrent: () => _isCurrent(run));
     var done = 0;
     var next = 0;
     // Stops the other workers when one fails.
@@ -1288,25 +1280,6 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
   /// [run] is not current.
   ///
   /// With [range] (`first-last`), only that part of [url] is downloaded.
-  Map<String, Object?> _iosJob(String url, File file,
-      Map<String, String> headers, {String? range}) {
-    final requestHeaders = <String, String>{...headers,
-      if (range != null) 'Range': 'bytes=$range',
-    };
-    final cookie = SingleInstanceCookieJar.instance
-        ?.loadForRequestCookieHeader(Uri.parse(url)) ?? '';
-    if (cookie.isNotEmpty) {
-      final key = requestHeaders.keys.where((k) => k.toLowerCase() == 'cookie')
-          .firstOrNull ?? 'Cookie';
-      final custom = requestHeaders[key];
-      requestHeaders[key] = custom == null ? cookie : '$custom; $cookie';
-    }
-    return {
-      'id': '${file.path}:${IosHttpDownloads.identity([url, range])}',
-      'path': file.path, 'url': url, 'headers': requestHeaders,
-    };
-  }
-
   Future<void> _downloadFile(
     String url,
     File file,
@@ -1316,37 +1289,25 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     String? range,
     Duration stallTimeout = const Duration(seconds: 30),
   }) async {
-    if (Platform.isIOS && await IosHttpDownloads.useBackground()) {
-      if (!_isCurrent(run)) {
-        return;
-      }
-      final job = _iosJob(url, file, headers, range: range);
-      await IosHttpDownloads.instance.enqueue([job]);
-      var lastBytes = 0;
-      try {
-        await IosHttpDownloads.instance.wait(job['id'] as String,
-          cancelToken: _episodeTokens[run], onProgress: (received, total) {
-            if (!_isCurrent(run)) {
-              return;
-            }
-            onData(received - lastBytes);
-            lastBytes = received;
-            if (total > 0) {
-              onProgress?.call(received / total);
-            }
-          });
-        return;
-      } on HttpException catch (e) {
-        if (!_isCurrent(run) || !shouldRetryIosDirectly(_episodeTokens[run])) {
-          rethrow;
+    var lastBytes = 0;
+    if (await BackgroundTransfers.instance.fetch(
+      () => transferJob(url, file, headers, range: range),
+      cancelToken: _episodeTokens[run],
+      isCurrent: () => _isCurrent(run),
+      onProgress: (received, total) {
+        if (!_isCurrent(run)) {
+          return;
         }
-        // Continue below with the downloader the other platforms use.
-        Log.warning('Download', 'iOS background download failed, '
-            'downloading directly: $url: ${e.message}');
-        await IosHttpDownloads.instance.control(job['id'] as String,
-            remove: true);
-      }
+        onData(received - lastBytes);
+        lastBytes = received;
+        if (total > 0) {
+          onProgress?.call(received / total);
+        }
+      },
+    )) {
+      return;
     }
+    // Not transferred in the background: fetched here.
     // Paused: do not start a new request.
     if (!_isCurrent(run)) return;
     var part = File("${file.path}.part");
@@ -1411,8 +1372,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     int? maxBytes,
     int? run,
   }) async {
-    if (Platform.isIOS && await IosHttpDownloads.useBackground() && run != null &&
-        path != null && maxBytes == null) {
+    if (run != null && path != null && maxBytes == null &&
+        await BackgroundTransfers.instance.available) {
       if (!_isCurrent(run)) {
         throw StateError('Episode paused');
       }
@@ -1420,7 +1381,8 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       final client = AppDio(BaseOptions(responseType: ResponseType.bytes));
       final episode = _episodeRuns.entries.where((e) => e.value == run).firstOrNull?.key;
       final root = episodeDirectory(path!, episode == '' ? null : episode);
-      client.httpClientAdapter = IosDownloadAdapter('$root/.http-meta', token);
+      client.httpClientAdapter =
+          BackgroundTransfers.instance.requestAdapter('$root/.http-meta', token);
       try {
         final response = await client.get<List<int>>(url, cancelToken: token,
           options: Options(headers: headers));

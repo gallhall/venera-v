@@ -14,8 +14,11 @@ import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/download_queue.dart';
+import 'package:venera/network/file_transfer.dart';
 import 'package:venera/utils/io.dart' show FilePath;
+import 'package:venera/utils/translations.dart';
 
+import 'fake_transfers.dart';
 import 'fmp4_builder.dart';
 
 class _CellularNetwork implements NetworkTypeCapability {
@@ -275,6 +278,9 @@ void main() {
   setUpAll(() async {
     if (!available) return;
     dataDir = await Directory.systemTemp.createTemp('venera_dl_test');
+    // Messages stay untranslated. Loading the real table needs the test
+    // binding, which would replace the HTTP client these tests use.
+    AppTranslation.translations = {};
     App.dataPath = dataDir.path;
     App.cachePath = FilePath.join(dataDir.path, 'cache');
     // The HTTP client of the app (rhttp) is native code.
@@ -655,7 +661,10 @@ class TestVideo extends ComicSource {
     }
 
     // The run paused while the source answers goes on waiting for it.
-    await waitFor(() => task.message == "Fetching play info...");
+    // The source is asked right after the record of the download is
+    // written, and takes 800 ms to answer.
+    await waitFor(() => task.path != null && File(FilePath.join(
+      task.path!, VideoDownloadTask.cacheMetadataName)).existsSync());
     task.pause();
     task.resume();
     await waitFor(() => LocalManager().find('race', task.comicType) != null);
@@ -684,12 +693,90 @@ class TestVideo extends ComicSource {
       File(episode.sources.single.url).readAsBytesSync(),
       server.otherClip,
     );
-    // The cover stays, the record of the source being downloaded goes.
+    // The cover and the record of the download stay, the record of the
+    // source being downloaded goes.
     expect(
       Directory(local.baseDir)
           .listSync()
           .map((e) => e.path.split(RegExp(r'[\\/]')).last),
-      unorderedEquals(['cover.png', 'video.mp4', 'episode.json']),
+      unorderedEquals(['cover.png', 'video.mp4', 'episode.json',
+        VideoDownloadTask.cacheMetadataName]),
     );
   }, skip: skip);
+
+  group('with background transfers', () {
+    late FakeTransfers transfers;
+
+    setUp(() {
+      final previous = BackgroundTransfers.instance;
+      transfers = FakeTransfers();
+      BackgroundTransfers.instance = transfers;
+      addTearDown(() => BackgroundTransfers.instance = previous);
+    });
+
+    Future<LocalComic> downloaded(VideoDownloadTask task, String id) async {
+      var deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (LocalManager().find(id, task.comicType) == null) {
+        expect(task.isError, isFalse, reason: task.message);
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      return LocalManager().find(id, task.comicType)!;
+    }
+
+    test('every file comes through them, and they are cleared once all is downloaded', () async {
+      var task = VideoDownloadTask(source: source, videoId: 'bg_all');
+      DownloadQueue().add(task);
+      var local = await downloaded(task, 'bg_all');
+      String ep(String id) =>
+          VideoDownloadTask.episodeDirectory(local.baseDir, id);
+
+      var mp4 = DownloadedEpisode.load(ep('mp4'))!;
+      expect(File(mp4.sources.single.url).readAsBytesSync(), server.clip);
+      var hls = DownloadedEpisode.load(ep('hls'))!;
+      expect(File(hls.sources.single.url).readAsStringSync(), contains('seg_'));
+
+      var urls = transfers.fetched.map((job) => job['url']).toList();
+      expect(urls, contains('${server.base}/clip'));
+      expect(urls.where((u) => '$u'.contains('/hls/')), isNotEmpty);
+      // The segments of a stream are handed over together, ahead of time.
+      expect(transfers.enqueued.map((job) => job['url']),
+        containsAll(urls.where((u) => '$u'.endsWith('.ts'))));
+      // Playlists are read through a session of the episode.
+      expect(transfers.adapters, contains(endsWith('.http-meta')));
+      expect(transfers.removed, contains(local.baseDir));
+      expect(transfers.forgotten, contains(local.baseDir));
+    }, skip: skip);
+
+    test('a file they give up on is fetched here', () async {
+      transfers.behaviour = FakeFetch.giveUp;
+      var task = VideoDownloadTask(source: source, videoId: 'bg_direct');
+      DownloadQueue().add(task);
+      var local = await downloaded(task, 'bg_direct');
+      var mp4 = DownloadedEpisode.load(
+        VideoDownloadTask.episodeDirectory(local.baseDir, 'mp4'))!;
+      expect(transfers.fetched, isNotEmpty);
+      expect(File(mp4.sources.single.url).readAsBytesSync(), server.clip);
+    }, skip: skip);
+
+    test('pausing the download stops them, cancelling it removes them', () async {
+      transfers.behaviour = FakeFetch.hang;
+      var task = VideoDownloadTask(source: source, videoId: 'bg_stop');
+      DownloadQueue().add(task);
+      var deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (transfers.fetched.isEmpty) {
+        expect(DateTime.now().isBefore(deadline), isTrue, reason: 'timeout');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      var root = task.path!;
+      task.pause();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(transfers.paused, contains(root));
+      expect(task.isError, isFalse, reason: task.message);
+
+      task.cancel();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(transfers.removed, contains(root));
+    }, skip: skip);
+  });
 }

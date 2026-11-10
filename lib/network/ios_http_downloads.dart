@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -11,9 +10,11 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/ios_download_policy.dart';
 
+import 'file_transfer.dart';
+
 /// Persistent native jobs are identified by destination AND request identity.
 /// Reattaching after suspension does not create a second transfer/writer.
-class IosHttpDownloads {
+class IosHttpDownloads implements BackgroundTransfers {
   static final instance = IosHttpDownloads();
   static const channel = MethodChannel('venera/ios_downloads');
   final _changes = StreamController<void>.broadcast();
@@ -52,7 +53,7 @@ class IosHttpDownloads {
     final path = '${App.cachePath}/ios-download-probe/success.html';
     final id = '$path:probe';
     try {
-      await enqueue([{'id': id, 'path': path,
+      await _enqueue([{'id': id, 'path': path,
         'url': 'https://www.apple.com/library/test/success.html'}]);
       await wait(id).timeout(const Duration(seconds: 30));
       appdata.implicitData[_verifiedKey] = true;
@@ -79,8 +80,8 @@ class IosHttpDownloads {
       return true;
     } finally {
       try {
-        await control(path, remove: true);
-        await forget(id);
+        await remove(path);
+        await channel.invokeMethod<void>('forget', id);
         final file = File(path);
         if (await file.exists()) await file.delete();
       } catch (_) {}
@@ -101,21 +102,21 @@ class IosHttpDownloads {
     await channel.invokeMethod<void>('remove', '');
   }
 
-  static String identity(Object request) {
-    Object? canonical(Object? value) {
-      if (value is Map) {
-        final keys = value.keys.map((k) => '$k').toList()..sort();
-        return {for (final key in keys) key: canonical(value[key])};
-      }
-      if (value is List) {
-        return value.map(canonical).toList();
-      }
-      return value;
+  @override
+  bool get supported => true;
+
+  @override
+  Future<bool> get available => useBackground();
+
+  @override
+  Future<void> enqueue(List<Map<String, Object?>> Function() jobs,
+      {bool Function()? isCurrent}) async {
+    if (await useBackground()) {
+      await _enqueue(jobs(), isCurrent: isCurrent);
     }
-    return sha256.convert(utf8.encode(jsonEncode(canonical(request)))).toString();
   }
 
-  Future<void> enqueue(List<Map<String, Object?>> jobs,
+  Future<void> _enqueue(List<Map<String, Object?>> jobs,
       {bool Function()? isCurrent}) async {
     for (final batch in downloadBatches(jobs)) {
       if (isCurrent != null && !isCurrent()) {
@@ -124,6 +125,43 @@ class IosHttpDownloads {
       await channel.invokeMethod<void>('enqueue', batch);
     }
   }
+
+  @override
+  Future<bool> fetch(
+    Map<String, Object?> Function() job, {
+    CancelToken? cancelToken,
+    void Function(int received, int total)? onProgress,
+    bool Function()? isCurrent,
+    bool retryDirectly = true,
+  }) async {
+    if (!await useBackground()) {
+      return false;
+    }
+    if (isCurrent != null && !isCurrent()) {
+      return true;
+    }
+    final request = job();
+    final id = request['id'] as String;
+    await _enqueue([request]);
+    try {
+      await wait(id, cancelToken: cancelToken, onProgress: onProgress);
+      return true;
+    } on HttpException catch (e) {
+      if (!retryDirectly || (isCurrent != null && !isCurrent()) ||
+          !shouldRetryIosDirectly(cancelToken)) {
+        rethrow;
+      }
+      Log.warning('Download', 'iOS background download failed, '
+          'downloading directly: ${request['url']}: ${e.message}');
+      await remove(id);
+      return false;
+    }
+  }
+
+  @override
+  HttpClientAdapter requestAdapter(String directory, CancelToken token,
+          {void Function(int bytes)? onData}) =>
+      IosDownloadAdapter(directory, token, onData: onData);
 
   Future<Map<Object?, Object?>> wait(String id, {
     CancelToken? cancelToken,
@@ -173,11 +211,17 @@ class IosHttpDownloads {
     }
   }
 
-  Future<void> control(String prefix, {bool remove = false}) =>
-      channel.invokeMethod<void>(remove ? 'remove' : 'pause', prefix);
+  @override
+  Future<void> pause(String prefix) =>
+      channel.invokeMethod<void>('pause', prefix);
 
-  Future<void> forget(String id) => channel.invokeMethod<void>('forget', id);
-  Future<void> forgetTree(String prefix) => channel.invokeMethod<void>('forgetTree', prefix);
+  @override
+  Future<void> remove(String prefix) =>
+      channel.invokeMethod<void>('remove', prefix);
+
+  @override
+  Future<void> forget(String prefix) =>
+      channel.invokeMethod<void>('forgetTree', prefix);
 }
 
 /// Used only by offline image downloads. Dio still builds the request body and
@@ -212,8 +256,8 @@ class IosDownloadAdapter implements HttpClientAdapter {
       'url': options.uri.toString(), 'headers': headers,
       'method': options.method, 'body': base64Encode(body),
     };
-    final id = '$directory/${IosHttpDownloads.identity(request)}';
-    await IosHttpDownloads.instance.enqueue([{
+    final id = '$directory/${transferIdentity(request)}';
+    await IosHttpDownloads.instance._enqueue([{
       ...request, 'id': id, 'path': id,
     }]);
     token.throwIfCancellationRequested();
@@ -234,7 +278,7 @@ class IosDownloadAdapter implements HttpClientAdapter {
       }
       Log.warning('Download', 'iOS background request failed, retrying '
           'directly: ${options.uri}: ${e.message}');
-      await IosHttpDownloads.instance.control(id, remove: true);
+      await IosHttpDownloads.instance.remove(id);
       return _fallback.fetch(
         options,
         body.isEmpty ? null : Stream.value(Uint8List.fromList(body)),

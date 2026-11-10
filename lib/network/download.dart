@@ -22,8 +22,7 @@ import 'package:venera/network/dash_manifest.dart';
 import 'package:venera/network/hls_ad_filter.dart';
 import 'package:venera/network/hls_playlist.dart';
 import 'package:venera/network/images.dart';
-import 'package:venera/network/ios_http_downloads.dart';
-import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/network/file_transfer.dart';
 import 'package:venera/network/mp4_merge.dart';
 import 'package:venera/network/video_quality.dart';
 import 'package:venera/utils/ext.dart';
@@ -280,7 +279,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     bool isCurrent() => _isRunning && run == _runId;
     notifyListeners();
     runRecorder();
-    if (Platform.isIOS) {
+    if (BackgroundTransfers.instance.supported) {
       await _iosStopping;
       if (!isCurrent()) {
         return;
@@ -332,7 +331,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     if (!isCurrent()) {
       return;
     }
-    if (Platform.isIOS) {
+    if (BackgroundTransfers.instance.supported) {
       _iosSession = IosComicDownloadSession(path!, onData: onData);
     }
     if (_cover == null) {
@@ -442,7 +441,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       await DownloadQueue().save();
     }
 
-    if (Platform.isIOS) {
+    if (BackgroundTransfers.instance.supported) {
       final session = _iosSession!;
       try {
         await session.prepare(source, comicId, {
