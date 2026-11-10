@@ -210,6 +210,10 @@ jobs:
       - name: Build the Arch package
         run: |
           F2A=$(jq -r '.packages[] | select(.name == "flutter_to_arch") | .rootUri' .dart_tool/package_config.json)
+          # Its PKGBUILD links /usr/bin/<name> to "$pkgdir/...", the build
+          # machine's path: a dangling link once installed. Link relatively.
+          sed -i 's|ln -s "\\\$pkgdir/usr/bin/\(${pkgName}_pkg/$pkgName\)"|ln -s "\1"|' "${F2A#file://}/lib/flutter_to_arch.dart"
+          grep -q 'ln -s "${pkgName}_pkg/$pkgName"' "${F2A#file://}/lib/flutter_to_arch.dart"
           dart compile exe --packages=.dart_tool/package_config.json "${F2A#file://}/bin/flutter_to_arch.dart" -o "$RUNNER_TEMP/flutter_to_arch"
           sed -i 's/^name: venera$/name: venera-v/' pubspec.yaml
           "$RUNNER_TEMP/flutter_to_arch"
