@@ -15,6 +15,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/download_queue.dart';
 import 'package:venera/utils/io.dart' show FilePath;
+import 'package:venera/utils/translations.dart';
 
 import 'fmp4_builder.dart';
 
@@ -275,6 +276,9 @@ void main() {
   setUpAll(() async {
     if (!available) return;
     dataDir = await Directory.systemTemp.createTemp('venera_dl_test');
+    // Messages stay untranslated. Loading the real table needs the test
+    // binding, which would replace the HTTP client these tests use.
+    AppTranslation.translations = {};
     App.dataPath = dataDir.path;
     App.cachePath = FilePath.join(dataDir.path, 'cache');
     // The HTTP client of the app (rhttp) is native code.
@@ -655,7 +659,10 @@ class TestVideo extends ComicSource {
     }
 
     // The run paused while the source answers goes on waiting for it.
-    await waitFor(() => task.message == "Fetching play info...");
+    // The source is asked right after the record of the download is
+    // written, and takes 800 ms to answer.
+    await waitFor(() => task.path != null && File(FilePath.join(
+      task.path!, VideoDownloadTask.cacheMetadataName)).existsSync());
     task.pause();
     task.resume();
     await waitFor(() => LocalManager().find('race', task.comicType) != null);
@@ -684,12 +691,14 @@ class TestVideo extends ComicSource {
       File(episode.sources.single.url).readAsBytesSync(),
       server.otherClip,
     );
-    // The cover stays, the record of the source being downloaded goes.
+    // The cover and the record of the download stay, the record of the
+    // source being downloaded goes.
     expect(
       Directory(local.baseDir)
           .listSync()
           .map((e) => e.path.split(RegExp(r'[\\/]')).last),
-      unorderedEquals(['cover.png', 'video.mp4', 'episode.json']),
+      unorderedEquals(['cover.png', 'video.mp4', 'episode.json',
+        VideoDownloadTask.cacheMetadataName]),
     );
   }, skip: skip);
 }

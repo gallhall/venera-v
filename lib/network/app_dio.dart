@@ -365,10 +365,11 @@ class RHttpAdapter implements HttpClientAdapter {
       headers[key] ??= [];
       headers[key]!.add(entry.$2);
     }
+    final received = _endedByItsReader(res.body, token);
     final response = ResponseBody(
       receiveTimeout == null
-          ? res.body
-          : res.body.timeout(receiveTimeout!, onTimeout: (sink) {
+          ? received
+          : received.timeout(receiveTimeout!, onTimeout: (sink) {
               unawaited(token!.cancel());
               sink.addError(timeoutError());
               sink.close();
@@ -380,6 +381,33 @@ class RHttpAdapter implements HttpClientAdapter {
     );
     response.extra['remoteIp'] = res.remoteIp;
     return response;
+  }
+
+  /// [body], for a reader that may stop listening before it ends.
+  ///
+  /// A request that is cancelled (by its token, or by its client being
+  /// disposed) ends its body with an error. The stream rhttp hands out keeps
+  /// waiting for one more event after its listener is gone, so an error
+  /// arriving then has no one to go to and is reported as uncaught, as
+  /// happened on every paused download. Here the listener stays for that one
+  /// event: an error is dropped, more data ends the stream for good.
+  static Stream<Uint8List> _endedByItsReader(
+      Stream<Uint8List> body, rhttp.CancelToken? token) {
+    late final StreamSubscription<Uint8List> source;
+    final controller = StreamController<Uint8List>(sync: true);
+    controller.onListen = () {
+      source = body.listen(controller.add,
+          onError: controller.addError, onDone: controller.close);
+    };
+    controller.onCancel = () {
+      if (token != null) {
+        unawaited(token.cancel());
+      }
+      source.onData((_) => unawaited(source.cancel()));
+      source.onError((Object _) {});
+      source.onDone(() {});
+    };
+    return controller.stream;
   }
 
   static String _getStatusMessage(int statusCode) {
