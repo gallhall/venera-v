@@ -8,6 +8,19 @@ class UnsupportedWebSniffing implements WebSniffingCapability {
   bool get isSupported => false;
 }
 
+/// The gate of a platform that lets BT run whether or not the app is visible.
+class AlwaysForeground implements ForegroundGate {
+  const AlwaysForeground();
+  @override
+  bool get isForeground => true;
+  @override
+  Duration get backgroundTime => Duration.zero;
+  @override
+  void Function() listen(void Function(bool foreground) listener) => () {};
+  @override
+  Future<void> wait(Future<void> cancelled) async {}
+}
+
 /// False preserves the current non-Android torrent policy; it is not a probe.
 class UnsupportedNetworkType implements NetworkTypeCapability {
   const UnsupportedNetworkType();

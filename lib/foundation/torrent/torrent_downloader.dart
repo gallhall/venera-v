@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
-import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
 import 'package:venera/network/app_dio.dart';
 
 import 'torrent_download_state.dart';
@@ -132,7 +131,8 @@ class TorrentDownloader {
 
 class _DownloadSession {
   void Function()? _foregroundSubscription;
-  bool get foreground => !Platform.isIOS || IosDownloadLifecycle.gate.isForeground;
+  final _gate = PlatformCapabilities.instance.foreground;
+  bool get foreground => _gate.isForeground;
   final TorrentDownloader owner;
   final String key;
   final String source;
@@ -266,21 +266,18 @@ class _DownloadSession {
     try {
       release = await owner.queue.acquire(cancelled: cancelled.future);
       checkCancelled();
-      if (Platform.isIOS) {
-        IosDownloadLifecycle.init();
-        _foregroundSubscription = IosDownloadLifecycle.gate.listen((visible) {
-          // Reset the wall-clock sample even during metadata/Wi-Fi waits,
-          // before iOS freezes timers for an arbitrary amount of time.
-          deadline.observe(0, waiting: true);
-          if (!visible) {
-            task?.pause();
-          } else if (onWifi && !closing && !cancelled.isCompleted) {
-            task?.resume();
-          }
-        });
-        await IosDownloadLifecycle.gate.wait(cancelled.future);
-        checkCancelled();
-      }
+      _foregroundSubscription = _gate.listen((visible) {
+        // Reset the wall-clock sample even during metadata/Wi-Fi waits,
+        // before iOS freezes timers for an arbitrary amount of time.
+        deadline.observe(0, waiting: true);
+        if (!visible) {
+          task?.pause();
+        } else if (onWifi && !closing && !cancelled.isCompleted) {
+          task?.resume();
+        }
+      });
+      await _gate.wait(cancelled.future);
+      checkCancelled();
       await _checkWifi();
       deadline.observe(0, waiting: !onWifi);
       await _readSavedMetadata();
@@ -369,10 +366,8 @@ class _DownloadSession {
       var listener = task!.createListener()
         ..on<TaskStorageFailed>((e) { storageError = e.error; });
       try {
-        if (Platform.isIOS) {
-          await IosDownloadLifecycle.gate.wait(cancelled.future);
-          checkCancelled();
-        }
+        await _gate.wait(cancelled.future);
+        checkCancelled();
         await task!.start();
         if (!foreground) {
           task!.pause();

@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:venera/foundation/log.dart';
-import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
+import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/bangumi_network.dart';
 import 'package:venera/utils/translations.dart';
@@ -70,11 +69,9 @@ class TorrentMetadataOperation {
 
 Future<TorrentMetadata> loadTorrentMetadata(String magnetOrTorrentUrl,
     TorrentMetadataOperation session) async {
-  if (Platform.isIOS) {
-    IosDownloadLifecycle.init();
-    await IosDownloadLifecycle.gate.wait(session.cancelled);
-    session.checkCancelled();
-  }
+  final gate = PlatformCapabilities.instance.foreground;
+  await gate.wait(session.cancelled);
+  session.checkCancelled();
   var uri = Uri.parse(magnetOrTorrentUrl);
   MagnetLink? magnet;
   var peers = <CompactAddress>[];
@@ -98,16 +95,12 @@ Future<TorrentMetadata> loadTorrentMetadata(String magnetOrTorrentUrl,
       Log.info('Torrent', 'Fetching metadata of ${magnet.infoHashString} '
           'from ${trackers.length} trackers and DHT');
       final started = DateTime.now();
-      final backgroundAtStart = IosDownloadLifecycle.gate.backgroundTime;
+      final backgroundAtStart = gate.backgroundTime;
       List<int>? bytes;
       for (var attempt = 1; bytes == null; attempt++) {
-        if (Platform.isIOS) {
-          await IosDownloadLifecycle.gate.wait(session.cancelled);
-          session.checkCancelled();
-        }
-        final background = Platform.isIOS
-            ? IosDownloadLifecycle.gate.backgroundTime - backgroundAtStart
-            : Duration.zero;
+        await gate.wait(session.cancelled);
+        session.checkCancelled();
+        final background = gate.backgroundTime - backgroundAtStart;
         var left = session.timeout - (DateTime.now().difference(started) - background);
         if (left <= Duration.zero) {
           throw TimeoutException('Torrent metadata timed out'.tl);
@@ -162,24 +155,20 @@ Future<List<int>?> fetchTorrentMetadata(MagnetLink magnet, List<Uri> trackers,
     var completed = Completer<List<int>?>();
     var backgroundPause = false;
     Future<void>? stopping;
-    Future<void> stop() => stopping ??= Platform.isIOS
-        ? downloader.stop().catchError((Object e) {
-            Log.warning('Torrent', 'Unable to stop metadata discovery: $e');
-          })
-        : downloader.stop();
-    void Function()? foregroundSubscription;
-    if (Platform.isIOS) {
-      foregroundSubscription = IosDownloadLifecycle.gate.listen((visible) {
-        if (!visible) {
-          backgroundPause = true;
-          unawaited(stop().whenComplete(() {
-            if (!completed.isCompleted) {
-              completed.complete(null);
-            }
-          }));
-        }
-      });
-    }
+    Future<void> stop() => stopping ??= downloader.stop().catchError((Object e) {
+      Log.warning('Torrent', 'Unable to stop metadata discovery: $e');
+    });
+    final foregroundSubscription =
+        PlatformCapabilities.instance.foreground.listen((visible) {
+      if (!visible) {
+        backgroundPause = true;
+        unawaited(stop().whenComplete(() {
+          if (!completed.isCompleted) {
+            completed.complete(null);
+          }
+        }));
+      }
+    });
     var seconds = 0;
     var progress = 0.0;
     var progressAt = 0;
@@ -240,7 +229,7 @@ Future<List<int>?> fetchTorrentMetadata(MagnetLink magnet, List<Uri> trackers,
         }),
       ]);
     } finally {
-      foregroundSubscription?.call();
+      foregroundSubscription();
       session.timer?.cancel();
       listener.dispose();
       session.downloader = null;
