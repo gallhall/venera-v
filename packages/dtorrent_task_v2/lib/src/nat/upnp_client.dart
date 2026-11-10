@@ -27,7 +27,13 @@ class UPnPClient {
   /// HTTP client timeout
   final Duration timeout;
 
-  UPnPClient({this.timeout = const Duration(seconds: 5)});
+  /// [bindSocket] supplies a datagram socket for deterministic network tests.
+  UPnPClient(
+      {this.timeout = const Duration(seconds: 5),
+      Future<RawDatagramSocket> Function()? bindSocket})
+      : _bindSocket = bindSocket;
+
+  final Future<RawDatagramSocket> Function()? _bindSocket;
 
   /// Discover UPnP gateway device on the network
   ///
@@ -35,7 +41,8 @@ class UPnPClient {
   Future<GatewayDevice?> discoverGateway() async {
     try {
       _log.info('Discovering UPnP gateway...');
-      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      final socket = await (_bindSocket?.call() ??
+          RawDatagramSocket.bind(InternetAddress.anyIPv4, 0));
 
       try {
         // Send M-SEARCH request
@@ -82,6 +89,13 @@ class UPnPClient {
               }
             }
           }
+        }, onError: (Object error, StackTrace stack) {
+          // UDP send failures can arrive on the stream, outside the try/catch
+          // around send(). Optional router discovery must not abort playback.
+          _log.warning('UPnP discovery socket failed', error, stack);
+          timeoutTimer?.cancel();
+          subscription?.cancel();
+          if (!completer.isCompleted) completer.complete(null);
         });
 
         timeoutTimer = Timer(timeout, () {
