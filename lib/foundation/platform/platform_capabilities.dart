@@ -6,6 +6,7 @@ import 'android_capabilities.dart';
 import 'capabilities.dart';
 import 'desktop_background_download.dart';
 import 'ios_capabilities.dart';
+import 'ios_foreground_gate.dart';
 import 'ios_background_download.dart';
 import 'unsupported_capabilities.dart';
 
@@ -23,6 +24,7 @@ class PlatformCapabilities {
     this.backgroundDownload = const UnsupportedBackgroundDownload(),
     this.filePicker = const UnsupportedNativeFilePicker(),
     this.sharedText = const UnsupportedSharedText(),
+    this.foreground = const AlwaysForeground(),
   });
 
   static PlatformCapabilities _instance = Platform.isAndroid
@@ -41,6 +43,7 @@ class PlatformCapabilities {
               networkType: IosNetworkType(),
               thermal: IosThermal(),
               backgroundDownload: IosBackgroundDownload(),
+              foreground: IosForegroundGate(),
             )
           : Platform.isWindows || Platform.isLinux || Platform.isMacOS
               ? PlatformCapabilities(
@@ -66,4 +69,5 @@ class PlatformCapabilities {
   final BackgroundDownloadCapability backgroundDownload;
   final NativeFilePickerCapability filePicker;
   final SharedTextCapability sharedText;
+  final ForegroundGate foreground;
 }

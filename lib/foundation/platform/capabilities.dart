@@ -28,6 +28,24 @@ abstract class VolumeKeysCapability {
   Stream<dynamic> get events;
 }
 
+/// Whether BT work may run now. iOS suspends an app that is not in the
+/// foreground, so BT waits there; elsewhere the app is always "in the
+/// foreground" as far as BT is concerned.
+abstract class ForegroundGate {
+  bool get isForeground;
+
+  /// Total time spent out of the foreground, for deadlines to leave out.
+  Duration get backgroundTime;
+
+  /// Reports every change to [listener] until the returned function is
+  /// called. A gate that can leave the foreground also reports its current
+  /// state at once.
+  void Function() listen(void Function(bool foreground) listener);
+
+  /// Completes in the foreground. Throws when [cancelled] completes first.
+  Future<void> wait(Future<void> cancelled);
+}
+
 abstract class BackgroundDownloadCapability {
   bool get isSupported;
   void setActionHandler(Future<void> Function(String action)? handler);

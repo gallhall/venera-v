@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
-import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -47,9 +46,8 @@ abstract final class DownloadNotification {
   static bool _askedPermission = false;
 
   static Future<void> init() async {
-    IosDownloadLifecycle.init();
     if (Platform.isIOS) {
-      IosDownloadLifecycle.gate.listen((foreground) {
+      PlatformCapabilities.instance.foreground.listen((foreground) {
         if (foreground && DownloadQueue().hasActiveDownloads) {
           _askPermission();
         }
