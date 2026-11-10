@@ -21,7 +21,7 @@ jobs:
       - name: Verify signed release entitlements
         run: |
           mkdir -p smoke
-          codesign -d --entitlements - build/macos/Build/Products/Release/venera-v.app > smoke/entitlements.plist
+          codesign -d --entitlements - --xml build/macos/Build/Products/Release/venera-v.app > smoke/entitlements.plist
           cat smoke/entitlements.plist
           python3 - <<'PY'
           import plistlib
