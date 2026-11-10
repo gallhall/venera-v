@@ -318,6 +318,12 @@ class PlayerService implements VideoPlayback {
 
   final Player _player;
 
+  /// Captures libass output as well as the decoded video for smoke artifacts.
+  @visibleForTesting
+  Future<Uint8List?> screenshotWithSubtitles() => _player.screenshot(
+    format: 'image/png', includeLibassSubtitles: true,
+  );
+
   /// Null without a view, see [PlayerService.withoutView].
   final VideoController? _controller;
 
