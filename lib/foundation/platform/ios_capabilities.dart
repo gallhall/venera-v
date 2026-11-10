@@ -1,6 +1,21 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/services.dart';
 
 import 'capabilities.dart';
+
+class IosThermal implements ThermalCapability {
+  const IosThermal();
+
+  static const _channel = MethodChannel('venera/thermal');
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<Map<String, dynamic>?> sample() => _channel
+      .invokeMapMethod<String, dynamic>('sample')
+      .timeout(const Duration(seconds: 2));
+}
 
 class IosNetworkType implements NetworkTypeCapability {
   const IosNetworkType();

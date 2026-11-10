@@ -280,6 +280,11 @@ class VideoCacheEpisodeRow extends StatelessWidget {
           if (active && entry.torrent?.noPeersHint == true)
             Text('No available peers yet, try another resource'.tl,
               style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant)),
+          if (Platform.isIOS && !entry.completed &&
+              (entry.torrent != null ||
+                entry.task?.torrentReleases.containsKey(entry.chapterId ?? '') == true))
+            Text('Keep the app in the foreground on iOS for BT downloads'.tl,
+              style: ts.s12.copyWith(color: context.colorScheme.onSurfaceVariant)),
         ])),
         PopupMenuButton<String>(tooltip: 'More'.tl,
           onSelected: (value) => action(context, value),

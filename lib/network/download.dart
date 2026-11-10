@@ -22,6 +22,8 @@ import 'package:venera/network/dash_manifest.dart';
 import 'package:venera/network/hls_ad_filter.dart';
 import 'package:venera/network/hls_playlist.dart';
 import 'package:venera/network/images.dart';
+import 'package:venera/network/ios_http_downloads.dart';
+import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/network/mp4_merge.dart';
 import 'package:venera/network/video_quality.dart';
 import 'package:venera/utils/ext.dart';
@@ -94,6 +96,9 @@ abstract class DownloadTask with ChangeNotifier {
 }
 
 class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
+  IosComicDownloadSession? _iosSession;
+  Future<void>? _iosStopping;
+  int _runId = 0;
   final ComicSource source;
 
   final String comicId;
@@ -121,9 +126,13 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
   });
 
   @override
-  void cancel() {
+  void cancel() async {
     _isRunning = false;
+    final nativeStop = _iosStopping = _iosSession?.stop(remove: true);
     DownloadQueue().remove(this);
+    if (_iosSession != null) {
+      await nativeStop;
+    }
     var local = LocalManager().find(id, comicType);
     if (path != null) {
       if (local == null) {
@@ -166,6 +175,9 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
     _isRunning = false;
     _message = "Paused";
+    if (_iosSession != null) {
+      unawaited(_iosStopping = _iosSession!.stop());
+    }
     _currentSpeed = 0;
     var shouldMove = <int>[];
     for (var entry in tasks.entries) {
@@ -264,8 +276,16 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     _isError = false;
     _message = "Resuming...";
     _isRunning = true;
+    final run = ++_runId;
+    bool isCurrent() => _isRunning && run == _runId;
     notifyListeners();
     runRecorder();
+    if (Platform.isIOS) {
+      await _iosStopping;
+      if (!isCurrent()) {
+        return;
+      }
+    }
 
     if (comic == null) {
       _message = "Fetching comic info...";
@@ -278,7 +298,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
           return r.data;
         }
       });
-      if (!_isRunning) {
+      if (!isCurrent()) {
         return;
       }
       if (res.error) {
@@ -309,13 +329,21 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
     await DownloadQueue().save();
 
+    if (!isCurrent()) {
+      return;
+    }
+    if (Platform.isIOS) {
+      _iosSession = IosComicDownloadSession(path!, onData: onData);
+    }
     if (_cover == null) {
       _message = "Downloading cover...";
       notifyListeners();
       var res = await _runWithRetry(() async {
         Uint8List? data;
-        await for (var progress
-            in ImageDownloader.loadThumbnail(comic!.cover, source.key)) {
+        final coverStream = _iosSession == null
+            ? ImageDownloader.loadThumbnail(comic!.cover, source.key)
+            : ImageDownloader.loadDownloadThumbnail(comic!.cover, source.key, _iosSession!);
+        await for (var progress in coverStream) {
           if (progress.imageBytes != null) {
             data = progress.imageBytes;
           }
@@ -323,11 +351,17 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         if (data == null) {
           throw "Failed to download cover";
         }
+        if (!isCurrent()) {
+          throw StateError('Comic download paused');
+        }
         var fileType = detectFileType(data);
         var file = File(FilePath.join(path!, "cover${fileType.ext}"));
         file.writeAsBytesSync(data);
         return "file://${file.path}";
       });
+      if (!isCurrent()) {
+        return;
+      }
       if (res.error) {
         Log.error("Download", res.errorMessage!);
         _setError("Error: ${res.errorMessage}");
@@ -337,6 +371,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         notifyListeners();
       }
       await DownloadQueue().save();
+    }
+
+    if (!isCurrent()) {
+      return;
     }
 
     if (_images == null) {
@@ -351,7 +389,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
             return r.data;
           }
         });
-        if (!_isRunning) {
+        if (!isCurrent()) {
           return;
         }
         if (res.error) {
@@ -386,7 +424,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
               return r.data;
             }
           });
-          if (!_isRunning) {
+          if (!isCurrent()) {
             return;
           }
           if (res.error) {
@@ -404,6 +442,23 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       await DownloadQueue().save();
     }
 
+    if (Platform.isIOS) {
+      final session = _iosSession!;
+      try {
+        await session.prepare(source, comicId, {
+          for (final entry in _images!.entries.skip(_chapter)) entry.key: entry.value,
+        });
+      } catch (e) {
+        if (isCurrent() && identical(_iosSession, session)) {
+          _setError('Error: $e');
+        }
+        return;
+      }
+      if (!isCurrent() || !identical(_iosSession, session)) {
+        return;
+      }
+    }
+
     while (_chapter < _images!.length) {
       var images = _images![_images!.keys.elementAt(_chapter)]!;
       tasks.clear();
@@ -411,7 +466,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
         _scheduleTasks();
         var task = tasks[_index]!;
         await task.wait();
-        if (isPaused) {
+        if (!isCurrent()) {
           return;
         }
         if (task.error != null) {
@@ -428,6 +483,10 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
       _chapter++;
     }
 
+    await _iosSession?.finish();
+    if (!isCurrent()) {
+      return;
+    }
     DownloadQueue().complete(this);
     stopRecorder();
   }
@@ -440,6 +499,9 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   void _setError(String message) {
     _isRunning = false;
+    if (_iosSession != null) {
+      unawaited(_iosStopping = _iosSession!.stop());
+    }
     _isError = true;
     _message = message;
     notifyListeners();
@@ -552,6 +614,7 @@ Future<Res<T>> _runWithRetry<T>(Future<T> Function() task,
 
 class _ImageDownloadWrapper {
   final ImagesDownloadTask task;
+  final IosComicDownloadSession? _iosSession;
 
   final String chapter;
 
@@ -567,7 +630,7 @@ class _ImageDownloadWrapper {
     this.image,
     this.saveTo,
     this.index,
-  ) {
+  ) : _iosSession = task._iosSession {
     start();
   }
 
@@ -579,6 +642,12 @@ class _ImageDownloadWrapper {
 
   void cancel() {
     isCancelled = true;
+    for (final completer in completers) {
+      if (!completer.isCompleted) {
+        completer.complete(this);
+      }
+    }
+    completers.clear();
   }
 
   var completers = <Completer<_ImageDownloadWrapper>>[];
@@ -589,16 +658,25 @@ class _ImageDownloadWrapper {
     int lastBytes = 0;
     try {
       await for (var p in ImageDownloader.loadComicImageUnwrapped(
-          image, task.source.key, task.comicId, chapter)) {
+          image, task.source.key, task.comicId, chapter, iosSession: _iosSession)) {
         if (isCancelled) {
           return;
         }
-        task.onData(p.currentBytes - lastBytes);
+        if (_iosSession == null) {
+          task.onData(p.currentBytes - lastBytes);
+        }
         lastBytes = p.currentBytes;
         if (p.imageBytes != null) {
           var fileType = detectFileType(p.imageBytes!);
           var file = saveTo.joinFile("$index${fileType.ext}");
-          await file.writeAsBytes(p.imageBytes!);
+          if (_iosSession != null) {
+            await _iosSession!.write(file, p.imageBytes!);
+          } else {
+            await file.writeAsBytes(p.imageBytes!);
+          }
+          if (isCancelled) {
+            return;
+          }
           isComplete = true;
           for (var c in completers) {
             c.complete(this);
@@ -626,7 +704,7 @@ class _ImageDownloadWrapper {
   }
 
   Future<_ImageDownloadWrapper> wait() {
-    if (isComplete) {
+    if (isComplete || isCancelled) {
       return Future.value(this);
     }
     var c = Completer<_ImageDownloadWrapper>();

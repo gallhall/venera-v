@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/network/download_queue.dart';
+import 'package:venera/network/ios_http_downloads.dart';
 
 /// Keeps the downloads running in the background on Android, through the
 /// foreground service `DownloadService` of the app. Its notification shows
@@ -45,6 +47,14 @@ abstract final class DownloadNotification {
   static bool _askedPermission = false;
 
   static Future<void> init() async {
+    IosDownloadLifecycle.init();
+    if (Platform.isIOS) {
+      IosDownloadLifecycle.gate.listen((foreground) {
+        if (foreground && DownloadQueue().hasActiveDownloads) {
+          _askPermission();
+        }
+      });
+    }
     if (!_service.isSupported) {
       return;
     }
@@ -95,6 +105,9 @@ abstract final class DownloadNotification {
   /// before the next one starts, and the service must not stop between them,
   /// as Android does not start it again from the background.
   static void _schedule() {
+    if (Platform.isIOS && DownloadQueue().hasActiveDownloads) {
+      _askPermission();
+    }
     // Observe every task, including failures hidden behind a running task.
     if (_service case DownloadFailureCapability failures) {
       final current = DownloadQueue().tasks.toSet();
@@ -118,8 +131,17 @@ abstract final class DownloadNotification {
   }
 
   static void _sync() {
+    if (Platform.isIOS) {
+      // Run after this sync's update/finish calls have been sent to native code.
+      scheduleMicrotask(() {
+        _invoke('settled', IosHttpDownloads.channel.invokeMethod<void>('settled'));
+      });
+    }
     var state = _currentState();
     if (state == _state) {
+      if (Platform.isIOS && state == 'none' && _completed > 0) {
+        _finish();
+      }
       // The representative can change while another anime keeps running.
       if (state != 'none') {
         _push();

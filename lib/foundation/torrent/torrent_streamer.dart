@@ -11,6 +11,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/platform/ios_download_lifecycle.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
 
@@ -110,6 +111,11 @@ class DartTorrentStreamer implements TorrentStreamer {
     var session = _TorrentSession()..download = download;
     _sessions[key] = session;
     try {
+      if (Platform.isIOS) {
+        IosDownloadLifecycle.init();
+        await IosDownloadLifecycle.gate.wait(session.cancelled.future);
+        session.checkCancelled();
+      }
       await _cache.create(recursive: true);
       await _cacheOperation(() async {
         await _trimCache(16 * 1024 * 1024, limited: !download);
@@ -168,6 +174,15 @@ class DartTorrentStreamer implements TorrentStreamer {
           seekLatencyTolerance: 1,
         ));
       session.task = task;
+      if (Platform.isIOS) {
+        session.foregroundSubscription = IosDownloadLifecycle.gate.listen((visible) {
+          if (!visible) {
+            task.pause();
+          } else if (!session.cancelled.isCompleted) {
+            task.resume();
+          }
+        });
+      }
       task.setLeechFilter(appdata.settings['btBlockLeechers'] != false);
       await _refreshLimits(session);
       session.checkCancelled();
@@ -176,6 +191,10 @@ class DartTorrentStreamer implements TorrentStreamer {
             ? FilePriority.high : FilePriority.skip);
       }
       task.setStreamFile(model.files.indexOf(file));
+      if (Platform.isIOS) {
+        await IosDownloadLifecycle.gate.wait(session.cancelled.future);
+        session.checkCancelled();
+      }
       // A step of the engine that never returns (it once looped forever
       // offline) must not keep a released stream from closing: cleanup
       // stops the task.
@@ -187,6 +206,9 @@ class DartTorrentStreamer implements TorrentStreamer {
       ]);
       session.checkCancelled();
       var selector = task.pieceManager?.pieceSelector;
+      if (Platform.isIOS && !IosDownloadLifecycle.gate.isForeground) {
+        task.pause();
+      }
       var filePieces = (file.end - 1) ~/ model.pieceLength -
           file.offset ~/ model.pieceLength + 1;
       Log.info('Torrent', 'Streaming $filePieces pieces of '
@@ -203,6 +225,9 @@ class DartTorrentStreamer implements TorrentStreamer {
         ...publicTorrentTrackers.map(Uri.parse),
       };
       session.retryPeers = () {
+        if (Platform.isIOS && !IosDownloadLifecycle.gate.isForeground) {
+          return;
+        }
         for (var tracker in trackers) {
           task.startAnnounceUrl(tracker, model.infoHashBuffer, force: true);
         }
@@ -366,6 +391,8 @@ class DartTorrentStreamer implements TorrentStreamer {
 
   Future<void> _cleanup(_TorrentSession session) =>
       session.cleanup ??= () async {
+        session.foregroundSubscription?.call();
+        session.foregroundSubscription = null;
         session.timer?.cancel();
         if (session.localUrl != null) {
           await _server.remove(session.localUrl!);
@@ -443,6 +470,7 @@ class DartTorrentStreamer implements TorrentStreamer {
 }
 
 class _TorrentSession {
+  void Function()? foregroundSubscription;
   final status = ValueNotifier(const TorrentStatus());
   final cancelled = Completer<void>();
   final opened = Completer<void>();

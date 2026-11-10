@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:venera/foundation/animeko/rss_preferences.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/app_page_route.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/release_lines.dart';
 import 'package:venera/foundation/bangumi/playback_context.dart';
@@ -30,6 +32,7 @@ import 'package:venera/foundation/video/watch_progress.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/play_info_source.dart';
 import 'package:venera/foundation/video/player_service.dart';
+import 'package:venera/foundation/video/now_playing.dart';
 import 'package:venera/foundation/video/resolution_label.dart';
 import 'package:venera/foundation/video/stream_lease.dart';
 import 'package:venera/foundation/video/system_subtitle_fonts.dart';
@@ -154,6 +157,123 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   final switcher = AutoSwitcher();
   final playbackSubscriptions = <StreamSubscription>[];
+
+  late final nowPlaying = NowPlaying(onCommand: onNowPlayingCommand);
+  Timer? nowPlayingTimer;
+  int nowPlayingToken = 0;
+  bool nowPlayingDisposed = false;
+
+  void refreshNowPlaying({Duration? position}) {
+    if (nowPlayingDisposed || !nowPlaying.isSupported) {
+      return;
+    }
+    nowPlayingTimer?.cancel();
+    final p = active;
+    final token = ++nowPlayingToken;
+    if (p == null) {
+      return;
+    }
+    if (p.isPlaying) {
+      nowPlayingTimer = Timer(const Duration(seconds: 5), () {
+        refreshNowPlaying();
+      });
+    }
+    final state = NowPlayingState(
+      title: bangumi != null ? bangumiEpisodeTitle : episodeLabel(episode),
+      artist: pageTitle,
+      duration: p.currentDuration,
+      position: position ?? p.currentPosition,
+      playing: p.isPlaying,
+      speed: p.currentRate,
+      canPrevious: hasPrevious,
+      canNext: hasNext,
+    );
+    unawaited(updateNowPlayingArtwork(state, p, token));
+  }
+
+  Future<void> updateNowPlayingArtwork(
+    NowPlayingState state, PlayerService p, int token,
+  ) async {
+    String? path;
+    try {
+      final subject = bangumi?.subject;
+      final cover = subject?.image ?? details.cover;
+      if (cover.startsWith('file://')) {
+        final file = File(cover.substring(7));
+        if (await file.exists()) {
+          path = file.path;
+        }
+      } else if (cover.isNotEmpty) {
+        // Use the same key as ImageDownloader.loadThumbnail; never fetch.
+        final key = subject != null
+            ? '$cover@null' : '$cover@$sourceKey@${details.id}';
+        path = (await CacheManager().findCache(key))?.path;
+      }
+    } catch (e) {
+      Log.info('Video', 'Now Playing cover unavailable: $e');
+    }
+    if (nowPlayingDisposed || !mounted || token != nowPlayingToken ||
+        !identical(active, p)) {
+      return;
+    }
+    await nowPlaying.update(NowPlayingState(
+      title: state.title,
+      artist: state.artist,
+      duration: state.duration,
+      position: state.position,
+      playing: state.playing,
+      speed: state.speed,
+      canPrevious: state.canPrevious,
+      canNext: state.canNext,
+      artworkPath: path,
+    ));
+  }
+
+  Future<void> onNowPlayingCommand(String name, double? position) async {
+    if (!mounted || nowPlayingDisposed) {
+      return;
+    }
+    if (name == 'next' && hasNext) {
+      await moveEpisode(1);
+      return;
+    }
+    if (name == 'previous' && hasPrevious) {
+      await moveEpisode(-1);
+      return;
+    }
+    final p = active;
+    if (p == null) {
+      return;
+    }
+    switch (name) {
+      case 'play':
+        await p.play();
+      case 'pause':
+        await p.pause();
+      case 'toggle':
+        await p.playOrPause();
+      case 'seek' || 'forward' || 'backward':
+        final seconds = name == 'seek' ? position
+            : p.currentPosition.inMicroseconds / Duration.microsecondsPerSecond
+                + (name == 'forward' ? 10 : -10);
+        if (seconds == null || !seconds.isFinite) {
+          return;
+        }
+        var target = Duration(microseconds:
+            (seconds * Duration.microsecondsPerSecond).round());
+        if (target < Duration.zero) {
+          target = Duration.zero;
+        }
+        if (p.currentDuration > Duration.zero && target > p.currentDuration) {
+          target = p.currentDuration;
+        }
+        danmaku.seek(target);
+        await p.seek(target);
+        refreshNowPlaying(position: target);
+        return;
+    }
+    refreshNowPlaying();
+  }
 
   bool get autoSwitch => appdata.settings['videoAutoSwitch'] != false;
 
@@ -455,10 +575,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.duration.listen(
         ifActive((d) {
           duration = d;
+          refreshNowPlaying();
         }),
       ),
       p.playing.listen(
         ifActive((playing) {
+          refreshNowPlaying();
           historyTimer?.cancel();
           if (playing) {
             watchProgress.playing();
@@ -471,7 +593,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           }
         }),
       ),
-      p.rate.listen(ifActive((v) => setState(() => rate = v))),
+      p.rate.listen(ifActive((v) {
+        setState(() => rate = v);
+        refreshNowPlaying();
+      })),
+      p.seeked.listen(ifActive((position) {
+        refreshNowPlaying(position: position);
+      })),
       p.position.listen(
         ifActive((position) {
           checkSkip(position);
@@ -483,6 +611,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void onStarted(PlaybackStarted event) {
     duration = event.duration;
+    refreshNowPlaying(position: openedAt);
     if (correspondence.memoryAt(current) case var line?) {
       Log.info('Video', 'Remember line "$line" for $sourceKey');
       LineMemory.remember(appdata.implicitData, sourceKey, details.id, line);
@@ -514,6 +643,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       }
     }
     setState(() {});
+    refreshNowPlaying();
   }
 
   void onSessionEvent(PlaybackEvent event) {
@@ -546,6 +676,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
+    nowPlayingDisposed = true;
+    ++nowPlayingToken;
+    nowPlayingTimer?.cancel();
+    unawaited(nowPlaying.dispose());
     sessionEvents?.cancel();
     session?.removeListener(sessionChanged);
     unawaited(session?.dispose());
@@ -1815,7 +1949,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               tooltip: 'Unlock'.tl,
               icon: Icons.lock_open_rounded,
               onTap: () => setState(() => isLocked = false),
-            ).paddingLeft(24),
+              // Clear of a landscape iPhone's Dynamic Island or notch.
+            ).paddingLeft(24 + MediaQuery.paddingOf(context).left),
           ),
         ),
       ),

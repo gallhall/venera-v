@@ -1380,7 +1380,17 @@ class PlayerService implements VideoPlayback {
   Future<void> playOrPause() => _player.playOrPause();
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+    if (!_seeked.isClosed) {
+      _seeked.add(position);
+    }
+  }
+
+  final _seeked = StreamController<Duration>.broadcast();
+
+  /// Completed seeks, including those made directly by the video controls.
+  Stream<Duration> get seeked => _seeked.stream;
 
   @override
   Future<void> setRate(double rate) => _player.setRate(rate);
@@ -1439,6 +1449,7 @@ class PlayerService implements VideoPlayback {
     }
     await _player.dispose();
     await _completed.close();
+    await _seeked.close();
     await _interrupted.close();
     await _anime4kFailures.close();
     await _anime4kGuardEvents.close();

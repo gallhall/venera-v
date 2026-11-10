@@ -6,6 +6,7 @@ import 'android_capabilities.dart';
 import 'capabilities.dart';
 import 'desktop_background_download.dart';
 import 'ios_capabilities.dart';
+import 'ios_background_download.dart';
 import 'unsupported_capabilities.dart';
 
 export 'capabilities.dart';
@@ -38,6 +39,8 @@ class PlatformCapabilities {
           ? const PlatformCapabilities(
               webSniffing: SupportedWebSniffing(),
               networkType: IosNetworkType(),
+              thermal: IosThermal(),
+              backgroundDownload: IosBackgroundDownload(),
             )
           : Platform.isWindows || Platform.isLinux || Platform.isMacOS
               ? PlatformCapabilities(
