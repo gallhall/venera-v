@@ -54,32 +54,65 @@ class Log {
   /// steps but not this did not finish starting.
   static const startedMessage = "First frame shown";
 
+  /// Whether [startRun] has run and found no file to write to. Entries are
+  /// then kept in memory only, instead of trying again for each of them.
+  static bool _noFile = false;
+
   /// Keeps the log of the previous run as [previousRunFile] and starts the
   /// one of this run. Called once the app's directories are known; logging
   /// before calls it too.
+  ///
+  /// A failure to keep the previous log, e.g. while another program holds
+  /// it on Windows, does not stop this run's log: it is then appended to
+  /// `logs.txt`, or goes to `logs.<pid>.txt` if that cannot be opened.
   static void startRun() {
-    if (_file != null || !App.isInitialized) return;
+    if (_file != null || _noFile || !App.isInitialized) return;
+    var file = _directory.joinFile("logs.txt");
+    String? previousStart;
+    String? problem;
     try {
-      var file = _directory.joinFile("logs.txt");
       var previous = previousRunFile;
-      String? previousStart;
       if (file.existsSync()) {
         if (previous.existsSync()) previous.deleteSync();
         file.renameSync(previous.path);
         previousStart = _readStart(previous);
       }
-      _file = file.openSync(mode: FileMode.write);
-      if (previousStart != null &&
-          previousStart.contains("Startup") &&
-          !previousStart.contains(startedMessage)) {
-        warning(
-          "Startup",
-          "The previous run stopped before its first frame was shown. "
-              "Its log is kept: Settings > Logs > Previous Run.",
-        );
-      }
     } catch (e) {
-      printError("Failed to open the log file: $e");
+      problem = "The log of the previous run could not be kept: $e";
+    }
+    // Appended after a failed rotation: the previous run's log is still
+    // in it, after its own "Run of process" line.
+    var mode = problem == null ? FileMode.write : FileMode.append;
+    for (var candidate in [file, _directory.joinFile("logs.$pid.txt")]) {
+      try {
+        _file = candidate.openSync(mode: mode);
+        break;
+      } catch (e) {
+        problem = "${problem ?? ""}\nCould not open ${candidate.path}: $e"
+            .trim();
+      }
+    }
+    if (_file == null) {
+      _noFile = true;
+      printError("Failed to open the log file: $problem");
+      return;
+    }
+    // Tells runs apart: on Windows, starting the app while it runs (also
+    // hidden in the tray) only shows the running one, no new run starts.
+    try {
+      _file!.writeStringSync(
+        "Run of process $pid, started ${DateTime.now()}\n\n",
+      );
+    } catch (_) {}
+    if (problem != null) warning("Log", problem);
+    if (previousStart != null &&
+        previousStart.contains("Startup") &&
+        !previousStart.contains(startedMessage)) {
+      warning(
+        "Startup",
+        "The previous run stopped before its first frame was shown. "
+            "Its log is kept: Settings > Logs > Previous Run.",
+      );
     }
   }
 
@@ -98,6 +131,7 @@ class Log {
   static void endRun() {
     _file?.closeSync();
     _file = null;
+    _noFile = false;
   }
 
   static void addLog(LogLevel level, String title, String content) {

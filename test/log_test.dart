@@ -60,6 +60,32 @@ void main() {
     expect(Log.logs, isEmpty);
   });
 
+  test('each run starts with its process, to tell runs apart', () {
+    Log.startRun();
+    expect(current().readAsStringSync(), startsWith('Run of process $pid,'));
+  });
+
+  test('still logs when the previous log cannot be kept', () {
+    current().writeAsStringSync('error Network\n\nlast words\n\n');
+    // A folder in its place makes the rename fail, as a locked file does.
+    Directory('${dir.path}/logs.previous.txt/x').createSync(recursive: true);
+    Log.startRun();
+    Log.info('Startup', 'Databases...');
+    var text = current().readAsStringSync();
+    // Appended: the previous run's log is not lost either.
+    expect(text, contains('last words'));
+    expect(text, contains('could not be kept'));
+    expect(text, contains('Databases...'));
+  });
+
+  test('writes to a file of its own when logs.txt cannot be opened', () {
+    Directory('${dir.path}/logs.txt').createSync();
+    Log.startRun();
+    Log.info('Startup', 'Databases...');
+    var own = File('${dir.path}/logs.$pid.txt');
+    expect(own.readAsStringSync(), contains('Databases...'));
+  });
+
   test('not for a log without startup steps, of an older version', () {
     current().writeAsStringSync('info Network\n\nGET https://example.com\n\n');
     Log.startRun();
