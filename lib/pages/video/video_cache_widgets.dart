@@ -197,6 +197,18 @@ class _CacheSubjectPickerState extends State<_CacheSubjectPicker> {
     ]));
 }
 
+/// What a cached episode is called: its Bangumi number and name, the same
+/// for every source, or the title its source gave it when that is unknown.
+String cachedEpisodeLabel(VideoCacheEntry entry) {
+  var episode = entry.episode;
+  if (episode == null) {
+    return entry.title;
+  }
+  var name = episode.nameCn.isNotEmpty ? episode.nameCn : episode.name;
+  var label = 'Episode @n'.tlParams({'n': episode.number});
+  return name.isEmpty ? label : '$label · $name';
+}
+
 class VideoCacheEpisodeRow extends StatelessWidget {
   const VideoCacheEpisodeRow({super.key, required this.entry, required this.onChanged});
   final VideoCacheEntry entry;
@@ -250,9 +262,7 @@ class VideoCacheEpisodeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var chapters = entry.task?.comic?.chapters ?? entry.local?.chapters;
-    var index = chapters?.ids.toList().indexOf(entry.chapterId ?? '') ?? -1;
-    var title = index < 0 ? entry.title : '${(index + 1).toString().padLeft(2, '0')}  ${entry.title}';
+    var title = cachedEpisodeLabel(entry);
     var active = !entry.completed && !entry.paused && entry.failure == null;
     return Padding(padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

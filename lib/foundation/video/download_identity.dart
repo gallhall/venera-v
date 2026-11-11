@@ -117,6 +117,19 @@ class DownloadIdentity {
         name: parts.length > 1 ? parts.skip(1).join(' · ') : '');
   }
 
+  /// [episodeOf] for showing the episode: null also when its number would
+  /// only be the chapter's place in the source's list, which differs from
+  /// source to source and says nothing next to other downloads.
+  BangumiEpisode? shownEpisodeOf(String? chapterId) {
+    var key = chapterId ?? '';
+    if (_episodes[key] case var episode?) {
+      return episode;
+    }
+    var number = BangumiEpisodeNumber.of(
+        (_titles[key] ?? '').split(' · ').first, 0);
+    return number == null || number == 0 ? null : episodeOf(chapterId);
+  }
+
   /// Whether this is a BT download stored under its subject, which lists
   /// every episode of the subject as a chapter.
   bool get listsSubject => _legacySubject;
