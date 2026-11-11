@@ -136,7 +136,11 @@ abstract final class DownloadNotification {
         _finish();
       }
       // The representative can change while another anime keeps running.
-      if (state != 'none') {
+      // A paused task is not reported again: it goes on changing for a
+      // moment while it winds down, and Android takes a second "paused" for
+      // a pause made in the app, which removes the notification that
+      // offers to continue.
+      if (state != 'none' && state != 'paused') {
         _push();
       }
       return;
