@@ -8,6 +8,7 @@ void main() {
   var imagesCleared = 0;
   var torrentsCleared = 0;
   var downloading = false;
+  var syncing = false;
 
   AppCaches caches() => AppCaches(
     root: root.path,
@@ -15,6 +16,7 @@ void main() {
     clearImages: () async => imagesCleared++,
     clearTorrents: () async => torrentsCleared++,
     downloading: () => downloading,
+    syncing: () => syncing,
   );
 
   Future<void> write(String path, int bytes) async {
@@ -32,6 +34,7 @@ void main() {
     imagesCleared = 0;
     torrentsCleared = 0;
     downloading = false;
+    syncing = false;
   });
   tearDown(() => root.delete(recursive: true));
 
@@ -92,6 +95,24 @@ void main() {
     expect(exists('archive_downloading/comic.zip'), isTrue);
   });
 
+  test('the backup of a running data sync is left alone', () async {
+    await write('1700000000.venera', 5);
+    await write('temp_data/history.db', 20);
+    await write('cbz_export/a.cbz', 3);
+    syncing = true;
+    var all = caches();
+    var temporary = named(all, 'Import and export temporary files');
+    expect(await temporary.size(), 3);
+    await temporary.clear();
+    expect(exists('1700000000.venera'), isTrue);
+    expect(exists('temp_data/history.db'), isTrue);
+    expect(exists('cbz_export/a.cbz'), isFalse);
+    syncing = false;
+    await temporary.clear();
+    expect(exists('1700000000.venera'), isFalse);
+    expect(exists('temp_data/history.db'), isFalse);
+  });
+
   test('a cache that fails to clear does not keep the others', () async {
     await write('danmaku/1.json', 10);
     var all = AppCaches(
@@ -100,6 +121,7 @@ void main() {
       clearImages: () async => throw const FileSystemException('in use'),
       clearTorrents: () async {},
       downloading: () => false,
+      syncing: () => false,
     );
     await all.clearAll();
     expect(exists('danmaku/1.json'), isFalse);
@@ -112,6 +134,7 @@ void main() {
       clearImages: () async {},
       clearTorrents: () async {},
       downloading: () => false,
+      syncing: () => false,
     );
     expect(await all.totalSize(), 0);
     await all.clearAll();

@@ -4,6 +4,7 @@ import 'package:venera/foundation/danmaku/danmaku_cache.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
 import 'package:venera/network/download_queue.dart';
+import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/io.dart';
 
 /// One kind of cache: files the app makes again when they are gone.
@@ -31,7 +32,8 @@ class AppCache {
 /// [root] is the cache directory. The image cache and the BT cache have
 /// owners that know what is in use: [imageSize], [clearImages] and
 /// [clearTorrents] ask them. [downloading] tells whether a download may be
-/// using its temporary files.
+/// using its temporary files, [syncing] whether a data sync is using its
+/// backup: those are no leftovers yet.
 class AppCaches {
   AppCaches({
     String? root,
@@ -39,17 +41,22 @@ class AppCaches {
     Future<void> Function()? clearImages,
     Future<void> Function()? clearTorrents,
     bool Function()? downloading,
+    bool Function()? syncing,
   }) : root = root ?? App.cachePath,
        _imageSize = imageSize ?? (() async => CacheManager().currentSize),
        _clearImages = clearImages ?? (() => CacheManager().clear()),
        _clearTorrents = clearTorrents ?? _clearIdleTorrents,
-       _downloading = downloading ?? (() => DownloadQueue().tasks.isNotEmpty);
+       _downloading = downloading ?? (() => DownloadQueue().tasks.isNotEmpty),
+       _syncing = syncing ?? (() =>
+           DataSync.instance?.isUploading == true ||
+           DataSync.instance?.isDownloading == true);
 
   final String root;
   final Future<int> Function() _imageSize;
   final Future<void> Function() _clearImages;
   final Future<void> Function() _clearTorrents;
   final bool Function() _downloading;
+  final bool Function() _syncing;
 
   static Future<void> _clearIdleTorrents() async {
     var streamer = TorrentStreamer.instance;
@@ -63,9 +70,12 @@ class AppCaches {
   /// files of their own there.
   static const _temporary = [
     'video_export', 'video_export_ios', 'comics_export', 'comics_export.zip',
-    'cbz_import', 'cbz_export', 'temp_data', 'import_data_temp',
+    'cbz_import', 'cbz_export', 'import_data_temp',
     'selected_directory', 'ios-download-probe',
   ];
+
+  /// Where a backup is unpacked while it is imported, as a data sync does.
+  static const _unpacked = 'temp_data';
 
   /// Used by a comic archive while it downloads.
   static const _archives = 'archive_downloading';
@@ -107,12 +117,20 @@ class AppCaches {
   ];
 
   Future<List<String>> _temporaryNames() async {
-    var names = [..._temporary, if (!_downloading()) _archives];
+    // A sync uploads the backup it made, or imports the one it fetched,
+    // some requests later.
+    var syncing = _syncing();
+    var names = [
+      ..._temporary,
+      if (!_downloading()) _archives,
+      if (!syncing) _unpacked,
+    ];
     try {
       await for (var entry in Directory(root).list(followLinks: false)) {
         // Backups, and files imported through a copy.
         if (entry is File &&
-            (entry.name.endsWith('.venera') || entry.name.startsWith('import_'))) {
+            (!syncing && entry.name.endsWith('.venera') ||
+                entry.name.startsWith('import_'))) {
           names.add(entry.name);
         }
       }
