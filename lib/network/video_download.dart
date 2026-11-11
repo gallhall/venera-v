@@ -309,6 +309,7 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
     await file.writeAsString(jsonEncode(DownloadIdentity.merged(previous,
       subjectId: bangumiSubjectId, sourceTitle: comic?.title,
+      subjectTitle: bangumiTitle,
       episodeIds: bangumiEpisodeIds, episodes: bangumiEpisodes)));
   }
 

@@ -214,6 +214,54 @@ void main() {
     expect(finished.entries.single.bangumiEpisodeId, 101);
   });
 
+  test('the downloads of a subject are titled after it, whichever source they came from', () async {
+    Future<LocalComic> downloaded(String id, String title, Map<String, Object?> sidecar) async {
+      var root = await Directory.systemTemp.createTemp('titled-cache-');
+      addTearDown(() => root.delete(recursive: true));
+      var episode = Directory(VideoDownloadTask.episodeDirectory(root.path, 'one'));
+      await episode.create();
+      await DownloadedEpisode.write(episode, video: 'video.mp4');
+      await File('${root.path}/${VideoDownloadTask.cacheMetadataName}')
+          .writeAsString(jsonEncode(sidecar));
+      return LocalComic(id: id, title: title, subtitle: '', tags: const [],
+        directory: root.path, chapters: const ComicChapters({'one': 'First'}),
+        cover: 'cover.jpg', comicType: ComicType(source.key.hashCode),
+        downloadedChapters: ['one'], createdAt: DateTime(2026));
+    }
+    // The same subject downloaded from two sources that name it their own way.
+    var a = await downloaded('a', 'Anime (dub)', {
+      'bangumiSubjectId': 42, 'sourceTitle': 'Anime (dub)', 'bangumiTitle': 'Anime',
+    });
+    var b = await downloaded('b', 'ANIME S1', {
+      'bangumiSubjectId': 42, 'sourceTitle': 'ANIME S1', 'bangumiTitle': 'Anime',
+    });
+    expect((await VideoCacheSnapshot.load([], [a, b])).groups.single.title, 'Anime');
+    expect((await VideoCacheSnapshot.load([], [b, a])).groups.single.title, 'Anime');
+
+    // A download made before the subject's title was recorded.
+    var old = await downloaded('old', 'Old source name', {
+      'bangumiSubjectId': 43, 'sourceTitle': 'Old source name',
+    });
+    expect((await VideoCacheSnapshot.load([], [old])).groups.single.title,
+      'Old source name');
+    expect((await VideoCacheSnapshot.load([], [old],
+      subjectTitle: (id) => id == 43 ? 'Old anime' : null)).groups.single.title,
+      'Old anime');
+    // Beside one that recorded it, the recorded title names the group.
+    var newer = await downloaded('newer', 'Another name', {
+      'bangumiSubjectId': 43, 'sourceTitle': 'Another name', 'bangumiTitle': 'Old anime',
+    });
+    expect((await VideoCacheSnapshot.load([], [old, newer])).groups.single.title,
+      'Old anime');
+
+    // A task that is still downloading says so itself.
+    var task = VideoDownloadTask(source: source, videoId: 'c',
+      comic: details(source, 'c', 'Source name of the task'), episodes: ['one'],
+      bangumiSubjectId: 44, bangumiTitle: 'Third anime');
+    expect((await VideoCacheSnapshot.load([task], [])).groups.single.title,
+      'Third anime');
+  });
+
   test('older finished BT caches recover subject and episode IDs from stored IDs', () async {
     var root = await Directory.systemTemp.createTemp('old-bt-cache-');
     addTearDown(() => root.delete(recursive: true));
