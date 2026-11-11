@@ -416,6 +416,32 @@ class DartTorrentStreamer implements TorrentStreamer {
         }
       }();
 
+  /// Deletes what no open stream is using, whatever the cache limit and
+  /// keeping files say: the user asked for it.
+  Future<void> clearIdleCache() => _cacheOperation(() async {
+    if (!await _cache.exists()) {
+      return;
+    }
+    // By name: a listing may spell the separators of a path another way.
+    var active = {
+      for (var s in _sessions.values)
+        if (s.directory != null) s.directory!.uri.pathSegments
+            .lastWhere((e) => e.isNotEmpty, orElse: () => ''),
+    };
+    await for (var entry in _cache.list(followLinks: false)) {
+      var name = entry.uri.pathSegments
+          .lastWhere((e) => e.isNotEmpty, orElse: () => '');
+      if (active.contains(name)) {
+        continue;
+      }
+      try {
+        await entry.delete(recursive: true);
+      } on FileSystemException catch (e) {
+        Log.warning('Torrent', 'Could not clear ${entry.path}: $e');
+      }
+    }
+  });
+
   Future<void> _cacheOperation(Future<void> Function() action) {
     var next = _cacheTail.then((_) => action());
     _cacheTail = next.catchError((Object _) {});
