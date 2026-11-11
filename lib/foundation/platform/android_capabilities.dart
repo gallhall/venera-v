@@ -1,19 +1,17 @@
 
 import 'package:flutter/services.dart';
 
+import 'app_channel.dart';
 import 'capabilities.dart';
 
 class AndroidNetworkType implements NetworkTypeCapability {
   const AndroidNetworkType();
-  static const _channel = MethodChannel('venera/method_channel');
   @override
   bool get isSupported => true;
   @override
-  Future<bool> isWifi() async =>
-      await _channel.invokeMethod<bool>('isActiveNetworkWifi') ?? false;
+  Future<bool> isWifi() => AppChannel.isActiveNetworkWifi();
   @override
-  Future<bool> isMetered() async =>
-      await _channel.invokeMethod<bool>('isActiveNetworkMetered') ?? false;
+  Future<bool> isMetered() => AppChannel.isActiveNetworkMetered();
 }
 
 class AndroidThermal implements ThermalCapability {

@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 
 import 'package:display_mode/display_mode.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:rhttp/rhttp.dart';
 import 'package:venera/foundation/app.dart';
@@ -13,6 +12,7 @@ import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/cookie_jar.dart';
+import 'package:venera/foundation/platform/app_channel.dart';
 import 'package:venera/network/download_notification.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
@@ -95,8 +95,7 @@ Future<void> init() async {
     // Report to the monitor thread that the app is running
     // https://github.com/venera-app/venera/issues/343
     Timer.periodic(const Duration(seconds: 1), (_) {
-      const methodChannel = MethodChannel('venera/method_channel');
-      methodChannel.invokeMethod("heartBeat");
+      AppChannel.heartBeat();
     });
   }
 }

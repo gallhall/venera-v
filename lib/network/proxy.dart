@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/app_channel.dart';
 import 'package:venera/network/proxy_environment.dart';
 import 'package:venera/utils/ext.dart';
 
@@ -47,9 +47,8 @@ Future<String?> _getProxy() async {
 
   String res;
   if (!App.isLinux) {
-    const channel = MethodChannel("venera/method_channel");
     try {
-      res = await channel.invokeMethod("getProxy");
+      res = await AppChannel.systemProxy();
     } catch (e) {
       return null;
     }

@@ -79,15 +79,7 @@ class _AppSettingsState extends State<AppSettings> {
               title: "Set New Storage Path".tl,
               actionTitle: "Set".tl,
               callback: () async {
-                String? result;
-                if (App.isAndroid) {
-                  var picker = DirectoryPicker();
-                  result = (await picker.pickDirectory())?.path;
-                } else if (App.isIOS) {
-                  result = await selectDirectoryIOS();
-                } else {
-                  result = await selectDirectory();
-                }
+                var result = await pickStorageDirectory();
                 if (result == null) return;
                 var loadingDialog = showLoadingDialog(
                   App.rootContext,
