@@ -33,6 +33,13 @@ class VideoCacheEntry {
   /// The title of the Bangumi subject, where the download knows it.
   final String? subjectTitle;
   final String title;
+
+  /// The Bangumi episode it is, where its number is known: what the
+  /// episode is shown and ordered by, whichever source it came from.
+  final BangumiEpisode? episode;
+
+  /// Its place among the chapters of the 作品 it was downloaded from.
+  final int position;
   final String? cover;
   final String? root;
   final int size;
@@ -41,7 +48,7 @@ class VideoCacheEntry {
 
   const VideoCacheEntry({this.task, this.local, this.chapterId, this.subjectId,
     this.bangumiEpisodeId, this.sourceTitle, this.subjectTitle,
-    required this.title, this.cover,
+    required this.title, this.episode, this.position = 0, this.cover,
     this.root, this.size = 0, bool completed = false}) : _completed = completed;
 
   String get groupKey => videoCacheGroupKey(subjectId: subjectId, sourceTitle: sourceTitle);
@@ -72,6 +79,27 @@ class VideoCacheEntry {
   bool get paused => !completed && task?.episodePaused(chapterId) == true;
   double get progress => completed ? 1 : task?.episodeProgress(chapterId) ?? 0;
   int get speed => completed || paused || failure != null ? 0 : task?.episodeSpeed(chapterId) ?? 0;
+}
+
+/// [entries] by Bangumi episode, then the ones whose episode is unknown as
+/// their 作品 lists them. Entries that compare equal keep their order.
+List<VideoCacheEntry> _inEpisodeOrder(List<VideoCacheEntry> entries) {
+  var indexed = entries.indexed.toList();
+  indexed.sort((a, b) {
+    var (x, y) = (a.$2.episode, b.$2.episode);
+    if (x != null && y != null && x.sort != y.sort) {
+      return x.sort.compareTo(y.sort);
+    }
+    if ((x == null) != (y == null)) {
+      return x == null ? 1 : -1;
+    }
+    if (x == null && a.$2.root == b.$2.root &&
+        a.$2.position != b.$2.position) {
+      return a.$2.position.compareTo(b.$2.position);
+    }
+    return a.$1.compareTo(b.$1);
+  });
+  return [for (var (_, entry) in indexed) entry];
 }
 
 /// Torrent speeds belong to sessions, while progress belongs to selected files.
@@ -179,6 +207,8 @@ class VideoCacheSnapshot {
           sourceTitle: known.sourceTitle ?? local.title,
           subjectTitle: titleOf(known.subjectId, known.subjectTitle),
           title: local.chapters?[ep ?? ''] ?? local.title,
+          episode: known.shownEpisodeOf(ep),
+          position: local.chapters?.ids.toList().indexOf(ep ?? '') ?? 0,
           cover: 'file://${local.coverFile.path}', completed: true,
           size: await measure(VideoDownloadTask.episodeDirectory(root, ep), stable: true));
         entries[entry.key] = entry;
@@ -203,6 +233,8 @@ class VideoCacheSnapshot {
           subjectTitle: titleOf(task.bangumiSubjectId ?? known.subjectId,
               task.bangumiTitle ?? known.subjectTitle),
           title: task.comic?.chapters?[ep ?? ''] ?? task.comic?.title ?? ep ?? '',
+          episode: task.bangumiEpisodes[ep ?? ''] ?? known.shownEpisodeOf(ep),
+          position: task.comic?.chapters?.ids.toList().indexOf(ep ?? '') ?? 0,
           cover: task.cover, completed: done,
           size: size);
         var local = entries[entry.key]?.local;
@@ -210,7 +242,8 @@ class VideoCacheSnapshot {
           chapterId: ep, root: root, subjectId: entry.subjectId,
           bangumiEpisodeId: entry.bangumiEpisodeId, sourceTitle: entry.sourceTitle,
           subjectTitle: entry.subjectTitle,
-          title: entry.title, cover: entry.cover, completed: done, size: entry.size);
+          title: entry.title, episode: entry.episode, position: entry.position,
+          cover: entry.cover, completed: done, size: entry.size);
       }
     }
     var grouped = <String, List<VideoCacheEntry>>{};
@@ -221,7 +254,7 @@ class VideoCacheSnapshot {
     for (var group in grouped.entries) {
       // The episodes are measured already; the cover is negligible.
       var size = group.value.fold<int>(0, (n, e) => n + e.size);
-      groups.add(VideoCacheGroup(group.key, group.value, size));
+      groups.add(VideoCacheGroup(group.key, _inEpisodeOrder(group.value), size));
     }
     return VideoCacheSnapshot(groups);
   }

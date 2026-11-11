@@ -18,6 +18,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
+import 'package:venera/pages/settings/storage_cache_page.dart';
 import 'package:venera/pages/video/video_test_page.dart';
 import 'package:venera/utils/app_update.dart';
 import 'package:venera/utils/data.dart';

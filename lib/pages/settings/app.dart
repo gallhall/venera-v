@@ -96,24 +96,11 @@ class _AppSettingsState extends State<AppSettings> {
                 }
               },
             ),
-            ListTile(
-              title: Text("Cache Size".tl),
-              subtitle: Text(bytesToReadableString(CacheManager().currentSize)),
-            ),
             _CallbackSetting(
-              title: "Clear Cache".tl,
-              actionTitle: "Clear".tl,
-              callback: () async {
-                var loadingDialog = showLoadingDialog(
-                  App.rootContext,
-                  barrierDismissible: false,
-                  allowCancel: false,
-                );
-                await CacheManager().clear();
-                loadingDialog.close();
-                context.showMessage(message: "Cache cleared".tl);
-                setState(() {});
-              },
+              title: "Storage and cache".tl,
+              subtitle: "View and clear every cache in one place".tl,
+              actionTitle: "Open".tl,
+              callback: () => showSubPage(context, const StorageCachePage()),
             ),
             _CallbackSetting(
               title: "Cache Limit".tl,

@@ -262,6 +262,45 @@ void main() {
       'Third anime');
   });
 
+  test('the episodes of a subject are named and ordered by Bangumi episode, whichever source they came from', () async {
+    Future<LocalComic> downloaded(String id, Map<String, String> chapters,
+        String chapter, Map<String, Object?> sidecar) async {
+      var root = await Directory.systemTemp.createTemp('named-cache-');
+      addTearDown(() => root.delete(recursive: true));
+      var episode = Directory(VideoDownloadTask.episodeDirectory(root.path, chapter));
+      await episode.create();
+      await DownloadedEpisode.write(episode, video: 'video.mp4');
+      await File('${root.path}/${VideoDownloadTask.cacheMetadataName}')
+          .writeAsString(jsonEncode({'bangumiSubjectId': 42, ...sidecar}));
+      return LocalComic(id: id, title: id, subtitle: '', tags: const [],
+        directory: root.path, chapters: ComicChapters(chapters),
+        cover: 'cover.jpg', comicType: ComicType(source.key.hashCode),
+        downloadedChapters: [chapter], createdAt: DateTime(2026));
+    }
+    // Two lines of 13 episodes: the seventh of the second is the 20th chapter.
+    var lines = {
+      for (var line in ['a', 'b'])
+        for (var i = 1; i <= 13; i++) '$line$i': '第$i集',
+    };
+    var seventh = await downloaded('online', lines, 'b7', {
+      'bangumiEpisodeIds': {'b7': 107},
+    });
+    // The episode as the subject listed it when it was downloaded.
+    var fifth = await downloaded('bangumi:42', {'105': 'Episode 5 · Feast'}, '105', {
+      'bangumiEpisodes': {'105': {'id': 105, 'ep': 5, 'sort': 5, 'name_cn': '宴席'}},
+    });
+    // Its number is only its place in the source's list: not shown.
+    var unnumbered = await downloaded('extra', {'x': 'Full movie'}, 'x', {
+      'bangumiEpisodeIds': {'x': 199},
+    });
+    var entries = (await VideoCacheSnapshot.load([], [unnumbered, seventh, fifth]))
+        .groups.single.entries;
+    expect([for (var e in entries) e.episode?.number], [5, 7, null]);
+    expect(entries[0].episode!.nameCn, '宴席');
+    expect(entries[1].title, '第7集');
+    expect(entries[2].title, 'Full movie');
+  });
+
   test('older finished BT caches recover subject and episode IDs from stored IDs', () async {
     var root = await Directory.systemTemp.createTemp('old-bt-cache-');
     addTearDown(() => root.delete(recursive: true));

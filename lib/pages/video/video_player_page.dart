@@ -39,6 +39,7 @@ import 'package:venera/foundation/video/playback_session.dart';
 import 'package:venera/pages/video/danmaku_icon.dart';
 import 'package:venera/pages/video/danmaku_overlay.dart';
 import 'package:venera/pages/video/danmaku_sheet.dart';
+import 'package:venera/pages/comments/comments.dart';
 import 'package:venera/pages/video/episode_comments.dart';
 import 'package:venera/pages/video/video_controls.dart';
 import 'package:venera/pages/video/anime4k_picker.dart';
@@ -1413,6 +1414,30 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
+  (String, String)? _sourceCommentsFor;
+  CommentTarget? _sourceComments;
+
+  /// The comments of the source itself, for a video that has them and is
+  /// not on Bangumi: neither played from a subject nor linked to one. Such
+  /// a source (not an anime site, say) is not asked to be linked.
+  CommentTarget? get sourceComments {
+    var s = source;
+    if (bangumi != null || linkedToBangumi || s?.commentsLoader == null) {
+      return null;
+    }
+    var key = (sourceKey, details.id);
+    if (_sourceCommentsFor != key) {
+      _sourceCommentsFor = key;
+      _sourceComments = CommentTarget.comic(
+        source: s!,
+        comicId: details.id,
+        subId: details.subId,
+        title: details.title,
+      );
+    }
+    return _sourceComments;
+  }
+
   Widget buildContentTabs() {
     var b = bangumi;
     int? episodeId;
@@ -1442,11 +1467,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ),
                 children: buildInfo(),
               ),
-              EpisodeComments(
-                episodeId: episodeId,
-                binding: b == null ? null : BangumiBinding.fromSubject(b.subject),
-                onLink: () => pickLinkedSource(forComments: true),
-              ),
+              if (sourceComments case var target?)
+                CommentsView(
+                  key: ValueKey((sourceKey, details.id)),
+                  target: target,
+                )
+              else
+                EpisodeComments(
+                  episodeId: episodeId,
+                  binding:
+                      b == null ? null : BangumiBinding.fromSubject(b.subject),
+                  onLink: () => pickLinkedSource(forComments: true),
+                ),
             ],
           )),
         ],
