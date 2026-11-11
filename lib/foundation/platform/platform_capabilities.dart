@@ -4,10 +4,10 @@ import 'package:flutter/foundation.dart';
 
 import 'android_capabilities.dart';
 import 'capabilities.dart';
-import 'desktop_background_download.dart';
+import 'desktop_download_presence.dart';
 import 'ios_capabilities.dart';
 import 'ios_foreground_gate.dart';
-import 'ios_background_download.dart';
+import 'ios_download_presence.dart';
 import 'unsupported_capabilities.dart';
 
 export 'capabilities.dart';
@@ -21,7 +21,7 @@ class PlatformCapabilities {
     this.networkType = const UnsupportedNetworkType(),
     this.thermal = const UnsupportedThermal(),
     this.volumeKeys = const UnsupportedVolumeKeys(),
-    this.backgroundDownload = const UnsupportedBackgroundDownload(),
+    this.downloads = const NoDownloadPresence(),
     this.filePicker = const UnsupportedNativeFilePicker(),
     this.sharedText = const UnsupportedSharedText(),
     this.foreground = const AlwaysForeground(),
@@ -33,7 +33,7 @@ class PlatformCapabilities {
           networkType: AndroidNetworkType(),
           thermal: AndroidThermal(),
           volumeKeys: AndroidVolumeKeys(),
-          backgroundDownload: AndroidBackgroundDownload(),
+          downloads: AndroidDownloadPresence(),
           filePicker: AndroidNativeFilePicker(),
           sharedText: AndroidSharedText(),
         )
@@ -42,7 +42,7 @@ class PlatformCapabilities {
               webSniffing: SupportedWebSniffing(),
               networkType: IosNetworkType(),
               thermal: IosThermal(),
-              backgroundDownload: IosBackgroundDownload(),
+              downloads: IosDownloadPresence(),
               foreground: IosForegroundGate(),
             )
           : Platform.isWindows || Platform.isLinux || Platform.isMacOS
@@ -50,7 +50,7 @@ class PlatformCapabilities {
                   webSniffing: Platform.isLinux
                       ? const UnsupportedWebSniffing()
                       : const SupportedWebSniffing(),
-                  backgroundDownload: DesktopBackgroundDownload(),
+                  downloads: DesktopDownloadPresence(),
                 )
               : const PlatformCapabilities(webSniffing: SupportedWebSniffing());
 
@@ -66,7 +66,7 @@ class PlatformCapabilities {
   final NetworkTypeCapability networkType;
   final ThermalCapability thermal;
   final VolumeKeysCapability volumeKeys;
-  final BackgroundDownloadCapability backgroundDownload;
+  final DownloadPresence downloads;
   final NativeFilePickerCapability filePicker;
   final SharedTextCapability sharedText;
   final ForegroundGate foreground;

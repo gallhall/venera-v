@@ -50,23 +50,11 @@ class UnsupportedVolumeKeys implements VolumeKeysCapability {
   Stream<dynamic> get events => const Stream<dynamic>.empty();
 }
 
-/// Service operations are no-ops, with no pending resume request or actions.
-class UnsupportedBackgroundDownload implements BackgroundDownloadCapability {
-  const UnsupportedBackgroundDownload();
+/// The downloads are not shown outside the app's pages.
+class NoDownloadPresence extends DownloadPresence {
+  const NoDownloadPresence();
   @override
   bool get isSupported => false;
-  @override
-  void setActionHandler(Future<void> Function(String action)? handler) {}
-  @override
-  Future<bool> takeResumeRequest() async => false;
-  @override
-  Future<void> update(Map<String, Object?> notification) async {}
-  @override
-  Future<void> finish(Map<String, Object?> notification) async {}
-  @override
-  Future<void> requestPermission() async {}
-  @override
-  Future<void> moveToBackground() async {}
 }
 
 /// Selection and thumbnails return null. Copy throws rather than losing data;

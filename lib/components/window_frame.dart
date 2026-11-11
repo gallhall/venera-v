@@ -9,7 +9,7 @@ import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
-import 'package:venera/foundation/platform/desktop_background_download.dart';
+import 'package:venera/foundation/platform/desktop_download_presence.dart';
 import 'package:venera/foundation/platform/desktop_download_policy.dart';
 import 'package:venera/network/download_queue.dart';
 import 'package:venera/utils/translations.dart';
@@ -68,9 +68,9 @@ class _WindowFrameState extends State<WindowFrame> with WindowListener {
   static const _closeChannel = MethodChannel('venera/desktop_close');
   bool _closing = false;
 
-  DesktopBackgroundDownload? get _desktop {
-    final service = PlatformCapabilities.instance.backgroundDownload;
-    return service is DesktopBackgroundDownload ? service : null;
+  DesktopDownloadPresence? get _desktop {
+    final service = PlatformCapabilities.instance.downloads;
+    return service is DesktopDownloadPresence ? service : null;
   }
 
   @override

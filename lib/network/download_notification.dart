@@ -7,21 +7,19 @@ import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/network/download_queue.dart';
-import 'package:venera/network/ios_http_downloads.dart';
 
-/// Keeps the downloads running in the background on Android, through the
-/// foreground service `DownloadService` of the app. Its notification shows
-/// the progress of an active task and pauses or resumes it, and it holds a
-/// wake lock while any task runs.
-/// Desktop capabilities use these updates for the tray and the queue-drained
-/// completion event for a single local notification.
+/// Tells the platform's 后台下载的呈现 what the download queue is doing: the
+/// state of one task once a second while any runs, what completed once
+/// nothing is left, and every failure. What is made of it (a foreground
+/// service and its notification on Android, the tray on desktop, local
+/// notifications on iOS) is the platform's.
 ///
-/// The service runs while at least one task runs. It is sent the state of
-/// the task once a second: without updates for two minutes it stops, as the
-/// downloads are then gone or stuck.
+/// On Android the service runs while at least one task runs; without
+/// updates for two minutes it stops, as the downloads are then gone or
+/// stuck.
 abstract final class DownloadNotification {
-  static BackgroundDownloadCapability get _service =>
-      PlatformCapabilities.instance.backgroundDownload;
+  static DownloadPresence get _service =>
+      PlatformCapabilities.instance.downloads;
 
   static final _tasks = <DownloadTask>{};
   static final _failedTasks = <DownloadTask>{};
@@ -46,16 +44,16 @@ abstract final class DownloadNotification {
   static bool _askedPermission = false;
 
   static Future<void> init() async {
-    if (Platform.isIOS) {
-      PlatformCapabilities.instance.foreground.listen((foreground) {
-        if (foreground && DownloadQueue().hasActiveDownloads) {
-          _askPermission();
-        }
-      });
-    }
     if (!_service.isSupported) {
       return;
     }
+    // Where the app can leave the foreground with downloads going on, it
+    // may come back to it before the permission could be asked for.
+    PlatformCapabilities.instance.foreground.listen((foreground) {
+      if (foreground && DownloadQueue().hasActiveDownloads) {
+        _askPermission();
+      }
+    });
     await attach();
   }
 
@@ -103,17 +101,17 @@ abstract final class DownloadNotification {
   /// before the next one starts, and the service must not stop between them,
   /// as Android does not start it again from the background.
   static void _schedule() {
-    if (Platform.isIOS && DownloadQueue().hasActiveDownloads) {
+    // Asked again on every change until the app is visible to ask.
+    if (DownloadQueue().hasActiveDownloads) {
       _askPermission();
     }
     // Observe every task, including failures hidden behind a running task.
-    if (_service case DownloadFailureCapability failures) {
-      final current = DownloadQueue().tasks.toSet();
-      _failedTasks.removeWhere((task) => !current.contains(task) || !task.isError);
-      for (final task in current) {
-        if (task.isError && _failedTasks.add(task)) {
-          _invoke('notifyFailure', failures.notifyFailure(task.title, task.message));
-        }
+    final current = DownloadQueue().tasks.toSet();
+    _failedTasks.removeWhere((task) => !current.contains(task) || !task.isError);
+    for (final task in current) {
+      if (task.isError && _failedTasks.add(task)) {
+        _invoke('failed', _service.failed(
+            'Download failed'.tl, '${task.title}: ${task.message}'));
       }
     }
     _debounce?.cancel();
@@ -129,15 +127,12 @@ abstract final class DownloadNotification {
   }
 
   static void _sync() {
-    if (Platform.isIOS) {
-      // Run after this sync's update/finish calls have been sent to native code.
-      scheduleMicrotask(() {
-        _invoke('settled', IosHttpDownloads.channel.invokeMethod<void>('settled'));
-      });
-    }
+    // Run after this sync's update/finish calls have been sent.
+    scheduleMicrotask(() => _invoke('settled', _service.settled()));
     var state = _currentState();
     if (state == _state) {
-      if (Platform.isIOS && state == 'none' && _completed > 0) {
+      // A task that completed before it was ever seen running.
+      if (state == 'none' && _completed > 0) {
         _finish();
       }
       // The representative can change while another anime keeps running.
