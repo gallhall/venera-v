@@ -184,6 +184,13 @@ void main() {
     expect(states().last, "paused");
     expect(DownloadQueue().tasks.first.isPaused, isTrue);
 
+    // The task goes on changing while it winds down: the notification
+    // that offers to continue stays, as nothing more is said about it.
+    calls.clear();
+    DownloadQueue().tasks.first.pause();
+    await settle();
+    expect(calls.where((c) => c.method == "update"), isEmpty);
+
     calls.clear();
     await fromNotification("resume");
     await settle();
