@@ -25,8 +25,7 @@ import 'package:venera/foundation/video/download_identity.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/torrent/torrent_streamer.dart';
-import 'package:venera/foundation/video/auto_switch.dart';
-import 'package:venera/foundation/video/auto_switcher.dart';
+import 'package:venera/foundation/video/episode_playback.dart';
 import 'package:venera/foundation/video/video_episode.dart';
 import 'package:venera/foundation/video/watch_progress.dart';
 import 'package:venera/foundation/video/anime4k.dart';
@@ -96,66 +95,59 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
-  late String sourceKey = widget.sourceKey;
-  late ComicDetails details = widget.details;
-  late List<VideoEpisode> episodes = VideoEpisode.fromDetails(details);
-  late BangumiPlaybackContext? bangumi = widget.bangumi;
+  /// 跨集播放: what is played and every way it changes.
+  late final playback = EpisodePlayback(
+    sourceKey: widget.sourceKey,
+    details: widget.details,
+    bangumi: widget.bangumi,
+    initialPosition: widget.initialPosition,
+    engines: _PlaybackEngines(this),
+    loadTarget: loadBangumiTarget,
+    resumeAt: (index) => watchProgress.resumeAt(index),
+    saveProgress: saveHistory,
+    lastDuration: () => duration,
+    autoSwitch: () => autoSwitch,
+    startupLimit: () {
+      var seconds = appdata.settings['videoAutoSwitchTimeout'];
+      return Duration(seconds: seconds is int ? seconds : 20);
+    },
+    onEvent: onEpisodeEvent,
+  );
+
+  String get sourceKey => playback.sourceKey;
+  ComicDetails get details => playback.details;
+  List<VideoEpisode> get episodes => playback.episodes;
+  BangumiPlaybackContext? get bangumi => playback.bangumi;
+  Duration? get initialPosition => playback.initialPosition;
   int contentTab = 0;
-  late Duration? initialPosition = widget.initialPosition;
 
-  ComicSource? get source => ComicSource.find(sourceKey);
+  ComicSource? get source => playback.source;
 
-  ComicDetails? _correspondenceDetails;
-  List<BangumiEpisode>? _correspondenceEpisodes;
-  EpisodeCorrespondence? _correspondence;
-
-  /// The 集对应 and 线路 of the 作品 playing. A BT download opened as such
-  /// lists Bangumi episodes, not releases, so it has chapter lines.
-  EpisodeCorrespondence get correspondence {
-    var episodes = bangumi?.episodes ?? const <BangumiEpisode>[];
-    if (_correspondence == null || !identical(_correspondenceDetails, details) ||
-        !identical(_correspondenceEpisodes, episodes)) {
-      _correspondenceDetails = details;
-      _correspondenceEpisodes = episodes;
-      _correspondence = EpisodeCorrespondence.of(source, details,
-        subjectId: bangumi?.subject.id, episodes: episodes);
-    }
-    return _correspondence!;
-  }
+  EpisodeCorrespondence get correspondence => playback.correspondence;
 
   ReleaseChapterMap? get btReleases => correspondence.releases;
-
-  String? get playbackChapterId =>
-      correspondence.playbackIdAt(current, number: bangumi?.number);
 
   /// The media_kit player.
   PlayerService? player;
 
-  PlaybackSession? session;
-  StreamSubscription<PlaybackEvent>? sessionEvents;
   PlayerService? listenedPlayer;
   int listenerToken = 0;
-  bool pageLoading = false;
-  String? pageError;
-  bool ignoringSession = false;
 
-  PlayerService? get active =>
-      ignoringSession ? null : session?.active as PlayerService?;
-  VideoPlayInfo? get playInfo => session?.playInfo;
-  int get sourceIndex => session?.streamIndex ?? 0;
-  bool get isLoading => pageLoading || session?.isLoading == true;
-  String? get error => pageError ?? (ignoringSession ? null : session?.error);
-  bool get started => !ignoringSession && session?.started == true;
-  Duration get openedAt => session?.openedAt ?? Duration.zero;
-  StreamLease? get lease => session?.lease;
+  PlayerService? get active => playback.active as PlayerService?;
+  VideoPlayInfo? get playInfo => playback.playInfo;
+  int get sourceIndex => playback.streamIndex;
+  bool get isLoading => playback.isLoading;
+  String? get error => playback.error;
+  bool get started => playback.started;
+  Duration get openedAt => playback.openedAt;
+  StreamLease? get lease => playback.lease;
 
   String? engineError;
 
   final subscriptions = <StreamSubscription>[];
 
-  late int current;
+  int get current => playback.current;
 
-  final switcher = AutoSwitcher();
   final playbackSubscriptions = <StreamSubscription>[];
 
   late final nowPlaying = NowPlaying(onCommand: onNowPlayingCommand);
@@ -234,11 +226,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     if (name == 'next' && hasNext) {
-      await moveEpisode(1);
+      await playback.move(1);
       return;
     }
     if (name == 'previous' && hasPrevious) {
-      await moveEpisode(-1);
+      await playback.move(-1);
       return;
     }
     final p = active;
@@ -276,13 +268,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   bool get autoSwitch => appdata.settings['videoAutoSwitch'] != false;
-
-  AutoSwitchCandidate get candidateKey => (source: sourceKey, id: details.id);
-
-  void resetAutoSwitch() => switcher.chosen(current);
-
-  /// Increased for page-level episode and Bangumi target lookups.
-  int loadToken = 0;
 
   double rate = 1.0;
 
@@ -330,18 +315,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ));
   }
 
-  VideoEpisode get episode => episodes[current];
+  VideoEpisode get episode => playback.episode;
 
-  int get bangumiIndex => bangumi!.episodes.indexWhere(
-    (e) => e.number == bangumi!.number,
-  );
+  int get bangumiIndex => playback.bangumiIndex;
 
-  bool get hasPrevious =>
-      bangumi != null ? bangumiIndex > 0 : current > 0;
+  bool get hasPrevious => playback.hasPrevious;
 
-  bool get hasNext => bangumi != null
-      ? bangumiIndex < bangumi!.episodes.length - 1
-      : current < episodes.length - 1;
+  bool get hasNext => playback.hasNext;
 
   /// Android phones show the player from the top edge without an app bar;
   /// the player then has its own back button.
@@ -373,20 +353,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   History get history => watchProgress.history;
 
-  /// The download playing for the current Bangumi episode in place of the
-  /// source: a downloaded episode plays from it whichever source it came
-  /// from, unless a source was chosen for it.
-  SubjectDownload? playingDownload;
-
-  /// Bangumi episodes for which a source was chosen over the download.
-  final onlineChosen = <int>{};
-
-  /// The download of [playback]'s current episode, if any.
-  SubjectDownload? _downloadOf(BangumiPlaybackContext playback) {
-    var e = playback.episodes
-        .where((e) => e.number == playback.number).firstOrNull;
-    return e == null ? null : SubjectDownloads.find(playback.subject.id, e.id);
-  }
+  SubjectDownload? get playingDownload => playback.playingDownload;
 
   /// The Bangumi episode playing, while there is a subject.
   BangumiEpisode? get bangumiEpisode => bangumi?.episodes
@@ -499,17 +466,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     } else if (history.ep >= 1) {
       index = episodes.fromHistory(history.ep, history.group);
     }
-    current = index ?? 0;
-    if (widget.bangumi case var b?) {
-      playingDownload = _downloadOf(b);
-    }
+    playback.select(index ?? 0);
+    playback.addListener(playbackChanged);
     danmaku.addListener(updateDanmakuControls);
     var savedRate = appdata.settings['videoPlaybackRate'];
     if (savedRate is num) rate = savedRate.toDouble();
     if (ensureMediaKit() == null) {
       return;
     }
-    loadEpisode(current);
+    playback.loadEpisode(current);
   }
 
   /// The media_kit player, created on first use.
@@ -628,8 +593,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     saveHistory(position: openedAt);
   }
 
-  void sessionChanged() {
-    if (!mounted || ignoringSession) {
+  void playbackChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (playback.switching) {
+      // The previous episode waits, paused, while another one is found.
+      setState(() {});
       return;
     }
     var p = active;
@@ -646,10 +616,35 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     refreshNowPlaying();
   }
 
-  void onSessionEvent(PlaybackEvent event) {
-    if (!mounted || ignoringSession) {
+  void onEpisodeEvent(EpisodeEvent event) {
+    if (!mounted) {
       return;
     }
+    switch (event) {
+      case EpisodeLoading():
+        listenedPlayer = null;
+        setState(() {
+          videoSize = null;
+          currentSkip = null;
+          handledSkips.clear();
+          watchProgress.begin();
+        });
+        loadDanmaku();
+      case EpisodeMessage(:var message):
+        context.showMessage(message: message);
+      case EpisodeKept(:var player):
+        if (player is PlayerService) {
+          listenedPlayer = player;
+          listenTo(player);
+        }
+      case EpisodeSourceNeeded(:var playback, :var position):
+        pickBangumiSource(position: position, playback: playback);
+      case EpisodeSessionEvent(:var event):
+        onSessionEvent(event);
+    }
+  }
+
+  void onSessionEvent(PlaybackEvent event) {
     switch (event) {
       case PlaybackStarted():
         onStarted(event);
@@ -667,10 +662,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           canSave: active != null,
         );
         if (hasNext) {
-          moveEpisode(1);
+          playback.move(1);
         }
       case PlaybackExhausted():
-        autoSwitchAfterFailure(event.reason, event.position);
+        // Followed by 自动换源, not reported.
     }
   }
 
@@ -680,9 +675,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ++nowPlayingToken;
     nowPlayingTimer?.cancel();
     unawaited(nowPlaying.dispose());
-    sessionEvents?.cancel();
-    session?.removeListener(sessionChanged);
-    unawaited(session?.dispose());
+    playback.removeListener(playbackChanged);
+    playback.dispose();
     historyTimer?.cancel();
     for (var s in playbackSubscriptions) {
       s.cancel();
@@ -724,154 +718,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     details.id,
     ComicType.fromKey(sourceKey),
   );
-
-  Future<void> loadEpisode(
-    int index, {
-    bool automatic = false,
-    Duration? position,
-  }) async {
-    if (index < 0 || index >= episodes.length) {
-      return;
-    }
-    if (index != current) {
-      saveHistory();
-    }
-    current = index;
-    if (!automatic) {
-      resetAutoSwitch();
-    }
-    if (source?.isPlaybackSupported != false) {
-      switcher.loading(correspondence, index, candidateKey);
-    }
-    ignoringSession = false;
-    var token = ++loadToken;
-    var start = position ?? watchProgress.resumeAt(index);
-    var previous = session;
-    sessionEvents?.cancel();
-    previous?.removeListener(sessionChanged);
-    var oldActive = previous?.active;
-    var releasing = previous?.dispose();
-    session = null;
-    listenedPlayer = null;
-    setState(() {
-      pageLoading = true;
-      pageError = null;
-      videoSize = null;
-      currentSkip = null;
-      handledSkips.clear();
-      watchProgress.begin();
-    });
-    loadDanmaku();
-    await oldActive?.pause();
-    await releasing;
-    if (!mounted || token != loadToken) {
-      return;
-    }
-    var next = PlaybackSession(
-      loader: playingDownload?.playInfo() ?? episodePlayInfo(
-        video: localVideo,
-        source: source,
-        videoId: details.id,
-        episodeId: playbackChapterId,
-      ),
-      engines: _PlaybackEngines(this),
-      initialDuration: duration,
-      autoSwitch: () => autoSwitch,
-      startupLimit: () {
-        var seconds = appdata.settings['videoAutoSwitchTimeout'];
-        return Duration(seconds: seconds is int ? seconds : 20);
-      },
-    );
-    session = next;
-    next.addListener(sessionChanged);
-    sessionEvents = next.events.listen(onSessionEvent);
-    pageLoading = false;
-    // start initiates opening before this message, as the inline flow did.
-    var starting = next.start(at: start);
-    await starting;
-    if (mounted && token == loadToken && next.playInfo != null && start != null) {
-      context.showMessage(
-        message: "Resumed from @t".tlParams({
-          "t": History.formatSeconds(start.inSeconds),
-        }),
-      );
-    }
-  }
-
-  Future<void> autoSwitchAfterFailure(
-    String message,
-    Duration position,
-  ) async {
-    if (!mounted) {
-      return;
-    }
-    Log.warning('Video', 'Playback failed: $message');
-    session?.cancelStartupWatch();
-    if (!autoSwitch) {
-      unawaited(session?.finishFailure(message));
-      setState(() => pageError = message);
-      return;
-    }
-    var token = ++loadToken;
-    await session?.pause();
-    if (!mounted || token != loadToken) {
-      return;
-    }
-    var step = switcher.next(
-      correspondence: correspondence,
-      current: current,
-      candidate: candidateKey,
-      bangumi: bangumi,
-      playingDownload: playingDownload != null,
-      torrent: playInfo?.isTorrent == true,
-      enabled: (key) => ComicSource.find(key)?.isEnabled == true,
-      currentSourceSupported: source?.isPlaybackSupported ?? true,
-    );
-    switch (step) {
-      case SwitchToSources():
-        onlineChosen.add(bangumi!.number);
-        await changeBangumi(bangumi!, automatic: true, position: position);
-        return;
-      case SwitchToLine(:var index):
-        context.showMessage(
-          message: "Auto switched to @name".tlParams({
-            'name': episodes[index].group ?? episodes[index].title,
-          }),
-        );
-        await loadEpisode(index, automatic: true, position: position);
-        return;
-      case SwitchToCandidate(:var candidate):
-        await changeBangumi(
-          bangumi!,
-          candidate: candidate,
-          position: position,
-          automatic: true,
-        );
-        return;
-      case SwitchExhausted():
-    }
-    unawaited(session?.finishFailure(message));
-    setState(() {
-      pageLoading = false;
-      pageError = message;
-    });
-  }
-
-  /// Load the play info again: stream urls may have expired.
-  void retry() => loadEpisode(current);
-
-  void switchSource(int index) {
-    resetAutoSwitch();
-    if (index == sourceIndex && error == null) {
-      return;
-    }
-    loadToken++;
-    pageLoading = false;
-    pageError = null;
-    ignoringSession = false;
-    session?.resume();
-    session?.pickStream(index);
-  }
 
   /// Applies fullscreen to the window or the system UI.
   static Future<void> applyFullscreen(bool value, {Size? videoSize}) async {
@@ -1105,7 +951,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       appdata.settings['videoAutoSwitch'] = v;
                       appdata.saveData();
                       if (!v) {
-                        session?.cancelStartupWatch();
+                        playback.cancelStartupWatch();
                       }
                       setDialogState(() {});
                     },
@@ -1221,161 +1067,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return name.isEmpty ? label : '$label · $name';
   }
 
-  bool changingBangumi = false;
-
-  Future<void> changeBangumi(
-    BangumiPlaybackContext playback, {
-    Comic? candidate,
-    Duration? position,
-    bool automatic = false,
-    ReleaseLine? releaseLine,
-  }) async {
-    if (changingBangumi) {
-      return;
-    }
-    if (!automatic) {
-      resetAutoSwitch();
-    }
-    saveHistory();
-    if (candidate != null) {
-      onlineChosen.add(playback.number);
-    }
-    var download = candidate != null ||
-        onlineChosen.contains(playback.number)
-        ? null : _downloadOf(playback);
-    if (download != null) {
-      // Downloaded: played without asking any source, also offline.
-      setState(() {
-        bangumi = playback;
-        playingDownload = download;
-        initialPosition = position ?? Duration.zero;
-      });
-      loadDanmaku();
-      await loadEpisode(current, automatic: automatic, position: position);
-      return;
-    }
-    var oldActive = active;
-    changingBangumi = true;
-    ignoringSession = true;
-    session?.cancelStartupWatch();
-    String? automaticError;
-    var wasPlaying = oldActive?.isPlaying == true;
-    var oldError = pageError;
-    setState(() {
-      pageLoading = true;
-      pageError = null;
-      loadToken++;
-    });
-    var token = loadToken;
-    try {
-      await session?.pause();
-      if (!mounted || token != loadToken) {
-        return;
-      }
-      candidate ??= playback.candidates
-          .where(
-            (c) => c.sourceKey == sourceKey &&
-                c.id == details.id &&
-                ComicSource.find(c.sourceKey)?.isEnabled == true &&
-                ComicSource.find(c.sourceKey)?.isPlaybackSupported == true,
-          )
-          .firstOrNull;
-      candidate ??= playback.candidates
-          .where((c) => ComicSource.find(c.sourceKey)?.isEnabled == true &&
-              ComicSource.find(c.sourceKey)?.isPlaybackSupported == true)
-          .firstOrNull;
-      if (candidate == null) {
-        throw Exception('Video source not found'.tl);
-      }
-      var target = await loadBangumiTarget(
-        playback,
-        candidate,
-        fallback: !automatic,
-        preferredReleaseLine: candidate.sourceKey == sourceKey &&
-            candidate.id == details.id
-            ? releaseLine ?? btReleases?.lineOf(episode.id) : null,
-        details: candidate.sourceKey == sourceKey && candidate.id == details.id
-            ? details
-            : null,
-        onSourceChanged: (c) {
-          if (mounted) {
-            context.showMessage(
-              message: 'Switched playback source to @source'.tlParams({
-                'source': ComicSource.find(c.sourceKey)?.name ?? c.sourceKey,
-              }),
-            );
-          }
-        },
-      );
-      if (!mounted || token != loadToken) {
-        return;
-      }
-      setState(() {
-        sourceKey = target.sourceKey;
-        details = target.details;
-        episodes = VideoEpisode.fromDetails(details);
-        bangumi = playback;
-        playingDownload = null;
-        initialPosition = position ?? Duration.zero;
-        current = episodes.fromHistory(target.ep, target.group) ?? 0;
-      });
-      if (automatic) {
-        switcher.sourceChanged(current);
-        context.showMessage(
-          message: "Auto switched to @name".tlParams({'name': playingSource}),
-        );
-      }
-      changingBangumi = false;
-      await loadEpisode(current, automatic: automatic, position: position);
-    } catch (e) {
-      if (automatic && mounted && token == loadToken) {
-        automaticError = '$e';
-      } else if (mounted && token == loadToken) {
-        // The old stream plays on; the failure is only shown as a message.
-        setState(() {
-          ignoringSession = false;
-          pageLoading = false;
-          pageError = oldError;
-        });
-        session?.resume();
-        if (oldActive != null) {
-          listenedPlayer = oldActive;
-          listenTo(oldActive);
-        }
-        if (wasPlaying) {
-          await oldActive?.play();
-        }
-        if (!mounted) {
-          return;
-        }
-        context.showMessage(message: '$e');
-        changingBangumi = false;
-        // Every source was asked already.
-        if (e is! BangumiEpisodeNotOut) {
-          await pickBangumiSource(
-            position: position ?? Duration.zero,
-            playback: playback,
-          );
-        }
-      }
-    } finally {
-      changingBangumi = false;
-    }
-    if (automaticError != null) {
-      await autoSwitchAfterFailure(
-        automaticError,
-        position ?? Duration.zero,
-      );
-    }
-  }
-
-  Future<void> moveEpisode(int direction) async {
-    var b = bangumi;
-    if (b == null) return loadEpisode(current + direction);
-    var target = b.episodes.elementAtOrNull(bangumiIndex + direction);
-    if (target != null) await changeBangumi(b.at(target.number));
-  }
-
   /// Whether the video is linked to Bangumi though opened without its
   /// context, as a downloaded video is: its sources can be switched too.
   bool get linkedToBangumi =>
@@ -1401,7 +1092,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var linkingSource = sourceKey;
     var linkingId = details.id;
     var linkingEpisode = current;
-    var linkingToken = loadToken;
+    var linkingToken = this.playback.loads;
     var position = active?.currentPosition ?? Duration.zero;
     var dialog = showLoadingDialog(App.rootContext, allowCancel: false);
     BangumiPlaybackContext? playback;
@@ -1425,10 +1116,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted || playback == null) return;
     if (forComments) {
       if (sourceKey != linkingSource || details.id != linkingId ||
-          current != linkingEpisode || loadToken != linkingToken) {
+          current != linkingEpisode || this.playback.loads != linkingToken) {
         return;
       }
-      setState(() => bangumi = playback);
+      this.playback.attach(playback);
       loadDanmaku();
       return;
     }
@@ -1454,7 +1145,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         Duration.zero;
     Comic? candidate;
     var useDownload = false;
-    var download = _downloadOf(b);
+    var download = this.playback.downloadOf(b);
     var local = playingDownload != null;
     await showSubPage(
       App.rootContext,
@@ -1519,14 +1210,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     if (useDownload) {
-      onlineChosen.remove(b.number);
-      await changeBangumi(b, position: savedPosition);
+      await this.playback.playDownload(b, position: savedPosition);
       return;
     }
     if (candidate == null) {
       return;
     }
-    await changeBangumi(b, candidate: candidate, position: savedPosition);
+    await this.playback.changeBangumi(b, candidate: candidate,
+        position: savedPosition);
   }
 
   PlayerControls buildControls() {
@@ -1547,12 +1238,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       // Always shown, so the buttons keep their place around play/pause.
       onPrevious: () {
         hasPrevious
-            ? moveEpisode(-1)
+            ? playback.move(-1)
             : context.showMessage(message: "Already the first episode".tl);
       },
       onNext: () {
         hasNext
-            ? moveEpisode(1)
+            ? playback.move(1)
             : context.showMessage(message: "Already the last episode".tl);
       },
       actions: [
@@ -1582,7 +1273,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 i: episodeLabel(episodes[i]),
             }, current);
             if (i != null && i != current) {
-              loadEpisode(i);
+              playback.loadEpisode(i);
             }
           }),
         if (info != null && info.sources.length > 1)
@@ -1591,7 +1282,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               for (int i = 0; i < info.sources.length; i++)
                 i: info.sources[i].name,
             }, sourceIndex);
-            if (i != null) switchSource(i);
+            if (i != null) playback.pickStream(i);
           }),
         PlayerControlAction(Icons.speed_rounded, "Speed".tl, (context) async {
           var r = await pick(context, "Speed".tl, {
@@ -1781,8 +1472,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   Widget buildPlayerContent() {
     var p = active;
-    var peerHint = ignoringSession
-        ? PeerHint.none : session?.peerHint ?? PeerHint.none;
+    var peerHint = playback.peerHint;
     Widget view;
     if (p != null) {
       view = LayoutBuilder(
@@ -1839,7 +1529,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           if (lease?.status != null && error == null &&
               peerHint == PeerHint.none)
             buildTorrentStatus(),
-          if (session?.recovering == true && error == null &&
+          if (playback.recovering && error == null &&
               peerHint == PeerHint.none)
             buildReconnecting(),
           if (currentSkip != null && !isLocked)
@@ -1889,7 +1579,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   ),
                   if (hint == PeerHint.searching)
                     TextButton(
-                      onPressed: () => session?.retryPeers(),
+                      onPressed: () => playback.retryPeers(),
                       child: Text('Retry'.tl),
                     ),
                 ],
@@ -2002,17 +1692,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget buildError() {
-    var untried = session?.nextUntriedStream;
+    var untried = playback.nextUntriedStream;
     return MediaErrorView(
       message: error!,
-      title: (switcher.exhausted
+      title: (playback.exhausted
           ? 'All sources failed'
-          : session?.hasRecovery == true
+          : playback.hasRecovery
               ? 'Playback interrupted'
               : 'Playback failed').tl,
-      retry: retry,
+      retry: playback.retry,
       secondaryLabel: 'Next source'.tl,
-      onSecondary: untried == null ? null : () => switchSource(untried),
+      onSecondary: untried == null ? null : () => playback.pickStream(untried),
       onBack: showPlayerBack || isFullscreen
           ? () => isFullscreen ? setFullscreen(false) : context.pop()
           : null,
@@ -2066,7 +1756,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   selectedColor: context.colorScheme.secondaryContainer,
                   label: Text(info.sources[i].name),
                   selected: sourceIndex == i,
-                  onSelected: (_) => switchSource(i),
+                  onSelected: (_) => playback.pickStream(i),
                 ),
             ],
           ),
@@ -2134,7 +1824,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 localVideo, AnimekoSource.playbackChapterId(match)),
               episodeDownloaded: (e) =>
                   SubjectDownloads.find(bangumi!.subject.id, e.id) != null,
-              onPlay: (target, line) => changeBangumi(
+              onPlay: (target, line) => playback.changeBangumi(
                 bangumi!.at(target.number),
                 releaseLine: line,
                 position: target.number == bangumi!.number
@@ -2156,7 +1846,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         bangumi!.subject.id, e.id) != null,
                     onTap: e.number == bangumi!.number
                         ? null
-                        : () => changeBangumi(bangumi!.at(e.number)),
+                        : () => playback.changeBangumi(bangumi!.at(e.number)),
                   ),
               ],
             ),
@@ -2198,7 +1888,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                           onTap: current == i ||
                               (source?.isPlaybackSupported == false &&
                                   !DownloadedPlayInfo.isDownloaded(local, episodes[i].id))
-                              ? null : () => loadEpisode(i),
+                              ? null : () => playback.loadEpisode(i),
                         ),
                   ],
                 ),
