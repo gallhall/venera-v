@@ -1,12 +1,12 @@
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/platform/app_channel.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translations.dart';
@@ -142,8 +142,7 @@ Future<void> exportVideos(BuildContext context, List<LocalComic> videos) async {
 Future<bool> _saveToFilesIOS(Directory dir) async {
   var paths = [for (var e in dir.listSync()) e.path];
   if (paths.isEmpty) return false;
-  const channel = MethodChannel("venera/method_channel");
-  return await channel.invokeMethod<bool>("exportFiles", paths) ?? false;
+  return AppChannel.exportFiles(paths);
 }
 
 /// Joining and decrypting segments takes a while: keep it off the UI

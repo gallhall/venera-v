@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:flutter_saf/flutter_saf.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/platform/app_channel.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:path/path.dart' as p;
@@ -207,11 +208,9 @@ class DirectoryPicker {
       Directory(path).deleteIgnoreError();
     }
     if (App.isIOS || App.isMacOS) {
-      _methodChannel.invokeMethod("stopAccessingSecurityScopedResource");
+      AppChannel.releaseScopedDirectory();
     }
   });
-
-  static const _methodChannel = MethodChannel("venera/method_channel");
 
   Future<Directory?> pickDirectory({bool directAccess = false}) async {
     IO._isSelectingFiles = true;
@@ -233,8 +232,7 @@ class DirectoryPicker {
         }
       } else {
         // ios, macos
-        directory =
-            await _methodChannel.invokeMethod<String?>("getDirectoryPath");
+        directory = await AppChannel.pickScopedDirectory();
       }
       if (directory == null) return null;
       _finalizer.attach(this, directory);
@@ -248,13 +246,11 @@ class DirectoryPicker {
 }
 
 class IOSDirectoryPicker {
-  static const MethodChannel _channel = MethodChannel("venera/method_channel");
-
   // 调用 iOS 目录选择方法
   static Future<String?> selectDirectory() async {
     IO._isSelectingFiles = true;
     try {
-      final String? path = await _channel.invokeMethod('selectDirectory');
+      final String? path = await AppChannel.selectDirectory();
       return path;
     } catch (e) {
       // 返回报错信息
@@ -324,6 +320,20 @@ Future<String?> selectDirectory() async {
 // selectDirectoryIOS
 Future<String?> selectDirectoryIOS() async {
   return IOSDirectoryPicker.selectDirectory();
+}
+
+/// Lets the user pick the directory the local library is kept in: one the
+/// app can go on using after a restart, picked the way each platform has
+/// for that. Null if nothing was picked.
+Future<String?> pickStorageDirectory() async {
+  if (App.isAndroid) {
+    var picker = DirectoryPicker();
+    return (await picker.pickDirectory())?.path;
+  }
+  if (App.isIOS) {
+    return selectDirectoryIOS();
+  }
+  return selectDirectory();
 }
 
 Future<void> saveFile(
