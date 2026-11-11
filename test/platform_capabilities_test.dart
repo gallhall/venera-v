@@ -25,7 +25,7 @@ void main() {
     expect(unsupported.networkType.isSupported, isFalse);
     expect(unsupported.thermal.isSupported, isFalse);
     expect(unsupported.volumeKeys.isSupported, isFalse);
-    expect(unsupported.backgroundDownload.isSupported, isFalse);
+    expect(unsupported.downloads.isSupported, isFalse);
     expect(unsupported.filePicker.isSupported, isFalse);
     expect(unsupported.sharedText.isSupported, isFalse);
   });
@@ -42,7 +42,7 @@ void main() {
   });
 
   test('unsupported background service is inert', () async {
-    final service = unsupported.backgroundDownload;
+    final service = unsupported.downloads;
     service.setActionHandler((_) async => fail('Unexpected native action'));
     expect(await service.takeResumeRequest(), isFalse);
     await service.update({});

@@ -12,8 +12,9 @@ import 'package:window_manager/window_manager.dart';
 import 'capabilities.dart';
 import 'desktop_download_policy.dart';
 
-class DesktopBackgroundDownload with TrayListener
-    implements BackgroundDownloadCapability, DownloadFailureCapability {
+/// The tray, where the window hides while downloads go on, and local
+/// notifications for what completed or failed.
+class DesktopDownloadPresence extends DownloadPresence with TrayListener {
   static const _linuxTray = MethodChannel('venera/desktop_tray');
   final _clock = Stopwatch()..start();
   final _limiter = TrayUpdateLimiter();
@@ -29,16 +30,8 @@ class DesktopBackgroundDownload with TrayListener
   /// Assigned by WindowFrame so tray Quit follows the same reader listeners.
   Future<void> Function()? onQuit;
 
-  @override
-  bool get isSupported => true;
-
-  // Desktop actions operate on the entire queue. Android's handler operates
-  // only on its representative task and remains unchanged.
-  @override
-  void setActionHandler(Future<void> Function(String action)? handler) {}
-
-  @override
-  Future<bool> takeResumeRequest() async => false;
+  // The tray's actions operate on the entire queue, not on the task shown:
+  // no action handler is needed.
 
   Future<void> _serialize(Future<void> Function() operation) {
     return _operations = _operations.then((_) => operation()).catchError((Object e) {
@@ -122,8 +115,8 @@ class DesktopBackgroundDownload with TrayListener
   }
 
   @override
-  Future<void> update(Map<String, Object?> notification) async {
-    _latest = Map.of(notification);
+  Future<void> update(Map<String, Object?> status) async {
+    _latest = Map.of(status);
     _scheduleUpdate();
   }
 
@@ -233,16 +226,15 @@ class DesktopBackgroundDownload with TrayListener
   }
 
   @override
-  Future<void> notifyFailure(String title, String text) =>
-      _notify('Download failed'.tl, '$title: $text');
+  Future<void> failed(String title, String text) => _notify(title, text);
 
   @override
-  Future<void> finish(Map<String, Object?> notification) async {
-    _latest = Map.of(notification);
+  Future<void> finish(Map<String, Object?> summary) async {
+    _latest = Map.of(summary);
     _scheduleUpdate();
-    final title = notification['title'] as String?;
+    final title = summary['title'] as String?;
     if (title != null) {
-      await _notify(title, notification['text'] as String? ?? '');
+      await _notify(title, summary['text'] as String? ?? '');
     }
   }
 

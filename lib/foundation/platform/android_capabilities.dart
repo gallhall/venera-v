@@ -36,11 +36,11 @@ class AndroidVolumeKeys implements VolumeKeysCapability {
   Stream<dynamic> get events => _channel.receiveBroadcastStream();
 }
 
-class AndroidBackgroundDownload implements BackgroundDownloadCapability {
-  const AndroidBackgroundDownload();
+/// The foreground service `DownloadService` and its notification. A
+/// failure shows in that notification, so it is not announced apart.
+class AndroidDownloadPresence extends DownloadPresence {
+  const AndroidDownloadPresence();
   static const _channel = MethodChannel('venera/download_service');
-  @override
-  bool get isSupported => true;
   @override
   void setActionHandler(Future<void> Function(String action)? handler) {
     if (handler == null) {
@@ -53,11 +53,11 @@ class AndroidBackgroundDownload implements BackgroundDownloadCapability {
   Future<bool> takeResumeRequest() async =>
       await _channel.invokeMethod<bool>('takeResumeRequest') ?? false;
   @override
-  Future<void> update(Map<String, Object?> notification) =>
-      _channel.invokeMethod<void>('update', notification);
+  Future<void> update(Map<String, Object?> status) =>
+      _channel.invokeMethod<void>('update', status);
   @override
-  Future<void> finish(Map<String, Object?> notification) =>
-      _channel.invokeMethod<void>('finish', notification);
+  Future<void> finish(Map<String, Object?> summary) =>
+      _channel.invokeMethod<void>('finish', summary);
   @override
   Future<void> requestPermission() =>
       _channel.invokeMethod<void>('requestPermission');

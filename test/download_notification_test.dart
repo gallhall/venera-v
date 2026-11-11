@@ -72,16 +72,36 @@ class _FakeTask extends DownloadTask {
   LocalComic toLocalComic() => throw UnimplementedError();
 }
 
-class _FailureService extends UnsupportedBackgroundDownload
-    implements DownloadFailureCapability {
+/// A presence that only records what it is told.
+class _Presence extends DownloadPresence {
   final failures = <String>[];
+  final calls = <String>[];
+  final finished = <Map<String, Object?>>[];
 
   @override
-  bool get isSupported => true;
+  Future<void> update(Map<String, Object?> status) async {
+    calls.add('update');
+  }
 
   @override
-  Future<void> notifyFailure(String title, String text) async {
-    failures.add(title);
+  Future<void> finish(Map<String, Object?> summary) async {
+    calls.add('finish');
+    finished.add(summary);
+  }
+
+  @override
+  Future<void> failed(String title, String text) async {
+    failures.add(text);
+  }
+
+  @override
+  Future<void> settled() async {
+    calls.add('settled');
+  }
+
+  @override
+  Future<void> requestPermission() async {
+    calls.add('requestPermission');
   }
 }
 
@@ -115,13 +135,21 @@ void main() {
   setUpAll(() async {
     App.dataPath = Directory.systemTemp.createTempSync("venera_dn").path;
     await AppTranslation.init();
+    // Completed tasks go nowhere: there is no local library here.
+    DownloadQueue.instance = DownloadQueue.custom(
+      read: () => null,
+      write: (_) async {},
+      discard: () {},
+      decode: (_) => null,
+      completed: (_) {},
+    );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       return call.method == "takeResumeRequest" ? false : null;
     });
     PlatformCapabilities.instance = const PlatformCapabilities(
-      backgroundDownload: AndroidBackgroundDownload(),
+      downloads: AndroidDownloadPresence(),
     );
     await DownloadNotification.attach();
   });
@@ -203,8 +231,8 @@ void main() {
 
   test('reports a non-representative failure once, and again after retry', () async {
     final previous = PlatformCapabilities.instance;
-    final service = _FailureService();
-    PlatformCapabilities.instance = PlatformCapabilities(backgroundDownload: service);
+    final service = _Presence();
+    PlatformCapabilities.instance = PlatformCapabilities(downloads: service);
     addTearDown(() {
       PlatformCapabilities.instance = previous;
     });
@@ -214,12 +242,55 @@ void main() {
     b.resume();
     b.setFailed(true);
     b.setFailed(true);
-    expect(service.failures, ['Task failed']);
+    expect(service.failures, ['Task failed: 1/2']);
     b.setFailed(false);
     b.setFailed(true);
-    expect(service.failures, ['Task failed', 'Task failed']);
+    expect(service.failures, ['Task failed: 1/2', 'Task failed: 1/2']);
     a.cancel();
     b.cancel();
     await settle();
+  });
+
+  test('every change ends with the presence told that it is settled', () async {
+    final previous = PlatformCapabilities.instance;
+    final service = _Presence();
+    PlatformCapabilities.instance = PlatformCapabilities(downloads: service);
+    addTearDown(() {
+      PlatformCapabilities.instance = previous;
+    });
+    final a = _FakeTask('settling');
+    DownloadQueue().add(a);
+    a.resume();
+    await settle();
+    expect(service.calls.first, 'update');
+    expect(service.calls.last, 'settled');
+    service.calls.clear();
+    a.cancel();
+    await settle();
+    expect(service.calls, ['finish', 'settled']);
+  });
+
+  test('a download completed before it was seen running is announced',
+      () async {
+    final previous = PlatformCapabilities.instance;
+    final service = _Presence();
+    PlatformCapabilities.instance = PlatformCapabilities(downloads: service);
+    addTearDown(() {
+      PlatformCapabilities.instance = previous;
+    });
+    final a = _FakeTask('instant');
+    DownloadQueue().add(a);
+    DownloadQueue().complete(a);
+    await settle();
+    expect(service.calls, isNot(contains('update')));
+    expect(service.finished.single['text'], 'Task instant');
+    expect(service.finished.single['title'], isNotNull);
+  });
+
+  test('a platform that shows nothing takes every report', () async {
+    const none = NoDownloadPresence();
+    expect(none.isSupported, isFalse);
+    await none.failed('title', 'text');
+    await none.settled();
   });
 }

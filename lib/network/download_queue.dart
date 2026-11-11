@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
-import 'package:flutter/widgets.dart' show ChangeNotifier;
+import 'package:flutter/widgets.dart' show ChangeNotifier, visibleForTesting;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/local.dart';
@@ -32,6 +32,10 @@ class DownloadQueue with ChangeNotifier {
     decode: DownloadTask.fromJson,
     completed: (task) => LocalManager().add(task.toLocalComic()),
   );
+
+  /// Tests replace the app's queue before anything asks for it.
+  @visibleForTesting
+  static set instance(DownloadQueue value) => _instance = value;
 
   static const _fileName = 'downloading_tasks.json';
 
