@@ -21,13 +21,17 @@ class DownloadIdentity {
   /// The title of the 作品 it was downloaded from.
   final String? sourceTitle;
 
+  /// The title of the Bangumi subject, as it was shown when the download
+  /// was made. Downloads made before it was recorded have none.
+  final String? subjectTitle;
+
   final Map<String, int> _ids;
   final Map<String, BangumiEpisode> _episodes;
   final bool _legacySubject;
   final Map<String, String> _titles;
 
-  DownloadIdentity._(this.subjectId, this.sourceTitle, this._ids,
-      this._episodes, this._legacySubject, this._titles);
+  DownloadIdentity._(this.subjectId, this.sourceTitle, this.subjectTitle,
+      this._ids, this._episodes, this._legacySubject, this._titles);
 
   /// The identity of video [videoId] with chapter titles [chapters] (in
   /// source order) from the decoded [sidecar], which may be missing or
@@ -43,6 +47,7 @@ class DownloadIdentity {
     return DownloadIdentity._(
       subject is int ? subject : legacy,
       data['sourceTitle'] is String ? data['sourceTitle'] : null,
+      data['bangumiTitle'] is String ? data['bangumiTitle'] : null,
       {
         if (data['bangumiEpisodeIds'] case Map ids)
           for (var e in ids.entries)
@@ -117,11 +122,12 @@ class DownloadIdentity {
   bool get listsSubject => _legacySubject;
 
   /// The sidecar to write: [previous] (the decoded file, if any) with
-  /// [subjectId], [sourceTitle] and the chapters' [episodeIds] and
-  /// [episodes] added.
+  /// [subjectId], [sourceTitle], [subjectTitle] and the chapters'
+  /// [episodeIds] and [episodes] added.
   static Map<String, dynamic> merged(Object? previous, {
     int? subjectId,
     String? sourceTitle,
+    String? subjectTitle,
     Map<String, int> episodeIds = const {},
     Map<String, BangumiEpisode> episodes = const {},
   }) {
@@ -130,6 +136,8 @@ class DownloadIdentity {
       'bangumiSubjectId': subjectId ??
           (data['bangumiSubjectId'] is int ? data['bangumiSubjectId'] : null),
       'sourceTitle': sourceTitle,
+      'bangumiTitle': subjectTitle ??
+          (data['bangumiTitle'] is String ? data['bangumiTitle'] : null),
       'bangumiEpisodeIds': {
         if (data['bangumiEpisodeIds'] case Map ids)
           for (var e in ids.entries)

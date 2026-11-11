@@ -82,4 +82,16 @@ void main() {
     var loaded = await DownloadIdentity.load(root.path, videoId: 'video');
     expect(loaded.episodeOf('one')!.ep, 3);
   });
+
+  test('the title of the subject is kept when it is not given again', () {
+    var first = DownloadIdentity.merged(null, subjectId: 42,
+        sourceTitle: 'Source name', subjectTitle: 'Anime');
+    expect(DownloadIdentity.of(videoId: 'v', sidecar: first).subjectTitle,
+        'Anime');
+    var second = DownloadIdentity.merged(jsonDecode(jsonEncode(first)),
+        sourceTitle: 'Source name');
+    expect(DownloadIdentity.of(videoId: 'v', sidecar: second).subjectTitle,
+        'Anime');
+    expect(DownloadIdentity.of(videoId: 'v').subjectTitle, isNull);
+  });
 }

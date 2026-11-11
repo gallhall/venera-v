@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
+import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/torrent/torrent_download_state.dart';
 import 'package:venera/foundation/video/download_identity.dart';
@@ -27,6 +29,9 @@ class VideoCacheEntry {
   final int? subjectId;
   final int? bangumiEpisodeId;
   final String? sourceTitle;
+
+  /// The title of the Bangumi subject, where the download knows it.
+  final String? subjectTitle;
   final String title;
   final String? cover;
   final String? root;
@@ -35,7 +40,8 @@ class VideoCacheEntry {
   bool get completed => _completed || task?.episodeCompleted(chapterId) == true;
 
   const VideoCacheEntry({this.task, this.local, this.chapterId, this.subjectId,
-    this.bangumiEpisodeId, this.sourceTitle, required this.title, this.cover,
+    this.bangumiEpisodeId, this.sourceTitle, this.subjectTitle,
+    required this.title, this.cover,
     this.root, this.size = 0, bool completed = false}) : _completed = completed;
 
   String get groupKey => videoCacheGroupKey(subjectId: subjectId, sourceTitle: sourceTitle);
@@ -88,7 +94,15 @@ class VideoCacheGroup {
   final int diskUsage;
   const VideoCacheGroup(this.key, this.entries, this.diskUsage);
   int? get subjectId => entries.first.subjectId;
-  String? get title => entries.map((e) => e.sourceTitle?.trim())
+  /// The title of the subject for the downloads of one, whichever sources
+  /// they came from: the titles of those differ, and the first entry is
+  /// not always the same one. The title of the 作品 otherwise, and for
+  /// downloads made before the subject's title was recorded.
+  String? get title => _first((e) => e.subjectTitle) ??
+      _first((e) => e.sourceTitle);
+
+  String? _first(String? Function(VideoCacheEntry entry) of) => entries
+      .map((e) => of(e)?.trim())
       .whereType<String>().where((s) => s.isNotEmpty).firstOrNull;
   String? get cover => entries.map((e) => e.cover).whereType<String>().firstOrNull;
   int get speed => videoCacheSpeed(entries);
@@ -103,9 +117,15 @@ class VideoCacheSnapshot {
 
   /// Files are scanned asynchronously; the UI retains the previous snapshot
   /// during refreshes rather than doing recursive IO in build().
+  ///
+  /// [subjectTitle] gives the title of a subject to the downloads that did
+  /// not record it.
   static Future<VideoCacheSnapshot> load(List<VideoDownloadTask> tasks,
       List<LocalComic> locals,
-      {Map<String, (DateTime, int)>? sizeCache, bool quick = false}) async {
+      {Map<String, (DateTime, int)>? sizeCache, bool quick = false,
+      String? Function(int subjectId)? subjectTitle}) async {
+    String? titleOf(int? subjectId, String? recorded) => recorded ??
+        (subjectId == null ? null : subjectTitle?.call(subjectId));
     // A finished episode only changes by being deleted or downloaded again,
     // both of which rewrite its manifest: its size is scanned once. HLS
     // episodes hold thousands of segments, so rescanning them every refresh
@@ -157,6 +177,7 @@ class VideoCacheSnapshot {
           bangumiEpisodeId: known.episodeIdOf(ep),
           // Existing source downloads have a library title even without a sidecar.
           sourceTitle: known.sourceTitle ?? local.title,
+          subjectTitle: titleOf(known.subjectId, known.subjectTitle),
           title: local.chapters?[ep ?? ''] ?? local.title,
           cover: 'file://${local.coverFile.path}', completed: true,
           size: await measure(VideoDownloadTask.episodeDirectory(root, ep), stable: true));
@@ -179,6 +200,8 @@ class VideoCacheSnapshot {
           subjectId: task.bangumiSubjectId ?? known.subjectId,
           bangumiEpisodeId: task.bangumiEpisodeIds[ep ?? ''] ?? known.episodeIdOf(ep),
           sourceTitle: task.comic?.title ?? known.sourceTitle,
+          subjectTitle: titleOf(task.bangumiSubjectId ?? known.subjectId,
+              task.bangumiTitle ?? known.subjectTitle),
           title: task.comic?.chapters?[ep ?? ''] ?? task.comic?.title ?? ep ?? '',
           cover: task.cover, completed: done,
           size: size);
@@ -186,6 +209,7 @@ class VideoCacheSnapshot {
         entries[entry.key] = VideoCacheEntry(task: task, local: local,
           chapterId: ep, root: root, subjectId: entry.subjectId,
           bangumiEpisodeId: entry.bangumiEpisodeId, sourceTitle: entry.sourceTitle,
+          subjectTitle: entry.subjectTitle,
           title: entry.title, cover: entry.cover, completed: done, size: entry.size);
       }
     }
@@ -225,6 +249,17 @@ class VideoCacheController extends ChangeNotifier {
     _timer = Timer.periodic(const Duration(seconds: 2), (_) => refresh());
   }
 
+  /// The title the subject has in the history, for downloads that did not
+  /// record it.
+  static String? _knownSubjectTitle(int subjectId) {
+    try {
+      return HistoryManager()
+          .find(bangumiHistoryId(subjectId), ComicType.bangumi)?.title;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _syncTasks() {
     var current = DownloadQueue().tasks.whereType<VideoDownloadTask>().toSet();
     for (var task in _tasks.difference(current)) {
@@ -261,7 +296,7 @@ class VideoCacheController extends ChangeNotifier {
       var quick = !_measured;
       var value = await VideoCacheSnapshot.load(_tasks.toList(),
         LocalManager().getComics(LocalSortType.name), sizeCache: _sizes,
-        quick: quick);
+        quick: quick, subjectTitle: _knownSubjectTitle);
       if (quick) {
         _measured = true;
         _again = true;
