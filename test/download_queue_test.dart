@@ -241,6 +241,38 @@ void main() {
     expect(kept[2]['path'], isNull);
   });
 
+  test('kept tasks are named, come back once they can, or are given up',
+      () async {
+    var stored = jsonEncode([
+      {'id': 'a', 'video': false},
+      {'id': 'gone', 'video': true, 'comic': {'title': 'Series'}},
+      {'id': 'other', 'video': true, 'comicTitle': 'Other'},
+      {'id': 'bad', 'video': true},
+    ]);
+    var installed = false;
+    var restored = DownloadQueue.custom(
+      read: () => stored,
+      write: (json) async => saved = json,
+      discard: () => saved = 'discarded',
+      decode: (e) => e['id'] == 'a' || (installed && e['id'] == 'gone')
+          ? FakeTask(e['id'], video: e['video'])
+          : null,
+      completed: completed.add,
+      parallel: (t) => (t as FakeTask).video,
+    )..restore();
+    expect(restored.unrestored, ['Series', 'Other', null]);
+    expect(restored.retryUnrestored(), 0);
+    installed = true;
+    expect(restored.retryUnrestored(), 1);
+    expect([for (var t in restored.tasks) t.id], ['a', 'gone']);
+    expect(restored.tasks.last.isPaused, isTrue);
+    expect(restored.unrestored, ['Other', null]);
+    restored.forgetUnrestored();
+    expect(restored.unrestored, isEmpty);
+    await restored.save();
+    expect([for (var e in jsonDecode(saved!)) e['id']], ['a', 'gone']);
+  });
+
   test('a broken file is discarded', () {
     var broken = make(stored: '{not json')..restore();
     expect(broken.tasks, isEmpty);

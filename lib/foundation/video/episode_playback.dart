@@ -204,7 +204,13 @@ class EpisodePlayback extends ChangeNotifier {
   /// Another episode is being found for the 播放上下文: the session of the
   /// previous one is still there, paused, and is not shown.
   bool _switching = false;
-  bool _changingBangumi = false;
+  /// While [changeBangumi] looks for an episode: what played before, to go
+  /// back to if the episode is not found.
+  ({VideoPlayback? active, bool wasPlaying, String? error})? _changing;
+
+  /// Counts [changeBangumi] calls, so that one a later one took over from
+  /// leaves [_changing] alone.
+  int _changes = 0;
   bool _disposed = false;
 
   String get sourceKey => _sourceKey;
@@ -517,9 +523,12 @@ class EpisodePlayback extends ChangeNotifier {
     bool automatic = false,
     ReleaseLine? releaseLine,
   }) async {
-    if (_disposed || _changingBangumi) {
+    // 自动换源 never takes over from what the user has just chosen; what
+    // the user chooses takes over from whatever is still being found.
+    if (_disposed || (automatic && _changing != null)) {
       return;
     }
+    var change = ++_changes;
     if (!automatic) {
       _resetAutoSwitch();
     }
@@ -535,16 +544,23 @@ class EpisodePlayback extends ChangeNotifier {
       _bangumi = playback;
       _playingDownload = download;
       _initialPosition = position ?? Duration.zero;
+      _changing = null;
       await loadEpisode(_current, automatic: automatic, position: position);
       return;
     }
-    var oldActive = active;
-    _changingBangumi = true;
+    // Chosen while another episode was being found: what played before
+    // that one is still what to go back to.
+    var before = _changing ??= (
+      active: active,
+      wasPlaying: active?.isPlaying == true,
+      error: _error,
+    );
+    var oldActive = before.active;
     _switching = true;
     _session?.cancelStartupWatch();
     String? automaticError;
-    var wasPlaying = oldActive?.isPlaying == true;
-    var oldError = _error;
+    var wasPlaying = before.wasPlaying;
+    var oldError = before.error;
     _loading = true;
     _error = null;
     var token = ++_loadToken;
@@ -574,6 +590,9 @@ class EpisodePlayback extends ChangeNotifier {
             : null,
         details: playing(candidate) ? _details : null,
         onSourceChanged: (c) {
+          if (_disposed || token != _loadToken) {
+            return;
+          }
           _emit(EpisodeMessage(
             'Switched playback source to @source'.tlParams({
               'source': lookups.name(c.sourceKey),
@@ -598,7 +617,7 @@ class EpisodePlayback extends ChangeNotifier {
           'name': lookups.name(_sourceKey),
         })));
       }
-      _changingBangumi = false;
+      _changing = null;
       await loadEpisode(_current, automatic: automatic, position: position);
     } catch (e) {
       if (automatic && !_disposed && token == _loadToken) {
@@ -620,14 +639,17 @@ class EpisodePlayback extends ChangeNotifier {
           return;
         }
         _emit(EpisodeMessage('$e'));
-        _changingBangumi = false;
+        _changing = null;
         // Every source was asked already.
         if (e is! BangumiEpisodeNotOut) {
           _emit(EpisodeSourceNeeded(playback, position ?? Duration.zero));
         }
       }
     } finally {
-      _changingBangumi = false;
+      // Not when a later choice has taken over meanwhile.
+      if (change == _changes) {
+        _changing = null;
+      }
     }
     if (automaticError != null) {
       await _autoSwitchAfterFailure(

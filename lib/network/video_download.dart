@@ -1365,6 +1365,14 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       response.headers.value('content-length') ?? '',
     );
     var total = length == null ? null : start + length;
+    if (total == null && status == 206) {
+      // Sent in chunks, without a length: the range still says how much is
+      // to come, so that one cut short is not taken for the whole file.
+      var sent = rangeLength(response.headers.value('content-range'));
+      if (sent != null) {
+        total = start + sent;
+      }
+    }
     var raf = await part.open(mode: start > 0 ? FileMode.append : FileMode.write);
     var received = start;
     try {
@@ -1381,10 +1389,31 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     if (total != null && received < total) {
       throw "Connection closed early ($received/$total bytes)";
     }
+    if (received == 0) {
+      // With no length to compare with, an empty answer is the one cut
+      // that can still be told from a file.
+      await part.deleteIgnoreError();
+      throw "The server sent an empty file";
+    }
     if (!_isCurrent(run)) {
       return;
     }
     await part.rename(file.path);
+  }
+
+  /// How many bytes a `Content-Range` such as `bytes 1000-1999/5000` says
+  /// are sent: from its first byte to its last, wherever in the resource
+  /// they are. Null if it does not say.
+  static int? rangeLength(String? contentRange) {
+    var range = RegExp(r'bytes\s+(\d+)-(\d+)').firstMatch(contentRange ?? '');
+    if (range == null) {
+      return null;
+    }
+    var first = int.tryParse(range[1]!), last = int.tryParse(range[2]!);
+    if (first == null || last == null || last < first) {
+      return null;
+    }
+    return last - first + 1;
   }
 
   Future<String> _readText(

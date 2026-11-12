@@ -104,6 +104,7 @@ class _DownloadingPageState extends State<DownloadingPage> {
             ButtonSegment(value: false, label: Text('Comics'.tl)),
             ButtonSegment(value: true, label: Text('Anime'.tl)),
           ], selected: {anime}, onSelectionChanged: (value) => setState(() => anime = value.single))),
+        if (DownloadQueue().unrestored.isNotEmpty) buildUnrestored(),
         Expanded(child: anime ? buildCache() : ListView(children: [
           if (comics.isEmpty)
             AppEmptyView(text: 'No downloads'.tl, icon: Icons.download_done_outlined)
@@ -111,6 +112,36 @@ class _DownloadingPageState extends State<DownloadingPage> {
             buildTop(),
             for (var task in comics) _DownloadTaskTile(key: ValueKey(task), task: task),
           ],
+        ])),
+      ]));
+  }
+
+  /// Downloads kept as they were saved because their source is missing or
+  /// failed to load: nothing else shows that they exist.
+  Widget buildUnrestored() {
+    var titles = DownloadQueue().unrestored;
+    var named = titles.whereType<String>().toSet().take(3).join(', ');
+    return AppCard(padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.warning_amber_outlined, size: 20, color: context.colorScheme.error),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: Text(
+            '@count unfinished downloads could not be restored. Their source is missing or failed to load.'
+                .tlParams({'count': titles.length}) + (named.isEmpty ? '' : '\n$named'),
+            style: ts.s14)),
+        ]),
+        Align(alignment: Alignment.centerRight, child: Wrap(spacing: AppSpacing.xs, children: [
+          TextButton(onPressed: () {
+            var restored = DownloadQueue().retryUnrestored();
+            context.showMessage(message: restored > 0
+                ? '@count downloads restored'.tlParams({'count': restored})
+                : 'Still cannot be restored'.tl);
+          }, child: Text('Retry'.tl)),
+          TextButton(onPressed: () => showConfirmDialog(context: context,
+            title: 'Give up these downloads'.tl,
+            content: 'They are removed from the list. Files already downloaded are kept.'.tl,
+            onConfirm: DownloadQueue().forgetUnrestored), child: Text('Give up'.tl)),
         ])),
       ]));
   }
