@@ -1473,6 +1473,11 @@ class PlayerService implements VideoPlayback {
     _controller?.rect.removeListener(_onOutputRect);
     _redrawTimer?.cancel();
     _anime4kAndroid?.rect.removeListener(_onAnime4kAndroidRect);
+    // Paused while Anime4K sets the surface size, see [_resizeAnime4k]. A
+    // paused subscription never gets the end of its stream, so the player
+    // would wait for it forever while disposing, and as media_kit creates
+    // and disposes players one at a time, no later player would ever open.
+    await _anime4kAndroid?.videoParamsSubscription?.cancel();
     for (var s in _subscriptions) {
       await s.cancel();
     }
