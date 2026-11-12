@@ -923,12 +923,21 @@ class _TorrentTask
 
     var stream = localFile.createStream(filePosition, endPosition);
     var position = offsetStart;
+    // Only the reader opened last says where playback is. One left behind
+    // by a seek still hands out a chunk or two after the new one opened,
+    // and would take the download back to where it was reading.
+    var reader = ++_readers;
     return stream.map((bytes) {
       position += bytes.length;
-      setPlaybackPosition(position);
+      if (reader == _readers) {
+        setPlaybackPosition(position);
+      }
       return bytes;
     });
   }
+
+  /// Streams created so far; the last one is the one being played.
+  int _readers = 0;
 
   @override
   void setPlaybackPosition(int bytePosition) {
