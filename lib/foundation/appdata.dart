@@ -33,7 +33,7 @@ class Appdata with Init {
       var json = toJson();
       var data = jsonEncode(json);
       var file = File(FilePath.join(App.dataPath, 'appdata.json'));
-      futures.add(file.writeAsString(data));
+      futures.add(writeStringAtomically(file, data));
 
       var disableSyncFields = json["settings"]["disableSyncFields"] as String;
       if (disableSyncFields.isNotEmpty) {
@@ -44,7 +44,7 @@ class Appdata with Init {
         }
         var data4sync = jsonEncode(json4sync);
         var file4sync = File(FilePath.join(App.dataPath, 'syncdata.json'));
-        futures.add(file4sync.writeAsString(data4sync));
+        futures.add(writeStringAtomically(file4sync, data4sync));
       }
 
       await Future.wait(futures);
@@ -127,7 +127,7 @@ class Appdata with Init {
     _isSavingData = true;
     try {
       var file = File(FilePath.join(App.dataPath, 'implicitData.json'));
-      await file.writeAsString(jsonEncode(implicitData));
+      await writeStringAtomically(file, jsonEncode(implicitData));
     } finally {
       _isSavingData = false;
     }
@@ -149,11 +149,11 @@ class Appdata with Init {
           settings[key] = json['settings'][key];
         }
       }
-      searchHistory = List.from(json['searchHistory']);
+      searchHistory = List.from(json['searchHistory'] ?? const []);
     } catch (e) {
       Log.error("Appdata", "Failed to load appdata", e);
       Log.info("Appdata", "Resetting appdata");
-      file.deleteIgnoreError();
+      await setAsideUnreadable(file);
     }
     if ((settings["deviceId"] as String).isEmpty) {
       settings._data["deviceId"] = const Uuid().v4();
@@ -168,7 +168,7 @@ class Appdata with Init {
       Log.error("Appdata", "Failed to load implicit data", e);
       Log.info("Appdata", "Resetting implicit data");
       var implicitDataFile = File(FilePath.join(dataPath, 'implicitData.json'));
-      implicitDataFile.deleteIgnoreError();
+      await setAsideUnreadable(implicitDataFile);
     }
     if (migrateRssRawFilter(implicitData, (key, value) => settings[key] = value)) {
       await saveData(false);

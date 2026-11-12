@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:flutter_saf/flutter_saf.dart';
+import 'package:path/path.dart' as p;
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
@@ -60,6 +61,27 @@ abstract class DownloadTask with ChangeNotifier {
 
   /// root path for the comic. If null, the task is not scheduled.
   String? path;
+
+  /// The local library moved from [from] to [to], with what this task has
+  /// downloaded: it goes on there. The task is paused meanwhile.
+  void relocate(String from, String to) {
+    var old = path;
+    if (old != null) {
+      path = relocatedPath(old, from, to);
+    }
+  }
+
+  /// [value], a path or a `file://` one, under [to] where it was under
+  /// [from]; else as it is.
+  static String relocatedPath(String value, String from, String to) {
+    const scheme = 'file://';
+    var prefix = value.startsWith(scheme) ? scheme : '';
+    var path = value.substring(prefix.length);
+    if (!p.equals(from, path) && !p.isWithin(from, path)) {
+      return value;
+    }
+    return prefix + p.normalize(p.join(to, p.relative(path, from: from)));
+  }
 
   /// convert current state to json, which can be used to restore the task
   Map<String, dynamic> toJson();
@@ -163,6 +185,15 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   @override
   String? get cover => _cover ?? comic?.cover;
+
+  @override
+  void relocate(String from, String to) {
+    super.relocate(from, to);
+    var cover = _cover;
+    if (cover != null) {
+      _cover = DownloadTask.relocatedPath(cover, from, to);
+    }
+  }
 
   @override
   String get message => _message;

@@ -264,6 +264,10 @@ class LocalManager with ChangeNotifier {
     if (!await newDir.list().isEmpty) {
       return "Directory is not empty";
     }
+    // Nothing is written to the old directory while it is copied, or
+    // after: the tasks go on in the new one, when they are resumed.
+    var oldPath = path;
+    DownloadQueue().pauseAll();
     try {
       await copyDirectoryIsolate(
         directory,
@@ -277,6 +281,7 @@ class LocalManager with ChangeNotifier {
     }
     await directory.deleteContents(recursive: true);
     path = newPath;
+    await DownloadQueue().relocate(oldPath, newPath);
     _checkNoMedia();
     return null;
   }

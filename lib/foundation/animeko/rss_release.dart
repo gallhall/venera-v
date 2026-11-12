@@ -122,7 +122,7 @@ class RssReleaseName {
     }
     for (var revision in RegExp(r'(?<![a-z0-9])v(\d+)(?!\d)',
         caseSensitive: false).allMatches(text)) {
-      var value = int.parse(revision[1]!);
+      var value = int.tryParse(revision[1]!) ?? 0;
       if (value > version) {
         version = value;
       }

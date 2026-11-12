@@ -204,6 +204,11 @@ String cachedEpisodeLabel(VideoCacheEntry entry) {
   if (episode == null) {
     return entry.title;
   }
+  return bangumiEpisodeLabel(episode);
+}
+
+/// A Bangumi episode as the cache pages name it: its number, then its name.
+String bangumiEpisodeLabel(BangumiEpisode episode) {
   var name = episode.nameCn.isNotEmpty ? episode.nameCn : episode.name;
   var label = 'Episode @n'.tlParams({'n': episode.number});
   return name.isEmpty ? label : '$label · $name';

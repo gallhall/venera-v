@@ -572,8 +572,9 @@ abstract final class BangumiEpisodeNumber {
 
   static int? _whole(String number) {
     if (number.contains('.')) return null;
-    var value = int.parse(number);
-    return value > 0 ? value : null;
+    // A run of digits too long for a number is none.
+    var value = int.tryParse(number);
+    return value != null && value > 0 ? value : null;
   }
 
   static String _halfWidth(String s) {

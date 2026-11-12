@@ -25,10 +25,10 @@ class DownloadQueue with ChangeNotifier {
       var file = File(FilePath.join(App.dataPath, _fileName));
       return file.existsSync() ? file.readAsStringSync() : null;
     },
-    write: (json) =>
-        File(FilePath.join(App.dataPath, _fileName)).writeAsString(json),
+    write: (json) => writeStringAtomically(
+        File(FilePath.join(App.dataPath, _fileName)), json),
     discard: () =>
-        File(FilePath.join(App.dataPath, _fileName)).deleteIgnoreError(),
+        setAsideUnreadable(File(FilePath.join(App.dataPath, _fileName))),
     decode: DownloadTask.fromJson,
     completed: (task) => LocalManager().add(task.toLocalComic()),
   );
@@ -63,6 +63,12 @@ class DownloadQueue with ChangeNotifier {
 
   final _tasks = <DownloadTask>[];
   final _queued = <DownloadTask>{};
+
+  /// Saved tasks that could not be restored, as they were saved: the source
+  /// of one is missing or failed to load, say. They are saved again as they
+  /// are, and restored once they can be, rather than dropped by the next
+  /// save with what they had downloaded left behind.
+  final _unrestored = <Object?>[];
 
   /// Serial tasks waiting their turn are paused internally, but still queued.
   bool get hasActiveDownloads => _tasks.any((task) =>
@@ -175,7 +181,32 @@ class DownloadQueue with ChangeNotifier {
   Future<void> save() {
     return _saving = _saving.catchError((Object e) {
       Log.error('DownloadQueue', 'Failed to save downloads: $e');
-    }).then((_) => _write(jsonEncode([for (var t in _tasks) t.toJson()])));
+    }).then((_) => _write(jsonEncode([
+      for (var t in _tasks) t.toJson(),
+      ..._unrestored,
+    ])));
+  }
+
+  /// The local library moved from [from] to [to] with what the tasks have
+  /// downloaded: they go on there rather than in the directory left
+  /// behind. Pause them first; they stay paused.
+  Future<void> relocate(String from, String to) {
+    for (var task in _tasks) {
+      task.relocate(from, to);
+    }
+    // Those that could not be restored moved with the library all the same:
+    // restored later, they would go on in the directory left behind.
+    for (var saved in _unrestored) {
+      if (saved is! Map) continue;
+      for (var field in const ['path', 'cover']) {
+        var value = saved[field];
+        if (value is String) {
+          saved[field] = DownloadTask.relocatedPath(value, from, to);
+        }
+      }
+    }
+    notifyListeners();
+    return save();
   }
 
   /// Reads the tasks saved before, without starting them.
@@ -184,15 +215,31 @@ class DownloadQueue with ChangeNotifier {
     if (json == null) {
       return;
     }
+    List saved;
     try {
-      for (var e in jsonDecode(json) as List) {
-        if (_decode(e) case var task?) {
-          _tasks.add(task);
-        }
-      }
+      saved = jsonDecode(json) as List;
     } catch (e) {
       _discard();
       Log.error('DownloadQueue', 'Failed to restore downloading tasks: $e');
+      return;
+    }
+    for (var e in saved) {
+      DownloadTask? task;
+      try {
+        task = _decode(e);
+      } catch (error) {
+        // One task that cannot be read does not cost the others.
+        Log.error('DownloadQueue', 'Failed to restore a task: $error');
+      }
+      if (task != null) {
+        _tasks.add(task);
+      } else {
+        _unrestored.add(e);
+      }
+    }
+    if (_unrestored.isNotEmpty) {
+      Log.warning('DownloadQueue',
+          '${_unrestored.length} tasks are kept until they can be restored');
     }
   }
 }

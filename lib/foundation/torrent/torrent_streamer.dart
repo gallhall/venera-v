@@ -425,13 +425,10 @@ class DartTorrentStreamer implements TorrentStreamer {
     // By name: a listing may spell the separators of a path another way.
     var active = {
       for (var s in _sessions.values)
-        if (s.directory != null) s.directory!.uri.pathSegments
-            .lastWhere((e) => e.isNotEmpty, orElse: () => ''),
+        if (s.directory != null) _name(s.directory!),
     };
     await for (var entry in _cache.list(followLinks: false)) {
-      var name = entry.uri.pathSegments
-          .lastWhere((e) => e.isNotEmpty, orElse: () => '');
-      if (active.contains(name)) {
+      if (active.contains(_name(entry))) {
         continue;
       }
       try {
@@ -447,6 +444,10 @@ class DartTorrentStreamer implements TorrentStreamer {
     _cacheTail = next.catchError((Object _) {});
     return next;
   }
+
+  /// The name of an entry of the cache directory.
+  static String _name(FileSystemEntity entry) => entry.uri.pathSegments
+      .lastWhere((e) => e.isNotEmpty, orElse: () => '');
 
   Future<int> _size(FileSystemEntity entry) async {
     if (entry is File) {
@@ -468,14 +469,17 @@ class DartTorrentStreamer implements TorrentStreamer {
       return;
     }
     var sessions = _sessions.values.toSet();
+    // By name: on Windows a listing spells the separator before the name
+    // another way than the session's path does, and an open stream's
+    // directory was taken for one to remove.
     var active = {for (var s in sessions)
-      if (s.reserved > 0 && s.directory != null) s.directory!.path};
+      if (s.reserved > 0 && s.directory != null) _name(s.directory!)};
     // Downloads are outside the limit, so they do not take from playback.
     var used = sessions.fold<int>(
         0, (n, s) => s.download ? n : n + s.reserved);
     var removable = <({FileSystemEntity entry, int size, DateTime time})>[];
     await for (var entry in _cache.list(followLinks: false)) {
-      if (!active.contains(entry.path)) {
+      if (!active.contains(_name(entry))) {
         var size = await _size(entry);
         removable.add((entry: entry, size: size,
           time: (await entry.stat()).modified));
