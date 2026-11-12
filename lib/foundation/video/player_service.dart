@@ -1132,7 +1132,7 @@ class PlayerService implements VideoPlayback {
     // Whatever an earlier open still waits for is no longer its to do.
     var opened = ++_opened;
     await _applyAudioOutput();
-    await _applyCacheDir();
+    await _keepCacheInMemory();
     await _applySubtitleFont();
     await _applyProxy(request.url);
     if (!_anime4kInitialized) {
@@ -1305,21 +1305,21 @@ class PlayerService implements VideoPlayback {
     }
   }
 
-  bool _cacheDirApplied = false;
+  bool _cacheInMemory = false;
 
-  /// media_kit enables mpv's on-disk demuxer cache but sets no directory, so
-  /// mpv logs "Failed to create file cache" and falls back to memory.
-  Future<void> _applyCacheDir() async {
-    if (_cacheDirApplied) return;
+  /// media_kit enables mpv's on-disk demuxer cache, which has no size limit:
+  /// mpv reads ahead as fast as the source gives, so a local or cached video
+  /// is copied whole to the disk within seconds. Kept in memory, what is read
+  /// ahead stays within the buffer size the player was created with.
+  Future<void> _keepCacheInMemory() async {
+    if (_cacheInMemory) return;
     var platform = _player.platform;
     if (platform is! NativePlayer) return;
     try {
-      var dir = Directory(FilePath.join(App.cachePath, 'video_cache'));
-      await dir.create(recursive: true);
-      await platform.setProperty('demuxer-cache-dir', dir.path);
-      _cacheDirApplied = true;
+      await platform.setProperty('cache-on-disk', 'no');
+      _cacheInMemory = true;
     } catch (e) {
-      Log.warning('Video', 'Failed to set the video cache directory: $e');
+      Log.warning('Video', 'Failed to keep the video cache in memory: $e');
     }
   }
 
