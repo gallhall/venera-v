@@ -28,6 +28,7 @@ import 'package:dtorrent_task_v2/src/standalone/dht/standalone_dht.dart';
 import 'package:logging/logging.dart';
 import 'package:events_emitter2/events_emitter2.dart';
 import 'file/download_file_manager.dart';
+import 'stream_readers.dart';
 import 'file/state_file.dart';
 import 'file/state_file_v2.dart';
 import 'file/selected_file_storage.dart';
@@ -923,12 +924,47 @@ class _TorrentTask
 
     var stream = localFile.createStream(filePosition, endPosition);
     var position = offsetStart;
-    return stream.map((bytes) {
-      position += bytes.length;
-      setPlaybackPosition(position);
-      return bytes;
-    });
+    // Not every stream says where playback is: see [StreamReaders].
+    int? reader;
+    StreamSubscription<List<int>>? subscription;
+    late StreamController<List<int>> controller;
+    void ended() {
+      if (reader == null) {
+        return;
+      }
+      var playback = _readers.close(reader!);
+      reader = null;
+      if (playback != null) {
+        setPlaybackPosition(playback);
+      }
+    }
+    controller = StreamController<List<int>>(
+      sync: true,
+      onListen: () {
+        reader = _readers.open(position);
+        subscription = stream.listen((bytes) {
+          position += bytes.length;
+          if (reader != null && _readers.moved(reader!, position)) {
+            setPlaybackPosition(position);
+          }
+          controller.add(bytes);
+        }, onError: controller.addError, onDone: () {
+          ended();
+          unawaited(controller.close());
+        });
+      },
+      onPause: () => subscription?.pause(),
+      onResume: () => subscription?.resume(),
+      onCancel: () {
+        ended();
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
+
+  /// Which of the streams being read says where playback is.
+  final _readers = StreamReaders();
 
   @override
   void setPlaybackPosition(int bytePosition) {
