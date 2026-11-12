@@ -440,6 +440,54 @@ void main() {
     expect(needed.playback.number, 2);
   });
 
+  test('an episode chosen while another is being found takes over', () async {
+    create(bangumi: context(1));
+    await load(0);
+    var asking = Completer<EpisodeTarget>();
+    targetOf['A'] = () => asking.future;
+    var first = playback.changeBangumi(context(2));
+    await _flush();
+    await playback.changeBangumi(context(2), candidate: comic('B'));
+    await _flush();
+    expect(targets, ['A:2', 'B:2']);
+    expect(playback.sourceKey, 'B');
+    expect(playback.bangumi!.number, 2);
+    expect(playback.switching, isFalse);
+    // The answer that comes late changes nothing.
+    asking.complete((sourceKey: 'A', details: details('A'), ep: 2, group: 1));
+    await first;
+    await _flush();
+    expect(playback.sourceKey, 'B');
+    expect(playback.active, same(engines.player));
+  });
+
+  test('what played goes on when neither episode chosen is found', () async {
+    create(bangumi: context(1));
+    await load(0);
+    play();
+    var asking = Completer<EpisodeTarget>();
+    targetOf['A'] = () => asking.future;
+    var first = playback.changeBangumi(context(2));
+    await _flush();
+    expect(engines.player.isPlaying, isFalse);
+    targetOf['B'] = () => throw Exception('no such episode');
+    await playback.changeBangumi(context(2), candidate: comic('B'));
+    await _flush();
+    expect(playback.bangumi!.number, 1);
+    expect(playback.switching, isFalse);
+    expect(playback.active, same(engines.player));
+    expect(engines.player.isPlaying, isTrue);
+    asking.completeError(Exception('late'));
+    await first;
+    await _flush();
+    expect(messages().where((m) => m.contains('late')), isEmpty);
+    // And another one can be chosen after that.
+    targetOf.clear();
+    await playback.changeBangumi(context(2), candidate: comic('B'));
+    await _flush();
+    expect(playback.bangumi!.number, 2);
+  });
+
   test('an episode that is not out yet asks for no other source', () async {
     create(bangumi: context(1));
     await load(0);
