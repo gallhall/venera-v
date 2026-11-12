@@ -194,6 +194,17 @@ class DownloadQueue with ChangeNotifier {
     for (var task in _tasks) {
       task.relocate(from, to);
     }
+    // Those that could not be restored moved with the library all the same:
+    // restored later, they would go on in the directory left behind.
+    for (var saved in _unrestored) {
+      if (saved is! Map) continue;
+      for (var field in const ['path', 'cover']) {
+        var value = saved[field];
+        if (value is String) {
+          saved[field] = DownloadTask.relocatedPath(value, from, to);
+        }
+      }
+    }
     notifyListeners();
     return save();
   }

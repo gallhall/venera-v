@@ -210,6 +210,37 @@ void main() {
         '/old/library2/Comic');
   });
 
+  test('tasks that could not be restored move with the library too', () async {
+    var stored = jsonEncode([
+      {
+        'id': 'gone',
+        'video': true,
+        'source': 'removed',
+        'path': '/old/library/Anime',
+        'cover': 'file:///old/library/Anime/cover.jpg',
+      },
+      {'id': 'elsewhere', 'video': true, 'source': 'removed', 'path': '/other'},
+      {'id': 'unscheduled', 'video': true, 'source': 'removed', 'path': null},
+    ]);
+    var restored = DownloadQueue.custom(
+      read: () => stored,
+      write: (json) async => saved = json,
+      discard: () => saved = 'discarded',
+      decode: (e) => null,
+      completed: completed.add,
+      parallel: (t) => true,
+    )..restore();
+    await restored.relocate('/old/library', '/new/place');
+    var kept = jsonDecode(saved!) as List;
+    expect((kept[0]['path'] as String).replaceAll(r'\', '/'),
+        '/new/place/Anime');
+    expect((kept[0]['cover'] as String).replaceAll(r'\', '/'),
+        'file:///new/place/Anime/cover.jpg');
+    expect(kept[0]['source'], 'removed');
+    expect(kept[1]['path'], '/other');
+    expect(kept[2]['path'], isNull);
+  });
+
   test('a broken file is discarded', () {
     var broken = make(stored: '{not json')..restore();
     expect(broken.tasks, isEmpty);
