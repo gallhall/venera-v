@@ -124,11 +124,10 @@ class _AnimeCachePageState extends State<AnimeCachePage> {
     var matches = entries.where((entry) =>
         entry.episodeIdIn(widget.subjectId!, episodes) == episode.id).toList();
     var entry = matches.where((e) => e.completed).firstOrNull ?? matches.firstOrNull;
-    var name = episode.nameCn.isEmpty ? episode.name : episode.nameCn;
     return AppCard(key: episodeKeys.putIfAbsent(episode.id, () => GlobalKey()),
       highlighted: episode.id == widget.initialEpisodeId,
       child: ListTile(onTap: () => select(episode, entry),
-        title: Text('${episode.number.toString().padLeft(2, '0')}  $name', style: ts.s14),
+        title: Text(bangumiEpisodeLabel(episode), style: ts.s14),
         subtitle: entry?.failure != null ? Text(entry!.failure!,
           style: ts.s12.copyWith(color: context.colorScheme.error)) :
           entry?.paused == true ? Text('Paused'.tl, style: ts.s12) : null,
