@@ -70,6 +70,53 @@ class DownloadQueue with ChangeNotifier {
   /// save with what they had downloaded left behind.
   final _unrestored = <Object?>[];
 
+  /// The titles of the saved tasks that could not be restored, for the user
+  /// to be told about them; null for one without a title.
+  List<String?> get unrestored => [
+    for (var saved in _unrestored)
+      if (saved is Map)
+        switch (saved['comic']) {
+          {'title': String title} => title,
+          _ => saved['comicTitle'] is String ? saved['comicTitle'] : null,
+        }
+      else
+        null,
+  ];
+
+  /// Tries again to restore the tasks that could not be: the source of one
+  /// may have been added since. They come back paused. Returns how many did.
+  int retryUnrestored() {
+    var restored = 0;
+    for (var saved in _unrestored.toList()) {
+      DownloadTask? task;
+      try {
+        task = saved is Map<String, dynamic> ? _decode(saved) : null;
+      } catch (_) {
+        // Still not readable.
+      }
+      if (task != null) {
+        _unrestored.remove(saved);
+        _tasks.add(task);
+        restored++;
+      }
+    }
+    if (restored > 0) {
+      _changed();
+    }
+    return restored;
+  }
+
+  /// Gives up the tasks that could not be restored. What they had
+  /// downloaded stays where it is: finished episodes are in the same
+  /// directory.
+  void forgetUnrestored() {
+    if (_unrestored.isEmpty) {
+      return;
+    }
+    _unrestored.clear();
+    _changed();
+  }
+
   /// Serial tasks waiting their turn are paused internally, but still queued.
   bool get hasActiveDownloads => _tasks.any((task) =>
       !task.isError && (!task.isPaused || _queued.contains(task)));
