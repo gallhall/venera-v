@@ -1365,6 +1365,16 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       response.headers.value('content-length') ?? '',
     );
     var total = length == null ? null : start + length;
+    if (total == null && status == 206) {
+      // Sent in chunks, without a length: the range still says where the
+      // answer ends, so that one cut short is not taken for the whole file.
+      var end = RegExp(r'bytes\s+\d+-(\d+)').firstMatch(
+          response.headers.value('content-range') ?? '');
+      var last = end == null ? null : int.tryParse(end[1]!);
+      if (last != null && last >= start) {
+        total = last + 1;
+      }
+    }
     var raf = await part.open(mode: start > 0 ? FileMode.append : FileMode.write);
     var received = start;
     try {
@@ -1380,6 +1390,12 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
     }
     if (total != null && received < total) {
       throw "Connection closed early ($received/$total bytes)";
+    }
+    if (received == 0) {
+      // With no length to compare with, an empty answer is the one cut
+      // that can still be told from a file.
+      await part.deleteIgnoreError();
+      throw "The server sent an empty file";
     }
     if (!_isCurrent(run)) {
       return;
