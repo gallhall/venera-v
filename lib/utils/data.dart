@@ -67,18 +67,13 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
       }
     }
     if (await historyFile.exists()) {
-      HistoryManager().close();
-      File(FilePath.join(App.dataPath, "history.db")).deleteIfExistsSync();
-      historyFile.renameSync(FilePath.join(App.dataPath, "history.db"));
-      HistoryManager().init();
+      _replaceData(historyFile, "history.db",
+          close: HistoryManager().close, open: HistoryManager().init);
     }
     if (await localFavoriteFile.exists()) {
-      LocalFavoritesManager().close();
-      File(FilePath.join(App.dataPath, "local_favorite.db"))
-          .deleteIfExistsSync();
-      localFavoriteFile
-          .renameSync(FilePath.join(App.dataPath, "local_favorite.db"));
-      LocalFavoritesManager().init();
+      _replaceData(localFavoriteFile, "local_favorite.db",
+          close: LocalFavoritesManager().close,
+          open: LocalFavoritesManager().init);
     }
     if (await appdataFile.exists()) {
       var content = await appdataFile.readAsString();
@@ -86,12 +81,11 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
       appdata.syncData(data);
     }
     if (await cookieFile.exists()) {
-      SingleInstanceCookieJar.instance?.dispose();
-      File(FilePath.join(App.dataPath, "cookie.db")).deleteIfExistsSync();
-      cookieFile.renameSync(FilePath.join(App.dataPath, "cookie.db"));
-      SingleInstanceCookieJar.instance =
-          SingleInstanceCookieJar(FilePath.join(App.dataPath, "cookie.db"))
-            ..init();
+      _replaceData(cookieFile, "cookie.db",
+          close: () => SingleInstanceCookieJar.instance?.dispose(),
+          open: () => SingleInstanceCookieJar.instance =
+              SingleInstanceCookieJar(FilePath.join(App.dataPath, "cookie.db"))
+                ..init());
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
     if (Directory(comicSourceDir).existsSync()) {
@@ -109,6 +103,32 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
     }
   } finally {
     cacheDir.deleteIgnoreError(recursive: true);
+  }
+}
+
+/// Puts the imported [file] in place of [name] in the data directory, whose
+/// owner is closed with [close] meanwhile and opened again with [open],
+/// also when it fails.
+///
+/// The file is brought next to the old one first, copied if the cache is on
+/// another volume, where a rename fails: the old one is only replaced once
+/// the new one is there, and is kept when it does not get there. It was
+/// deleted before the new one was moved, and lost when that failed.
+void _replaceData(File file, String name,
+    {required void Function() close, required void Function() open}) {
+  var target = FilePath.join(App.dataPath, name);
+  var staged = File('$target.importing');
+  try {
+    file.renameSync(staged.path);
+  } on FileSystemException {
+    file.copySync(staged.path);
+  }
+  close();
+  try {
+    staged.renameSync(target);
+  } finally {
+    staged.deleteIfExistsSync();
+    open();
   }
 }
 
