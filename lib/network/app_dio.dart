@@ -234,6 +234,13 @@ class RHttpAdapter implements HttpClientAdapter {
   /// Optional response deadline used by the dedicated Bangumi transport.
   final Duration? receiveTimeout;
 
+  /// How long a response may take to begin where there is no
+  /// [receiveTimeout].
+  static const responseStartTimeout = Duration(seconds: 60);
+
+  /// The same for a request with a body, which is sent first.
+  static const uploadTimeout = Duration(minutes: 10);
+
   RHttpAdapter({this.client, this.receiveTimeout});
 
   /// An adapter with a client of its own, for many requests in a row such
@@ -317,6 +324,21 @@ class RHttpAdapter implements HttpClientAdapter {
     if (token != null) {
       unawaited(cancelFuture?.then((_) => token.cancel()));
     }
+    // Without a deadline of its own a request still gets one for its
+    // response to begin: a server that takes the connection and then says
+    // nothing kept it waiting for good. Its body is read as before.
+    final headersToken = token ?? rhttp.CancelToken();
+    var headersReceived = false;
+    if (token == null) {
+      unawaited(cancelFuture?.then((_) {
+        if (!headersReceived) {
+          return headersToken.cancel();
+        }
+      }));
+    }
+    // A response begins after the request was sent: an upload gets longer.
+    final headersTimeout = receiveTimeout ??
+        (requestStream == null ? responseStartTimeout : uploadTimeout);
     // A persistent client's proxy is fixed at creation. Use a direct request
     // for bypassed hosts, preserving its TLS (including ECH), DNS and timeouts.
     final pending = client != null && !bypassesSystemProxy(options.uri.host)
@@ -326,7 +348,7 @@ class RHttpAdapter implements HttpClientAdapter {
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
-            cancelToken: token,
+            cancelToken: headersToken,
           )
         : rhttp.Rhttp.request(
             method: method,
@@ -343,19 +365,19 @@ class RHttpAdapter implements HttpClientAdapter {
             expectBody: rhttp.HttpExpectBody.stream,
             body: body,
             headers: requestHeaders,
-            cancelToken: token,
+            cancelToken: headersToken,
           );
-    DioException timeoutError() => DioException(
+    DioException timeoutError([Duration? after]) => DioException(
           requestOptions: options,
           type: DioExceptionType.receiveTimeout,
-          message: 'Response timed out after ${receiveTimeout!.inSeconds} seconds',
+          message: 'Response timed out after '
+              '${(after ?? receiveTimeout!).inSeconds} seconds',
         );
-    final res = receiveTimeout == null
-        ? await pending
-        : await pending.timeout(receiveTimeout!, onTimeout: () {
-            unawaited(token!.cancel());
-            throw timeoutError();
-          });
+    final res = await pending.timeout(headersTimeout, onTimeout: () {
+      unawaited(headersToken.cancel());
+      throw timeoutError(headersTimeout);
+    });
+    headersReceived = true;
     if (res is! rhttp.HttpStreamResponse) {
       throw Exception("Invalid response type: ${res.runtimeType}");
     }
