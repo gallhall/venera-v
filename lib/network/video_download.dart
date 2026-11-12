@@ -112,6 +112,15 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
   String? _cover;
 
+  @override
+  void relocate(String from, String to) {
+    super.relocate(from, to);
+    var cover = _cover;
+    if (cover != null) {
+      _cover = DownloadTask.relocatedPath(cover, from, to);
+    }
+  }
+
   /// Episodes downloaded by this task.
   final _completed = <String>[];
 
@@ -1341,6 +1350,17 @@ class VideoDownloadTask extends DownloadTask with _TransferSpeedMixin {
       throw "The server does not support byte ranges";
     }
     if (status == 200) start = 0;
+    if (status == 206 && start > 0) {
+      // Continued where the part file ends, if that is what was sent: a
+      // server may answer with another range, which would be appended to
+      // the wrong place. The file is then downloaded again.
+      var sent = RegExp(r'bytes\s+(\d+)-').firstMatch(
+          response.headers.value('content-range') ?? '');
+      if (sent != null && int.tryParse(sent[1]!) != start) {
+        await part.deleteIgnoreError();
+        throw "The server sent another range than asked for";
+      }
+    }
     var length = int.tryParse(
       response.headers.value('content-length') ?? '',
     );

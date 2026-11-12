@@ -35,6 +35,26 @@ class FilePath {
   }
 }
 
+/// Writes [contents] to [file] so that it holds either what it held or all
+/// of [contents]: written beside it first, then moved over it. A process
+/// killed while it wrote a file in place left half of it, which could not
+/// be read again.
+Future<void> writeStringAtomically(File file, String contents) async {
+  var staged = File('${file.path}.tmp');
+  await staged.writeAsString(contents, flush: true);
+  await staged.rename(file.path);
+}
+
+/// Puts aside a [file] that cannot be read as `<name>.bak`, replacing an
+/// earlier one, rather than deleting what may still be recovered by hand.
+Future<void> setAsideUnreadable(File file) async {
+  try {
+    await file.rename('${file.path}.bak');
+  } catch (_) {
+    // Missing, or in use: it is overwritten by the next save either way.
+  }
+}
+
 extension FileSystemEntityExt on FileSystemEntity {
   /// Get the base name of the file or directory.
   String get name {

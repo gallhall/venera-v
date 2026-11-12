@@ -167,6 +167,49 @@ void main() {
     expect(jsonDecode(saved!), hasLength(2));
   });
 
+  test('a task that cannot be restored is kept as it was saved', () async {
+    var stored = jsonEncode([
+      {'id': 'a', 'video': false},
+      {'id': 'gone', 'video': true, 'source': 'removed'},
+      {'id': 'bad'},
+      {'id': 'v', 'video': true},
+    ]);
+    // The source of one is missing; reading another throws.
+    var restored = DownloadQueue.custom(
+      read: () => stored,
+      write: (json) async => saved = json,
+      discard: () => saved = 'discarded',
+      decode: (e) => e['source'] == 'removed'
+          ? null
+          : FakeTask(e['id'], video: e['video']),
+      completed: completed.add,
+      parallel: (t) => (t as FakeTask).video,
+    )..restore();
+    expect([for (var t in restored.tasks) t.id], ['a', 'v']);
+    await restored.save();
+    expect(saved, isNot('discarded'));
+    expect([for (var e in jsonDecode(saved!)) e['id']], ['a', 'v', 'gone', 'bad']);
+    expect(jsonDecode(saved!)[2]['source'], 'removed');
+  });
+
+  test('tasks follow the local library when it moves', () async {
+    var a = task('a')..path = '/old/library/Comic';
+    var elsewhere = task('b')..path = '/other/Comic';
+    var unscheduled = task('c');
+    q..add(a)..add(elsewhere)..add(unscheduled);
+    q.pauseAll();
+    await q.relocate('/old/library', '/new/place');
+    expect(a.path!.replaceAll(r'\', '/'), '/new/place/Comic');
+    expect(elsewhere.path, '/other/Comic');
+    expect(unscheduled.path, isNull);
+    expect(DownloadTask.relocatedPath(
+        'file:///old/library/Comic/cover.jpg', '/old/library', '/new/place')
+        .replaceAll(r'\', '/'), 'file:///new/place/Comic/cover.jpg');
+    expect(DownloadTask.relocatedPath(
+        '/old/library2/Comic', '/old/library', '/new/place'),
+        '/old/library2/Comic');
+  });
+
   test('a broken file is discarded', () {
     var broken = make(stored: '{not json')..restore();
     expect(broken.tasks, isEmpty);
