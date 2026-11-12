@@ -226,12 +226,19 @@ class CacheManager {
     ''', [DateTime.now().millisecondsSinceEpoch]);
     }
 
+    // Files that could not be deleted: still on the disk, so still counted
+    // and still known, for the next trim to try again.
+    var kept = 0;
     while (_currentSize != null && _currentSize! > _limitSize) {
       var res = _db.select('''
         SELECT * FROM cache
         ORDER BY expires ASC
-        limit 10
-      ''');
+        limit 10 offset ?
+      ''', [kept]);
+      if (res.isEmpty && kept > 0) {
+        // Everything else is deleted; what is left is in use.
+        break;
+      }
       if (res.isEmpty) {
         // There are many files unmanaged by the cache manager.
         // Clear all cache.
@@ -253,23 +260,17 @@ class CacheManager {
             await file.delete();
           }
         } on FileSystemException {
-          // In use: forgotten all the same, so that the loop goes on to
-          // the next ones; the scan at the next start deletes it.
+          // In use (on Windows): the loop goes on to the next ones.
+          kept++;
+          continue;
         }
-        if (size > 0) {
-          _db.execute('''
-            DELETE FROM cache
-            WHERE key = ?
-          ''', [key]);
-          _currentSize = _currentSize! - size;
-          if (_currentSize! <= _limitSize) {
-            break;
-          }
-        } else {
-          _db.execute('''
-            DELETE FROM cache
-            WHERE key = ?
-          ''', [key]);
+        _db.execute('''
+          DELETE FROM cache
+          WHERE key = ?
+        ''', [key]);
+        _currentSize = _currentSize! - size;
+        if (_currentSize! <= _limitSize) {
+          break;
         }
       }
     }
