@@ -6,6 +6,7 @@ import 'package:venera/utils/database.dart';
 import 'package:venera/utils/io.dart';
 
 import 'app.dart';
+import 'log.dart';
 
 class CacheManager {
   static String get cachePath => '${App.cachePath}/cache';
@@ -186,6 +187,18 @@ class CacheManager {
       return;
     }
     _isChecking = true;
+    try {
+      await _trim();
+    } catch (e) {
+      // A file in use cannot be deleted on Windows: tried again next time,
+      // rather than never again.
+      Log.warning('Cache', 'Failed to trim the cache: $e');
+    } finally {
+      _isChecking = false;
+    }
+  }
+
+  Future<void> _trim() async {
     var res = _db.select('''
       SELECT * FROM cache
       WHERE expires < ?
@@ -194,10 +207,16 @@ class CacheManager {
       var dir = row[1] as String;
       var name = row[2] as String;
       var file = File('$cachePath/$dir/$name');
-      if (await file.exists()) {
-        var size = await file.length();
-        _currentSize = _currentSize! - size;
-        await file.delete();
+      try {
+        if (await file.exists()) {
+          var size = await file.length();
+          await file.delete();
+          if (_currentSize != null) {
+            _currentSize = _currentSize! - size;
+          }
+        }
+      } on FileSystemException {
+        // In use: the scan at the next start deletes it, its row being gone.
       }
     }
     if (res.isNotEmpty) {
@@ -216,8 +235,10 @@ class CacheManager {
       if (res.isEmpty) {
         // There are many files unmanaged by the cache manager.
         // Clear all cache.
-        await Directory(cachePath).delete(recursive: true);
-        Directory(cachePath).createSync(recursive: true);
+        await _deleteFiles();
+        // Nothing is left to count: the size said otherwise, and every
+        // write would clear the whole cache again.
+        _currentSize = 0;
         break;
       }
       for (var row in res) {
@@ -225,9 +246,17 @@ class CacheManager {
         var dir = row[1] as String;
         var name = row[2] as String;
         var file = File('$cachePath/$dir/$name');
-        if (await file.exists()) {
-          var size = await file.length();
-          await file.delete();
+        var size = 0;
+        try {
+          if (await file.exists()) {
+            size = await file.length();
+            await file.delete();
+          }
+        } on FileSystemException {
+          // In use: forgotten all the same, so that the loop goes on to
+          // the next ones; the scan at the next start deletes it.
+        }
+        if (size > 0) {
           _db.execute('''
             DELETE FROM cache
             WHERE key = ?
@@ -244,7 +273,24 @@ class CacheManager {
         }
       }
     }
-    _isChecking = false;
+  }
+
+  /// Deletes every cached file. One in use (on Windows) stays, and does not
+  /// keep the others.
+  Future<void> _deleteFiles() async {
+    var directory = Directory(cachePath);
+    try {
+      await for (var entry in directory.list(followLinks: false)) {
+        try {
+          await entry.delete(recursive: true);
+        } on FileSystemException catch (e) {
+          Log.warning('Cache', 'Could not delete ${entry.path}: $e');
+        }
+      }
+    } on FileSystemException {
+      // The directory itself is gone.
+    }
+    directory.createSync(recursive: true);
   }
 
   /// Delete cache by key.
@@ -276,8 +322,7 @@ class CacheManager {
 
   /// Delete all cache.
   Future<void> clear() async {
-    await Directory(cachePath).delete(recursive: true);
-    Directory(cachePath).createSync(recursive: true);
+    await _deleteFiles();
     _db.execute('''
       DELETE FROM cache
     ''');
