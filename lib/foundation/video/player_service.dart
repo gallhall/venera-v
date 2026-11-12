@@ -1007,10 +1007,11 @@ class PlayerService implements VideoPlayback {
 
   void _onBuffering(bool buffering) {
     _stallTimer?.cancel();
-    if (!buffering) return;
+    if (!buffering || _disposed) return;
     var since = DateTime.now();
     _stallTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       // Not paused by the user meanwhile.
+      if (_disposed) return timer.cancel();
       if (!_player.state.playing) return;
       var interruption = _failures.stalled(since);
       if (interruption == null) return;
@@ -1128,6 +1129,8 @@ class PlayerService implements VideoPlayback {
     ++_anime4kCheck;
     _anime4kOutputSize = null;
     ++_anime4kGeneration;
+    // Whatever an earlier open still waits for is no longer its to do.
+    var opened = ++_opened;
     await _applyAudioOutput();
     await _applyCacheDir();
     await _applySubtitleFont();
@@ -1159,9 +1162,11 @@ class PlayerService implements VideoPlayback {
     } finally {
       _anime4kOpening = false;
     }
+    if (opened != _opened || _disposed) {
+      return;
+    }
     _updateAnime4kSource();
     _checkAnime4k();
-    var opened = ++_opened;
     if (request.audioUrl == null && request.subtitles.isEmpty) {
       // Without "auto", restore the choice among embedded subtitles once
       // they are known, without holding up the caller.
@@ -1179,6 +1184,12 @@ class PlayerService implements VideoPlayback {
       Log.warning('Video', 'Timed out waiting for ${request.url} to load');
       return;
     }
+    // Another stream was opened meanwhile, and it is the one that loaded:
+    // the audio and subtitles of this one are not to be added to it.
+    bool superseded() => opened != _opened || _disposed;
+    if (superseded()) {
+      return;
+    }
     if (request.audioUrl != null) {
       await _player.setAudioTrack(
         AudioTrack.uri(request.audioUrl!, title: 'External'),
@@ -1187,6 +1198,9 @@ class PlayerService implements VideoPlayback {
     // Besides "auto" and "no".
     var subtitleCount = _player.state.tracks.subtitle.length - 2;
     for (var s in request.subtitles) {
+      if (superseded()) {
+        return;
+      }
       await _player.setSubtitleTrack(
         SubtitleTrack.uri(
           s.url,
@@ -1194,6 +1208,9 @@ class PlayerService implements VideoPlayback {
           language: s.language,
         ),
       );
+    }
+    if (superseded()) {
+      return;
     }
     await _restoreSubtitleTrack(subtitleCount + request.subtitles.length);
   }
@@ -1452,6 +1469,7 @@ class PlayerService implements VideoPlayback {
     _anime4kRenderTimer?.cancel();
     _stallTimer?.cancel();
     await _anime4kPending;
+    _stallTimer?.cancel();
     _controller?.rect.removeListener(_onOutputRect);
     _redrawTimer?.cancel();
     _anime4kAndroid?.rect.removeListener(_onAnime4kAndroidRect);
