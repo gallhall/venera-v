@@ -87,6 +87,26 @@ var _log = Logger('TorrentTask');
 bool shouldReleaseTimedOutRequest(int resendCount, {required bool urgent}) =>
     urgent || resendCount >= 3;
 
+/// What to do with a peer whose requests were given up on [strikes] times
+/// in a row, with no block from it in between: how long to wait before it
+/// is asked again, or null to let it go. Exposed separately so it can be
+/// tested without peers.
+///
+/// A peer whose requests are released has none left, and nothing asked it
+/// again: a slow seed sat connected and idle for good. It is asked again,
+/// a little later each time, and after five times without a single block
+/// the connection is given up.
+Duration? retryAfterTimeouts(int strikes) {
+  if (strikes >= maxTimeoutStrikes) {
+    return null;
+  }
+  var seconds = 5 << strikes;
+  return Duration(seconds: seconds > 60 ? 60 : seconds);
+}
+
+/// Timeouts in a row without a block after which a peer is let go.
+const maxTimeoutStrikes = 5;
+
 abstract class TorrentTask with EventsEmittable<TaskEvent> {
   factory TorrentTask.newTask(
     TorrentModel metaInfo,
@@ -1724,6 +1744,7 @@ class _TorrentTask
   }
 
   void _processPeerDispose(PeerDisposeEvent event) {
+    _forgetStrikes(event.peer);
     if (_pieceManager == null) return;
 
     // Clean up superseeding tracking for this peer
@@ -1752,6 +1773,8 @@ class _TorrentTask
   }
 
   void _processReceivePiece(PeerPieceEvent event) {
+    // It answers: what it let time out before is forgiven.
+    _forgetStrikes(event.peer);
     if (_pieceManager == null || _peersManager == null) return;
 
     var piece = _pieceManager![event.index];
@@ -1984,7 +2007,59 @@ class _TorrentTask
           Timer.run(() => requestPieces(p));
         }
       }
+      _struck(peer);
     }
+  }
+
+  /// Timeouts in a row without a block, by peer, and when each is asked
+  /// again: see [retryAfterTimeouts].
+  final _timeoutStrikes = <Peer, int>{};
+  final _retryTimers = <Peer, Timer>{};
+
+  /// The requests of [peer] were given up on once more.
+  void _struck(Peer peer) {
+    var strikes = (_timeoutStrikes[peer] ?? 0) + 1;
+    _timeoutStrikes[peer] = strikes;
+    var delay = retryAfterTimeouts(strikes);
+    if (delay == null) {
+      _forgetStrikes(peer);
+      // Not to be connected again at once: it had its chances.
+      Timer.run(() => peer.dispose(BadException(
+          'No block for $strikes timeouts in a row')));
+      return;
+    }
+    _askAgain(peer, delay);
+  }
+
+  void _askAgain(Peer peer, Duration delay) {
+    _retryTimers.remove(peer)?.cancel();
+    _retryTimers[peer] = Timer(delay, () {
+      _retryTimers.remove(peer);
+      if (!peer.isDisposed && peer.isSleeping) {
+        requestPieces(peer);
+      }
+    });
+  }
+
+  void _forgetStrikes(Peer peer) {
+    _timeoutStrikes.remove(peer);
+    _retryTimers.remove(peer)?.cancel();
+  }
+
+  /// Whether [piece] is better left to another peer than asked of [peer]:
+  /// one that let requests time out is not given a piece playback waits
+  /// for while a peer that did not has it too. The block would be out of
+  /// reach of the others for as long as its timeout, which doubles each
+  /// time.
+  bool _betterAskedElsewhere(Peer peer, Piece piece) {
+    if ((_timeoutStrikes[peer] ?? 0) == 0 ||
+        !(_advancedSelector?.isUrgent(piece.index) ?? false)) {
+      return false;
+    }
+    return _peersManager!.activePeers.any((p) =>
+        p != peer && !p.isDisposed && !p.chokeMe &&
+        (_timeoutStrikes[p] ?? 0) == 0 &&
+        p.remoteCompletePieces.contains(piece.index));
   }
 
   void requestPieces(Peer peer, [int pieceIndex = -1]) async {
@@ -2036,6 +2111,14 @@ class _TorrentTask
       return;
     }
 
+    if (_betterAskedElsewhere(peer, piece)) {
+      // Looked at again later: the others may be gone by then, or the
+      // pieces playback waits for may all be there.
+      _askAgain(peer,
+          retryAfterTimeouts(_timeoutStrikes[peer]!) ??
+              const Duration(seconds: 60));
+      return;
+    }
     var subIndex = piece.popSubPiece();
     if (subIndex == null) return;
     var size = defaultRequestLength; // Block size is calculated dynamically.
@@ -2077,6 +2160,11 @@ class _TorrentTask
     await _flushFiles(_flushIndicesBuffer);
     _flushIndicesBuffer.clear();
     events.dispose();
+    for (var timer in _retryTimers.values) {
+      timer.cancel();
+    }
+    _retryTimers.clear();
+    _timeoutStrikes.clear();
     _dhtRepeatTimer?.cancel();
     _dhtRepeatTimer = null;
     _dhtRetryEvents = 0;

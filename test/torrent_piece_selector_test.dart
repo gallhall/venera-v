@@ -206,4 +206,16 @@ void main() {
     expect(task.pieceManager, isNull);
     await task.dispose();
   });
+
+  test('a peer that lets requests time out is asked again later each time, '
+      'then let go', () {
+    expect([for (var strikes in [1, 2, 3, 4]) retryAfterTimeouts(strikes)], [
+      const Duration(seconds: 10),
+      const Duration(seconds: 20),
+      const Duration(seconds: 40),
+      const Duration(seconds: 60),
+    ]);
+    expect(retryAfterTimeouts(maxTimeoutStrikes), isNull);
+    expect(retryAfterTimeouts(maxTimeoutStrikes + 3), isNull);
+  });
 }
