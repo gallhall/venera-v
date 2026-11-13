@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
@@ -25,6 +26,17 @@ class TestPeer implements Peer {
   TestPeer(int count) : remoteCompletePieces = List.generate(count, (i) => i);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class AddressedPeer extends TestPeer {
+  final String ip;
+  AddressedPeer(this.ip, super.count);
+  @override
+  CompactAddress get address => CompactAddress(InternetAddress(ip), 6881);
+  @override
+  String? get remotePeerId => '-XX0001-$ip';
+  @override
+  bool get isDisposed => false;
 }
 
 class TestPieces implements PieceProvider {
@@ -205,5 +217,46 @@ void main() {
     expect(task.getFilePriority(2), FilePriority.skip);
     expect(task.pieceManager, isNull);
     await task.dispose();
+  });
+
+  test('a peer that lets requests time out is asked again later each time, '
+      'then let go', () {
+    expect([for (var strikes in [1, 2, 3, 4]) retryAfterTimeouts(strikes)], [
+      const Duration(seconds: 10),
+      const Duration(seconds: 20),
+      const Duration(seconds: 40),
+      const Duration(seconds: 60),
+    ]);
+    expect(retryAfterTimeouts(maxTimeoutStrikes), isNull);
+    expect(retryAfterTimeouts(maxTimeoutStrikes + 3), isNull);
+  });
+
+  test('a seed let go for answering nothing is not connected again at once',
+      () {
+    var silent = UnresponsiveException('No block for 5 timeouts in a row');
+    expect(silent, isA<BadException>());
+    expect(reconnectsBadPeer(silent, seeder: true), isFalse);
+    expect(reconnectsBadPeer(BadException('bad'), seeder: true), isTrue);
+    expect(reconnectsBadPeer(BadException('bad'), seeder: false), isFalse);
+  });
+
+  test('with peer priority only the peer of the highest priority is one a '
+      'piece can be left to', () {
+    var model = torrent([8 * mb], mb);
+    var pieces = TestPieces(model);
+    var one = AddressedPeer('203.0.113.7', pieces.length);
+    var other = AddressedPeer('198.51.100.9', pieces.length);
+    var piece = pieces[0]!..addAvailablePeer(one)..addAvailablePeer(other);
+    var selected = AdvancedSequentialPieceSelector(const SequentialConfig(
+        lookAheadSize: 8, adaptiveStrategy: false))
+      ..initialize(model.pieces!.length, model.pieceLength);
+    // Nothing known of our own address: any peer will do.
+    expect(selected.prefers(one, piece), isTrue);
+    expect(selected.prefers(other, piece), isTrue);
+    selected.setLocalPeerEndpoint(InternetAddress('192.0.2.1'), port: 6881);
+    // What a struck peer must not be passed over for: the one that cannot
+    // be given the piece.
+    expect([selected.prefers(one, piece), selected.prefers(other, piece)],
+        unorderedEquals([true, false]));
   });
 }

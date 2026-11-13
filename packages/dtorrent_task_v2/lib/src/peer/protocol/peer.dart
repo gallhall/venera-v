@@ -2069,6 +2069,13 @@ class BadException implements Exception {
   }
 }
 
+/// The peer was let go for answering nothing. Unlike other bad peers, a
+/// seed let go for this is not connected again at once: it would only take
+/// the place of a peer that answers.
+class UnresponsiveException extends BadException {
+  UnresponsiveException(super.e);
+}
+
 class TCPConnectException implements Exception {
   final Exception _e;
   TCPConnectException(this._e);

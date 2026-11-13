@@ -300,10 +300,18 @@ void main() {
       version: TorrentVersion.v1,
     );
     // 02 spans pieces 1-3, which it shares with 01 and 03 but not 04.
-    expect(DartTorrentStreamer.reservedBytes(model, model.files[1]),
-      3000 + 16 * mb);
-    expect(DartTorrentStreamer.reservedBytes(model, model.files[3]),
-      2048 + 16 * mb);
+    expect(DartTorrentStreamer.reservedBytes(model, model.files[1],
+      sparse: false), 3000 + 16 * mb);
+    expect(DartTorrentStreamer.reservedBytes(model, model.files[3],
+      sparse: false), 2048 + 16 * mb);
+    // Where files are sparse the neighbours take only their part of the
+    // pieces shared: pieces 1-3 are bytes 512-2048, 488 of them in 01 and
+    // 48 in 03.
+    expect(DartTorrentStreamer.reservedBytes(model, model.files[1],
+      sparse: true), 1000 + 488 + 48 + 16 * mb);
+    // 04 is pieces 5-7, from byte 2560: 440 bytes of 03.
+    expect(DartTorrentStreamer.reservedBytes(model, model.files[3],
+      sparse: true), 1048 + 440 + 16 * mb);
   });
 
   test('info hash ignores the word info in a preceding comment', () {
