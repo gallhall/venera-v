@@ -325,11 +325,30 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// Cache needed to play [file]. The engine creates a file at its full
   /// length on its first write, and only the selected file and the files
   /// sharing a boundary piece with it are written; the rest of a batch is
-  /// skipped. Not every file system keeps those files sparse, so count
-  /// them whole.
-  static int reservedBytes(TorrentModel model, TorrentFileModel file) =>
-      writtenFiles(model, file).fold<int>(0, (n, f) => n + f.length) +
-      16 * 1024 * 1024;
+  /// skipped.
+  ///
+  /// Where files are [sparse] (everywhere but Windows) a neighbour takes
+  /// only what is written to it, its part of the boundary piece: counted
+  /// whole, three episodes of a batch had to fit the limit to play one,
+  /// and an episode of a batch of large ones could never be played.
+  static int reservedBytes(TorrentModel model, TorrentFileModel file,
+      {bool? sparse}) {
+    sparse ??= filesAreSparse;
+    var piece = model.pieceLength;
+    var start = file.offset ~/ piece * piece;
+    var end = ((max(file.end, file.offset + 1) - 1) ~/ piece + 1) * piece;
+    var size = 16 * 1024 * 1024;
+    for (var f in writtenFiles(model, file)) {
+      size += identical(f, file) || !sparse
+          ? f.length
+          : max(0, min(f.end, end) - max(f.offset, start));
+    }
+    return size;
+  }
+
+  /// Whether a file made at its full length takes only what is written to
+  /// it. Windows fills it with zeros.
+  static bool get filesAreSparse => !Platform.isWindows;
 
   /// The files written to play [file]: itself and those sharing a boundary
   /// piece with it.
@@ -346,9 +365,14 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// What a torrent's directory holds besides what playing [file] writes:
   /// the episodes of a batch watched before. They are in the cache as long
   /// as the directory is, so they count for the stream that uses it.
+  ///
+  /// Each at its full length: what of it is there is not known here. The
+  /// neighbours of [file] are left out only where [reservedBytes] counts
+  /// them whole already.
   static Future<int> keptBeyond(Directory directory, TorrentModel model,
-      TorrentFileModel file) async {
-    var written = writtenFiles(model, file).toSet();
+      TorrentFileModel file, {bool? sparse}) async {
+    sparse ??= filesAreSparse;
+    var written = sparse ? {file} : writtenFiles(model, file).toSet();
     var size = 0;
     for (var other in model.files) {
       if (other.isPaddingFile || written.contains(other)) {

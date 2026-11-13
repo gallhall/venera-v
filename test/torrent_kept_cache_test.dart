@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dtorrent_task_v2/dtorrent_task_v2.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,8 +88,36 @@ void main() {
       await file.create(recursive: true);
       await file.writeAsBytes(List.filled(f.length, 0));
     }
-    expect(await DartTorrentStreamer.keptBeyond(kept, model, second),
-        4 * _pieceLength);
+    expect(await DartTorrentStreamer.keptBeyond(kept, model, second,
+        sparse: true), 4 * _pieceLength);
+    // The files are whole pieces here, so the first is no neighbour of the
+    // second and counts the same where neighbours are reserved whole.
+    expect(await DartTorrentStreamer.keptBeyond(kept, model, second,
+        sparse: false), 4 * _pieceLength);
+  });
+
+  test('an episode of a batch fits a limit its neighbours would not', () {
+    const mb = 1024 * 1024;
+    var lengths = [411 * mb + 7, 622 * mb + 5, 519 * mb + 3];
+    var offset = 0;
+    var files = <TorrentFileModel>[];
+    for (var length in lengths) {
+      files.add(TorrentFileModel(path: 'batch/0${files.length + 1}.mp4',
+          length: length, offset: offset));
+      offset += length;
+    }
+    var model = TorrentModel(name: 'batch', files: files,
+        infoHashBuffer: Uint8List(20), pieceLength: 4 * mb,
+        pieces: List.generate((offset / (4 * mb)).ceil(), (_) => Uint8List(20)),
+        announces: [], nodes: [], version: TorrentVersion.v1);
+    // The middle one shares a piece with each of the others.
+    expect(DartTorrentStreamer.writtenFiles(model, files[1]).length, 3);
+    expect(DartTorrentStreamer.reservedBytes(model, files[1], sparse: true),
+        lessThan(1024 * mb));
+    expect(DartTorrentStreamer.reservedBytes(model, files[1], sparse: true),
+        lessThanOrEqualTo(lengths[1] + 2 * 4 * mb + 16 * mb));
+    expect(DartTorrentStreamer.reservedBytes(model, files[1], sparse: false),
+        greaterThan(1024 * mb));
   });
 
   test('a torrent opened again in its directory needs no peer for what it has',
