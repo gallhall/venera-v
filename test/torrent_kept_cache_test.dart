@@ -81,7 +81,8 @@ void main() {
         batch.path, TorrentCreationOptions(pieceLength: _pieceLength));
     var second = model.files.firstWhere((f) => f.name == '02.mkv');
     var kept = await Directory('${root.path}/kept').create();
-    expect(await DartTorrentStreamer.keptBeyond(kept, model, second), 0);
+    expect(await DartTorrentStreamer.keptBeyond(kept, model, second,
+        sparse: true), 0);
     // The first episode was watched before; the second is what is played.
     for (var f in model.files.where((f) => f.name != '03.mkv')) {
       var file = File('${kept.path}/${f.path}');
@@ -94,6 +95,76 @@ void main() {
     // second and counts the same where neighbours are reserved whole.
     expect(await DartTorrentStreamer.keptBeyond(kept, model, second,
         sparse: false), 4 * _pieceLength);
+  });
+
+  test('what is kept counts for what was fetched, not for the length of '
+      'its files', () async {
+    const mb = 1024 * 1024;
+    var lengths = [10 * mb + 7, 20 * mb + 5, 12 * mb + 3];
+    var offset = 0;
+    var files = <TorrentFileModel>[];
+    for (var length in lengths) {
+      files.add(TorrentFileModel(path: 'batch/0${files.length + 1}.mp4',
+          length: length, offset: offset));
+      offset += length;
+    }
+    var model = TorrentModel(name: 'batch', files: files,
+        infoHashBuffer: Uint8List(20), pieceLength: 4 * mb,
+        pieces: List.generate((offset / (4 * mb)).ceil(), (_) => Uint8List(20)),
+        announces: [], nodes: [], version: TorrentVersion.v1);
+    // The second episode was played from its start: pieces 2 to 4, the
+    // first of which it shares with the first episode.
+    var fetched = DartTorrentStreamer.fetchedBytes(
+        model, (piece) => piece >= 2 && piece <= 4);
+    expect(fetched, {
+      'batch/01.mp4': 2 * mb + 7,
+      'batch/02.mp4': 10 * mb - 7,
+    });
+    // Nothing fetched, nothing recorded.
+    expect(DartTorrentStreamer.fetchedBytes(model, (_) => false), isEmpty);
+    // Everything: each file whole.
+    expect(DartTorrentStreamer.fetchedBytes(model, (_) => true), {
+      for (var f in files) f.path: f.length,
+    });
+
+    var root = await _root();
+    expect(await DartTorrentStreamer.keptRecord(root), isNull);
+    await DartTorrentStreamer.writeKeptRecord(root, fetched);
+    var record = await DartTorrentStreamer.keptRecord(root);
+    expect(record, fetched);
+    // For the third episode both count; for the second only the part of
+    // the first, though the first's file is there at its full length.
+    expect(DartTorrentStreamer.recordedBeyond(record!, files[2]), 12 * mb);
+    expect(DartTorrentStreamer.recordedBeyond(record, files[1]), 2 * mb + 7);
+    // A record that cannot be read is none: the files count whole.
+    await File('${root.path}/.kept').writeAsString('{');
+    expect(await DartTorrentStreamer.keptRecord(root), isNull);
+  });
+
+  test('a file that is there whole counts whole, whatever was fetched',
+      () async {
+    const mb = 1024 * 1024;
+    var files = [
+      TorrentFileModel(path: '01.mp4', length: 3 * mb, offset: 0),
+      TorrentFileModel(path: '02.mp4', length: 3 * mb, offset: 3 * mb),
+    ];
+    var model = TorrentModel(name: 'batch', files: files,
+        infoHashBuffer: Uint8List(20), pieceLength: mb,
+        pieces: List.generate(6, (_) => Uint8List(20)),
+        announces: [], nodes: [], version: TorrentVersion.v1);
+    var root = await _root();
+    // Made the old way: Windows fills it with zeros.
+    var old = await File('${root.path}/01.mp4').open(mode: FileMode.write);
+    await old.truncate(3 * mb);
+    await old.close();
+    var fetched = {'01.mp4': mb, '02.mp4': 2 * mb};
+    var record = await DartTorrentStreamer.onDisk(root, model, fetched);
+    if (allocatedFileSize('${root.path}/01.mp4') == null) {
+      // Not known here: what was fetched stands.
+      expect(record, fetched);
+      return;
+    }
+    expect(record, {'01.mp4': 3 * mb, '02.mp4': 2 * mb});
   });
 
   test('an episode of a batch fits a limit its neighbours would not', () {

@@ -41,6 +41,7 @@ export 'src/queue/torrent_queue.dart';
 export 'src/queue/queue_manager.dart';
 export 'src/queue/queue_events.dart';
 export 'src/file/state_file_v2.dart';
+export 'src/file/sparse_file.dart';
 export 'src/file/file_validator.dart';
 export 'src/file/state_recovery.dart';
 export 'src/file/auto_move_manager.dart';
