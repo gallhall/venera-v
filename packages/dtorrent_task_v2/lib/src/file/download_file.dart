@@ -123,14 +123,53 @@ class DownloadFile {
     // never started. Only pieces written whole are read here, so nothing
     // has to wait for a write.
     RandomAccessFile? own;
+    // Which move of the file the handle was opened after: a moved file is
+    // another file (copied and deleted across devices), and the handle
+    // would go on reading the one left behind.
+    var opened = -1;
+    // The read under way, if any: its handle is closed after it.
+    Future<void>? reading;
+    Future<void> release() async {
+      await reading;
+      var handle = own;
+      own = null;
+      try {
+        await handle?.close();
+      } catch (_) {
+        // Nothing to do about a handle that does not close.
+      }
+    }
     Future<List<int>> read(int position, int count) async {
       if (isVirtualFile) {
         return requestRead(position, count);
       }
-      own ??= await File(filePath).open();
-      await own!.setPosition(position);
-      return own!.read(count);
+      for (var attempt = 0; ; attempt++) {
+        while (_moving && !cancelled && !isClosed) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        var move = _moves;
+        var done = Completer<void>();
+        try {
+          if (own == null || opened != move) {
+            await release();
+            own = await File(filePath).open();
+            opened = move;
+          }
+          reading = done.future;
+          await own!.setPosition(position);
+          return await own!.read(count);
+        } on FileSystemException {
+          // Closed under this read by a move: read again where it is now.
+          if (move == _moves && !_moving || attempt > 4) {
+            rethrow;
+          }
+        } finally {
+          reading = null;
+          done.complete();
+        }
+      }
     }
+    _streamHandles.add(release);
     Future<void> pump() async {
       var position = startByte;
       try {
@@ -162,11 +201,8 @@ class DownloadFile {
           controller.addError(e, stack);
         }
       } finally {
-        try {
-          await own?.close();
-        } catch (_) {
-          // Nothing to do about a handle that does not close.
-        }
+        _streamHandles.remove(release);
+        await release();
         if (!controller.isClosed) {
           unawaited(controller.close());
         }
@@ -327,6 +363,12 @@ class DownloadFile {
   /// after path update.
   Future<void> prepareForMove() async {
     if (isVirtualFile) return;
+    _moves++;
+    // The streams' own handles too: they would read the file left behind,
+    // and on Windows keep it from being moved.
+    for (var release in _streamHandles.toList()) {
+      await release();
+    }
     try {
       await _streamSubscription?.cancel();
       await _streamController?.close();
@@ -356,6 +398,15 @@ class DownloadFile {
     final destination = File(newPath);
     await destination.parent.create(recursive: true);
 
+    _moving = true;
+    try {
+      await _move(source, destination, newPath);
+    } finally {
+      _moving = false;
+    }
+  }
+
+  Future<void> _move(File source, File destination, String newPath) async {
     await prepareForMove();
 
     try {
@@ -385,11 +436,23 @@ class DownloadFile {
   Future<void> rebindPath(String newPath) async {
     if (isVirtualFile) return;
     if (newPath == filePath) return;
-    await prepareForMove();
-    filePath = newPath;
-    _file = File(newPath);
-    _closed = false;
+    _moving = true;
+    try {
+      await prepareForMove();
+      filePath = newPath;
+      _file = File(newPath);
+      _closed = false;
+    } finally {
+      _moving = false;
+    }
   }
+
+  /// Moves of the file so far, and whether one is under way: the streams
+  /// read through handles of their own, which a move closes
+  /// ([_streamHandles]) and which are opened again where the file is then.
+  int _moves = 0;
+  bool _moving = false;
+  final _streamHandles = <Future<void> Function()>{};
 
   Future<FileSystemEntity?> delete() async {
     if (isVirtualFile) {
