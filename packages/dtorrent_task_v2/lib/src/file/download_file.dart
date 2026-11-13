@@ -116,6 +116,21 @@ class DownloadFile {
     var cancelled = false;
     var paused = false;
     late StreamController<List<int>> controller;
+    // Read through a handle of its own. The requests of the file are done
+    // one after the other, and the blocks other peers ask for (a thousand
+    // in five seconds, uploading at full speed) kept a player waiting
+    // seconds for each of its own: a file whose first cluster is 20 MB in
+    // never started. Only pieces written whole are read here, so nothing
+    // has to wait for a write.
+    RandomAccessFile? own;
+    Future<List<int>> read(int position, int count) async {
+      if (isVirtualFile) {
+        return requestRead(position, count);
+      }
+      own ??= await File(filePath).open();
+      await own!.setPosition(position);
+      return own!.read(count);
+    }
     Future<void> pump() async {
       var position = startByte;
       try {
@@ -130,7 +145,7 @@ class DownloadFile {
           }
           var count = math.min(64 * 1024,
             math.min(endByte - position, piece.end - absolute));
-          var bytes = await requestRead(position, count);
+          var bytes = await read(position, count);
           if (cancelled || isClosed) {
             break;
           }
@@ -147,6 +162,11 @@ class DownloadFile {
           controller.addError(e, stack);
         }
       } finally {
+        try {
+          await own?.close();
+        } catch (_) {
+          // Nothing to do about a handle that does not close.
+        }
         if (!controller.isClosed) {
           unawaited(controller.close());
         }
