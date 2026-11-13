@@ -493,6 +493,7 @@ abstract class Peer
 
     /// Clear the request cache.
     _requestBuffer.clear();
+    _cancelled.clear();
     _remoteRequestBuffer.clear();
 
     /// Reset the fast pieces.
@@ -1243,6 +1244,18 @@ abstract class Peer
       var blockLength = message.length - messageInteger * 2;
       var request = removeRequest(index, begin, blockLength);
 
+      // The answer to a request given up on: a slow seed sends it after
+      // our timeout (one took 54 s), or it crossed our cancel on the way.
+      // It was asked for, so it is no violation, and the block is used if
+      // the piece still lacks it. Closing the connection for it threw
+      // away one of the two seeds a swarm had.
+      if (request == null && _wasCancelled(index, begin, blockLength)) {
+        var late = Uint8List(blockLength);
+        late.setRange(0, blockLength, message, messageInteger * 2);
+        events.emit(PeerPieceEvent(this, index, begin, late));
+        continue;
+      }
+
       /// Per BEP 6: Receiving a piece without a corresponding request is a protocol violation.
       /// Close the connection to prevent potential attacks or protocol errors.
       if (request == null) {
@@ -1545,9 +1558,30 @@ abstract class Peer
   void requestCancel(int index, int begin, int length) {
     var request = removeRequest(index, begin, length);
     if (request != null) {
+      _cancelled.remove(_requestKey(index, begin));
+      _cancelled[_requestKey(index, begin)] = length;
+      while (_cancelled.length > maxCancelledRequests) {
+        _cancelled.remove(_cancelled.keys.first);
+      }
       _sendCancel(index, begin, length);
     }
   }
+
+  /// How many requests given up on are remembered, the oldest forgotten
+  /// first: what a peer may still answer.
+  static const maxCancelledRequests = 256;
+
+  /// The requests cancelled (timed out included) and not answered since,
+  /// with their length.
+  final _cancelled = <int, int>{};
+
+  static int _requestKey(int index, int begin) => index * 0x100000000 + begin;
+
+  /// Whether this block answers a request that was cancelled; each one is
+  /// answered once.
+  bool _wasCancelled(int index, int begin, int length) =>
+      _cancelled[_requestKey(index, begin)] == length &&
+      _cancelled.remove(_requestKey(index, begin)) != null;
 
   @override
   void orderResendRequest(int index, int begin, int length, int resend) {
