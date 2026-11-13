@@ -2024,7 +2024,7 @@ class _TorrentTask
     if (delay == null) {
       _forgetStrikes(peer);
       // Not to be connected again at once: it had its chances.
-      Timer.run(() => peer.dispose(BadException(
+      Timer.run(() => peer.dispose(UnresponsiveException(
           'No block for $strikes timeouts in a row')));
       return;
     }
@@ -2051,6 +2051,10 @@ class _TorrentTask
   /// for while a peer that did not has it too. The block would be out of
   /// reach of the others for as long as its timeout, which doubles each
   /// time.
+  ///
+  /// Only a peer the selector would give the piece to counts as another:
+  /// with peer priority a peer of lower priority is never given a piece a
+  /// higher one has, and the piece would be asked of nobody.
   bool _betterAskedElsewhere(Peer peer, Piece piece) {
     if ((_timeoutStrikes[peer] ?? 0) == 0 ||
         !(_advancedSelector?.isUrgent(piece.index) ?? false)) {
@@ -2059,7 +2063,8 @@ class _TorrentTask
     return _peersManager!.activePeers.any((p) =>
         p != peer && !p.isDisposed && !p.chokeMe &&
         (_timeoutStrikes[p] ?? 0) == 0 &&
-        p.remoteCompletePieces.contains(piece.index));
+        p.remoteCompletePieces.contains(piece.index) &&
+        (_advancedSelector?.prefers(p, piece) ?? true));
   }
 
   void requestPieces(Peer peer, [int pieceIndex = -1]) async {

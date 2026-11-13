@@ -359,6 +359,10 @@ class AdvancedSequentialPieceSelector implements PieceSelector {
     return rarest;
   }
 
+  /// Whether [peer] may be given [piece]: with peer priority, only the
+  /// peers of the highest priority among those that have it.
+  bool prefers(Peer peer, Piece piece) => _isPeerPreferredForPiece(peer, piece);
+
   bool _isPeerPreferredForPiece(Peer peer, Piece piece) {
     if (!config.enablePeerPriority) return true;
     if (_localPeerIp == null || peer.remotePeerId == null) return true;

@@ -42,6 +42,11 @@ typedef _PausedRemoteRequest = ({
 ///
 /// TODO:
 /// - The external Suggest Piece/Fast Allow requests are not handled.
+/// Whether a peer dropped as bad for [reason] is connected again all the
+/// same: a seed is, unless it was dropped for answering nothing.
+bool reconnectsBadPeer(Object? reason, {required bool seeder}) =>
+    seeder && reason is! UnresponsiveException;
+
 class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
   final List<InternetAddress> ignoreIps = [
     InternetAddress.tryParse('0.0.0.0')!,
@@ -449,10 +454,7 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
   void _processPeerDispose(PeerDisposeEvent disposeEvent) {
     _peerListeners.remove(disposeEvent.peer);
     _clientNames.remove(disposeEvent.peer);
-    var reconnect = true;
-    if (disposeEvent.reason is BadException) {
-      reconnect = false;
-    }
+    var reconnect = disposeEvent.reason is! BadException;
 
     _peersAddress.remove(disposeEvent.peer.address);
     _incomingAddress.remove(disposeEvent.peer.address.address);
@@ -476,7 +478,9 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
         );
       }
     } else {
-      if (disposeEvent.peer.isSeeder && !isDisposed) {
+      if (reconnectsBadPeer(disposeEvent.reason,
+              seeder: disposeEvent.peer.isSeeder) &&
+          !isDisposed) {
         addNewPeerAddress(disposeEvent.peer.address, disposeEvent.peer.source,
             type: disposeEvent.peer.type);
       }
