@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dart_ipify/dart_ipify.dart';
 import 'package:dtorrent_task_v2/src/torrent/torrent_model.dart';
 import 'package:dtorrent_task_v2/src/standalone/dtorrent_common.dart';
 import 'package:dtorrent_task_v2/src/peer/protocol/peer_events.dart';
@@ -116,7 +115,6 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
     IPFilter? ipFilter,
   }) {
     _ipFilter = ipFilter;
-    _init();
     // Start pex interval
     startPEX();
   }
@@ -160,14 +158,6 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
     _protocolEncryptionConfig = config;
     _log.info(
         'Protocol encryption ${config?.isEnabled == true ? "enabled" : "disabled"}');
-  }
-
-  Future<void> _init() async {
-    try {
-      localExternalIP = InternetAddress.tryParse(await Ipify.ipv4());
-    } catch (e) {
-      // Do nothing
-    }
   }
 
   /// Task is paused
@@ -342,9 +332,10 @@ class PeersManager with Holepunch, PEX, EventsEmittable<PeerEvent> {
       if (isFiltered(source)) {
         source.sendChoke(true);
       }
+      // Our address as peers see it: learned from them, not asked of a
+      // service outside the swarm.
       final yourIpRaw = data['yourip'];
-      if (localExternalIP != null &&
-          yourIpRaw is List<int> &&
+      if (yourIpRaw is List<int> &&
           (yourIpRaw.length == 4 || yourIpRaw.length == 16)) {
         final yourIpBytes = Uint8List.fromList(yourIpRaw);
         InternetAddress myIp;

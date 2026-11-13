@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart' show sha1;
 import 'package:logging/logging.dart';
 
 import 'package:b_encode_decode/b_encode_decode.dart';
-import 'package:dart_ipify/dart_ipify.dart';
 import 'package:dtorrent_task_v2/src/standalone/dtorrent_common.dart';
 import 'package:dtorrent_task_v2/src/standalone/compact_address_bridge.dart';
 import 'package:dtorrent_task_v2/src/standalone/dht/standalone_dht.dart';
@@ -219,7 +218,6 @@ class MetadataDownloader
         }
       }
     }
-    _init();
     _log.info('Created MetadataDownloader for hash: $_infoHashString');
   }
 
@@ -241,15 +239,6 @@ class MetadataDownloader
       trackerTiers: magnet.trackerTiers,
     );
   }
-  Future<void> _init() async {
-    try {
-      localExternalIP = InternetAddress.tryParse(await Ipify.ipv4());
-      _log.info('External IP detected: $localExternalIP');
-    } catch (e) {
-      _log.warning('Failed to detect external IP', e);
-    }
-  }
-
   int _generation = 0;
 
   Future<void> startDownload() async {
@@ -557,9 +546,10 @@ class MetadataDownloader
         }
       }
 
+      // Our address as peers see it: learned from them, not asked of a
+      // service outside the swarm.
       final yourIpRaw = data['yourip'];
-      if (localExternalIP != null &&
-          yourIpRaw is List<int> &&
+      if (yourIpRaw is List<int> &&
           (yourIpRaw.length == 4 || yourIpRaw.length == 16)) {
         final yourIpBytes = Uint8List.fromList(yourIpRaw);
         InternetAddress myIp;
