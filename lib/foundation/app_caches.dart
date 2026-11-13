@@ -145,21 +145,25 @@ class AppCaches {
     for (var name in names) {
       var path = FilePath.join(root, name);
       try {
-        switch (await FileSystemEntity.type(path, followLinks: false)) {
-          case FileSystemEntityType.file:
-            total += await File(path).length();
-          case FileSystemEntityType.directory:
-            await for (var entry in Directory(path)
-                .list(recursive: true, followLinks: false)) {
-              if (entry is File) {
-                try {
-                  total += await entry.length();
-                } on FileSystemException {
-                  // Deleted during the scan.
-                }
+        // Asked of the file and the directory themselves: on Android
+        // FileSystemEntity.type says "not found" for a directory of the
+        // cache that is there, and every cache was shown as empty.
+        if (await FileSystemEntity.isLink(path)) {
+          continue;
+        }
+        if (await Directory(path).exists()) {
+          await for (var entry in Directory(path)
+              .list(recursive: true, followLinks: false)) {
+            if (entry is File) {
+              try {
+                total += await entry.length();
+              } on FileSystemException {
+                // Deleted during the scan.
               }
             }
-          default:
+          }
+        } else if (await File(path).exists()) {
+          total += await File(path).length();
         }
       } on FileSystemException {
         // Deleted during the scan.
@@ -173,18 +177,19 @@ class AppCaches {
     for (var name in names) {
       var path = FilePath.join(root, name);
       try {
-        switch (await FileSystemEntity.type(path, followLinks: false)) {
-          case FileSystemEntityType.file:
-            await File(path).delete();
-          case FileSystemEntityType.directory:
-            await for (var entry in Directory(path).list(followLinks: false)) {
-              try {
-                await entry.delete(recursive: true);
-              } on FileSystemException catch (e) {
-                Log.warning('Cache', 'Could not clear ${entry.path}: $e');
-              }
+        if (await FileSystemEntity.isLink(path)) {
+          continue;
+        }
+        if (await Directory(path).exists()) {
+          await for (var entry in Directory(path).list(followLinks: false)) {
+            try {
+              await entry.delete(recursive: true);
+            } on FileSystemException catch (e) {
+              Log.warning('Cache', 'Could not clear ${entry.path}: $e');
             }
-          default:
+          }
+        } else if (await File(path).exists()) {
+          await File(path).delete();
         }
       } on FileSystemException catch (e) {
         Log.warning('Cache', 'Could not clear $path: $e');
