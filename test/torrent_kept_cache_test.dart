@@ -66,6 +66,31 @@ void main() {
     expect(await DartTorrentStreamer.keptUsable(kept, model, file), isTrue);
   });
 
+  test('episodes of a batch watched before count for the one that uses '
+      'their directory', () async {
+    var root = await _root();
+    var sep = Platform.pathSeparator;
+    var batch = await Directory('${root.path}${sep}seed${sep}batch')
+        .create(recursive: true);
+    for (var name in ['01.mkv', '02.mkv', '03.mkv']) {
+      await File('${batch.path}$sep$name')
+          .writeAsBytes(List.filled(4 * _pieceLength, 1));
+    }
+    var model = await TorrentCreator.createTorrent(
+        batch.path, TorrentCreationOptions(pieceLength: _pieceLength));
+    var second = model.files.firstWhere((f) => f.name == '02.mkv');
+    var kept = await Directory('${root.path}/kept').create();
+    expect(await DartTorrentStreamer.keptBeyond(kept, model, second), 0);
+    // The first episode was watched before; the second is what is played.
+    for (var f in model.files.where((f) => f.name != '03.mkv')) {
+      var file = File('${kept.path}/${f.path}');
+      await file.create(recursive: true);
+      await file.writeAsBytes(List.filled(f.length, 0));
+    }
+    expect(await DartTorrentStreamer.keptBeyond(kept, model, second),
+        4 * _pieceLength);
+  });
+
   test('a torrent opened again in its directory needs no peer for what it has',
       () async {
     InternetAddress? local;

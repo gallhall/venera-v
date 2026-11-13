@@ -161,10 +161,11 @@ class DartTorrentStreamer implements TorrentStreamer {
       Log.info('Torrent', 'Playing ${file.path} '
           '(${file.length ~/ (1024 * 1024)} MB, ${model.files.length} files, '
           '${peers.length} metadata peers)');
-      var reservation = reservedBytes(model, file);
       // Before the cache is trimmed for this stream: what is kept of this
       // torrent is not what to remove to make room for it.
-      session.data = await _dataDirectory(session, model, file);
+      var reservation = reservedBytes(model, file) +
+          await _dataDirectory(session, model, file);
+      session.checkCancelled();
       await _cacheOperation(() async {
         await _trimCache(reservation - session.reserved,
             limited: !session.download);
@@ -326,14 +327,39 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// sharing a boundary piece with it are written; the rest of a batch is
   /// skipped. Not every file system keeps those files sparse, so count
   /// them whole.
-  static int reservedBytes(TorrentModel model, TorrentFileModel file) {
+  static int reservedBytes(TorrentModel model, TorrentFileModel file) =>
+      writtenFiles(model, file).fold<int>(0, (n, f) => n + f.length) +
+      16 * 1024 * 1024;
+
+  /// The files written to play [file]: itself and those sharing a boundary
+  /// piece with it.
+  static Iterable<TorrentFileModel> writtenFiles(
+      TorrentModel model, TorrentFileModel file) {
     var piece = model.pieceLength;
     int first(TorrentFileModel f) => f.offset ~/ piece;
     int last(TorrentFileModel f) => (max(f.end, f.offset + 1) - 1) ~/ piece;
-    var written = model.files.where((f) => identical(f, file) ||
+    return model.files.where((f) => identical(f, file) ||
         !f.isPaddingFile && f.length > 0 &&
         first(f) <= last(file) && last(f) >= first(file));
-    return written.fold<int>(0, (n, f) => n + f.length) + 16 * 1024 * 1024;
+  }
+
+  /// What a torrent's directory holds besides what playing [file] writes:
+  /// the episodes of a batch watched before. They are in the cache as long
+  /// as the directory is, so they count for the stream that uses it.
+  static Future<int> keptBeyond(Directory directory, TorrentModel model,
+      TorrentFileModel file) async {
+    var written = writtenFiles(model, file).toSet();
+    var size = 0;
+    for (var other in model.files) {
+      if (other.isPaddingFile || written.contains(other)) {
+        continue;
+      }
+      var kept = File('${directory.path}/${other.path}');
+      if (await kept.exists()) {
+        size += await kept.length();
+      }
+    }
+    return size;
   }
 
   static TorrentFileModel selectVideo(List<TorrentFileModel> files,
@@ -457,32 +483,54 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// episode of a batch) that is still open keeps that directory to itself,
   /// and this one gets one of its own, as does a torrent whose kept data is
   /// not what its state says.
-  Future<Directory> _dataDirectory(_TorrentSession session,
+  ///
+  /// Sets [session]'s data directory, and returns the bytes it holds
+  /// besides what this stream reserves anyway.
+  Future<int> _dataDirectory(_TorrentSession session,
       TorrentModel model, TorrentFileModel file) async {
     var own = Directory('${session.directory!.path}/data');
     var shared = Directory('${_cache.path}/${keptName(model.infoHash)}');
     if (_sessions.values.any((s) => !identical(s, session) &&
         s.data != null && _name(s.data!) == _name(shared))) {
-      return own;
+      session.data = own;
+      return 0;
     }
+    // Taken before anything is waited for: two streams of one torrent
+    // opened at once must not both get it. From here on it is not what
+    // trimming the cache removes either.
+    session.data = shared;
     try {
-      if (await shared.exists()) {
-        if (await keptUsable(shared, model, file)) {
-          Log.info('Torrent', 'Going on from kept data of ${file.name}');
-        } else {
-          Log.info('Torrent', 'Kept data of ${file.name} is not usable');
-          await shared.delete(recursive: true);
+      return await _cacheOperation(() async {
+        var beyond = 0;
+        if (await shared.exists()) {
+          if (!await keptUsable(shared, model, file)) {
+            Log.info('Torrent', 'Kept data of ${file.name} is not usable');
+            await shared.delete(recursive: true);
+          } else {
+            beyond = await keptBeyond(shared, model, file);
+            if (!session.download &&
+                reservedBytes(model, file) + beyond > _maxCache) {
+              // The episodes watched before leave no room for this one.
+              Log.info('Torrent', 'Kept data of the batch of ${file.name} '
+                  'is over the cache limit');
+              await shared.delete(recursive: true);
+              beyond = 0;
+            } else {
+              Log.info('Torrent', 'Going on from kept data of ${file.name}');
+            }
+          }
         }
-      }
-      await shared.create(recursive: true);
-      // The cache is trimmed oldest first: this one was just used.
-      var mark = File('${shared.path}/.used');
-      await mark.writeAsString('');
-      await mark.delete();
-      return shared;
+        await shared.create(recursive: true);
+        // The cache is trimmed oldest first: this one was just used.
+        var mark = File('${shared.path}/.used');
+        await mark.writeAsString('');
+        await mark.delete();
+        return beyond;
+      });
     } on FileSystemException catch (e) {
       Log.warning('Torrent', 'Kept data cannot be used: $e');
-      return own;
+      session.data = own;
+      return 0;
     }
   }
 
@@ -509,9 +557,9 @@ class DartTorrentStreamer implements TorrentStreamer {
   static bool _kept(FileSystemEntity entry) =>
       _name(entry).startsWith('torrent-');
 
-  Future<void> _cacheOperation(Future<void> Function() action) {
+  Future<T> _cacheOperation<T>(Future<T> Function() action) {
     var next = _cacheTail.then((_) => action());
-    _cacheTail = next.catchError((Object _) {});
+    _cacheTail = next.then<void>((_) {}, onError: (Object _) {});
     return next;
   }
 
