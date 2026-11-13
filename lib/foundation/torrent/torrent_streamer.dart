@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -163,7 +164,9 @@ class DartTorrentStreamer implements TorrentStreamer {
           '${peers.length} metadata peers)');
       // Before the cache is trimmed for this stream: what is kept of this
       // torrent is not what to remove to make room for it.
-      var reservation = reservedBytes(model, file) +
+      session.model = model;
+      var reservation =
+          reservedBytes(model, file, sparse: await _sparse()) +
           await _dataDirectory(session, model, file);
       session.checkCancelled();
       await _cacheOperation(() async {
@@ -327,13 +330,12 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// sharing a boundary piece with it are written; the rest of a batch is
   /// skipped.
   ///
-  /// Where files are [sparse] (everywhere but Windows) a neighbour takes
-  /// only what is written to it, its part of the boundary piece: counted
-  /// whole, three episodes of a batch had to fit the limit to play one,
-  /// and an episode of a batch of large ones could never be played.
+  /// Where files are [sparse] a neighbour takes only what is written to
+  /// it, its part of the boundary piece: counted whole, three episodes of
+  /// a batch had to fit the limit to play one, and an episode of a batch
+  /// of large ones could never be played.
   static int reservedBytes(TorrentModel model, TorrentFileModel file,
-      {bool? sparse}) {
-    sparse ??= filesAreSparse;
+      {required bool sparse}) {
     var piece = model.pieceLength;
     var start = file.offset ~/ piece * piece;
     var end = ((max(file.end, file.offset + 1) - 1) ~/ piece + 1) * piece;
@@ -347,8 +349,83 @@ class DartTorrentStreamer implements TorrentStreamer {
   }
 
   /// Whether a file made at its full length takes only what is written to
-  /// it. Windows fills it with zeros.
-  static bool get filesAreSparse => !Platform.isWindows;
+  /// it in the cache directory. Windows fills it with zeros unless the
+  /// engine can mark it sparse, which not every file system there has.
+  Future<bool> _sparse() => _sparseFiles ??= () async {
+        if (!Platform.isWindows) {
+          return true;
+        }
+        var probe = File('${_cache.path}/.sparse');
+        try {
+          await probe.create(recursive: true);
+          return createSparseFile(probe.path, 1024 * 1024);
+        } on FileSystemException {
+          return false;
+        } finally {
+          try {
+            await probe.delete();
+          } on FileSystemException {
+            // Gone with the rest of the cache.
+          }
+        }
+      }();
+  Future<bool>? _sparseFiles;
+
+  /// What is there of each file of [model], by path: the bytes of its
+  /// pieces that are [complete]. Written to the directory when a stream
+  /// closes, so that what is kept counts for what it takes of the disk
+  /// and not for the length of its files: beside an episode lie the
+  /// neighbours it shares a piece with, at their full length and all but
+  /// empty.
+  static Map<String, int> fetchedBytes(
+      TorrentModel model, bool Function(int piece) complete) {
+    var piece = model.pieceLength;
+    var result = <String, int>{};
+    for (var f in model.files) {
+      if (f.isPaddingFile || f.length == 0) {
+        continue;
+      }
+      var size = 0;
+      for (var i = f.offset ~/ piece; i <= (f.end - 1) ~/ piece; i++) {
+        if (complete(i)) {
+          size += min(f.end, (i + 1) * piece) - max(f.offset, i * piece);
+        }
+      }
+      if (size > 0) {
+        result[f.path] = size;
+      }
+    }
+    return result;
+  }
+
+  /// The record of [fetchedBytes] in a torrent's directory. It is there
+  /// only while no stream uses the directory: one that was killed leaves
+  /// none, and the files count at their length.
+  static File _record(Directory directory) => File('${directory.path}/.kept');
+
+  static Future<Map<String, int>?> keptRecord(Directory directory) async {
+    try {
+      var record = _record(directory);
+      if (!await record.exists()) {
+        return null;
+      }
+      var json = jsonDecode(await record.readAsString());
+      return {
+        for (var e in (json as Map).entries) '${e.key}': e.value as int,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> writeKeptRecord(
+          Directory directory, Map<String, int> fetched) =>
+      _record(directory).writeAsString(jsonEncode(fetched));
+
+  /// What [record] says is there besides [file].
+  static int recordedBeyond(Map<String, int> record, TorrentFileModel file) =>
+      record.entries
+          .fold(0, (n, e) => e.key == file.path ? n : n + e.value);
 
   /// The files written to play [file]: itself and those sharing a boundary
   /// piece with it.
@@ -370,8 +447,7 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// neighbours of [file] are left out only where [reservedBytes] counts
   /// them whole already.
   static Future<int> keptBeyond(Directory directory, TorrentModel model,
-      TorrentFileModel file, {bool? sparse}) async {
-    sparse ??= filesAreSparse;
+      TorrentFileModel file, {required bool sparse}) async {
     var written = sparse ? {file} : writtenFiles(model, file).toSet();
     var size = 0;
     for (var other in model.files) {
@@ -452,6 +528,14 @@ class DartTorrentStreamer implements TorrentStreamer {
         if (session.localUrl != null) {
           await _server.remove(session.localUrl!);
         }
+        // Before the task is stopped: it lets go of its pieces.
+        Map<String, int>? fetched;
+        var model = session.model;
+        var pieces = session.task?.pieceManager;
+        if (model != null && pieces != null) {
+          fetched = fetchedBytes(
+              model, (i) => pieces[i]?.isCompleted ?? false);
+        }
         try {
           await session.task?.stop();
         } finally {
@@ -469,10 +553,20 @@ class DartTorrentStreamer implements TorrentStreamer {
                 await data.exists() &&
                 (session.download || appdata.settings['btKeepFiles'] != true)) {
               await data.delete(recursive: true);
+            } else if (data != null && _kept(data) && fetched != null &&
+                await data.exists()) {
+              try {
+                await writeKeptRecord(data, fetched);
+              } on FileSystemException catch (e) {
+                Log.warning('Torrent', 'Kept data not recorded: $e');
+              }
             }
             session.reserved = 0;
+            // From here on its directory is another stream's to take.
+            session.closed = true;
             await _trimCache(0);
           });
+          session.closed = true;
         }
       }();
 
@@ -506,7 +600,8 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// fetching it all once more. Another stream of the same torrent (another
   /// episode of a batch) that is still open keeps that directory to itself,
   /// and this one gets one of its own, as does a torrent whose kept data is
-  /// not what its state says.
+  /// not what its state says. A stream that is closing is waited for: the
+  /// episode chosen after another in the player goes on in its directory.
   ///
   /// Sets [session]'s data directory, and returns the bytes it holds
   /// besides what this stream reserves anyway.
@@ -514,10 +609,26 @@ class DartTorrentStreamer implements TorrentStreamer {
       TorrentModel model, TorrentFileModel file) async {
     var own = Directory('${session.directory!.path}/data');
     var shared = Directory('${_cache.path}/${keptName(model.infoHash)}');
-    if (_sessions.values.any((s) => !identical(s, session) &&
-        s.data != null && _name(s.data!) == _name(shared))) {
-      session.data = own;
-      return 0;
+    var sparse = await _sparse();
+    while (true) {
+      var holder = _sessions.values.where((s) => !identical(s, session) &&
+          !s.closed && s.data != null &&
+          _name(s.data!) == _name(shared)).firstOrNull;
+      if (holder == null) {
+        break;
+      }
+      var closing = holder.cleanup;
+      if (closing == null) {
+        session.data = own;
+        return 0;
+      }
+      try {
+        await closing;
+      } catch (_) {
+        // Its own business; it is closed all the same.
+      }
+      holder.closed = true;
+      session.checkCancelled();
     }
     // Taken before anything is waited for: two streams of one torrent
     // opened at once must not both get it. From here on it is not what
@@ -531,9 +642,13 @@ class DartTorrentStreamer implements TorrentStreamer {
             Log.info('Torrent', 'Kept data of ${file.name} is not usable');
             await shared.delete(recursive: true);
           } else {
-            beyond = await keptBeyond(shared, model, file);
+            var record = sparse ? await keptRecord(shared) : null;
+            beyond = record == null
+                ? await keptBeyond(shared, model, file, sparse: sparse)
+                : recordedBeyond(record, file);
             if (!session.download &&
-                reservedBytes(model, file) + beyond > _maxCache) {
+                reservedBytes(model, file, sparse: sparse) + beyond >
+                    _maxCache) {
               // The episodes watched before leave no room for this one.
               Log.info('Torrent', 'Kept data of the batch of ${file.name} '
                   'is over the cache limit');
@@ -545,6 +660,11 @@ class DartTorrentStreamer implements TorrentStreamer {
           }
         }
         await shared.create(recursive: true);
+        // What this stream adds is not in the record.
+        var record = _record(shared);
+        if (await record.exists()) {
+          await record.delete();
+        }
         // The cache is trimmed oldest first: this one was just used.
         var mark = File('${shared.path}/.used');
         await mark.writeAsString('');
@@ -622,9 +742,14 @@ class DartTorrentStreamer implements TorrentStreamer {
     var used = sessions.fold<int>(
         0, (n, s) => s.download ? n : n + s.reserved);
     var removable = <({FileSystemEntity entry, int size, DateTime time})>[];
+    var sparse = await _sparse();
     await for (var entry in _cache.list(followLinks: false)) {
       if (!active.contains(_name(entry))) {
-        var size = await _size(entry);
+        var record = sparse && _kept(entry) && entry is Directory
+            ? await keptRecord(entry)
+            : null;
+        var size = record?.values.fold<int>(0, (n, v) => n + v) ??
+            await _size(entry);
         removable.add((entry: entry, size: size,
           time: (await entry.stat()).modified));
         used += size;
@@ -653,6 +778,10 @@ class _TorrentSession {
   final opened = Completer<void>();
   final cancelToken = CancelToken();
   TorrentTask? task;
+  TorrentModel? model;
+
+  /// The cleanup is over: the data directory is no longer this one's.
+  bool closed = false;
   void Function()? retryPeers;
   Directory? directory;
 

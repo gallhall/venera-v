@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:collection/collection.dart';
 import 'package:dtorrent_task_v2/src/file/download_file_requests.dart';
 import 'package:dtorrent_task_v2/src/file/file_attributes.dart';
+import 'package:dtorrent_task_v2/src/file/sparse_file.dart';
 import 'package:dtorrent_task_v2/src/file/utils.dart';
 import 'package:dtorrent_task_v2/src/piece/piece_base.dart';
 import 'package:logging/logging.dart';
@@ -300,11 +301,23 @@ class DownloadFile {
     var exists = await _file?.exists();
     if (exists != null && !exists) {
       _file = await _file?.create(recursive: true);
-      var access = await _file?.open(mode: FileMode.write);
-      access = await access?.truncate(length);
-      await access?.close();
+      await _setLength(_file!);
     }
     return _file;
+  }
+
+  /// Gives the new, empty [file] its full length, without taking that
+  /// much of the disk where it can be helped.
+  Future<void> _setLength(File file) async {
+    if (createSparseFile(file.path, length)) {
+      return;
+    }
+    var access = await file.open(mode: FileMode.writeOnly);
+    try {
+      await access.truncate(length);
+    } finally {
+      await access.close();
+    }
   }
 
   Future<bool>? get exists {
@@ -415,9 +428,7 @@ class DownloadFile {
       } else {
         // If file is not yet materialized, create an empty shell in new place.
         await destination.create(recursive: true);
-        final access = await destination.open(mode: FileMode.writeOnly);
-        await access.truncate(length);
-        await access.close();
+        await _setLength(destination);
       }
     } on FileSystemException {
       // Cross-device fallback: copy+delete.
