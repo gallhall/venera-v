@@ -161,7 +161,11 @@ class DartTorrentStreamer implements TorrentStreamer {
       Log.info('Torrent', 'Playing ${file.path} '
           '(${file.length ~/ (1024 * 1024)} MB, ${model.files.length} files, '
           '${peers.length} metadata peers)');
-      var reservation = reservedBytes(model, file);
+      // Before the cache is trimmed for this stream: what is kept of this
+      // torrent is not what to remove to make room for it.
+      var reservation = reservedBytes(model, file) +
+          await _dataDirectory(session, model, file);
+      session.checkCancelled();
       await _cacheOperation(() async {
         await _trimCache(reservation - session.reserved,
             limited: !session.download);
@@ -170,7 +174,7 @@ class DartTorrentStreamer implements TorrentStreamer {
       });
       session.checkCancelled();
       var task = TorrentTask.newTask(model,
-        '${session.directory!.path}/data', true,
+        session.data!.path, true,
         magnet?.webSeeds, magnet?.acceptableSources,
         const SequentialConfig(
           lookAheadSize: 8,
@@ -323,14 +327,39 @@ class DartTorrentStreamer implements TorrentStreamer {
   /// sharing a boundary piece with it are written; the rest of a batch is
   /// skipped. Not every file system keeps those files sparse, so count
   /// them whole.
-  static int reservedBytes(TorrentModel model, TorrentFileModel file) {
+  static int reservedBytes(TorrentModel model, TorrentFileModel file) =>
+      writtenFiles(model, file).fold<int>(0, (n, f) => n + f.length) +
+      16 * 1024 * 1024;
+
+  /// The files written to play [file]: itself and those sharing a boundary
+  /// piece with it.
+  static Iterable<TorrentFileModel> writtenFiles(
+      TorrentModel model, TorrentFileModel file) {
     var piece = model.pieceLength;
     int first(TorrentFileModel f) => f.offset ~/ piece;
     int last(TorrentFileModel f) => (max(f.end, f.offset + 1) - 1) ~/ piece;
-    var written = model.files.where((f) => identical(f, file) ||
+    return model.files.where((f) => identical(f, file) ||
         !f.isPaddingFile && f.length > 0 &&
         first(f) <= last(file) && last(f) >= first(file));
-    return written.fold<int>(0, (n, f) => n + f.length) + 16 * 1024 * 1024;
+  }
+
+  /// What a torrent's directory holds besides what playing [file] writes:
+  /// the episodes of a batch watched before. They are in the cache as long
+  /// as the directory is, so they count for the stream that uses it.
+  static Future<int> keptBeyond(Directory directory, TorrentModel model,
+      TorrentFileModel file) async {
+    var written = writtenFiles(model, file).toSet();
+    var size = 0;
+    for (var other in model.files) {
+      if (other.isPaddingFile || written.contains(other)) {
+        continue;
+      }
+      var kept = File('${directory.path}/${other.path}');
+      if (await kept.exists()) {
+        size += await kept.length();
+      }
+    }
+    return size;
   }
 
   static TorrentFileModel selectVideo(List<TorrentFileModel> files,
@@ -403,12 +432,19 @@ class DartTorrentStreamer implements TorrentStreamer {
           await session.task?.stop();
         } finally {
           await _cacheOperation(() async {
+            // The session's own directory is of no use to a later one.
             var directory = session.directory;
-            // A download's file is copied out: no need to keep it here.
-            if (directory != null && await directory.exists() &&
-                (session.download || appdata.settings['btKeepFiles'] != true ||
-                  session.cancelled.isCompleted && session.localUrl == null)) {
+            if (directory != null && await directory.exists()) {
               await directory.delete(recursive: true);
+            }
+            // What was fetched of the torrent is kept for the next time it
+            // is opened. A download's file is copied out: no need to keep
+            // it here.
+            var data = session.data;
+            if (data != null && _kept(data) &&
+                await data.exists() &&
+                (session.download || appdata.settings['btKeepFiles'] != true)) {
+              await data.delete(recursive: true);
             }
             session.reserved = 0;
             await _trimCache(0);
@@ -424,8 +460,10 @@ class DartTorrentStreamer implements TorrentStreamer {
     }
     // By name: a listing may spell the separators of a path another way.
     var active = {
-      for (var s in _sessions.values)
+      for (var s in _sessions.values) ...[
         if (s.directory != null) _name(s.directory!),
+        if (s.data != null && _kept(s.data!)) _name(s.data!),
+      ],
     };
     await for (var entry in _cache.list(followLinks: false)) {
       if (active.contains(_name(entry))) {
@@ -439,9 +477,89 @@ class DartTorrentStreamer implements TorrentStreamer {
     }
   });
 
-  Future<void> _cacheOperation(Future<void> Function() action) {
+  /// Where the torrent's data goes: a directory of the torrent's own, so
+  /// that opening it again goes on from what was fetched before instead of
+  /// fetching it all once more. Another stream of the same torrent (another
+  /// episode of a batch) that is still open keeps that directory to itself,
+  /// and this one gets one of its own, as does a torrent whose kept data is
+  /// not what its state says.
+  ///
+  /// Sets [session]'s data directory, and returns the bytes it holds
+  /// besides what this stream reserves anyway.
+  Future<int> _dataDirectory(_TorrentSession session,
+      TorrentModel model, TorrentFileModel file) async {
+    var own = Directory('${session.directory!.path}/data');
+    var shared = Directory('${_cache.path}/${keptName(model.infoHash)}');
+    if (_sessions.values.any((s) => !identical(s, session) &&
+        s.data != null && _name(s.data!) == _name(shared))) {
+      session.data = own;
+      return 0;
+    }
+    // Taken before anything is waited for: two streams of one torrent
+    // opened at once must not both get it. From here on it is not what
+    // trimming the cache removes either.
+    session.data = shared;
+    try {
+      return await _cacheOperation(() async {
+        var beyond = 0;
+        if (await shared.exists()) {
+          if (!await keptUsable(shared, model, file)) {
+            Log.info('Torrent', 'Kept data of ${file.name} is not usable');
+            await shared.delete(recursive: true);
+          } else {
+            beyond = await keptBeyond(shared, model, file);
+            if (!session.download &&
+                reservedBytes(model, file) + beyond > _maxCache) {
+              // The episodes watched before leave no room for this one.
+              Log.info('Torrent', 'Kept data of the batch of ${file.name} '
+                  'is over the cache limit');
+              await shared.delete(recursive: true);
+              beyond = 0;
+            } else {
+              Log.info('Torrent', 'Going on from kept data of ${file.name}');
+            }
+          }
+        }
+        await shared.create(recursive: true);
+        // The cache is trimmed oldest first: this one was just used.
+        var mark = File('${shared.path}/.used');
+        await mark.writeAsString('');
+        await mark.delete();
+        return beyond;
+      });
+    } on FileSystemException catch (e) {
+      Log.warning('Torrent', 'Kept data cannot be used: $e');
+      session.data = own;
+      return 0;
+    }
+  }
+
+  /// The cache directory of a torrent, apart from the sessions' own (32
+  /// hexadecimal digits).
+  static String keptName(String infoHash) => 'torrent-$infoHash';
+
+  /// Whether what is kept in [directory] can be gone on from: the state
+  /// says which pieces are there, so it and the file must both be.
+  static Future<bool> keptUsable(Directory directory, TorrentModel model,
+      TorrentFileModel file) async {
+    var state = File('${directory.path}/${model.infoHash}.bt.state');
+    if (!await state.exists()) {
+      // Nothing is said about what is there: only an empty one will do.
+      return !await directory.list().any((e) => _name(e) != '.used');
+    }
+    var data = File('${directory.path}/${file.path}');
+    // The engine creates the file at its full length on its first write.
+    return !await data.exists() || await data.length() == file.length;
+  }
+
+  /// Whether [entry] is a torrent's own directory of the cache, not one of
+  /// a session.
+  static bool _kept(FileSystemEntity entry) =>
+      _name(entry).startsWith('torrent-');
+
+  Future<T> _cacheOperation<T>(Future<T> Function() action) {
     var next = _cacheTail.then((_) => action());
-    _cacheTail = next.catchError((Object _) {});
+    _cacheTail = next.then<void>((_) {}, onError: (Object _) {});
     return next;
   }
 
@@ -472,8 +590,10 @@ class DartTorrentStreamer implements TorrentStreamer {
     // By name: on Windows a listing spells the separator before the name
     // another way than the session's path does, and an open stream's
     // directory was taken for one to remove.
-    var active = {for (var s in sessions)
-      if (s.reserved > 0 && s.directory != null) _name(s.directory!)};
+    var active = {for (var s in sessions) if (s.reserved > 0) ...[
+      if (s.directory != null) _name(s.directory!),
+      if (s.data != null && _kept(s.data!)) _name(s.data!),
+    ]};
     // Downloads are outside the limit, so they do not take from playback.
     var used = sessions.fold<int>(
         0, (n, s) => s.download ? n : n + s.reserved);
@@ -488,9 +608,10 @@ class DartTorrentStreamer implements TorrentStreamer {
     }
     removable.sort((a, b) => a.time.compareTo(b.time));
     for (var item in removable) {
-      if (used + needed <= _maxCache &&
+      // What a session left of its own is never opened again.
+      if (_kept(item.entry) && used + needed <= _maxCache &&
           appdata.settings['btKeepFiles'] == true) {
-        break;
+        continue;
       }
       await item.entry.delete(recursive: true);
       used -= item.size;
@@ -510,6 +631,10 @@ class _TorrentSession {
   TorrentTask? task;
   void Function()? retryPeers;
   Directory? directory;
+
+  /// Where the torrent's data is: its own directory of the cache, shared
+  /// with later sessions, or one inside [directory].
+  Directory? data;
   String? localUrl;
   Timer? timer;
   bool checkingLimits = false;

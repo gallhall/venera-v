@@ -139,6 +139,7 @@ class Appdata with Init {
     var file = File(FilePath.join(dataPath, 'appdata.json'));
     if (!await file.exists()) {
       migrateRssRawFilter(implicitData, (key, value) => settings[key] = value);
+      migrateKeptTorrents(implicitData, (key, value) => settings[key] = value);
       writeImplicitData();
       return;
     }
@@ -170,11 +171,29 @@ class Appdata with Init {
       var implicitDataFile = File(FilePath.join(dataPath, 'implicitData.json'));
       await setAsideUnreadable(implicitDataFile);
     }
-    if (migrateRssRawFilter(implicitData, (key, value) => settings[key] = value)) {
+    var rss = migrateRssRawFilter(
+        implicitData, (key, value) => settings[key] = value);
+    var kept = migrateKeptTorrents(
+        implicitData, (key, value) => settings[key] = value);
+    if (rss || kept) {
       await saveData(false);
       writeImplicitData();
     }
   }
+}
+
+/// Keeping torrent data was off by default while what was kept was never
+/// opened again; now that it is gone on from, it is on, once, also where the
+/// old default was saved. Returns whether settings need saving. The switch
+/// is respected afterwards.
+bool migrateKeptTorrents(Map<String, dynamic> implicitData,
+    void Function(String, Object) setSetting) {
+  if (implicitData['btKeepFilesMigrated'] == true) {
+    return false;
+  }
+  setSetting('btKeepFiles', true);
+  implicitData['btKeepFilesMigrated'] = true;
+  return true;
 }
 
 final appdata = Appdata._create();
@@ -273,7 +292,7 @@ class Settings with ChangeNotifier {
     'btPreferredResolution': '1080',
     'btPreferredSubtitles': 'any',
     'btShowRaw': false,
-    'btKeepFiles': false,
+    'btKeepFiles': true,
     'disabledComicSources': <String>[],
     'bangumiEchMode': 'doh',
     'bangumiEchDohUrl': 'https://dns.alidns.com/resolve',
