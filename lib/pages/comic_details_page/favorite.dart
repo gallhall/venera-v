@@ -208,6 +208,10 @@ class _NetworkSectionState extends State<_NetworkSection> {
 
   void loadFolders() async {
     var res = await widget.comicSource.favoriteData!.loadFolders!(widget.cid);
+    // The panel may have been closed while the folders were on their way.
+    if (!mounted) {
+      return;
+    }
     if (res.error) {
       context.showMessage(message: res.errorMessage!);
       setState(() {
@@ -349,6 +353,13 @@ class _NetworkSectionState extends State<_NetworkSection> {
                         .comicSource
                         .favoriteData!
                         .addOrDelFavorite!(widget.cid, '', !isFavorite, null);
+                    if (!mounted) {
+                      // Closed meanwhile: the page still learns of it.
+                      if (res.success) {
+                        widget.onFavorite(!isFavorite);
+                      }
+                      return;
+                    }
                     if (res.success) {
                       setState(() {
                         localIsFavorite = !isFavorite;
@@ -432,6 +443,19 @@ class _NetworkSectionState extends State<_NetworkSection> {
                           .comicSource
                           .favoriteData!
                           .addOrDelFavorite!(widget.cid, id, !isAdded, null);
+                      if (!mounted) {
+                        // Closed meanwhile: the page still learns of it.
+                        if (res.success) {
+                          NetworkCacheManager().clear();
+                          if (isAdded) {
+                            addedFolders.remove(id);
+                          } else {
+                            addedFolders.add(id);
+                          }
+                          widget.onFavorite(addedFolders.isNotEmpty);
+                        }
+                        return;
+                      }
                       if (res.success) {
                         // Invalidate network cache so folders/pages reload with fresh data
                         NetworkCacheManager().clear();
@@ -594,6 +618,9 @@ class _LocalSectionState extends State<_LocalSection> {
           ),
           onTap: () {
             newFolder().then((v) {
+              if (!mounted) {
+                return;
+              }
               setState(() {
                 localFolders = LocalFavoritesManager().folderNames;
               });
