@@ -141,6 +141,32 @@ void main() {
     expect(await DartTorrentStreamer.keptRecord(root), isNull);
   });
 
+  test('a file that is there whole counts whole, whatever was fetched',
+      () async {
+    const mb = 1024 * 1024;
+    var files = [
+      TorrentFileModel(path: '01.mp4', length: 3 * mb, offset: 0),
+      TorrentFileModel(path: '02.mp4', length: 3 * mb, offset: 3 * mb),
+    ];
+    var model = TorrentModel(name: 'batch', files: files,
+        infoHashBuffer: Uint8List(20), pieceLength: mb,
+        pieces: List.generate(6, (_) => Uint8List(20)),
+        announces: [], nodes: [], version: TorrentVersion.v1);
+    var root = await _root();
+    // Made the old way: Windows fills it with zeros.
+    var old = await File('${root.path}/01.mp4').open(mode: FileMode.write);
+    await old.truncate(3 * mb);
+    await old.close();
+    var fetched = {'01.mp4': mb, '02.mp4': 2 * mb};
+    var record = await DartTorrentStreamer.onDisk(root, model, fetched);
+    if (allocatedFileSize('${root.path}/01.mp4') == null) {
+      // Not known here: what was fetched stands.
+      expect(record, fetched);
+      return;
+    }
+    expect(record, {'01.mp4': 3 * mb, '02.mp4': 2 * mb});
+  });
+
   test('an episode of a batch fits a limit its neighbours would not', () {
     const mb = 1024 * 1024;
     var lengths = [411 * mb + 7, 622 * mb + 5, 519 * mb + 3];

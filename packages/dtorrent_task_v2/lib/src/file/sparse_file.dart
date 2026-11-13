@@ -34,7 +34,10 @@ int? allocatedFileSize(String path) {
     var high = calloc<Uint32>();
     try {
       var low = _getCompressedFileSize(name, high);
-      if (low == 0xFFFFFFFF && _getLastError() != 0) {
+      // The failure value. What a file takes is whole clusters, so it is
+      // never a size; the error code is not asked for, as other calls
+      // made in between may have replaced it.
+      if (low == 0xFFFFFFFF) {
         return null;
       }
       return (high.value << 32) | low;
@@ -84,9 +87,6 @@ final _closeHandle = _kernel32
 final _getCompressedFileSize = _kernel32.lookupFunction<
     Uint32 Function(Pointer<Utf16>, Pointer<Uint32>),
     int Function(Pointer<Utf16>, Pointer<Uint32>)>('GetCompressedFileSizeW');
-
-final _getLastError = _kernel32
-    .lookupFunction<Uint32 Function(), int Function()>('GetLastError');
 
 bool _createSparse(String path, int length) {
   // Paths over 260 characters need the long form.

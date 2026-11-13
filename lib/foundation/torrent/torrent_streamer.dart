@@ -398,6 +398,24 @@ class DartTorrentStreamer implements TorrentStreamer {
     return result;
   }
 
+  /// [fetched], with each file counted for what it takes of the disk
+  /// where that is known and more: a file made before files were made
+  /// sparse on Windows is there whole, whatever was fetched of it.
+  static Future<Map<String, int>> onDisk(Directory directory,
+      TorrentModel model, Map<String, int> fetched) async {
+    var result = {...fetched};
+    for (var f in model.files) {
+      if (f.isPaddingFile) {
+        continue;
+      }
+      var taken = allocatedFileSize('${directory.path}/${f.path}');
+      if (taken != null && taken > (result[f.path] ?? 0)) {
+        result[f.path] = min(taken, f.length);
+      }
+    }
+    return result;
+  }
+
   /// The record of [fetchedBytes] in a torrent's directory. It is there
   /// only while no stream uses the directory: one that was killed leaves
   /// none, and the files count at their length.
@@ -556,7 +574,8 @@ class DartTorrentStreamer implements TorrentStreamer {
             } else if (data != null && _kept(data) && fetched != null &&
                 await data.exists()) {
               try {
-                await writeKeptRecord(data, fetched);
+                await writeKeptRecord(
+                    data, await onDisk(data, model!, fetched));
               } on FileSystemException catch (e) {
                 Log.warning('Torrent', 'Kept data not recorded: $e');
               }
