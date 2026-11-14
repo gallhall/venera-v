@@ -21,13 +21,22 @@ It keeps everything venera does and adds video playback.
 
 ### Video (venera-v only)
 - Video sources: comic sources with `mediaType = "video"`, plus `video.loadPlayInfo` for playback
-- Video player with episodes, fullscreen, gestures, lock, skips and remembered settings
+- Use [Kazumi](https://github.com/Predidit/Kazumi) anime rules and [Animeko](https://github.com/creamycake-anime/animeko-subs) subscriptions as video sources, see [Kazumi Rules](doc/kazumi_rules.md)
+- Video player with episodes, fullscreen, gestures, lock, skips and remembered settings; switch sources and lines inside the player, and switch automatically when one fails
 - Playback history and resume from the saved position
 - Download episodes (including DASH streams) in a chosen quality, play them offline, and export them as files
 - Import local videos and subtitles
 - Find streams by opening the web page of a video
-- Use [Kazumi](https://github.com/Predidit/Kazumi) anime rules as video sources, see [Kazumi Rules](doc/kazumi_rules.md)
 - Playback with media_kit on every platform
+
+### Anime (venera-v only)
+- [Bangumi](https://bgm.tv): find anime by subject, airing schedule, collections, and sync of watched episodes
+- BT: play torrents while they download from RSS sources such as Mikan and Nyaa, with preferred release groups, resolution and subtitles; download them too
+- Danmaku: Bilibili first, [DanDanPlay](https://www.dandanplay.com) as fallback
+- Bangumi comments of the subject and of each episode, in the player
+- [Anime4K](https://github.com/bloc97/Anime4K) upscaling, with presets for phones that step down when frames drop or the device is hot
+- Styled ASS/SSA subtitles, and a CJK font on every platform
+- Cache management by anime and episode
 
 ## Download
 Installers for Android, iOS, Windows, macOS and Linux (deb, Arch) are on the [Releases](https://github.com/gallhall/venera-v/releases) page.
@@ -68,6 +77,18 @@ The Chinese translation of the manga tags is from this project.
 [Kazumi](https://github.com/Predidit/Kazumi) and [KazumiRules](https://github.com/Predidit/KazumiRules)
 
 venera-v reads the anime rule format of Kazumi.
+
+### Animeko
+[Animeko](https://github.com/open-ani/animeko) and [animeko-subs](https://github.com/creamycake-anime/animeko-subs)
+
+venera-v reads Animeko subscription sources, and its BT and RSS playback follows the way Animeko does it.
+
+### Others
+- [Bangumi](https://bgm.tv) for subjects, episodes, collections and comments
+- [DanDanPlay](https://www.dandanplay.com) and Bilibili for danmaku
+- [Anime4K](https://github.com/bloc97/Anime4K) for the upscaling shaders
+- [media_kit](https://github.com/media-kit/media-kit) for playback
+- [dtorrent_task_v2](https://github.com/atlet99/dtorrent_task_v2), [rhttp](https://codeberg.org/Tienisto/rhttp), [tray_manager](https://github.com/leanflutter/tray_manager) and [connectivity_plus](https://github.com/fluttercommunity/plus_plugins), included in `packages/` with changes
 
 ## Headless Mode
 See [Headless Doc](doc/headless_doc.md)

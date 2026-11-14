@@ -21,13 +21,22 @@ venera-v 保留了 venera 的全部功能，并增加了视频播放。
 
 ### 视频（venera-v 新增）
 - 视频源：`mediaType = "video"` 的漫画源，通过 `video.loadPlayInfo` 提供播放地址
-- 视频播放器：选集、全屏、手势、锁定、快进快退，并记住播放设置
+- 把 [Kazumi](https://github.com/Predidit/Kazumi) 的动漫规则和 [Animeko](https://github.com/creamycake-anime/animeko-subs) 的订阅源用作视频源，见 [Kazumi Rules](doc/kazumi_rules.md)
+- 视频播放器：选集、全屏、手势、锁定、快进快退，并记住播放设置；在播放器内切换来源和线路，播放失败时自动换源
 - 播放历史，从上次的位置继续播放
 - 按选择的画质下载剧集（包括 DASH 流），离线播放，并可导出为文件
 - 导入本地视频和字幕
 - 打开视频网页来查找视频流
-- 把 [Kazumi](https://github.com/Predidit/Kazumi) 的动漫规则用作视频源，见 [Kazumi Rules](doc/kazumi_rules.md)
 - 所有平台均使用 media_kit 播放
+
+### 看番（venera-v 新增）
+- [Bangumi](https://bgm.tv)：按条目找番、放送表、收藏，并同步观看进度
+- BT：从蜜柑计划、Nyaa 等 RSS 源边下边播，可设置偏好的字幕组、分辨率和字幕；也可以下载
+- 弹幕：B 站弹幕优先，[弹弹play](https://www.dandanplay.com) 备用
+- 在播放器里查看 Bangumi 的条目吐槽和单集评论
+- [Anime4K](https://github.com/bloc97/Anime4K) 超分，手机有专门的档位，掉帧或发热时自动降档
+- ASS/SSA 特效字幕，各平台内置中日韩字体
+- 按番剧和剧集管理缓存
 
 ## 下载
 Android、iOS、Windows、macOS 和 Linux（deb、Arch）的安装包在 [Releases](https://github.com/gallhall/venera-v/releases) 页面。
@@ -68,6 +77,18 @@ venera-v 是独立的应用（Android 包名为 `com.github.gallhall.venerav`）
 [Kazumi](https://github.com/Predidit/Kazumi) 和 [KazumiRules](https://github.com/Predidit/KazumiRules)
 
 venera-v 支持 Kazumi 的动漫规则格式。
+
+### Animeko
+[Animeko](https://github.com/open-ani/animeko) 和 [animeko-subs](https://github.com/creamycake-anime/animeko-subs)
+
+venera-v 支持 Animeko 的订阅源，BT 和 RSS 播放参考了 Animeko 的做法。
+
+### 其他
+- [Bangumi](https://bgm.tv)：条目、剧集、收藏和评论
+- [弹弹play](https://www.dandanplay.com) 和哔哩哔哩：弹幕
+- [Anime4K](https://github.com/bloc97/Anime4K)：超分着色器
+- [media_kit](https://github.com/media-kit/media-kit)：播放
+- [dtorrent_task_v2](https://github.com/atlet99/dtorrent_task_v2)、[rhttp](https://codeberg.org/Tienisto/rhttp)、[tray_manager](https://github.com/leanflutter/tray_manager) 和 [connectivity_plus](https://github.com/fluttercommunity/plus_plugins)：修改后放在 `packages/` 中
 
 ## Headless 模式
 见 [Headless Doc](doc/headless_doc.md)
