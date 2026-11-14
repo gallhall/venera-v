@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/components/rich_comment_content.dart';
 import 'package:venera/pages/comments/comments.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
@@ -179,6 +180,12 @@ class _BangumiPanelState extends State<BangumiPanel> {
 
   BangumiCollection? collection;
 
+  /// The numbers of the episodes marked watched on Bangumi; null for a book
+  /// and until they are known. Bangumi marks episodes one by one, and the
+  /// count of the collection says how many, not which: with only the
+  /// second watched, the first was shown as watched.
+  Set<int>? watched;
+
   bool isLoading = false;
 
   String? error;
@@ -274,6 +281,25 @@ class _BangumiPanelState extends State<BangumiPanel> {
     if (mounted) {
       setState(() => this.collection = collection);
     }
+    var subjectId = binding!.subjectId;
+    Set<int>? watched;
+    if (!binding!.isBook && collection != null) {
+      try {
+        var statuses = await manager.api.episodeStatuses(subjectId);
+        watched = {
+          for (var e in await manager.progress.episodes(subjectId))
+            if (e.type == 0 &&
+                statuses[e.id] == BangumiEpisodeStatus.watched)
+              e.number,
+        };
+      } catch (e, s) {
+        // The count is still there to go by.
+        Log.error('Bangumi', e.toString(), s);
+      }
+    }
+    if (mounted && binding?.subjectId == subjectId) {
+      setState(() => this.watched = watched);
+    }
   }
 
   void bind(BangumiSubject subject) {
@@ -283,6 +309,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
       this.binding = binding;
       this.subject = subject;
       collection = null;
+      watched = null;
       isSearching = false;
     });
     run(loadCollection);
@@ -294,6 +321,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
       binding = null;
       subject = null;
       collection = null;
+      watched = null;
       isSearching = true;
     });
     if (results == null) {
@@ -555,6 +583,11 @@ class _BangumiPanelState extends State<BangumiPanel> {
     var isBook = binding.isBook;
     var done = collection?.epStatus ?? 0;
     var total = subject?.eps ?? 0;
+    // How far it is watched: the last episode marked. That is the count
+    // only when none before it was left out ([isUpTo]).
+    var marks = watched;
+    var reached = marks == null ? done : marks.fold(0, math.max);
+    var isUpTo = marks == null || marks.length == reached;
     yield Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -586,14 +619,14 @@ class _BangumiPanelState extends State<BangumiPanel> {
             IconButton(
               tooltip: 'Decrease progress'.tl,
               icon: const Icon(Icons.remove),
-              onPressed: isLoading || done <= 0
+              onPressed: isLoading || reached <= 0
                   ? null
-                  : () => setProgress(done - 1),
+                  : () => setProgress(reached - 1),
             ),
             IconButton(
               tooltip: 'Increase progress'.tl,
               icon: const Icon(Icons.add),
-              onPressed: isLoading ? null : () => setProgress(done + 1),
+              onPressed: isLoading ? null : () => setProgress(reached + 1),
             ),
           ],
         ),
@@ -602,7 +635,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
             : () => showInputDialog(
                 context: context,
                 title: (isBook ? "Chapters read" : "Episodes watched").tl,
-                initialValue: "$done",
+                initialValue: "$reached",
                 inputValidator: RegExp(r"^\d+$"),
                 onConfirm: (value) {
                   setProgress(int.parse(value));
@@ -612,7 +645,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
       ),
     );
     if (total > 0) {
-      final position = done > total ? total : done;
+      final position = reached > total ? total : reached;
       final first = math.max(1, math.min(position - 5, total - 11));
       final last = math.min(first + 11, total);
       yield ExcludeFocus(
@@ -624,9 +657,9 @@ class _BangumiPanelState extends State<BangumiPanel> {
               for (var i = first; i <= last; i++)
                 EpisodeGridItem(
                   label: '$i',
-                  selected: i == done,
-                  watched: i <= done,
-                  onTap: i == done ? null : () => setProgress(i),
+                  selected: i == reached,
+                  watched: watched?.contains(i) ?? i <= done,
+                  onTap: i == reached && isUpTo ? null : () => setProgress(i),
                 ),
             ],
           ),
@@ -634,7 +667,7 @@ class _BangumiPanelState extends State<BangumiPanel> {
       ).paddingHorizontal(16).paddingVertical(8);
     }
     var local = localProgress;
-    if (local != null && local != done) {
+    if (local != null && (local != reached || !isUpTo)) {
       yield ListTile(
         leading: const Icon(Icons.history_outlined),
         title: Text(
