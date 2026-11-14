@@ -94,7 +94,7 @@ venera-v reads Animeko subscription sources, and its BT and RSS playback follows
 See [Headless Doc](doc/headless_doc.md)
 
 ## Disclaimer
-- venera-v is a free, open-source client for learning and personal use. It does not host, store, upload or distribute any comics, videos, torrents, subtitles or other content.
+- venera-v is a free, open-source client for learning and personal use. The project does not host or provide any comics, videos, torrents, subtitles or other content.
 - Everything shown in the app comes from sources the user adds or chooses (comic and video sources, rules, RSS feeds, BT swarms) and from third-party services. The copyright of that content belongs to its owners. venera-v does not check, endorse or take responsibility for it.
 - Users are responsible for what they access, download and share, and for complying with the laws of their country or region and the terms of the services they use. BT downloads also upload to other peers while they run.
 - venera-v is not affiliated with Bangumi, DanDanPlay, Bilibili, Kazumi, Animeko or any source it can use.
