@@ -31,8 +31,20 @@ String bangumiCommentHtml(String text) {
     },
   );
   text = text.replaceAllMapped(
-    RegExp(r'\[(/?)(b|i|u|s)\]', caseSensitive: false),
+    RegExp(r'\[(/?)(b|i|u|s|quote|mask|code)\]', caseSensitive: false),
     (m) => '<${m[1]}${m[2]!.toLowerCase()}>',
+  );
+  // A quote is a block of its own: what follows starts on a new line.
+  text = text.replaceAll(RegExp(r'</quote>(?!\n)'), '</quote>\n');
+  // Colour, size, font and alignment are not shown; their text is.
+  text = text.replaceAll(
+    RegExp(r'\[/?(?:color|size|font|align|left|center|right)(?:=[^\]\n]*)?\]',
+        caseSensitive: false),
+    '',
+  );
+  text = text.replaceAllMapped(
+    RegExp(r'\[user(?:=[^\]\n]*)?\]([\s\S]*?)\[/user\]', caseSensitive: false),
+    (m) => '@${m[1]}',
   );
   text = text.replaceAllMapped(RegExp(r'\(bgm(\d+)\)'), (m) {
     var n = int.tryParse(m[1]!);
@@ -56,5 +68,11 @@ String bangumiCommentHtml(String text) {
     }
     return '<img src="https://bgm.tv/img/smiles/$path">';
   });
+  // The sets added later are named, and all animated: (musume_30) is
+  // musume/musume_30.gif. Which numbers there are is the site's to say; one
+  // that is not there shows as nothing.
+  text = text.replaceAllMapped(
+      RegExp(r'\((musume|blake)_(\d{1,3})\)'),
+      (m) => '<img src="https://bgm.tv/img/smiles/${m[1]}/${m[1]}_${m[2]}.gif">');
   return text;
 }
