@@ -100,7 +100,8 @@ class _Tag {
         made?.add(recognizer);
       }
     }
-    if (name == 'mask' && hidden && onReveal != null && recognizer == null) {
+    // Over a link in it too: a tap reveals, it does not follow the link.
+    if (name == 'mask' && hidden && onReveal != null) {
       recognizer = TapGestureRecognizer()..onTap = onReveal;
       made?.add(recognizer);
     }
@@ -204,7 +205,12 @@ class _RichCommentContentState extends State<RichCommentContent> {
         value = value.replaceAll('&lt;', '<').replaceAll('&gt;', '>');
       }
       var span = TextSpan(text: value);
-      for (var tag in s) {
+      // A mask last, whatever it holds: a link in it took its colour and
+      // its tap, and the hidden text could be read and was not revealed.
+      for (var tag in [
+        ...s.where((t) => t.name != 'mask'),
+        ...s.where((t) => t.name == 'mask'),
+      ]) {
         span = tag.merge(span, context,
             hidden: !revealed,
             onReveal: () => setState(() {
@@ -331,7 +337,9 @@ class _RichCommentContentState extends State<RichCommentContent> {
         }
       } else if (text.length - i > 8 &&
           text.substring(i, i + 4) == 'http' &&
-          !s.any((e) => e.name == 'a')) {
+          !s.any((e) => e.name == 'a') &&
+          // A bare link in a mask stays hidden text until it is revealed.
+          (revealed || !s.any((e) => e.name == 'mask'))) {
         // auto link
         int j = i;
         for (; j < text.length; j++) {

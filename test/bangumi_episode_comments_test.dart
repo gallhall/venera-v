@@ -192,6 +192,25 @@ void main() {
       expect((parts[1] as Text).textSpan!.toPlainText(), 'Cute too');
     });
 
+    testWidgets('a link in a mask is hidden too, and a tap reveals it',
+        (tester) async {
+      await tester.pumpWidget(frame(
+          '[mask][url=https://example.com/a]named[/url] '
+          'https://example.com/bare[/mask]'));
+      for (var text in ['named', ' https://example.com/bare']) {
+        var style = part(tester, text).style!;
+        expect(style.color, style.backgroundColor, reason: text);
+      }
+      // The tap reveals; it does not follow the link.
+      (part(tester, 'named').recognizer as TapGestureRecognizer).onTap!();
+      await tester.pump();
+      var named = part(tester, 'named').style!;
+      expect(named.color, isNot(named.backgroundColor));
+      // Revealed, the links are links again.
+      expect(part(tester, 'named').recognizer, isNotNull);
+      expect(part(tester, 'https://example.com/bare').recognizer, isNotNull);
+    });
+
     testWidgets('masked text is hidden until it is tapped', (tester) async {
       await tester.pumpWidget(frame('Seen it [mask]the butler[/mask] end'));
       var hidden = part(tester, 'the butler').style!;
