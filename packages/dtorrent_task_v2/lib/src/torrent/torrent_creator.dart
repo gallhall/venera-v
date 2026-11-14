@@ -145,8 +145,11 @@ class TorrentCreator {
     final directoryName = directory.path.split(Platform.pathSeparator).last;
     final fileList = <Map<String, dynamic>>[];
 
-    // Calculate pieces for all files
-    final allPieces = <int>[];
+    // The pieces of a torrent run through its files as if they were one:
+    // a piece that starts in one file ends in the next. Hashed file by
+    // file, every file not a whole number of pieces long gave a torrent
+    // whose boundary pieces (and all after them) never verify.
+    final allPieces = await _calculatePiecesAcross(files, options.pieceLength);
     for (final file in files) {
       final relativePath = _getRelativePath(file, directory);
       final fileLength = await file.length();
@@ -155,10 +158,6 @@ class TorrentCreator {
         'length': fileLength,
         'path': relativePath.split(Platform.pathSeparator),
       });
-
-      // Calculate pieces for this file
-      final filePieces = await _calculatePieces(file, options.pieceLength);
-      allPieces.addAll(filePieces.toList());
     }
 
     // Build info dictionary
@@ -240,6 +239,39 @@ class TorrentCreator {
     return Uint8List.fromList(pieces);
   }
 
+  /// SHA1 hashes of the pieces of [files] laid end to end.
+  static Future<List<int>> _calculatePiecesAcross(
+    List<File> files,
+    int pieceLength,
+  ) async {
+    final pieces = <int>[];
+    final piece = Uint8List(pieceLength);
+    var filled = 0;
+    for (final file in files) {
+      final access = await file.open();
+      try {
+        while (true) {
+          final read =
+              await access.readInto(piece, filled, pieceLength);
+          if (read <= 0) {
+            break;
+          }
+          filled += read;
+          if (filled == pieceLength) {
+            pieces.addAll(sha1.convert(piece).bytes);
+            filled = 0;
+          }
+        }
+      } finally {
+        await access.close();
+      }
+    }
+    if (filled > 0) {
+      pieces.addAll(sha1.convert(Uint8List.sublistView(piece, 0, filled)).bytes);
+    }
+    return pieces;
+  }
+
   /// Get all files in a directory recursively
   static Future<List<File>> _getAllFiles(Directory directory) async {
     final files = <File>[];
@@ -248,6 +280,8 @@ class TorrentCreator {
         files.add(entity);
       }
     }
+    // A listing has no order of its own; the torrent must not depend on it.
+    files.sort((a, b) => a.path.compareTo(b.path));
     return files;
   }
 
