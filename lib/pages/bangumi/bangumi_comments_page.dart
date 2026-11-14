@@ -166,7 +166,10 @@ class _BangumiCommentsPageState extends State<BangumiCommentsPage> {
             ),
         ],
       ),
-      content: SelectableText(comment.comment, style: ts.s14),
+      content: CopyableText(
+        text: comment.comment,
+        child: Text(comment.comment, style: ts.s14),
+      ),
     );
   }
 }

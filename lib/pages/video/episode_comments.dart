@@ -195,8 +195,12 @@ class _EpisodeCommentsState extends State<EpisodeComments> {
                 expanded.add(comment.id);
               }
             }),
-            child: Text(isExpanded ? 'Hide replies'.tl
-                : 'Show @n replies'.tlParams({'n': comment.replies.length})),
+            child: Text(isExpanded
+                ? 'Hide replies'.tl
+                : comment.replies.length == 1
+                    ? 'Show 1 reply'.tl
+                    : 'Show @n replies'
+                        .tlParams({'n': comment.replies.length})),
           ),
           if (isExpanded)
             for (var item in comment.replies) buildComment(item, reply: true),
