@@ -24,6 +24,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/duration_records.dart';
+import 'package:venera/foundation/reading_activity.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
@@ -32,7 +33,6 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/res.dart';
-import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/network/network_error.dart';
 import 'package:venera/pages/comments/comments.dart';
@@ -51,6 +51,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:battery_plus/battery_plus.dart';
 
 import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
+import 'package:venera/pages/watch_later_page.dart' show showWatchLaterStartedToast;
 import 'reader_chain.dart';
 
 part 'scaffold.dart';
@@ -237,8 +238,10 @@ class _ReaderState extends State<Reader>
 
   var focusNode = FocusNode();
 
-  /// 时长记录 of this reading. Created by the first page set in [initState].
-  late final _duration = ReadingDurationTracker(
+  /// 阅读活动: starts at the first page shown, taking the comic off 稍后看,
+  /// and keeps the 时长记录 of this reading.
+  late final _activity = ReadingActivity.comic(
+    onWatchLaterRemoved: showWatchLaterStartedToast,
     work: () {
       var binding = BangumiManager().bindingOf(type.sourceKey, cid);
       return DurationWork(
@@ -250,11 +253,6 @@ class _ReaderState extends State<Reader>
       );
     },
     position: () => (ep: history?.ep ?? chapter, group: history?.group),
-  );
-
-  late final _lifecycle = AppLifecycleListener(
-    onShow: () => _duration.foreground(),
-    onHide: () => _duration.background(),
   );
 
   @override
@@ -289,10 +287,9 @@ class _ReaderState extends State<Reader>
       handleVolumeEvent();
     }
     setImageCacheSize();
-    _lifecycle;
+    _activity;
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
-      WatchLater().started(cid, type);
     });
     super.initState();
   }
@@ -338,8 +335,7 @@ class _ReaderState extends State<Reader>
       fullscreen();
     }
     autoPageTurningTimer?.cancel();
-    _lifecycle.dispose();
-    _duration.end();
+    _activity.dispose();
     focusNode.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     stopVolumeEvent();
@@ -388,7 +384,6 @@ class _ReaderState extends State<Reader>
 
   @override
   void onPageChanged() {
-    _duration.pageTurned();
     updateHistory();
   }
 
@@ -397,6 +392,8 @@ class _ReaderState extends State<Reader>
   Timer? _updateHistoryTimer;
 
   void updateHistory() {
+    // Also called once the images of a chapter are loaded.
+    if (images != null) _activity.pageShown();
     if (history != null) {
       // page >= maxPage handles both last image page and chapter comments page
       if (page >= maxPage) {
@@ -430,7 +427,7 @@ class _ReaderState extends State<Reader>
         history!.ep = chapter;
       }
       if (images != null && page >= maxPage) {
-        _duration.chapterFinished('${history!.group}-${history!.ep}');
+        _activity.chapterFinished('${history!.group}-${history!.ep}');
         BangumiManager().onFinished(
           sourceKey: type.sourceKey,
           id: cid,

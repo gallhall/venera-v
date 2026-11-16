@@ -1,4 +1,3 @@
-import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -263,16 +262,12 @@ class WatchLater with ChangeNotifier {
 
   WatchLaterStore? _store;
 
-  /// Called with what was taken off the list when reading or playing
-  /// started, to offer to undo it.
-  static void Function(List<WatchLaterItem> removed)? onStartedRemoved;
-
   void attach(Database db) {
     _store = WatchLaterStore(db);
     _changed();
   }
 
-  /// Cached, for the checks of every history write.
+  /// Cached: most works started are not on the list.
   int? _count;
 
   List<WatchLaterItem> all({int? limit}) => _store?.all(limit: limit) ?? [];
@@ -303,17 +298,13 @@ class WatchLater with ChangeNotifier {
     _changed();
   }
 
-  /// Reading or playing work [id] of [type] started: takes it off the list.
-  void started(String id, ComicType type) {
-    if (_store == null || count == 0) return;
+  /// Reading or playing work [id] of [type] started (see 阅读活动): takes
+  /// it off the list. What was taken off, to offer to undo it.
+  List<WatchLaterItem> started(String id, ComicType type) {
+    if (_store == null || count == 0) return const [];
     var removed = _store!.removeStarted(id, type);
-    if (removed.isEmpty) return;
-    _count = null;
-    // The player also saves from dispose, while widgets cannot rebuild.
-    scheduleMicrotask(() {
-      notifyListeners();
-      onStartedRemoved?.call(removed);
-    });
+    if (removed.isNotEmpty) _changed();
+    return removed;
   }
 
   void _changed() {
