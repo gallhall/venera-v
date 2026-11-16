@@ -371,7 +371,7 @@ class LocalFavoritesManager with ChangeNotifier {
     final folders = _getTablesWithDB();
     folders.remove('folder_sync');
     folders.remove('folder_order');
-    folders.remove(WatchLaterStore.table);
+    folders.remove(WatchLater.table);
     var folderToOrder = <String, int>{};
     for (var folder in folders) {
       var res = _db.select("""

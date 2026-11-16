@@ -91,7 +91,7 @@ class _WatchLaterPageState extends State<WatchLaterPage> {
   }
 
   void remove(List<WatchLaterItem> removed) {
-    WatchLater().removeAll(removed);
+    WatchLater().removeItems(removed);
     showUndoToast(
       context: context,
       message: 'Removed from Watch Later'.tl,
