@@ -175,7 +175,6 @@ class DurationRecords {
 
   /// Written by an isolate, so the UI does not wait.
   Future<void> add(DurationRecord record) {
-    Log.info('DurationRecord', 'Recorded $record');
     var path = _path;
     if (path == null) return Future.value();
     return _writing = _writing.then((_) {
