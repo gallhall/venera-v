@@ -35,7 +35,10 @@ class _HistoryPageState extends State<HistoryPage> {
     setState(() {
       comics = HistoryManager().getAll();
       if (multiSelectMode) {
-        selectedComics.removeWhere((comic, _) => !comics.contains(comic));
+        // A refreshed title can stop matching the search: drop hidden ones
+        // too, so a bulk delete never removes entries the user cannot see.
+        final shown = shownComics.toSet();
+        selectedComics.removeWhere((comic, _) => !shown.contains(comic));
         if (selectedComics.isEmpty) {
           multiSelectMode = false;
         }

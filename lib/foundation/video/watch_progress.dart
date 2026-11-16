@@ -12,7 +12,17 @@ abstract interface class WatchHistoryStore {
 }
 
 class _HistoryStore implements WatchHistoryStore {
-  const _HistoryStore();
+  _HistoryStore();
+
+  /// Works already taken off 稍后看 by this player: the history is saved
+  /// every few seconds, and an undone removal must stay undone.
+  final _started = <String>{};
+
+  void _start(History history) {
+    if (_started.add('${history.type.value}:${history.id}')) {
+      WatchLater().started(history.id, history.type);
+    }
+  }
 
   @override
   History? find(String id, ComicType type) => HistoryManager().find(id, type);
@@ -20,13 +30,13 @@ class _HistoryStore implements WatchHistoryStore {
   @override
   void add(History history, {bool notifyLater = false}) {
     HistoryManager().addHistory(history, notifyLater: notifyLater);
-    WatchLater().started(history.id, history.type);
+    _start(history);
   }
 
   @override
   void addAsync(History history) {
     HistoryManager().addHistoryAsync(history);
-    WatchLater().started(history.id, history.type);
+    _start(history);
   }
 
   @override
@@ -80,7 +90,7 @@ class SourceWatchProgress extends WatchProgress {
     BangumiWatchSync? sync,
     this.onSync,
   }) : _initialHistory = initialHistory,
-       store = store ?? const _HistoryStore(),
+       store = store ?? _HistoryStore(),
        _sync = sync ?? BangumiManager().onFinished;
 
   final String Function() sourceKey;

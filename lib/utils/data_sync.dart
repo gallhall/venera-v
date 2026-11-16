@@ -7,6 +7,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/data.dart';
 import 'package:venera/utils/ext.dart';
@@ -22,6 +23,8 @@ class DataSync with ChangeNotifier {
     }
     LocalFavoritesManager().addListener(onDataChanged);
     ComicSourceManager().addListener(onDataChanged);
+    // 稍后看 lives in local_favorite.db but notifies on its own.
+    WatchLater().addListener(onDataChanged);
     if (App.isDesktop) {
       Future.delayed(const Duration(seconds: 1), () {
         var controller = WindowFrame.of(App.rootContext);
