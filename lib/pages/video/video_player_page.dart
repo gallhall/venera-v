@@ -18,6 +18,7 @@ import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
+import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
@@ -417,6 +418,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Saves the progress while playing.
   Timer? historyTimer;
 
+  /// 时长记录, one per episode.
+  final durationTracker = WatchDurationTracker();
+
+  late final durationLifecycle = AppLifecycleListener(
+    onShow: () => durationTracker.foreground = true,
+    onHide: () => durationTracker.foreground = false,
+  );
+
+  /// The work recorded in 时长记录: the one of the history.
+  DurationWork get durationWork {
+    var h = history;
+    var subjectId = bangumi?.subject.id ?? linkedVideo?.subjectId;
+    if (subjectId == null) {
+      var binding = BangumiManager().bindingOf(sourceKey, details.id);
+      if (binding != null && !binding.isBook) subjectId = binding.subjectId;
+    }
+    return DurationWork(id: h.id, type: h.type, title: h.title,
+        cover: h.cover, subjectId: subjectId);
+  }
+
+  /// The episode recorded in 时长记录, numbered as in the history.
+  ({int ep, int? group}) get durationEpisode {
+    if (bangumi case var b?) return (ep: b.number, group: null);
+    if (linkedVideo?.number(current) case var n?) return (ep: n, group: null);
+    return episodes.toHistory(current);
+  }
+
   Duration duration = Duration.zero;
 
   /// Fullscreen is done by the page rather than by the engine's own route,
@@ -448,6 +476,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void initState() {
     super.initState();
+    durationLifecycle;
     if (widget.startFullscreen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setFullscreen(true);
@@ -526,6 +555,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     playbackSubscriptions.clear();
     var token = ++listenerToken;
+    durationTracker
+      ..playing = p.isPlaying
+      ..buffering = p.isBuffering;
     void Function(T) ifActive<T>(void Function(T) f) {
       return (v) {
         if (mounted && token == listenerToken && identical(active, p)) {
@@ -547,6 +579,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.playing.listen(
         ifActive((playing) {
           refreshNowPlaying();
+          durationTracker.playing = playing;
           historyTimer?.cancel();
           if (playing) {
             watchProgress.playing();
@@ -566,8 +599,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.seeked.listen(ifActive((position) {
         refreshNowPlaying(position: position);
       })),
+      p.buffering.listen(ifActive((buffering) {
+        durationTracker.buffering = buffering;
+      })),
       p.position.listen(
         ifActive((position) {
+          durationTracker.position(position, duration,
+              inOutro: playInfo?.skips.any((s) =>
+                  s.type == VideoSkipType.outro && s.contains(position)) ??
+                  false);
           checkSkip(position);
           checkWatched(position);
         }),
@@ -577,6 +617,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void onStarted(PlaybackStarted event) {
     duration = event.duration;
+    durationTracker.started(durationWork, durationEpisode);
     refreshNowPlaying(position: openedAt);
     if (correspondence.memoryAt(current) case var line?) {
       Log.info('Video', 'Remember line "$line" for $sourceKey');
@@ -689,6 +730,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     // Saved synchronously, so the details page sees it when it comes back.
     saveHistory(sync: true);
+    durationLifecycle.dispose();
+    durationTracker.end();
     player?.dispose();
     danmaku.removeListener(updateDanmakuControls);
     danmaku.dispose();

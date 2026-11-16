@@ -23,6 +23,7 @@ import 'package:venera/foundation/cache_manager.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
+import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
@@ -235,6 +236,26 @@ class _ReaderState extends State<Reader>
 
   var focusNode = FocusNode();
 
+  /// 时长记录 of this reading. Created by the first page set in [initState].
+  late final _duration = ReadingDurationTracker(
+    work: () {
+      var binding = BangumiManager().bindingOf(type.sourceKey, cid);
+      return DurationWork(
+        id: cid,
+        type: type,
+        title: history?.title ?? widget.name,
+        cover: history?.cover ?? '',
+        subjectId: binding?.subjectId,
+      );
+    },
+    position: () => (ep: history?.ep ?? chapter, group: history?.group),
+  );
+
+  late final _lifecycle = AppLifecycleListener(
+    onShow: () => _duration.foreground(),
+    onHide: () => _duration.background(),
+  );
+
   @override
   void initState() {
     page = widget.initialPage ?? 1;
@@ -267,6 +288,7 @@ class _ReaderState extends State<Reader>
       handleVolumeEvent();
     }
     setImageCacheSize();
+    _lifecycle;
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
     });
@@ -314,6 +336,8 @@ class _ReaderState extends State<Reader>
       fullscreen();
     }
     autoPageTurningTimer?.cancel();
+    _lifecycle.dispose();
+    _duration.end();
     focusNode.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     stopVolumeEvent();
@@ -362,6 +386,7 @@ class _ReaderState extends State<Reader>
 
   @override
   void onPageChanged() {
+    _duration.pageTurned();
     updateHistory();
   }
 
@@ -403,6 +428,7 @@ class _ReaderState extends State<Reader>
         history!.ep = chapter;
       }
       if (images != null && page >= maxPage) {
+        _duration.chapterFinished('${history!.group}-${history!.ep}');
         BangumiManager().onFinished(
           sourceKey: type.sourceKey,
           id: cid,
