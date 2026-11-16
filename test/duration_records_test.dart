@@ -8,6 +8,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/reading_stats.dart';
 
 const _work = DurationWork(
   id: '42',
@@ -39,6 +40,50 @@ DurationRecord _record({int seconds = 120, DateTime? start}) => DurationRecord(
 void main() {
   group('store', () {
     var skip = _sqliteAvailable() ? false : 'sqlite3 is not on PATH';
+
+    test('stats read only the kind and range asked for', () {
+      var db = sqlite3.openInMemory();
+      DurationRecordTable.create(db);
+      DurationRecord at(DateTime start, int seconds, DurationKind kind) =>
+          DurationRecord(
+            work: _work,
+            kind: kind,
+            start: start,
+            seconds: seconds,
+            ep: 1,
+            finished: 0,
+          );
+      // Wednesday 18 November 2026.
+      var now = DateTime(2026, 11, 18, 21);
+      for (var r in [
+        at(DateTime(2026, 11, 18, 9), 100, DurationKind.anime),
+        at(DateTime(2026, 11, 16, 9), 200, DurationKind.anime),
+        at(DateTime(2026, 11, 2, 9), 400, DurationKind.anime),
+        at(DateTime(2026, 10, 2, 9), 800, DurationKind.anime),
+        at(DateTime(2026, 11, 18, 10), 50, DurationKind.comic),
+      ]) {
+        DurationRecordTable.insert(db, r);
+      }
+      expect(
+          DurationRecordTable.of(db, DurationKind.anime,
+                  from: DateTime(2026, 11, 16))
+              .map((r) => r.seconds),
+          [200, 100]);
+      DurationRecords().open(db, '');
+      int total(DurationKind kind, StatsRange range) =>
+          DurationRecords().stats(kind, range, now: now).seconds;
+      expect(total(DurationKind.anime, StatsRange.today), 100);
+      expect(total(DurationKind.anime, StatsRange.week), 300);
+      expect(total(DurationKind.anime, StatsRange.month), 700);
+      expect(total(DurationKind.anime, StatsRange.all), 1500);
+      expect(total(DurationKind.comic, StatsRange.all), 50);
+      expect(DurationRecords().kinds(),
+          {DurationKind.anime, DurationKind.comic});
+      DurationRecords().clear();
+      expect(DurationRecords().kinds(), isEmpty);
+      expect(total(DurationKind.anime, StatsRange.all), 0);
+      db.dispose();
+    }, skip: skip);
 
     test('round trip and clear', () {
       var db = sqlite3.openInMemory();
