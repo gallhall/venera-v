@@ -142,6 +142,19 @@ void main() {
       expect(takenOff, hasLength(1), reason: 'one activity, one start');
     });
 
+    test('a page loaded in the background starts it on coming back', () {
+      var a = comic();
+      foreground.add(false);
+      a.pageShown();
+      clock.advance(_minute);
+      expect(takenOff, isEmpty, reason: 'not seen yet');
+      foreground.add(true);
+      expect(takenOff, hasLength(1));
+      clock.advance(_minute);
+      a.dispose();
+      expect(saved.single.seconds, 60);
+    });
+
     test('chapters read to the end count once; short readings are dropped', () {
       var a = comic();
       a.pageShown();

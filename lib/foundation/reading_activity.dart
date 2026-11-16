@@ -118,6 +118,10 @@ class ReadingActivity {
   bool _ended = false;
   bool _foreground = true;
 
+  /// Comics: a page was shown while in the background; it is seen when the
+  /// app comes back.
+  bool _shownInBackground = false;
+
   /// The record being kept, with the work and episode it is of.
   _Session? _session;
 
@@ -147,7 +151,11 @@ class ReadingActivity {
   /// Comics: a page is shown, after the reader opened or a page turn. The
   /// first starts the activity.
   void pageShown() {
-    if (_ended || _kind != DurationKind.comic || !_foreground) return;
+    if (_ended || _kind != DurationKind.comic) return;
+    if (!_foreground) {
+      _shownInBackground = true;
+      return;
+    }
     if (!_started) _start(_work());
     var session = _session;
     if (session == null) {
@@ -218,6 +226,10 @@ class ReadingActivity {
       // The background ends a reading; coming back starts another one.
       if (!value) {
         _close();
+      } else if (_shownInBackground) {
+        // E.g. the first chapter finished loading in the background.
+        _shownInBackground = false;
+        pageShown();
       } else if (_started && !_ended) {
         _open(_work(), _episode());
       }
