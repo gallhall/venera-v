@@ -5,6 +5,7 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
+import 'package:venera/foundation/history_filter.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/utils/translations.dart';
@@ -26,6 +27,7 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   void dispose() {
     HistoryManager().removeListener(onUpdate);
+    searchController.dispose();
     super.dispose();
   }
 
@@ -43,12 +45,35 @@ class _HistoryPageState extends State<HistoryPage> {
 
   var comics = HistoryManager().getAll();
 
+  final searchController = TextEditingController();
+
+  String query = '';
+
+  HistoryKindFilter kind = HistoryKindFilter.all;
+
+  /// [comics] narrowed by the search box and the kind chips.
+  List<History> get shownComics =>
+      filterHistories(comics, query: query, kind: kind);
+
+  /// Applies a new search or kind, dropping selections that are now hidden
+  /// so a multi-select delete never removes entries the user cannot see.
+  void setFilter({String? query, HistoryKindFilter? kind}) {
+    setState(() {
+      this.query = query ?? this.query;
+      this.kind = kind ?? this.kind;
+      if (selectedComics.isNotEmpty) {
+        final shown = shownComics.toSet();
+        selectedComics.removeWhere((comic, _) => !shown.contains(comic));
+      }
+    });
+  }
+
   bool multiSelectMode = false;
   Map<History, bool> selectedComics = {};
 
   void selectAll() {
     setState(() {
-      selectedComics = comics.asMap().map((k, v) => MapEntry(v, true));
+      selectedComics = shownComics.asMap().map((k, v) => MapEntry(v, true));
     });
   }
 
@@ -60,7 +85,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   void invertSelection() {
     setState(() {
-      comics.asMap().forEach((k, v) {
+      shownComics.asMap().forEach((k, v) {
         selectedComics[v] = !selectedComics.putIfAbsent(v, () => false);
       });
       selectedComics.removeWhere((k, v) => !v);
@@ -179,8 +204,82 @@ class _HistoryPageState extends State<HistoryPage> {
     }
   }
 
+  Widget buildFilterBar(BuildContext context) {
+    final colors = context.colorScheme;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      borderSide: BorderSide.none,
+    );
+    Widget chip(String text, HistoryKindFilter value) {
+      final selected = kind == value;
+      return ChoiceChip(
+        label: Text(text),
+        selected: selected,
+        showCheckmark: false,
+        shape: const StadiumBorder(),
+        side: BorderSide.none,
+        backgroundColor: colors.surfaceContainerHigh,
+        selectedColor: colors.secondaryContainer,
+        labelStyle: TextStyle(
+          color: selected ? colors.onSecondaryContainer : colors.onSurface,
+        ),
+        onSelected: (_) => setFilter(kind: value),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: "Search title or ID".tl,
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: "Clear".tl,
+                      onPressed: () {
+                        searchController.clear();
+                        setFilter(query: '');
+                      },
+                    ),
+              isDense: true,
+              filled: true,
+              fillColor: colors.surfaceContainerHigh,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              border: border,
+              enabledBorder: border,
+              focusedBorder: border.copyWith(
+                borderSide: BorderSide(color: colors.primary),
+              ),
+            ),
+            onChanged: (v) => setFilter(query: v),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              chip("All".tl, HistoryKindFilter.all),
+              chip("Comic".tl, HistoryKindFilter.comic),
+              chip("Anime series".tl, HistoryKindFilter.video),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final shown = shownComics;
     List<Widget> selectActions = [
       MenuButton(
         entries: [
@@ -302,6 +401,8 @@ class _HistoryPageState extends State<HistoryPage> {
                 actions: multiSelectMode ? selectActions : normalActions,
               ),
             ),
+            if (comics.isNotEmpty)
+              SliverToBoxAdapter(child: buildFilterBar(context)),
             if (comics.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
@@ -324,9 +425,17 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                 ),
               )
+            else if (shown.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: AppEmptyView(
+                  icon: Icons.search_off_outlined,
+                  text: "No matching history".tl,
+                ),
+              )
             else
               SliverGridComics(
-                comics: comics,
+                comics: shown,
                 selections: selectedComics,
                 onLongPressed: null,
                 onTap: multiSelectMode
