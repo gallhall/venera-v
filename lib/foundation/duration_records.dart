@@ -387,13 +387,16 @@ class WatchDurationTracker {
   bool _foreground = true;
 
   /// Episode [episode] of [work] started. Another episode or work starts a
-  /// new session; the same one, e.g. after switching lines, goes on.
+  /// new session; the same one, e.g. after switching lines, goes on. The
+  /// group of a video source is its line, so only [episode.ep] identifies
+  /// the episode here; the latest group is kept for the record.
   void started(DurationWork work, ({int ep, int? group}) episode) {
     if (_session != null &&
         _work?.id == work.id &&
         _work?.type == work.type &&
-        _episode == episode) {
+        _episode?.ep == episode.ep) {
       _work = work;
+      _episode = episode;
       return;
     }
     end();
@@ -428,7 +431,7 @@ class WatchDurationTracker {
     if (session == null || episode == null) return;
     if (inOutro ||
         (duration > Duration.zero && position >= duration * finishedAt)) {
-      session.finish('${episode.group}-${episode.ep}');
+      session.finish('${episode.ep}');
     }
   }
 

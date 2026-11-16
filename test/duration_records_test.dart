@@ -217,6 +217,19 @@ void main() {
       expect(saved.single.seconds, 40);
     });
 
+    test('another line of the same episode goes on, finished once', () {
+      t.started(_work, (ep: 3, group: 1));
+      t.playing = true;
+      t.position(const Duration(minutes: 22), const Duration(minutes: 24));
+      clock.advance(const Duration(seconds: 20));
+      t.started(_work, (ep: 3, group: 2));
+      t.position(const Duration(minutes: 23), const Duration(minutes: 24));
+      clock.advance(const Duration(seconds: 20));
+      t.end();
+      expect((saved.single.seconds, saved.single.group, saved.single.finished),
+          (40, 2, 1));
+    });
+
     test('an episode is finished at 90% or in the ending, once', () {
       t.started(_work, ep1);
       t.playing = true;

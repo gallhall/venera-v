@@ -639,6 +639,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (!mounted) {
       return;
     }
+    if (active == null) {
+      // The player is detached before it is paused or replaced, so its
+      // pause never reaches the tracker: loading is not watching.
+      durationTracker.playing = false;
+    }
     if (playback.switching) {
       // The previous episode waits, paused, while another one is found.
       setState(() {});
