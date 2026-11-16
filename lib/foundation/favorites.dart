@@ -8,6 +8,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/image_provider/local_favorite_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/utils/database.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -242,6 +243,7 @@ class LocalFavoritesManager with ChangeNotifier {
         source_folder text
       );
     """);
+    WatchLater().attach(_db);
     var folderNames = _getFolderNamesWithDB();
     for (var folder in folderNames) {
       var columns = _db.select("""
@@ -369,6 +371,7 @@ class LocalFavoritesManager with ChangeNotifier {
     final folders = _getTablesWithDB();
     folders.remove('folder_sync');
     folders.remove('folder_order');
+    folders.remove(WatchLaterStore.table);
     var folderToOrder = <String, int>{};
     for (var folder in folders) {
       var res = _db.select("""

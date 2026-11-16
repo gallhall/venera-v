@@ -108,6 +108,16 @@ class ComicTile extends StatelessWidget {
     showMenu(details.globalPosition, context);
   }
 
+  MenuEntry _watchLaterEntry() {
+    var item = WatchLaterItem.fromComic(comic);
+    var added = WatchLater().contains(item.id, item.type);
+    return MenuEntry(
+      icon: added ? Icons.watch_later : Icons.watch_later_outlined,
+      text: added ? 'Remove from Watch Later'.tl : 'Watch Later'.tl,
+      onClick: () => toggleWatchLater(item),
+    );
+  }
+
   void showMenu(Offset location, BuildContext context) {
     showMenuX(
       App.rootContext,
@@ -143,6 +153,7 @@ class ComicTile extends StatelessWidget {
             addFavorite([comic]);
           },
         ),
+        _watchLaterEntry(),
         if (!ComicType.fromKey(comic.sourceKey).isBangumi)
           MenuEntry(
             icon: Icons.block_outlined,

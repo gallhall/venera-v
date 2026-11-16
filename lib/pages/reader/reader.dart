@@ -32,6 +32,7 @@ import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/network/network_error.dart';
 import 'package:venera/pages/comments/comments.dart';
@@ -291,6 +292,7 @@ class _ReaderState extends State<Reader>
     _lifecycle;
     Future.delayed(const Duration(milliseconds: 200), () {
       LocalFavoritesManager().onRead(cid, type);
+      WatchLater().started(cid, type);
     });
     super.initState();
   }

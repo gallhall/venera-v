@@ -10,6 +10,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/pages/bangumi/bangumi_calendar_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/comic_source_page.dart';
@@ -18,6 +19,7 @@ import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/history_page.dart';
 import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
 import 'package:venera/pages/search_page.dart';
+import 'package:venera/pages/watch_later_page.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/import_comic.dart';
 import 'package:venera/utils/import_video.dart';
@@ -93,6 +95,7 @@ class _HomePageState extends State<HomePage> {
           imageCount: imageFavorites?.count,
         ),
         const _History(),
+        const _WatchLater(),
         BangumiCalendarWidget(
           onCountChanged: (count) {
             if (mounted && animeCount != count) {
@@ -664,6 +667,75 @@ class _HistoryState extends State<_History> {
               ).paddingHorizontal(8).paddingTop(6).paddingBottom(12),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _WatchLater extends StatefulWidget {
+  const _WatchLater();
+
+  @override
+  State<_WatchLater> createState() => _WatchLaterState();
+}
+
+class _WatchLaterState extends State<_WatchLater> {
+  var items = WatchLater().all(limit: 20);
+
+  var count = WatchLater().count;
+
+  void onChange() {
+    if (mounted) {
+      setState(() {
+        items = WatchLater().all(limit: 20);
+        count = WatchLater().count;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    WatchLater().addListener(onChange);
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    WatchLater().removeListener(onChange);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SliverToBoxAdapter();
+    }
+    return SliverToBoxAdapter(
+      child: SectionCard(
+        icon: Icons.watch_later_outlined,
+        title: 'Watch Later'.tl,
+        collapseKey: 'home_watch_later',
+        onTap: () => context.to(() => const WatchLaterPage()),
+        actions: [AppBadge(count.toString())],
+        bodyPadding: EdgeInsets.zero,
+        body: SizedBox(
+          height: 136,
+          child: HorizontalCoverList(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final heroID = Object.hash('watch_later', item.id);
+                return ComicCoverButton(
+                  comic: item,
+                  heroID: heroID,
+                  onTap: () => openWatchLater(item, heroID),
+                ).paddingHorizontal(8).paddingVertical(2);
+              },
+            ),
+          ),
+        ).paddingHorizontal(8).paddingTop(6).paddingBottom(12),
       ),
     );
   }

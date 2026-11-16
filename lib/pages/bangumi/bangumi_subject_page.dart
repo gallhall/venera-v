@@ -15,11 +15,13 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/cloudflare.dart';
 import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/bangumi/subject_source_matcher.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/pages/watch_later_page.dart';
 import 'bangumi_panel.dart';
 import 'anime_cache_page.dart';
 import 'package:venera/foundation/video/subject_downloads.dart';
@@ -149,6 +151,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     appdata.settings.addListener(onSettingsChanged);
     HistoryManager().addListener(onSettingsChanged);
     LocalFavoritesManager().addListener(onFavoritesChanged);
+    WatchLater().addListener(onFavoritesChanged);
     subject = widget.preview;
     if (subject != null) matcher.setSubject(subject!);
     load();
@@ -159,6 +162,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     appdata.settings.removeListener(onSettingsChanged);
     HistoryManager().removeListener(onSettingsChanged);
     LocalFavoritesManager().removeListener(onFavoritesChanged);
+    WatchLater().removeListener(onFavoritesChanged);
     scrollController.dispose();
     matcher.dispose();
     sourceUpdates.dispose();
@@ -766,6 +770,22 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
                 text: 'Favorite'.tl,
                 onPressed: openLocalFavorites,
                 onLongPressed: quickFavorite,
+              ),
+              ActionPill(
+                icon: const Icon(Icons.watch_later_outlined),
+                activeIcon: const Icon(Icons.watch_later),
+                isActive: WatchLater().contains(
+                  bangumiHistoryId(subject.id),
+                  ComicType.bangumi,
+                ),
+                text: 'Watch Later'.tl,
+                onPressed: () => toggleWatchLater(WatchLaterItem(
+                  id: bangumiHistoryId(subject.id),
+                  type: ComicType.bangumi,
+                  title: subject.displayName,
+                  subtitle: subject.platform,
+                  cover: subject.image,
+                )),
               ),
               ActionPill(
                 icon: const Icon(Icons.bookmark_outline_outlined),

@@ -17,6 +17,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/res.dart';
+import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/download.dart';
 import 'package:venera/network/cache.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
@@ -27,6 +28,7 @@ import 'package:venera/pages/reader/reader.dart';
 import 'package:venera/pages/video/download_quality_dialog.dart';
 import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/pages/video/video_player_page.dart';
+import 'package:venera/pages/watch_later_page.dart' as watch_later;
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/tags_translation.dart';
@@ -242,12 +244,14 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
   @override
   void initState() {
     scrollController.addListener(onScroll);
+    WatchLater().addListener(update);
     super.initState();
   }
 
   @override
   void dispose() {
     scrollController.removeListener(onScroll);
+    WatchLater().removeListener(update);
     super.dispose();
   }
 
@@ -565,6 +569,13 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
                 text: 'Favorite'.tl,
                 onPressed: openFavPanel,
                 onLongPressed: quickFavorite,
+              ),
+              ActionPill(
+                icon: const Icon(Icons.watch_later_outlined),
+                activeIcon: const Icon(Icons.watch_later),
+                isActive: isWatchLater,
+                text: 'Watch Later'.tl,
+                onPressed: toggleWatchLater,
               ),
               ActionPill(
                 icon: const Icon(Icons.live_tv_outlined),
