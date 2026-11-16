@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/reading_stats.dart';
 import 'package:venera/utils/database.dart';
 
 /// Whether a 时长记录 is of reading a comic or of watching anime.
@@ -146,6 +148,28 @@ abstract final class DurationRecordTable {
         .toList();
   }
 
+  /// The records of [kind] that started at [from] or later (all of them
+  /// without [from]), oldest first. Uses the index on `start`.
+  static List<DurationRecord> of(Database db, DurationKind kind,
+      {DateTime? from}) {
+    return db
+        .select(
+          "select * from duration_records where kind = ? and start >= ? "
+          "order by start;",
+          [kind.value, from?.millisecondsSinceEpoch ?? 0],
+        )
+        .map(DurationRecord.fromRow)
+        .toList();
+  }
+
+  /// The kinds that have records.
+  static Set<DurationKind> kinds(Database db) {
+    return {
+      for (var row in db.select("select distinct kind from duration_records;"))
+        DurationKind.fromValue(row['kind'] as int),
+    };
+  }
+
   static void clear(Database db) {
     db.execute("delete from duration_records;");
   }
@@ -187,10 +211,28 @@ class DurationRecords with ChangeNotifier {
     });
   }
 
-  /// Oldest first.
+  /// What the records of [kind] add up to in [range] at [now] (see
+  /// [computeStats]). Only the records of the range are read.
+  KindStats stats(DurationKind kind, StatsRange range, {DateTime? now}) {
+    now ??= DateTime.now();
+    var db = _db;
+    var records = db == null
+        ? const <DurationRecord>[]
+        : DurationRecordTable.of(db, kind, from: rangeStart(range, now));
+    return computeStats(records, kind: kind, range: range, now: now);
+  }
+
+  /// Every record, oldest first.
+  @visibleForTesting
   List<DurationRecord> all() {
     var db = _db;
     return db == null ? const [] : DurationRecordTable.all(db);
+  }
+
+  /// The kinds that have records; empty when there are none.
+  Set<DurationKind> kinds() {
+    var db = _db;
+    return db == null ? const {} : DurationRecordTable.kinds(db);
   }
 
   /// 清空统计.

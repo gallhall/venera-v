@@ -15,11 +15,12 @@ class ReadingStatsPage extends StatefulWidget {
 }
 
 class _ReadingStatsPageState extends State<ReadingStatsPage> {
-  var records = DurationRecords().all();
+  /// The kinds that have records.
+  var kinds = DurationRecords().kinds();
 
   /// Reading or watching from a ranking entry adds records meanwhile.
   void reload() {
-    if (mounted) setState(() => records = DurationRecords().all());
+    if (mounted) setState(() => kinds = DurationRecords().kinds());
   }
 
   @override
@@ -37,8 +38,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
   StatsRange range = StatsRange.week;
 
   late DurationKind kind =
-      records.any((r) => r.kind == DurationKind.anime) &&
-          !records.any((r) => r.kind == DurationKind.comic)
+      kinds.contains(DurationKind.anime) && !kinds.contains(DurationKind.comic)
       ? DurationKind.anime
       : DurationKind.comic;
 
@@ -59,12 +59,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
 
   @override
   Widget build(BuildContext context) {
-    var stats = computeStats(
-      records,
-      kind: kind,
-      range: range,
-      now: DateTime.now(),
-    );
+    var stats = DurationRecords().stats(kind, range);
     return Scaffold(
       body: AppContentWidth(
         child: SmoothCustomScrollView(
@@ -75,7 +70,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                 IconButton(
                   tooltip: 'Clear Statistics'.tl,
                   icon: const Icon(Icons.delete_sweep_outlined),
-                  onPressed: records.isEmpty ? null : clear,
+                  onPressed: kinds.isEmpty ? null : clear,
                 ),
               ],
             ),
@@ -85,7 +80,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                 hasScrollBody: false,
                 child: AppEmptyView(
                   icon: Icons.insights_outlined,
-                  text: records.isEmpty
+                  text: kinds.isEmpty
                       ? 'No records yet. Time spent reading and watching is recorded from now on.'
                             .tl
                       : 'Nothing in this period'.tl,
