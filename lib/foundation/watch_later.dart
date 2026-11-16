@@ -93,16 +93,44 @@ class WatchLaterItem implements Comic {
   int get hashCode => Object.hash(id, type);
 }
 
-/// The rows of the 稍后看 list, a table of `local_favorite.db` so that it
-/// travels with the favorites when data is exported or synced.
+/// The 稍后看 list: a table of `local_favorite.db`, so that it travels with
+/// the favorites when data is exported or synced. The local favorites
+/// attach it whenever they open the file.
 ///
-/// Anime are kept as their Bangumi subject: a source work bound to one is
-/// added as the subject, and starting it from any source bound to the
-/// subject takes the subject off.
-class WatchLaterStore {
-  WatchLaterStore(this._db, {WorkSubject? subjects})
-      : _subjects = subjects ?? WorkSubject() {
-    _db.execute('''
+/// Works are kept under their 代表条目 key ([WorkSubject.key]): anime as
+/// their subject, so a work bound to a subject is added as the subject, and
+/// removing any work bound to it removes it, as well as works of that
+/// subject added before they were bound.
+class WatchLater with ChangeNotifier {
+  WatchLater._() : _subjects = null;
+
+  /// A list on [db] of its own, for tests.
+  @visibleForTesting
+  WatchLater.on(Database db, {WorkSubject? subjects}) : _subjects = subjects {
+    _open(db);
+  }
+
+  static final WatchLater _instance = WatchLater._();
+
+  factory WatchLater() => _instance;
+
+  /// Not a favorites folder, though every other table of the file is one.
+  static const table = '__watch_later';
+
+  Database? _db;
+
+  final WorkSubject? _subjects;
+
+  WorkSubject get _subject => _subjects ?? WorkSubject();
+
+  /// Called by the local favorites with the database they opened.
+  void attach(Database db) {
+    _open(db);
+    _changed();
+  }
+
+  void _open(Database db) {
+    db.execute('''
       create table if not exists "$table" (
         id text not null,
         type int not null,
@@ -113,31 +141,33 @@ class WatchLaterStore {
         primary key (id, type)
       );
     ''');
+    _db = db;
   }
 
-  /// Not a favorites folder, though every other table of the file is one.
-  static const table = '__watch_later';
-
-  final Database _db;
-
-  final WorkSubject _subjects;
+  /// Cached: most works started are not on the list.
+  int? _count;
 
   /// Newest first.
-  List<WatchLaterItem> all({int? limit}) => _db
-      .select(
-        'select * from "$table" order by time desc'
-        '${limit == null ? '' : ' limit $limit'};',
-      )
-      .map(WatchLaterItem.fromRow)
-      .toList();
+  List<WatchLaterItem> all({int? limit}) {
+    var db = _db;
+    if (db == null) return [];
+    return db
+        .select(
+          'select * from "$table" order by time desc'
+          '${limit == null ? '' : ' limit $limit'};',
+        )
+        .map(WatchLaterItem.fromRow)
+        .toList();
+  }
 
-  int count() => _db.select('select count(*) from "$table";').first[0] as int;
+  int get count => _count ??=
+      _db?.select('select count(*) from "$table";').first[0] as int? ?? 0;
 
   /// [item] as it is kept: as its subject when it is bound to one.
-  WatchLaterItem normalize(WatchLaterItem item) {
-    var (id, type) = _subjects.key(item.sourceKey, item.id);
+  WatchLaterItem _normalize(WatchLaterItem item) {
+    var (id, type) = _subject.key(item.sourceKey, item.id);
     if (id == item.id && type == item.type) return item;
-    var binding = _subjects.of(item.sourceKey, item.id)?.binding;
+    var binding = _subject.of(item.sourceKey, item.id)?.binding;
     if (binding == null) {
       // A subject given by its bare number.
       return WatchLaterItem(
@@ -158,29 +188,28 @@ class WatchLaterStore {
     );
   }
 
-  /// The keys the work may be kept under: as itself, added before it was
-  /// bound, and as its subject.
-  List<(String, ComicType)> _keys(String id, ComicType type) {
-    var key = normalize(WatchLaterItem(id: id, type: type, title: ''));
-    return [(id, type), if (key.id != id) (key.id, key.type)];
+  /// Whether the work is on the list: as itself (added before it was
+  /// bound) or as its subject.
+  bool contains(String id, ComicType type) {
+    var db = _db;
+    if (db == null || count == 0) return false;
+    var key = _normalize(WatchLaterItem(id: id, type: type, title: ''));
+    return [(id, type), if (key.id != id) (key.id, key.type)].any(
+      (k) => db.select(
+        'select 1 from "$table" where id = ? and type = ?;',
+        [k.$1, k.$2.value],
+      ).isNotEmpty,
+    );
   }
 
-  bool contains(String id, ComicType type) => _keys(id, type).any(
-        (k) => _db.select(
-          'select 1 from "$table" where id = ? and type = ?;',
-          [k.$1, k.$2.value],
-        ).isNotEmpty,
-      );
-
   /// Adds [item], or moves it to the top when it is there.
-  WatchLaterItem add(WatchLaterItem item) {
-    item = normalize(item);
-    _insert(item);
-    return item;
+  void add(WatchLaterItem item) {
+    _insert(_normalize(item));
+    _changed();
   }
 
   void _insert(WatchLaterItem item) {
-    _db.execute(
+    _db?.execute(
       'insert or replace into "$table" (id, type, title, subtitle, cover, time) '
       'values (?, ?, ?, ?, ?, ?);',
       [
@@ -194,110 +223,43 @@ class WatchLaterStore {
     );
   }
 
-  /// Puts back removed [items] as they were.
-  void restore(Iterable<WatchLaterItem> items) {
-    for (var item in items) {
-      _insert(item);
-    }
-  }
-
-  /// Removes the entry of the work and of its subject; the removed ones.
+  /// Takes work [id] of [type] off the list, by hand or when reading it
+  /// started (see 阅读活动): the work, its subject, and works added before
+  /// they were bound to that subject. What was taken off, to offer to undo.
   List<WatchLaterItem> remove(String id, ComicType type) {
-    var removed = <WatchLaterItem>[];
-    for (var (id, type) in _keys(id, type)) {
-      var rows = _db.select(
-        'select * from "$table" where id = ? and type = ?;',
-        [id, type.value],
-      );
-      if (rows.isEmpty) continue;
-      _db.execute(
-        'delete from "$table" where id = ? and type = ?;',
-        [id, type.value],
-      );
-      removed.add(WatchLaterItem.fromRow(rows.first));
-    }
+    if (_db == null || count == 0) return const [];
+    var key = _normalize(WatchLaterItem(id: id, type: type, title: ''));
+    var removed = all().where((e) {
+      var k = _normalize(e);
+      return k.id == key.id && k.type == key.type;
+    }).toList();
+    if (removed.isEmpty) return removed;
+    _delete(removed);
+    _changed();
     return removed;
   }
 
-  /// Removes what starting work [id] of [type] stands for: the work, its
-  /// subject, and works added before they were bound to that subject.
-  List<WatchLaterItem> removeStarted(String id, ComicType type) {
-    var key = normalize(WatchLaterItem(id: id, type: type, title: ''));
-    var removed = all()
-        .where((e) {
-          var k = normalize(e);
-          return k.id == key.id && k.type == key.type;
-        })
-        .toList();
-    delete(removed);
-    return removed;
+  /// Removes these rows exactly, as picked in the list.
+  void removeItems(Iterable<WatchLaterItem> items) {
+    _delete(items);
+    _changed();
   }
 
-  /// Deletes the rows of [items] as they are kept.
-  void delete(Iterable<WatchLaterItem> items) {
+  void _delete(Iterable<WatchLaterItem> items) {
     for (var e in items) {
-      _db.execute(
+      _db?.execute(
         'delete from "$table" where id = ? and type = ?;',
         [e.id, e.type.value],
       );
     }
   }
-}
 
-/// The 稍后看 list of the app, on the database of the local favorites,
-/// which attaches it whenever it opens the file.
-class WatchLater with ChangeNotifier {
-  WatchLater._();
-
-  static final WatchLater _instance = WatchLater._();
-
-  factory WatchLater() => _instance;
-
-  WatchLaterStore? _store;
-
-  void attach(Database db) {
-    _store = WatchLaterStore(db);
-    _changed();
-  }
-
-  /// Cached: most works started are not on the list.
-  int? _count;
-
-  List<WatchLaterItem> all({int? limit}) => _store?.all(limit: limit) ?? [];
-
-  int get count => _count ??= _store?.count() ?? 0;
-
-  bool contains(String id, ComicType type) =>
-      _store?.contains(id, type) ?? false;
-
-  void add(WatchLaterItem item) {
-    _store?.add(item);
-    _changed();
-  }
-
-  List<WatchLaterItem> remove(String id, ComicType type) {
-    var removed = _store?.remove(id, type) ?? [];
-    if (removed.isNotEmpty) _changed();
-    return removed;
-  }
-
-  void removeAll(Iterable<WatchLaterItem> items) {
-    _store?.delete(items);
-    _changed();
-  }
-
+  /// Puts back removed [items] as they were.
   void restore(Iterable<WatchLaterItem> items) {
-    _store?.restore(items);
+    for (var item in items) {
+      _insert(item);
+    }
     _changed();
-  }
-
-  /// Reading or playing work [id] of [type] started (see 阅读活动): takes
-  /// it off the list. What was taken off, to offer to undo it.
-  List<WatchLaterItem> started(String id, ComicType type) {
-    if (_store == null || count == 0) return const [];
-    var removed = _store!.removeStarted(id, type);
-    if (removed.isNotEmpty) _changed();
-    return removed;
   }
 
   void _changed() {

@@ -22,7 +22,7 @@ void main() {
   }
   late Database db;
   late Map<String, BangumiBinding> bindings;
-  late WatchLaterStore store;
+  late WatchLater store;
 
   final source = ComicType.fromKey('anime_source');
   final other = ComicType.fromKey('other_source');
@@ -54,7 +54,7 @@ void main() {
   setUp(() {
     db = sqlite3.openInMemory();
     bindings = {};
-    store = WatchLaterStore(
+    store = WatchLater.on(
       db,
       subjects: WorkSubject(
         bindings: (sourceKey, id) =>
@@ -72,11 +72,11 @@ void main() {
 
     expect(store.all().map((e) => e.id), ['2', '3', '1']);
     expect(store.all(limit: 2).map((e) => e.id), ['2', '3']);
-    expect(store.count(), 3);
+    expect(store.count, 3);
     var tables = db
         .select("select name from sqlite_master where type = 'table';")
         .map((e) => e['name']);
-    expect(tables, [WatchLaterStore.table]);
+    expect(tables, [WatchLater.table]);
   });
 
   test('adding again keeps one entry and moves it to the top', () {
@@ -88,21 +88,21 @@ void main() {
     expect(store.all().first.title, 'New');
     // The same id of another source is another work.
     store.add(item('1', source, time: 4));
-    expect(store.count(), 3);
+    expect(store.count, 3);
   });
 
   test('a source work bound to a subject is kept as the subject', () {
     bindings['${source.value}/a'] = bind(42);
     bindings['${other.value}/b'] = bind(42);
 
-    var kept = store.add(item('a', source, time: 1));
+    store.add(item('a', source, time: 1));
     store.add(item('b', other, time: 2));
 
+    var kept = store.all().single;
     expect(kept.id, 'bangumi:42');
     expect(kept.type, ComicType.bangumi);
     expect(kept.title, '条目 42');
     expect(kept.cover, 'https://lain.bgm.tv/42.jpg');
-    expect(store.all(), [kept]);
     expect(store.contains('a', source), isTrue);
     expect(store.contains('b', other), isTrue);
     expect(store.contains('bangumi:42', ComicType.bangumi), isTrue);
@@ -116,7 +116,7 @@ void main() {
     expect(store.remove('1', comics).map((e) => e.id), ['1']);
     expect(store.remove('1', comics), isEmpty);
     expect(store.remove('a', source).map((e) => e.id), ['bangumi:42']);
-    expect(store.count(), 0);
+    expect(store.count, 0);
   });
 
   test('removes a work added before it was bound', () {
@@ -138,14 +138,14 @@ void main() {
     expect(store.all().last.time, DateTime.fromMillisecondsSinceEpoch(5));
   });
 
-  group('starting a work', () {
+  group('removing a work, by hand or when it starts', () {
     test('removes the work itself only', () {
       store.add(item('1', comics));
       store.add(item('2', comics));
 
-      expect(store.removeStarted('1', comics).map((e) => e.id), ['1']);
+      expect(store.remove('1', comics).map((e) => e.id), ['1']);
       expect(store.all().map((e) => e.id), ['2']);
-      expect(store.removeStarted('1', comics), isEmpty);
+      expect(store.remove('1', comics), isEmpty);
     });
 
     test('from another source bound to the subject removes the subject', () {
@@ -153,10 +153,10 @@ void main() {
       bindings['${other.value}/b'] = bind(42);
       store.add(item('a', source));
 
-      var removed = store.removeStarted('b', other);
+      var removed = store.remove('b', other);
 
       expect(removed.map((e) => e.id), ['bangumi:42']);
-      expect(store.count(), 0);
+      expect(store.count, 0);
     });
 
     test('as the subject removes works added before they were bound', () {
@@ -164,11 +164,21 @@ void main() {
       store.add(item('c', other, time: 2));
       bindings['${source.value}/a'] = bind(42);
 
-      var removed = store.removeStarted('bangumi:42', ComicType.bangumi);
+      var removed = store.remove('bangumi:42', ComicType.bangumi);
 
       expect(removed.map((e) => e.id), ['a']);
       expect(store.all().map((e) => e.id), ['c']);
     });
+  });
+
+  test('removes the rows picked in the list exactly', () {
+    bindings['${source.value}/a'] = bind(42);
+    store.add(item('1', comics, time: 1));
+    store.add(item('a', source, time: 2));
+
+    store.removeItems([store.all().first]);
+
+    expect(store.all().map((e) => e.id), ['1']);
   });
 
   test('a Bangumi tile is kept by the subject history id', () {

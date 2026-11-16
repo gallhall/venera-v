@@ -61,7 +61,7 @@ class ReadingActivity {
        _episode = position,
        _signals = null,
        _onRemoved = onWatchLaterRemoved,
-       _takeOff = takeOffWatchLater ?? WatchLater().started,
+       _takeOff = takeOffWatchLater ?? WatchLater().remove,
        _save = save ?? DurationRecords().add,
        _now = now ?? DateTime.now,
        _kind = DurationKind.comic {
@@ -83,7 +83,7 @@ class ReadingActivity {
        _episode = episode,
        _signals = signals,
        _onRemoved = onWatchLaterRemoved,
-       _takeOff = takeOffWatchLater ?? WatchLater().started,
+       _takeOff = takeOffWatchLater ?? WatchLater().remove,
        _save = save ?? DurationRecords().add,
        _now = now ?? DateTime.now,
        _kind = DurationKind.anime,
