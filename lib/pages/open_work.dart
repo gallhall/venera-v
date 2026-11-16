@@ -7,6 +7,10 @@ import 'package:venera/pages/comic_details_page/comic_page.dart';
 /// Opens work [id] of source [sourceKey] from a list (history, 稍后看,
 /// statistics) where [WorkSubject.route] says: anime on its subject page,
 /// anything else on its own page.
+///
+/// [animeSubject] is the subject already known to stand for the anime, such
+/// as the one a 时长记录 kept: it is opened whatever the work's current
+/// 绑定, or even when its source is gone.
 void openWork({
   required String sourceKey,
   required String id,
@@ -14,10 +18,14 @@ void openWork({
   String cover = '',
   ImageProvider? coverProvider,
   int? heroID,
+  int? animeSubject,
   WorkSubject? subjects,
 }) {
   var context = App.mainNavigatorKey?.currentContext;
-  switch ((subjects ?? WorkSubject()).route(sourceKey, id)) {
+  var route = animeSubject != null
+      ? SubjectRoute(animeSubject)
+      : (subjects ?? WorkSubject()).route(sourceKey, id);
+  switch (route) {
     case SubjectRoute(:var subjectId, title: var subjectTitle):
       context?.to(
         () => BangumiSubjectPage(

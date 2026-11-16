@@ -114,7 +114,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                   body: Column(
                     children: [
                       for (var (i, w) in stats.ranking.indexed)
-                        _RankingTile(rank: i + 1, total: w),
+                        _RankingTile(rank: i + 1, total: w, kind: kind),
                     ],
                   ),
                 ),
@@ -325,16 +325,24 @@ class _BarChart extends StatelessWidget {
 }
 
 class _RankingTile extends StatelessWidget {
-  const _RankingTile({required this.rank, required this.total});
+  const _RankingTile({
+    required this.rank,
+    required this.total,
+    required this.kind,
+  });
 
   final int rank;
   final WorkTotal total;
+  final DurationKind kind;
 
   void open() => openWork(
     sourceKey: total.work.type.sourceKey,
     id: total.work.id,
     title: total.work.title,
     cover: total.work.cover,
+    // Anime are ranked by the subject their records kept; a comic's is a
+    // book, read from the comic's own page.
+    animeSubject: kind == DurationKind.anime ? total.work.subjectId : null,
   );
 
   @override
