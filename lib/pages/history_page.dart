@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/bangumi/bangumi.dart';
-import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/history_filter.dart';
-import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
-import 'package:venera/pages/comic_details_page/comic_page.dart';
 import 'package:venera/pages/reading_stats_page.dart';
+import 'package:venera/pages/open_work.dart';
 import 'package:venera/utils/translations.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -121,34 +118,14 @@ class _HistoryPageState extends State<HistoryPage> {
   /// Opens [h]: a video linked to a Bangumi anime opens its subject page,
   /// where its source can be picked, like a Bangumi history entry; anything
   /// else its details page.
-  void openHistory(History h, int heroID) {
-    var binding = ComicSource.find(h.sourceKey)?.isVideoSource == true
-        ? BangumiManager().bindingOf(h.sourceKey, h.id)
-        : null;
-    var context = App.mainNavigatorKey?.currentContext;
-    if (binding == null || binding.isBook) {
-      context?.to(
-        () => ComicPage(
-          id: h.id,
-          sourceKey: h.sourceKey,
-          cover: h.cover,
-          coverProvider: comicCoverProvider(h),
-          title: h.title,
-          heroID: heroID,
-        ),
-      );
-      return;
-    }
-    context?.to(
-      () => BangumiSubjectPage(
-        subjectId: binding.subjectId,
+  void openHistory(History h, int heroID) => openWork(
+        sourceKey: h.sourceKey,
+        id: h.id,
+        title: h.title,
+        cover: h.cover,
+        coverProvider: comicCoverProvider(h),
         heroID: heroID,
-        initialCover: h.cover,
-        initialCoverProvider: comicCoverProvider(h),
-        initialTitle: binding.displayName,
-      ),
-    );
-  }
+      );
 
   void _refreshHistory(History comic) async {
     var result = await HistoryManager().refreshHistoryInfo(comic);

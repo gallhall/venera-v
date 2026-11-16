@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/bangumi/bangumi_playback.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/reading_stats.dart';
-import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
-import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/open_work.dart';
 import 'package:venera/utils/translations.dart';
 
 /// 统计: what the 时长记录 add up to, comics and anime apart.
@@ -116,7 +114,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                   body: Column(
                     children: [
                       for (var (i, w) in stats.ranking.indexed)
-                        _RankingTile(rank: i + 1, total: w, kind: kind),
+                        _RankingTile(rank: i + 1, total: w),
                     ],
                   ),
                 ),
@@ -327,47 +325,17 @@ class _BarChart extends StatelessWidget {
 }
 
 class _RankingTile extends StatelessWidget {
-  const _RankingTile({
-    required this.rank,
-    required this.total,
-    required this.kind,
-  });
+  const _RankingTile({required this.rank, required this.total});
 
   final int rank;
   final WorkTotal total;
-  final DurationKind kind;
 
-  void open() {
-    var work = total.work;
-    var context = App.mainNavigatorKey?.currentContext;
-    // A comic bound to a Bangumi book is read from its details page; only
-    // anime go to the subject page.
-    var subjectId = kind != DurationKind.anime
-        ? null
-        : work.subjectId ??
-              (work.type.isBangumi
-                  ? bangumiSubjectIdFromHistory(work.id)
-                  : null);
-    if (subjectId != null) {
-      context?.to(
-        () => BangumiSubjectPage(
-          subjectId: subjectId,
-          initialCover: work.cover,
-          initialTitle: work.title,
-        ),
-      );
-      return;
-    }
-    var sourceKey = work.type.sourceKey;
-    context?.to(
-      () => ComicPage(
-        id: work.id,
-        sourceKey: sourceKey,
-        cover: work.cover,
-        title: work.title,
-      ),
-    );
-  }
+  void open() => openWork(
+    sourceKey: total.work.type.sourceKey,
+    id: total.work.id,
+    title: total.work.title,
+    cover: total.work.cover,
+  );
 
   @override
   Widget build(BuildContext context) {

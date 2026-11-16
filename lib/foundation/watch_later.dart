@@ -1,7 +1,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
-import 'package:venera/foundation/bangumi/bangumi.dart';
+import 'package:venera/foundation/bangumi/work_subject.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 
@@ -24,17 +24,12 @@ class WatchLaterItem implements Comic {
         cover = row['cover'] ?? '',
         time = DateTime.fromMillisecondsSinceEpoch(row['time'] ?? 0);
 
-  /// [comic] from a tile or page; a Bangumi subject by its history id,
-  /// `bangumi:<subject>`, as everywhere it is kept.
+  /// [comic] from a tile or page. The store keeps it under its 代表条目
+  /// key (see [WorkSubject.key]).
   factory WatchLaterItem.fromComic(Comic comic, {String? subtitle}) {
     var type = ComicType.fromKey(comic.sourceKey);
-    var id = comic.id;
-    if (type.isBangumi && bangumiSubjectIdFromHistory(id) == null) {
-      var subjectId = int.tryParse(id);
-      if (subjectId != null && subjectId > 0) id = bangumiHistoryId(subjectId);
-    }
     return WatchLaterItem(
-      id: id,
+      id: WorkSubject.canonicalId(comic.sourceKey, comic.id),
       type: type,
       title: comic.title,
       subtitle: subtitle ?? comic.subtitle ?? '',
@@ -98,19 +93,6 @@ class WatchLaterItem implements Comic {
   int get hashCode => Object.hash(id, type);
 }
 
-/// The Bangumi subject a source work is bound to, if it stands for it: an
-/// anime of a video source; null for anything else.
-typedef WatchLaterSubjectOf = BangumiBinding? Function(
-  String sourceKey,
-  String id,
-);
-
-BangumiBinding? _boundSubject(String sourceKey, String id) {
-  if (ComicSource.find(sourceKey)?.isVideoSource != true) return null;
-  var binding = BangumiManager().bindingOf(sourceKey, id);
-  return binding == null || binding.isBook ? null : binding;
-}
-
 /// The rows of the 稍后看 list, a table of `local_favorite.db` so that it
 /// travels with the favorites when data is exported or synced.
 ///
@@ -118,8 +100,8 @@ BangumiBinding? _boundSubject(String sourceKey, String id) {
 /// added as the subject, and starting it from any source bound to the
 /// subject takes the subject off.
 class WatchLaterStore {
-  WatchLaterStore(this._db, {WatchLaterSubjectOf subjectOf = _boundSubject})
-      : _subjectOf = subjectOf {
+  WatchLaterStore(this._db, {WorkSubject? subjects})
+      : _subjects = subjects ?? WorkSubject() {
     _db.execute('''
       create table if not exists "$table" (
         id text not null,
@@ -138,7 +120,7 @@ class WatchLaterStore {
 
   final Database _db;
 
-  final WatchLaterSubjectOf _subjectOf;
+  final WorkSubject _subjects;
 
   /// Newest first.
   List<WatchLaterItem> all({int? limit}) => _db
@@ -153,12 +135,23 @@ class WatchLaterStore {
 
   /// [item] as it is kept: as its subject when it is bound to one.
   WatchLaterItem normalize(WatchLaterItem item) {
-    if (item.type.isBangumi) return item;
-    var binding = _subjectOf(item.sourceKey, item.id);
-    if (binding == null) return item;
+    var (id, type) = _subjects.key(item.sourceKey, item.id);
+    if (id == item.id && type == item.type) return item;
+    var binding = _subjects.of(item.sourceKey, item.id)?.binding;
+    if (binding == null) {
+      // A subject given by its bare number.
+      return WatchLaterItem(
+        id: id,
+        type: type,
+        title: item.title,
+        subtitle: item.subtitle,
+        cover: item.cover,
+        time: item.time,
+      );
+    }
     return WatchLaterItem(
-      id: bangumiHistoryId(binding.subjectId),
-      type: ComicType.bangumi,
+      id: id,
+      type: type,
       title: binding.displayName.isEmpty ? item.title : binding.displayName,
       cover: binding.image.isEmpty ? item.cover : binding.image,
       time: item.time,

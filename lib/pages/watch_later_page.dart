@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
-import 'package:venera/foundation/bangumi/bangumi.dart';
-import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/watch_later.dart';
-import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
-import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/open_work.dart';
 import 'package:venera/utils/translations.dart';
 
 /// Adds [item] to 稍后看, or takes it off when it is there.
@@ -39,42 +36,14 @@ void showWatchLaterStartedToast(List<WatchLaterItem> removed) {
 
 /// Opens [item] like a history entry: a Bangumi subject, or an anime bound
 /// to one, its subject page; anything else its details page.
-void openWatchLater(WatchLaterItem item, int heroID) {
-  var context = App.mainNavigatorKey?.currentContext;
-  int? subjectId;
-  String? title;
-  if (item.type.isBangumi) {
-    subjectId = bangumiSubjectIdFromHistory(item.id);
-  } else if (ComicSource.find(item.sourceKey)?.isVideoSource == true) {
-    var binding = BangumiManager().bindingOf(item.sourceKey, item.id);
-    if (binding != null && !binding.isBook) {
-      subjectId = binding.subjectId;
-      title = binding.displayName;
-    }
-  }
-  if (subjectId != null) {
-    context?.to(
-      () => BangumiSubjectPage(
-        subjectId: subjectId!,
-        heroID: heroID,
-        initialCover: item.cover,
-        initialCoverProvider: comicCoverProvider(item),
-        initialTitle: title ?? item.title,
-      ),
-    );
-    return;
-  }
-  context?.to(
-    () => ComicPage(
-      id: item.id,
+void openWatchLater(WatchLaterItem item, int heroID) => openWork(
       sourceKey: item.sourceKey,
+      id: item.id,
+      title: item.title,
       cover: item.cover,
       coverProvider: comicCoverProvider(item),
-      title: item.title,
       heroID: heroID,
-    ),
-  );
-}
+    );
 
 class WatchLaterPage extends StatefulWidget {
   const WatchLaterPage({super.key});
