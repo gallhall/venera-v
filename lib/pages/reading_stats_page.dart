@@ -100,7 +100,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                   body: Column(
                     children: [
                       for (var (i, w) in stats.ranking.indexed)
-                        _RankingTile(rank: i + 1, total: w),
+                        _RankingTile(rank: i + 1, total: w, kind: kind),
                     ],
                   ),
                 ),
@@ -311,17 +311,27 @@ class _BarChart extends StatelessWidget {
 }
 
 class _RankingTile extends StatelessWidget {
-  const _RankingTile({required this.rank, required this.total});
+  const _RankingTile({
+    required this.rank,
+    required this.total,
+    required this.kind,
+  });
 
   final int rank;
   final WorkTotal total;
+  final DurationKind kind;
 
   void open() {
     var work = total.work;
     var context = App.mainNavigatorKey?.currentContext;
-    var subjectId =
-        work.subjectId ??
-        (work.type.isBangumi ? bangumiSubjectIdFromHistory(work.id) : null);
+    // A comic bound to a Bangumi book is read from its details page; only
+    // anime go to the subject page.
+    var subjectId = kind != DurationKind.anime
+        ? null
+        : work.subjectId ??
+              (work.type.isBangumi
+                  ? bangumiSubjectIdFromHistory(work.id)
+                  : null);
     if (subjectId != null) {
       context?.to(
         () => BangumiSubjectPage(
