@@ -20,6 +20,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/reading_activity.dart';
+import 'package:venera/foundation/bangumi/work_subject.dart';
 import 'package:venera/foundation/video/episode_playback_signals.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
@@ -435,11 +436,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// The work recorded in 时长记录: the one of the history.
   DurationWork get durationWork {
     var h = history;
-    var subjectId = bangumi?.subject.id ?? linkedVideo?.subjectId;
-    if (subjectId == null) {
-      var binding = BangumiManager().bindingOf(sourceKey, details.id);
-      if (binding != null && !binding.isBook) subjectId = binding.subjectId;
-    }
+    var subjectId = bangumi?.subject.id ??
+        linkedVideo?.subjectId ??
+        WorkSubject().of(sourceKey, details.id)?.id;
     return DurationWork(id: h.id, type: h.type, title: h.title,
         cover: h.cover, subjectId: subjectId);
   }

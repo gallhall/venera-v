@@ -27,3 +27,4 @@ jobs:
           test/history_filter_test.dart
           test/reading_stats_test.dart
           test/reading_activity_test.dart
+          test/work_subject_test.dart

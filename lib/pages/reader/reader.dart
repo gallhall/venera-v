@@ -25,6 +25,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/reading_activity.dart';
+import 'package:venera/foundation/bangumi/work_subject.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/global_state.dart';
 import 'package:venera/foundation/history.dart';
@@ -243,13 +244,13 @@ class _ReaderState extends State<Reader>
   late final _activity = ReadingActivity.comic(
     onWatchLaterRemoved: showWatchLaterStartedToast,
     work: () {
-      var binding = BangumiManager().bindingOf(type.sourceKey, cid);
+      var subject = WorkSubject().of(type.sourceKey, cid);
       return DurationWork(
         id: cid,
         type: type,
         title: history?.title ?? widget.name,
         cover: history?.cover ?? '',
-        subjectId: binding?.subjectId,
+        subjectId: subject?.id,
       );
     },
     position: () => (ep: history?.ep ?? chapter, group: history?.group),

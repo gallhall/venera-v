@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/bangumi/bangumi_models.dart';
+import 'package:venera/foundation/bangumi/work_subject.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/watch_later.dart';
 
@@ -55,8 +56,10 @@ void main() {
     bindings = {};
     store = WatchLaterStore(
       db,
-      subjectOf: (sourceKey, id) =>
-          bindings['${ComicType.fromKey(sourceKey).value}/$id'],
+      subjects: WorkSubject(
+        bindings: (sourceKey, id) =>
+            bindings['${ComicType.fromKey(sourceKey).value}/$id'],
+      ),
     );
   });
 

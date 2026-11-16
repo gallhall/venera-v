@@ -80,14 +80,8 @@ String? validateFolderName(String newFolderName) {
 
 /// Bangumi anime are favorited under their history id, `bangumi:<subject>`,
 /// which opens the subject page.
-String _favoriteId(Comic comic) {
-  if (!ComicType.fromKey(comic.sourceKey).isBangumi ||
-      bangumiSubjectIdFromHistory(comic.id) != null) {
-    return comic.id;
-  }
-  var subjectId = int.tryParse(comic.id);
-  return subjectId == null ? comic.id : bangumiHistoryId(subjectId);
-}
+String _favoriteId(Comic comic) =>
+    WorkSubject.canonicalId(comic.sourceKey, comic.id);
 
 void addFavorite(List<Comic> comics) {
   var folders = LocalFavoritesManager().folderNames;
