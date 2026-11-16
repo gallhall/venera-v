@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart' show ChangeNotifier;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/image_provider/image_favorites_provider.dart';
 import 'package:venera/foundation/local.dart';
@@ -262,6 +263,7 @@ class HistoryManager with ChangeNotifier {
     if (!columns.any((element) => element["name"] == "chapter_group")) {
       _db.execute("alter table history add column chapter_group int;");
     }
+    DurationRecords().open(_db, _dbPath);
 
     notifyListeners();
     ImageFavoriteManager().init();
