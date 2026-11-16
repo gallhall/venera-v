@@ -2,6 +2,7 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/video/video_episode.dart';
+import 'package:venera/foundation/watch_later.dart';
 
 abstract interface class WatchHistoryStore {
   History? find(String id, ComicType type);
@@ -19,11 +20,13 @@ class _HistoryStore implements WatchHistoryStore {
   @override
   void add(History history, {bool notifyLater = false}) {
     HistoryManager().addHistory(history, notifyLater: notifyLater);
+    WatchLater().started(history.id, history.type);
   }
 
   @override
   void addAsync(History history) {
     HistoryManager().addHistoryAsync(history);
+    WatchLater().started(history.id, history.type);
   }
 
   @override

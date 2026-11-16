@@ -76,6 +76,18 @@ abstract mixin class _ComicPageActions {
     );
   }
 
+  bool get isWatchLater => WatchLater().contains(comic.id, comic.comicType);
+
+  void toggleWatchLater() {
+    watch_later.toggleWatchLater(WatchLaterItem(
+      id: comic.id,
+      type: comic.comicType,
+      title: comic.title,
+      subtitle: comic.subTitle ?? comic.uploader ?? '',
+      cover: comic.cover,
+    ));
+  }
+
   void quickFavorite() {
     var folder = appdata.settings['quickFavorite'];
     if (folder is! String) {
