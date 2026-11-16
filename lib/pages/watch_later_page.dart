@@ -106,8 +106,11 @@ class _WatchLaterPageState extends State<WatchLaterPage> {
     if (!mounted) return;
     setState(() {
       items = WatchLater().all();
+      // Leave multi-select only when the change took away the last
+      // selected item, not when nothing was selected yet.
+      var hadSelection = selected.isNotEmpty;
       selected.removeWhere((item, _) => !items.contains(item));
-      if (selected.isEmpty) multiSelectMode = false;
+      if (hadSelection && selected.isEmpty) multiSelectMode = false;
     });
   }
 

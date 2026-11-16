@@ -39,8 +39,9 @@ class _HistoryPageState extends State<HistoryPage> {
         // A refreshed title can stop matching the search: drop hidden ones
         // too, so a bulk delete never removes entries the user cannot see.
         final shown = shownComics.toSet();
+        final hadSelection = selectedComics.isNotEmpty;
         selectedComics.removeWhere((comic, _) => !shown.contains(comic));
-        if (selectedComics.isEmpty) {
+        if (hadSelection && selectedComics.isEmpty) {
           multiSelectMode = false;
         }
       }
