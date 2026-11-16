@@ -46,6 +46,19 @@ void main() {
     expect(run('1350234'), [comic]);
   });
 
+  test('digits apart in an id are not joined', () {
+    final split = _h('ep12-34', 'Split');
+    final real = _h('1234', 'Real');
+    expect(
+      filterHistories([split, real], query: '1234', isVideo: isVideo),
+      [real],
+    );
+    expect(
+      filterHistories([split, real], query: '34', isVideo: isVideo),
+      [split, real],
+    );
+  });
+
   test('digits still match titles', () {
     final numbered = _h('x', 'Room 350234');
     expect(

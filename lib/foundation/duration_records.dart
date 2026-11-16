@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/log.dart';
@@ -151,7 +152,8 @@ abstract final class DurationRecordTable {
 }
 
 /// The 时长记录 of `history.db`, opened with the history.
-class DurationRecords {
+/// Notifies when a record was written or the records were cleared.
+class DurationRecords with ChangeNotifier {
   DurationRecords._();
 
   static final instance = DurationRecords._();
@@ -177,16 +179,10 @@ class DurationRecords {
   Future<void> add(DurationRecord record) {
     var path = _path;
     if (path == null) return Future.value();
-    return _writing = _writing.then((_) {
-      return Isolate.run(() {
-        var db = openForIsolate(path, readOnly: false);
-        try {
-          DurationRecordTable.insert(db, record);
-        } finally {
-          db.dispose();
-        }
-      });
-    }).catchError((Object e, StackTrace s) {
+    return _writing = _writing
+        .then((_) => _insertInIsolate(path, record))
+        .then((_) => notifyListeners())
+        .catchError((Object e, StackTrace s) {
       Log.error('DurationRecord', 'Failed to write $record: $e', s);
     });
   }
@@ -201,7 +197,22 @@ class DurationRecords {
   void clear() {
     var db = _db;
     if (db != null) DurationRecordTable.clear(db);
+    notifyListeners();
   }
+}
+
+/// Built outside [DurationRecords.add], so the closure sent to the isolate
+/// holds only [path] and [record]: a closure made in a method may carry
+/// its whole context, with unsendable futures, along.
+Future<void> _insertInIsolate(String path, DurationRecord record) {
+  return Isolate.run(() {
+    var db = openForIsolate(path, readOnly: false);
+    try {
+      DurationRecordTable.insert(db, record);
+    } finally {
+      db.dispose();
+    }
+  });
 }
 
 typedef Now = DateTime Function();

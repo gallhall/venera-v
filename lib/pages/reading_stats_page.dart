@@ -19,6 +19,23 @@ class ReadingStatsPage extends StatefulWidget {
 class _ReadingStatsPageState extends State<ReadingStatsPage> {
   var records = DurationRecords().all();
 
+  /// Reading or watching from a ranking entry adds records meanwhile.
+  void reload() {
+    if (mounted) setState(() => records = DurationRecords().all());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    DurationRecords().addListener(reload);
+  }
+
+  @override
+  void dispose() {
+    DurationRecords().removeListener(reload);
+    super.dispose();
+  }
+
   StatsRange range = StatsRange.week;
 
   late DurationKind kind =
@@ -38,7 +55,6 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
       btnColor: context.colorScheme.error,
       onConfirm: () {
         DurationRecords().clear();
-        setState(() => records = DurationRecords().all());
       },
     );
   }

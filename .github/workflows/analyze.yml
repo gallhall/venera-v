@@ -17,3 +17,12 @@ jobs:
           architecture: x64
       - run: flutter pub get
       - uses: invertase/github-action-dart-analyzer@v1
+      # Tests of the features kept in SQLite (稍后看, 时长记录) and of the
+      # history search and statistics. They skip without libsqlite3.so.
+      - run: sudo apt-get install -y libsqlite3-dev
+      - run: >-
+          flutter test
+          test/watch_later_test.dart
+          test/duration_records_test.dart
+          test/history_filter_test.dart
+          test/reading_stats_test.dart
