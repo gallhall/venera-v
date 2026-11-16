@@ -19,6 +19,8 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/danmaku/danmaku_session.dart';
 import 'package:venera/foundation/duration_records.dart';
+import 'package:venera/foundation/reading_activity.dart';
+import 'package:venera/foundation/video/episode_playback_signals.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/bangumi/episode_correspondence.dart';
@@ -47,6 +49,7 @@ import 'package:venera/pages/video/anime4k_picker.dart';
 import 'package:venera/pages/video/bt_episode_list.dart';
 import 'package:venera/pages/bangumi/bangumi_play.dart';
 import 'package:venera/pages/bangumi/bangumi_panel.dart';
+import 'package:venera/pages/watch_later_page.dart' show showWatchLaterStartedToast;
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/utils/translations.dart';
 import 'package:venera/pages/bangumi/bangumi_sync_message.dart';
@@ -418,12 +421,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// Saves the progress while playing.
   Timer? historyTimer;
 
-  /// 时长记录, one per episode.
-  final durationTracker = WatchDurationTracker();
+  late final playbackSignals = EpisodePlaybackSignals(playback);
 
-  late final durationLifecycle = AppLifecycleListener(
-    onShow: () => durationTracker.foreground = true,
-    onHide: () => durationTracker.foreground = false,
+  /// 阅读活动: takes the work off 稍后看 when it starts playing and keeps
+  /// its 时长记录, one per episode.
+  late final activity = ReadingActivity.anime(
+    signals: playbackSignals,
+    work: () => durationWork,
+    episode: () => durationEpisode,
+    onWatchLaterRemoved: showWatchLaterStartedToast,
   );
 
   /// The work recorded in 时长记录: the one of the history.
@@ -476,7 +482,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void initState() {
     super.initState();
-    durationLifecycle;
+    activity;
     if (widget.startFullscreen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setFullscreen(true);
@@ -555,9 +561,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     playbackSubscriptions.clear();
     var token = ++listenerToken;
-    durationTracker
-      ..playing = p.isPlaying
-      ..buffering = p.isBuffering;
     void Function(T) ifActive<T>(void Function(T) f) {
       return (v) {
         if (mounted && token == listenerToken && identical(active, p)) {
@@ -579,7 +582,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.playing.listen(
         ifActive((playing) {
           refreshNowPlaying();
-          durationTracker.playing = playing;
           historyTimer?.cancel();
           if (playing) {
             watchProgress.playing();
@@ -599,15 +601,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       p.seeked.listen(ifActive((position) {
         refreshNowPlaying(position: position);
       })),
-      p.buffering.listen(ifActive((buffering) {
-        durationTracker.buffering = buffering;
-      })),
       p.position.listen(
         ifActive((position) {
-          durationTracker.position(position, duration,
-              inOutro: playInfo?.skips.any((s) =>
-                  s.type == VideoSkipType.outro && s.contains(position)) ??
-                  false);
           checkSkip(position);
           checkWatched(position);
         }),
@@ -617,7 +612,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void onStarted(PlaybackStarted event) {
     duration = event.duration;
-    durationTracker.started(durationWork, durationEpisode);
     refreshNowPlaying(position: openedAt);
     if (correspondence.memoryAt(current) case var line?) {
       Log.info('Video', 'Remember line "$line" for $sourceKey');
@@ -638,11 +632,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void playbackChanged() {
     if (!mounted) {
       return;
-    }
-    if (active == null) {
-      // The player is detached before it is paused or replaced, so its
-      // pause never reaches the tracker: loading is not watching.
-      durationTracker.playing = false;
     }
     if (playback.switching) {
       // The previous episode waits, paused, while another one is found.
@@ -723,6 +712,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     nowPlayingTimer?.cancel();
     unawaited(nowPlaying.dispose());
     playback.removeListener(playbackChanged);
+    activity.dispose();
+    playbackSignals.dispose();
     playback.dispose();
     historyTimer?.cancel();
     for (var s in playbackSubscriptions) {
@@ -735,8 +726,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     // Saved synchronously, so the details page sees it when it comes back.
     saveHistory(sync: true);
-    durationLifecycle.dispose();
-    durationTracker.end();
     player?.dispose();
     danmaku.removeListener(updateDanmakuControls);
     danmaku.dispose();

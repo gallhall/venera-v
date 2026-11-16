@@ -2,7 +2,6 @@ import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/video/video_episode.dart';
-import 'package:venera/foundation/watch_later.dart';
 
 abstract interface class WatchHistoryStore {
   History? find(String id, ComicType type);
@@ -12,17 +11,7 @@ abstract interface class WatchHistoryStore {
 }
 
 class _HistoryStore implements WatchHistoryStore {
-  _HistoryStore();
-
-  /// Works already taken off 稍后看 by this player: the history is saved
-  /// every few seconds, and an undone removal must stay undone.
-  final _started = <String>{};
-
-  void _start(History history) {
-    if (_started.add('${history.type.value}:${history.id}')) {
-      WatchLater().started(history.id, history.type);
-    }
-  }
+  const _HistoryStore();
 
   @override
   History? find(String id, ComicType type) => HistoryManager().find(id, type);
@@ -30,13 +19,11 @@ class _HistoryStore implements WatchHistoryStore {
   @override
   void add(History history, {bool notifyLater = false}) {
     HistoryManager().addHistory(history, notifyLater: notifyLater);
-    _start(history);
   }
 
   @override
   void addAsync(History history) {
     HistoryManager().addHistoryAsync(history);
-    _start(history);
   }
 
   @override
@@ -90,7 +77,7 @@ class SourceWatchProgress extends WatchProgress {
     BangumiWatchSync? sync,
     this.onSync,
   }) : _initialHistory = initialHistory,
-       store = store ?? _HistoryStore(),
+       store = store ?? const _HistoryStore(),
        _sync = sync ?? BangumiManager().onFinished;
 
   final String Function() sourceKey;

@@ -17,8 +17,6 @@ import 'package:venera/network/download_notification.dart';
 import 'package:venera/pages/comic_source_page.dart';
 import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/settings/settings_page.dart';
-import 'package:venera/pages/watch_later_page.dart';
-import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/utils/app_links.dart';
 import 'package:venera/utils/handle_text_share.dart';
 import 'package:venera/utils/opencc.dart';
@@ -83,7 +81,6 @@ Future<void> init() async {
     handleTextShare();
   }
   DownloadNotification.init().wait();
-  WatchLater.onStartedRemoved = showWatchLaterStartedToast;
   if (App.isAndroid) {
     try {
       await FlutterDisplayMode.setHighRefreshRate();

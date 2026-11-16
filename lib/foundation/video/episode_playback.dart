@@ -175,6 +175,12 @@ class EpisodePlayback extends ChangeNotifier {
   final bool Function() autoSwitch;
   final Duration Function() startupLimit;
   final void Function(EpisodeEvent event) onEvent;
+
+  final _events = StreamController<EpisodeEvent>.broadcast();
+
+  /// What [onEvent] gets, for others who follow the playback, such as the
+  /// 阅读活动. Delivered later than [onEvent], which may re-enter.
+  Stream<EpisodeEvent> get events => _events.stream;
   final EpisodeLookups lookups;
   final StreamOpener? opener;
   final StreamTimerFactory? timers;
@@ -303,6 +309,7 @@ class EpisodePlayback extends ChangeNotifier {
   void _emit(EpisodeEvent event) {
     if (!_disposed) {
       onEvent(event);
+      _events.add(event);
     }
   }
 
@@ -667,6 +674,7 @@ class EpisodePlayback extends ChangeNotifier {
       return;
     }
     _disposed = true;
+    unawaited(_events.close());
     _sessionEvents?.cancel();
     _session?.removeListener(_sessionChanged);
     unawaited(_session?.dispose());
