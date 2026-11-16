@@ -8,6 +8,7 @@ import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/history_filter.dart';
 import 'package:venera/pages/bangumi/bangumi_subject_page.dart';
 import 'package:venera/pages/comic_details_page/comic_page.dart';
+import 'package:venera/pages/reading_stats_page.dart';
 import 'package:venera/utils/translations.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -321,6 +322,11 @@ class _HistoryPageState extends State<HistoryPage> {
     ];
 
     List<Widget> normalActions = [
+      IconButton(
+        icon: const Icon(Icons.insights_outlined),
+        tooltip: 'Statistics'.tl,
+        onPressed: () => context.to(() => const ReadingStatsPage()),
+      ),
       IconButton(
         icon: const Icon(Icons.refresh),
         tooltip: 'Refresh All Histories'.tl,
