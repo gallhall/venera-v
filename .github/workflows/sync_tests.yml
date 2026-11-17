@@ -1,0 +1,33 @@
+name: "sync tests"
+# The sync Merger and canonical hashes must agree on every platform
+# (docs/sync/testing.md P14), so these pure tests run on all three CI hosts.
+on:
+  pull_request:
+    paths:
+      - "lib/foundation/sync/**"
+      - "test/sync/**"
+      - ".github/workflows/sync_tests.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "lib/foundation/sync/**"
+      - "test/sync/**"
+      - ".github/workflows/sync_tests.yml"
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version-file: pubspec.yaml
+      - run: flutter pub get
+      - run: flutter test test/sync/
