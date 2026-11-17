@@ -406,6 +406,29 @@ void main() {
       'Playback start timed out');
   });
 
+  test('a held startup watch waits until playback goes on, then has its '
+      'full time', () async {
+    create(limit: const Duration(seconds: 20));
+    await start();
+    clock.elapse(10);
+    // The app went to the background: the player is paused on purpose.
+    session.holdStartupWatch();
+    clock.elapse(60);
+    await _flush();
+    expect(session.active, isNotNull);
+    expect(engines.media.opens.length, 1);
+    // Back, and playing again: 20 seconds from now, not from the start.
+    session.resumeStartupWatch();
+    clock.elapse(19);
+    await _flush();
+    expect(session.active, isNotNull);
+    clock.elapse(1);
+    await _flush();
+    expect(session.active, isNull);
+    // Resuming twice does not arm it twice.
+    session.resumeStartupWatch();
+  });
+
   test('web startup keeps the configured 20 second limit', () async {
     create(limit: const Duration(seconds: 20));
     await start();

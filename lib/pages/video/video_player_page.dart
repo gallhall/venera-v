@@ -424,6 +424,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   late final playbackSignals = EpisodePlaybackSignals(playback);
 
+  /// Pauses, and stops loading ahead, when the app is left on a phone.
+  /// Android cuts the network of an app in the background about 5 s later
+  /// (there is no media foreground service); mpv, which loads ahead even
+  /// when paused, would then go through every remaining HLS segment,
+  /// failing each six times: thousands of log lines in a few seconds.
+  /// Loading resumes on coming back; playback stays paused.
+  late final backgroundPause = AppLifecycleListener(
+    onHide: () {
+      if (!App.isMobile) return;
+      var p = active;
+      // Not a stream that fails to start: auto source switching would
+      // reopen it, playing, while the user is away.
+      playback.holdStartupWatch();
+      p?.pause();
+      p?.holdBuffering(true);
+    },
+    onShow: () {
+      if (App.isMobile) active?.holdBuffering(false);
+    },
+  );
+
   /// 阅读活动: takes the work off 稍后看 when it starts playing and keeps
   /// its 时长记录, one per episode.
   late final activity = ReadingActivity.anime(
@@ -482,6 +503,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void initState() {
     super.initState();
     activity;
+    backgroundPause;
     if (widget.startFullscreen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setFullscreen(true);
@@ -583,6 +605,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           refreshNowPlaying();
           historyTimer?.cancel();
           if (playing) {
+            playback.resumeStartupWatch();
             watchProgress.playing();
             historyTimer = Timer.periodic(
               const Duration(seconds: 15),
@@ -711,6 +734,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     nowPlayingTimer?.cancel();
     unawaited(nowPlaying.dispose());
     playback.removeListener(playbackChanged);
+    backgroundPause.dispose();
     activity.dispose();
     playbackSignals.dispose();
     playback.dispose();
