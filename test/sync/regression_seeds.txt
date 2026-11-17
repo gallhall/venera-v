@@ -1,0 +1,2 @@
+# Seeds of merger_property_test.dart that once failed; every CI run repeats
+# them. One per line: "<seed>" or "copies:<seed>" for a run with identity copies.
