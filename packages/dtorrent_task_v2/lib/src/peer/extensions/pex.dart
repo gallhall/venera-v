@@ -62,7 +62,14 @@ mixin PEX {
   }
 
   void parsePEXDatas(Peer source, List<int> message) {
-    final datas = decode(Uint8List.fromList(message));
+    dynamic datas;
+    try {
+      datas = decode(Uint8List.fromList(message));
+    } catch (_) {
+      // A peer's malformed message names no peers; it must not escape the
+      // peer's event listener as an unhandled exception.
+      return;
+    }
     if (datas is! Map) return;
     _parseAdded(source, datas);
     _parseAdded(source, datas, 'added6', InternetAddressType.IPv6);

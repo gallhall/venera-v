@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'torrent_model.dart';
 import 'torrent_file_model.dart';
 import 'file_tree.dart';
+import 'torrent_text.dart';
 import 'torrent_version.dart';
 import '../file/file_attributes.dart';
 import 'package:logging/logging.dart';
@@ -65,10 +66,8 @@ class TorrentParser {
     String? name;
     if (nameRaw is String) {
       name = nameRaw;
-    } else if (nameRaw is Uint8List) {
-      name = String.fromCharCodes(nameRaw);
     } else if (nameRaw is List<int>) {
-      name = String.fromCharCodes(nameRaw);
+      name = decodeTorrentText(nameRaw);
     }
     if (name == null || name.isEmpty) {
       throw FormatException(
@@ -369,10 +368,8 @@ class TorrentParser {
         path = pathList.map((p) {
           if (p is String) {
             return p;
-          } else if (p is Uint8List) {
-            return String.fromCharCodes(p);
           } else if (p is List<int>) {
-            return String.fromCharCodes(p);
+            return decodeTorrentText(p);
           } else {
             return p.toString();
           }
