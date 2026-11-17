@@ -105,6 +105,56 @@ void main() {
     expect((await get()).$1.statusCode, 404);
   });
 
+  group('a socket lost in the background', () {
+    late TorrentLoopbackServer server;
+    late HttpClient client;
+    setUp(() {
+      server = TorrentLoopbackServer();
+      client = HttpClient()..findProxy = (_) => 'DIRECT';
+    });
+    tearDown(() async {
+      client.close(force: true);
+      await server.close();
+    });
+
+    Future<int> status(String url) async {
+      var response = await (await client.getUrl(Uri.parse(url))).close();
+      await response.drain<void>();
+      return response.statusCode;
+    }
+
+    test('revive binds again on the same port: handed-out URLs work', () async {
+      var url = await server.add(_Bytes());
+      expect(await status(url), 200);
+      await server.loseSocketSilently();
+      await expectLater(status(url), throwsA(isA<SocketException>()));
+      await server.revive();
+      expect(await status(url), 200);
+      // A live server is left alone.
+      await server.revive();
+      expect(await status(url), 200);
+    });
+
+    test('revive binds again after a loss the server was told of', () async {
+      var url = await server.add(_Bytes());
+      expect(await status(url), 200);
+      await server.loseSocketSilently(notice: true);
+      await expectLater(status(url), throwsA(isA<SocketException>()));
+      // Open torrents keep their URL and call no add().
+      await server.revive();
+      expect(await status(url), 200);
+    });
+
+    test('a socket closed with notice is bound again by the next add',
+        () async {
+      var first = await server.add(_Bytes());
+      await server.close();
+      var second = await server.add(_Bytes());
+      expect(await status(second), 200);
+      expect(Uri.parse(second).port, Uri.parse(first).port);
+    });
+  });
+
   test('headers go out before the first piece arrives', () async {
     var server = TorrentLoopbackServer();
     var pieces = StreamController<List<int>>();

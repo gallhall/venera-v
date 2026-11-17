@@ -144,6 +144,9 @@ class TorrentAnnounceTracker with EventsEmittable<TorrentAnnounceEvent> {
   }
 
   int get trackersNum => _trackers.length;
+
+  /// The tracker running for [url], if any.
+  Tracker? trackerOf(Uri url) => _trackers[url];
   InternetAddress? get externalIp {
     if (_externalIpByTracker.isEmpty) return null;
     return _externalIpByTracker.values.last;
@@ -304,6 +307,11 @@ class TorrentAnnounceTracker with EventsEmittable<TorrentAnnounceEvent> {
       {String event = eventStarted, bool force = false}) {
     if (isDisposed) return;
     var tracker = _trackers[url];
+    if (tracker != null && tracker.isDisposed) {
+      // Gave up or stopped earlier: asked again, it starts over.
+      _trackers.remove(url);
+      tracker = null;
+    }
     if (tracker == null) {
       tracker = _createTracker(url, infoHash);
       if (tracker == null) return;
@@ -338,10 +346,17 @@ class TorrentAnnounceTracker with EventsEmittable<TorrentAnnounceEvent> {
 
   /// Restart all trackers(which is record with this class instance , some of the trackers
   /// was removed because it can not access)
+  /// Restarts the tracker of [url]; false when there is none to restart,
+  /// including one that was disposed (for [runTracker] to make a new one).
   bool restartTracker(Uri url) {
     var tracker = _trackers[url];
-    tracker?.restart();
-    return tracker != null;
+    if (tracker == null) return false;
+    if (tracker.isDisposed) {
+      _trackers.remove(url);
+      return false;
+    }
+    unawaited(tracker.restart().catchError((Object _) => false));
+    return true;
   }
 
   void _fireAnnounceError(TrackerAnnounceErrorEvent event) {
