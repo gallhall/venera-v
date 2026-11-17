@@ -378,22 +378,45 @@ jobs:
         run: |
           bash .github/scripts/set_version.sh "${{ github.ref_name }}"
           if git diff --quiet; then
-            echo "master already has this version"
-            exit 0
+            echo "master already has this version: nothing to push"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "chore: version ${GITHUB_REF_NAME#v}"
+            git push
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: version ${GITHUB_REF_NAME#v}"
-          git push
-          # The app checks for updates in this pubspec.yaml through jsDelivr.
-          # Right after a push jsDelivr can still see the previous commit and
-          # cache the old file again: purge late, and twice.
+          # The app checks for updates in this pubspec.yaml through jsDelivr,
+          # which may still hold the previous version either way. Right after
+          # a push jsDelivr can still see the previous commit and cache the
+          # old file again: purge late, and twice.
           BRANCH="${{ github.event.repository.default_branch }}"
+          URL="https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml"
+          # jsDelivr answers 200 even when it did not purge: what happened is
+          # in the body (status, and per path throttled and per provider).
           purge() {
-            curl -s -o /dev/null -w "purge pubspec.yaml %{http_code}\n" --max-time 10 \
-              "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${BRANCH}/pubspec.yaml" || true
+            local body code
+            body=$(mktemp)
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 20 "$URL") || true
+            echo "jsDelivr purge of pubspec.yaml: HTTP ${code:-000}"
+            cat "$body"; echo
+            if [ "${code:-000}" != 200 ]; then
+              echo "::warning::jsDelivr purge failed: HTTP ${code:-000}"
+              return 1
+            fi
+            if ! jq -e '.status == "finished" and (.paths | length > 0) and
+                all(.paths[]; .throttled == false and ([.providers[]] | all))' \
+                "$body" > /dev/null; then
+              echo "::warning::jsDelivr purge did not go through (status, throttled or a provider failed): $(head -c 500 "$body")"
+              return 1
+            fi
+            echo "jsDelivr purge succeeded"
           }
+          purged=0
           sleep 30
-          purge
+          purge && purged=1
           sleep 120
-          purge
+          purge && purged=1
+          if [ "$purged" != 1 ]; then
+            echo "::error::Both jsDelivr purges failed: the app may offer the previous version until jsDelivr's cache expires"
+            exit 1
+          fi
