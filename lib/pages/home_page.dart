@@ -171,14 +171,11 @@ class _SyncDataWidget extends StatefulWidget {
   State<_SyncDataWidget> createState() => _SyncDataWidgetState();
 }
 
-class _SyncDataWidgetState extends State<_SyncDataWidget>
-    with WidgetsBindingObserver {
+class _SyncDataWidgetState extends State<_SyncDataWidget> {
   @override
   void initState() {
     super.initState();
     DataSync().addListener(update);
-    WidgetsBinding.instance.addObserver(this);
-    lastCheck = DateTime.now();
   }
 
   void update() {
@@ -191,26 +188,25 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
   void dispose() {
     super.dispose();
     DataSync().removeListener(update);
-    WidgetsBinding.instance.removeObserver(this);
   }
 
-  late DateTime lastCheck;
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) {
-      if (DateTime.now().difference(lastCheck) > const Duration(minutes: 10)) {
-        lastCheck = DateTime.now();
-        DataSync().downloadData();
-      }
-    }
+  /// Restoring replaces local data with the backup: only on confirmation.
+  void restore() {
+    showConfirmDialog(
+      context: context,
+      title: 'Download data'.tl,
+      content:
+          'Replace the data on this device with the full backup on WebDAV?'.tl,
+      onConfirm: () => DataSync().restore(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     Widget child;
-    if (!DataSync().isEnabled) {
+    // Manual upload and restore are there whenever an account is set,
+    // automatic backup or not.
+    if (!DataSync().isConfigured) {
       child = const SliverPadding(padding: EdgeInsets.zero);
     } else if (DataSync().isUploading || DataSync().isDownloading) {
       child = SliverToBoxAdapter(
@@ -280,9 +276,7 @@ class _SyncDataWidgetState extends State<_SyncDataWidget>
                 IconButton(
                   tooltip: 'Download data'.tl,
                   icon: const Icon(Icons.cloud_download_outlined),
-                  onPressed: () async {
-                    DataSync().downloadData();
-                  },
+                  onPressed: restore,
                 ),
               ],
             ),

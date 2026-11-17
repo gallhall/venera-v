@@ -52,7 +52,8 @@ class Appdata with Init {
       _isSavingData = false;
     }
     if (sync) {
-      DataSync().uploadData();
+      // Uploads only with automatic backup on.
+      DataSync().onDataChanged();
     }
   }
 

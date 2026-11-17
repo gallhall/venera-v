@@ -16,15 +16,15 @@ import 'package:venera/utils/translations.dart';
 
 import 'io.dart';
 
+/// The 完整备份 on WebDAV: a `.venera` snapshot of all data.
+///
+/// Restoring one replaces local data, so it only ever happens when the user
+/// asks for it ([downloadData] from a button). Uploading one happens on the
+/// user's request ([uploadData]) or, with automatic backup on, when data
+/// changes ([onDataChanged]); nothing else uploads.
 class DataSync with ChangeNotifier {
-  DataSync._() {
-    if (isEnabled) {
-      downloadData();
-    }
-    LocalFavoritesManager().addListener(onDataChanged);
-    ComicSourceManager().addListener(onDataChanged);
-    // 稍后看 lives in local_favorite.db but notifies on its own.
-    WatchLater().addListener(onDataChanged);
+  DataSync._() : _upload = null, _download = null {
+    _listen();
     if (App.isDesktop) {
       Future.delayed(const Duration(seconds: 1), () {
         var controller = WindowFrame.of(App.rootContext);
@@ -33,11 +33,36 @@ class DataSync with ChangeNotifier {
     }
   }
 
+  /// With [upload] and [download] standing in for the network.
+  @visibleForTesting
+  DataSync.forTest({
+    required Future<Res<bool>> Function() upload,
+    required Future<Res<bool>> Function() download,
+  }) : _upload = upload, _download = download {
+    _listen();
+  }
+
+  final Future<Res<bool>> Function()? _upload;
+  final Future<Res<bool>> Function()? _download;
+
+  void _listen() {
+    // Nothing is downloaded here: a full backup would replace local data at
+    // every start.
+    LocalFavoritesManager().addListener(onDataChanged);
+    ComicSourceManager().addListener(onDataChanged);
+    // 稍后看 lives in history.db and notifies on its own.
+    WatchLater().addListener(onDataChanged);
+  }
+
+  /// Data changed: upload a full backup if automatic backup is on.
   void onDataChanged() {
     if (isEnabled) {
-      uploadData();
+      (_upload ?? uploadData)();
     }
   }
+
+  /// The user asked to restore the full backup from WebDAV.
+  Future<Res<bool>> restore() => (_download ?? downloadData)();
 
   bool _handleWindowClose() {
     if (_isUploading) {
@@ -79,10 +104,16 @@ class DataSync with ChangeNotifier {
 
   String? get lastError => _lastError;
 
-  bool get isEnabled {
+  /// A WebDAV account is set.
+  bool get isConfigured {
     var config = appdata.settings['webdav'];
+    return config is List && config.isNotEmpty;
+  }
+
+  /// Automatic backup is on: every data change uploads a full backup.
+  bool get isEnabled {
     var autoSync = appdata.implicitData['webdavAutoSync'] ?? false;
-    return autoSync && config is List && config.isNotEmpty;
+    return autoSync == true && isConfigured;
   }
 
   List<String>? _validateConfig() {
