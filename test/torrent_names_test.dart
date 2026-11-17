@@ -44,7 +44,7 @@ void main() {
   test('a download queued with the legacy path finds its file', () {
     var model = TorrentParser.parseBytes(
         _torrent(utf8.encode('魔法少女'), utf8.encode('第01话.mp4')));
-    var legacy = legacyTorrentPath('魔法少女/第01话.mp4');
+    var legacy = legacyTorrentPaths('魔法少女/第01话.mp4').single;
     expect(legacy, isNot('魔法少女/第01话.mp4'));
     expect(
         selectedTorrentFile(model,
@@ -52,11 +52,24 @@ void main() {
         0);
   });
 
+  test('a path mixing UTF-8 and other segments finds its queued file', () {
+    // A UTF-8 directory, a GBK file name (魔法 in GBK).
+    var gbk = Uint8List.fromList([0xC4, 0xA7, 0xB7, 0xA8, 0x2E, 0x6D, 0x70, 0x34]);
+    var model = TorrentParser.parseBytes(_torrent(utf8.encode('魔法'), gbk));
+    var oldPath = '${String.fromCharCodes(utf8.encode('魔法'))}/'
+        '${String.fromCharCodes(gbk)}';
+    expect(model.files.single.path, isNot(oldPath));
+    expect(
+        selectedTorrentFile(model,
+            TorrentDownloadFile(path: oldPath, directory: Directory('unused'))),
+        0);
+  });
+
   test('files kept under their legacy name get their real one', () async {
     var dir = await Directory.systemTemp.createTemp('venera_names');
     addTearDown(() => dir.delete(recursive: true));
     var path = '魔法少女/第01话.mp4';
-    var old = File('${dir.path}/${legacyTorrentPath(path)}');
+    var old = File('${dir.path}/${legacyTorrentPaths(path).single}');
     await old.create(recursive: true);
     await old.writeAsString('kept');
 

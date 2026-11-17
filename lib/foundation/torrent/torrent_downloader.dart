@@ -42,7 +42,8 @@ int selectedTorrentFile(TorrentModel model, TorrentDownloadFile request) {
     var index = model.files.indexWhere((f) {
       if (f.isPaddingFile) return false;
       var path = f.path.replaceAll('\\', '/');
-      return path == normalized || legacyTorrentPath(path) == normalized;
+      return path == normalized ||
+          legacyTorrentPaths(path).contains(normalized);
     });
     if (index < 0) {
       throw const TorrentDownloadException(TorrentDownloadFailure.fileNotFound);
