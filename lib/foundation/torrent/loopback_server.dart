@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 /// [end] is exclusive, like File.openRead and TorrentTask.createStream.
 abstract interface class TorrentByteSource {
   int get length;
@@ -38,18 +40,88 @@ class TorrentRange {
 
 class TorrentLoopbackServer {
   Future<HttpServer>? _binding;
+
+  /// The port of the last binding, kept so that a new one takes it again
+  /// and the URLs handed out stay valid.
+  int? _port;
+
+  Future<HttpServer> _bind() async {
+    HttpServer server;
+    try {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, _port ?? 0);
+    } on SocketException {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    }
+    _port = server.port;
+    void lost() {
+      // Closed, or the system took the socket back: bind again on demand.
+      if (_binding != null && identical(_current, server)) {
+        _binding = null;
+        _current = null;
+      }
+    }
+    _current = server;
+    server.listen(
+      (request) {
+        unawaited(_serve(request));
+      },
+      onError: (Object _) => lost(),
+      onDone: lost,
+    );
+    return server;
+  }
+
+  HttpServer? _current;
+
+  /// Binds again if the listening socket no longer takes connections, e.g.
+  /// iOS reclaimed it while the app was in the background (the server is
+  /// not told). Called when the app comes back to the foreground.
+  Future<void> revive() async {
+    var binding = _binding;
+    if (binding == null) return;
+    var server = await binding;
+    // The port as bound: a closed server no longer tells it.
+    var port = _port;
+    if (port != null && await _accepts(port)) return;
+    if (!identical(_binding, binding)) return;
+    _binding = null;
+    _current = null;
+    try {
+      await server.close(force: true);
+    } catch (_) {
+      // Already gone.
+    }
+    await (_binding ??= _bind());
+  }
+
+  /// Closes the listening socket without the server knowing, as iOS does
+  /// to an app in the background.
+  @visibleForTesting
+  Future<void> loseSocketSilently() async {
+    var server = _current;
+    _current = null;
+    await server?.close(force: true);
+  }
+
+  static Future<bool> _accepts(int port) async {
+    try {
+      var socket = await Socket.connect(
+        InternetAddress.loopbackIPv4, port,
+        timeout: const Duration(seconds: 1),
+      );
+      socket.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
   final _sources = <String, TorrentByteSource>{};
   final _requests = <String, Set<HttpResponse>>{};
   final _sockets = <String, Set<Socket>>{};
   final _random = Random.secure();
 
   Future<String> add(TorrentByteSource source) async {
-    var server = await (_binding ??= HttpServer.bind(
-      InternetAddress.loopbackIPv4, 0,
-    ).then((server) {
-      server.listen((request) { unawaited(_serve(request)); });
-      return server;
-    }));
+    var server = await (_binding ??= _bind());
     var token = List.generate(32,
       (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
     var path = '/$token';
@@ -78,6 +150,7 @@ class TorrentLoopbackServer {
     }
     var binding = _binding;
     _binding = null;
+    _current = null;
     if (binding != null) {
       await (await binding).close(force: true);
     }

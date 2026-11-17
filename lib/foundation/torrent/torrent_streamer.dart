@@ -66,13 +66,25 @@ abstract interface class TorrentStreamer {
 }
 
 class DartTorrentStreamer implements TorrentStreamer {
-  DartTorrentStreamer() : _initialPeers = const [];
+  DartTorrentStreamer() : _initialPeers = const [] {
+    _watchForeground();
+  }
+
+  /// iOS may take the loopback server's socket back while the app is in the
+  /// background; streams would then be refused on coming back.
+  void _watchForeground() {
+    PlatformCapabilities.instance.foreground.listen((visible) {
+      if (visible) unawaited(_server.revive());
+    });
+  }
 
   /// Deterministic local swarms for integration tests; normal discovery is
   /// unchanged for the application's default constructor.
   @visibleForTesting
   DartTorrentStreamer.withInitialPeers(List<CompactAddress> peers)
-      : _initialPeers = List.unmodifiable(peers);
+      : _initialPeers = List.unmodifiable(peers) {
+    _watchForeground();
+  }
 
   final List<CompactAddress> _initialPeers;
   final _server = TorrentLoopbackServer();
