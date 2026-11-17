@@ -755,7 +755,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             const SizedBox(height: 12),
             ListTile(
               leading: Icon(Icons.sync_outlined),
-              title: Text("Auto Sync Data".tl),
+              title: Text("Upload Full Backup Automatically".tl),
               contentPadding: EdgeInsets.zero,
               trailing: Switch(
                 value: autoSync,
@@ -800,7 +800,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                                "Once the operation is successful, app will automatically sync data with the server."
+                                "Once the operation is successful, a full backup is uploaded whenever data changes. Data on this device is only replaced when you download a backup."
                                     .tl),
                           ),
                         ],

@@ -297,7 +297,8 @@ class ComicSource {
     }
     await file.writeAsString(jsonEncode(data));
     _isSaving = false;
-    DataSync().uploadData();
+    // Uploads only with automatic backup on.
+    DataSync().onDataChanged();
   }
 
   Future<bool> reLogin() async {
