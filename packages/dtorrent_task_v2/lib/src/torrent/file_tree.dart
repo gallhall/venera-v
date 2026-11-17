@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:dtorrent_task_v2/src/file/file_attributes.dart';
+import 'package:dtorrent_task_v2/src/torrent/torrent_text.dart';
 
 /// Represents a file in v2 file tree structure (BEP 52)
 class FileTreeEntry {
@@ -175,8 +176,7 @@ class FileTreeFile {
 
 String? _decodeString(dynamic value) {
   if (value is String) return value;
-  if (value is Uint8List) return String.fromCharCodes(value);
-  if (value is List<int>) return String.fromCharCodes(value);
+  if (value is List<int>) return decodeTorrentText(value);
   return null;
 }
 

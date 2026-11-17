@@ -15,6 +15,7 @@ import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/utils/translations.dart';
 
+import 'legacy_names.dart';
 import 'loopback_server.dart';
 import 'torrent_metadata.dart';
 export 'torrent_metadata.dart' show publicTorrentTrackers;
@@ -668,6 +669,14 @@ class DartTorrentStreamer implements TorrentStreamer {
     try {
       return await _cacheOperation(() async {
         var beyond = 0;
+        if (await shared.exists() &&
+            await adoptLegacyNames(shared, model.files.map((f) => f.path))) {
+          // The record names the files as they were.
+          var record = _record(shared);
+          if (await record.exists()) {
+            await record.delete();
+          }
+        }
         if (await shared.exists()) {
           if (!await keptUsable(shared, model, file)) {
             Log.info('Torrent', 'Kept data of ${file.name} is not usable');

@@ -11,6 +11,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/network/app_dio.dart';
 
+import 'legacy_names.dart';
 import 'torrent_download_state.dart';
 import 'torrent_metadata.dart';
 import 'torrent_streamer.dart' show DartTorrentStreamer;
@@ -36,8 +37,14 @@ class TorrentDownloadFile {
 int selectedTorrentFile(TorrentModel model, TorrentDownloadFile request) {
   if (request.path != null) {
     var normalized = request.path!.replaceAll('\\', '/');
-    var index = model.files.indexWhere((f) =>
-      !f.isPaddingFile && f.path.replaceAll('\\', '/') == normalized);
+    // A download queued before names were read as UTF-8 keeps its legacy
+    // path.
+    var index = model.files.indexWhere((f) {
+      if (f.isPaddingFile) return false;
+      var path = f.path.replaceAll('\\', '/');
+      return path == normalized ||
+          legacyTorrentPaths(path).contains(normalized);
+    });
     if (index < 0) {
       throw const TorrentDownloadException(TorrentDownloadFailure.fileNotFound);
     }
@@ -499,6 +506,8 @@ class _DownloadSession {
         if (h.cancelled) {
           continue;
         }
+        // What a download begun before names were read as UTF-8 wrote.
+        await adoptLegacyNames(h.request.directory, [name]);
         await storage!.addFiles({index: p.join(h.request.directory.path, name)});
         await task?.verifySelectedFiles({index});
         h.index = index;
