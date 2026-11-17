@@ -243,7 +243,7 @@ class LocalFavoritesManager with ChangeNotifier {
         source_folder text
       );
     """);
-    WatchLater().attach(_db);
+    _moveWatchLaterOut();
     var folderNames = _getFolderNamesWithDB();
     for (var folder in folderNames) {
       var columns = _db.select("""
@@ -367,11 +367,35 @@ class LocalFavoritesManager with ChangeNotifier {
     return tables;
   }
 
+  /// 稍后看 was first kept here, where older versions take every table for
+  /// a folder and fail on it: its rows go to the history's file.
+  void _moveWatchLaterOut() {
+    var exists = _db.select(
+      "select 1 from sqlite_master where type = 'table' and name = ?;",
+      [WatchLater.table],
+    ).isNotEmpty;
+    if (!exists) return;
+    var rows = _db
+        .select('select * from "${WatchLater.table}";')
+        .map(WatchLaterItem.fromRow)
+        .toList();
+    // Written to the history's file before the table goes: a second
+    // connection to it is safe, sqlite locks the file.
+    var history = sqlite3.open("${App.dataPath}/history.db");
+    try {
+      waitForLocks(history);
+      WatchLater.adoptLegacy(history, rows);
+    } finally {
+      history.dispose();
+    }
+    _db.execute('drop table "${WatchLater.table}";');
+    WatchLater().reload();
+  }
+
   List<String> _getFolderNamesWithDB() {
     final folders = _getTablesWithDB();
     folders.remove('folder_sync');
     folders.remove('folder_order');
-    folders.remove(WatchLater.table);
     var folderToOrder = <String, int>{};
     for (var folder in folders) {
       var res = _db.select("""
