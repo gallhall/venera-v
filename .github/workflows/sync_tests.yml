@@ -30,4 +30,8 @@ jobs:
           channel: "stable"
           flutter-version-file: pubspec.yaml
       - run: flutter pub get
+      # sync.db tests need a system sqlite3: macOS has one, Ubuntu needs the
+      # package; on Windows they skip (no sqlite3.dll outside an app build).
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y libsqlite3-dev
       - run: flutter test test/sync/
