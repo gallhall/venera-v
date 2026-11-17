@@ -162,11 +162,17 @@ class _ComicPageState extends LoadingState<ComicPage, ComicDetails>
     ImageProvider? cover = widget.coverProvider;
     var url = widget.cover;
     if (cover == null && url != null && url.isNotEmpty) {
-      cover = CachedImageProvider(
-        url,
-        sourceKey: widget.sourceKey,
-        cid: widget.id,
-      );
+      if (widget.sourceKey == 'local') {
+        // A local comic's cover is a file name in its folder, not a URL.
+        var local = LocalManager().find(widget.id, ComicType.local);
+        if (local != null) cover = FileImage(local.coverFile);
+      } else if (Uri.tryParse(url)?.hasScheme == true) {
+        cover = CachedImageProvider(
+          url,
+          sourceKey: widget.sourceKey,
+          cid: widget.id,
+        );
+      }
     }
     String? title = widget.title;
     if (title != null && title.isEmpty) {
