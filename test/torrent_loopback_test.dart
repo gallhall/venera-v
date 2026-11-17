@@ -135,6 +135,16 @@ void main() {
       expect(await status(url), 200);
     });
 
+    test('revive binds again after a loss the server was told of', () async {
+      var url = await server.add(_Bytes());
+      expect(await status(url), 200);
+      await server.loseSocketSilently(notice: true);
+      await expectLater(status(url), throwsA(isA<SocketException>()));
+      // Open torrents keep their URL and call no add().
+      await server.revive();
+      expect(await status(url), 200);
+    });
+
     test('a socket closed with notice is bound again by the next add',
         () async {
       var first = await server.add(_Bytes());

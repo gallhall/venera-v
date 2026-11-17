@@ -78,7 +78,12 @@ class TorrentLoopbackServer {
   /// not told). Called when the app comes back to the foreground.
   Future<void> revive() async {
     var binding = _binding;
-    if (binding == null) return;
+    if (binding == null) {
+      // The server learnt of the loss and let go of the binding; the URLs of
+      // open torrents still point at the old port, so take it again now.
+      if (_sources.isNotEmpty) await (_binding ??= _bind());
+      return;
+    }
     var server = await binding;
     // The port as bound: a closed server no longer tells it.
     var port = _port;
@@ -94,12 +99,12 @@ class TorrentLoopbackServer {
     await (_binding ??= _bind());
   }
 
-  /// Closes the listening socket without the server knowing, as iOS does
-  /// to an app in the background.
+  /// Closes the listening socket as iOS does to an app in the background:
+  /// without the server knowing, or, with [notice], through its listener.
   @visibleForTesting
-  Future<void> loseSocketSilently() async {
+  Future<void> loseSocketSilently({bool notice = false}) async {
     var server = _current;
-    _current = null;
+    if (!notice) _current = null;
     await server?.close(force: true);
   }
 
