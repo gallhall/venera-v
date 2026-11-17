@@ -29,6 +29,11 @@ It keeps everything venera does and adds video playback.
 - Find streams by opening the web page of a video
 - Playback with media_kit on every platform
 
+### Reading records (venera-v only)
+- Watch later: add comics and anime to a watch-later list; they leave it once you start reading or watching
+- Reading and watching statistics: time, charts and rankings for today, this week, this month and all time
+- History search: find entries by title or by id, filtered by comics or anime
+
 ### Anime (venera-v only)
 - [Bangumi](https://bgm.tv): find anime by subject, airing schedule, collections, and sync of watched episodes
 - BT: play torrents while they download from RSS sources such as Mikan and Nyaa, with preferred release groups, resolution and subtitles; download them too
