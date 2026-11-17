@@ -241,7 +241,9 @@ class Version {
     required Map<String, Object?> fields,
     required Origin origin,
   }) {
-    var cleaned = _dropNulls(fields);
+    // A deep, frozen copy: the hash and body are computed once, so nothing
+    // the caller still holds may change the content afterwards.
+    var cleaned = _freeze(fields) as Map<String, Object?>;
     var base = seenBase.toSet().toList()..sort();
     if (base.any((d) => !d.isBaseline)) {
       throw const FormatException('seenBase holds a normal dot');
@@ -266,7 +268,7 @@ class Version {
       seenBase: List.unmodifiable(base),
       hlc: hlc,
       deleted: deleted,
-      fields: Map.unmodifiable(cleaned),
+      fields: cleaned,
       origin: origin,
     );
   }
@@ -344,7 +346,16 @@ class Version {
       'Version($dot, ${deleted ? 'deleted' : fields}, $vv, $origin)';
 }
 
-Map<String, Object?> _dropNulls(Map<String, Object?> m) => {
-  for (var e in m.entries)
-    if (e.value != null) e.key: e.value,
+/// A deep, unmodifiable copy of [v]. Map members whose value is null are
+/// dropped, as canonical JSON drops them, at every level.
+Object? _freeze(Object? v) => switch (v) {
+  Map m => Map<String, Object?>.unmodifiable({
+    for (var e in m.entries)
+      if (e.value != null) _key(e.key): _freeze(e.value),
+  }),
+  List l => List<Object?>.unmodifiable([for (var x in l) _freeze(x)]),
+  _ => v,
 };
+
+String _key(Object? k) =>
+    k is String ? k : throw const CanonicalJsonException('non-string key');

@@ -17,6 +17,28 @@ RegisterKey history(String source, String work, String reg) =>
 
 void main() {
   group('versions', () {
+    test('nested fields are copied and frozen', () {
+      var read = ['1', '2'];
+      var inner = <String, Object?>{'a': 1, 'gone': null};
+      var v = Version(
+        dot: const Dot('a', 1),
+        vv: VersionVector({'a': 1}),
+        hlc: const Hlc(0),
+        deleted: false,
+        fields: {'read': read, 'm': inner},
+        origin: Origin.normal,
+      );
+      var hash = v.hash, body = v.body;
+      read.add('3');
+      inner['a'] = 2;
+      expect(v.fields['read'], ['1', '2']);
+      expect(v.fields['m'], {'a': 1});
+      expect(() => (v.fields['read'] as List).add('x'), throwsUnsupportedError);
+      expect(() => (v.fields['m'] as Map)['a'] = 3, throwsUnsupportedError);
+      expect(versionHash(false, v.fields), hash);
+      expect(v.body, body);
+    });
+
     test('a version must hold its own dot in its vector', () {
       expect(
         () => Version(
