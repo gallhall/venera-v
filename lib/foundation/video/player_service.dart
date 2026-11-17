@@ -266,7 +266,7 @@ class PlayerService implements VideoPlayback {
     var player = Player(
       configuration: PlayerConfiguration(
         title: 'venera-v',
-        bufferSize: 64 * 1024 * 1024,
+        bufferSize: _bufferSize,
         logLevel: onLog == null ? MPVLogLevel.warn : MPVLogLevel.v,
         // mpv draws subtitles with libass, keeping ASS/SSA styles, positions
         // and effects; media_kit's own overlay only shows plain text.
@@ -1403,6 +1403,21 @@ class PlayerService implements VideoPlayback {
 
   @override
   Future<void> pause() => _player.pause();
+
+  static const _bufferSize = 64 * 1024 * 1024;
+
+  /// Stops or resumes loading ahead. mpv fills its cache while paused too;
+  /// held, it loads nothing more, e.g. while Android has cut the network
+  /// of the app in the background.
+  Future<void> holdBuffering(bool hold) async {
+    var platform = _player.platform;
+    if (platform is NativePlayer) {
+      await platform.setProperty(
+        'demuxer-max-bytes',
+        hold ? '1' : '$_bufferSize',
+      );
+    }
+  }
 
   @override
   Future<void> playOrPause() => _player.playOrPause();
