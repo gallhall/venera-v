@@ -300,6 +300,12 @@ class EpisodePlayback extends ChangeNotifier {
 
   void cancelStartupWatch() => _session?.cancelStartupWatch();
 
+  /// See [PlaybackSession.holdStartupWatch].
+  void holdStartupWatch() => _session?.holdStartupWatch();
+
+  /// See [PlaybackSession.resumeStartupWatch].
+  void resumeStartupWatch() => _session?.resumeStartupWatch();
+
   void _changed() {
     if (!_disposed) {
       notifyListeners();

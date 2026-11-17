@@ -367,10 +367,14 @@ class PlaybackSession extends ChangeNotifier {
           _onPlayerError("Playback start timed out".tl);
         }
       }
-      _startupWatch = opening.watchStartup(
-        opening.isTorrent ? const Duration(seconds: 45) : startupLimit(),
-        timedOut,
-      );
+      void arm() => _startupWatch = opening.watchStartup(
+            opening.isTorrent ? const Duration(seconds: 45) : startupLimit(),
+            timedOut,
+          );
+      _armStartupWatch = () {
+        if (!_disposed && token == _openToken && !_playbackAdvanced) arm();
+      };
+      arm();
     }
     VideoStreamRequest request;
     try {
@@ -612,6 +616,28 @@ class PlaybackSession extends ChangeNotifier {
   }
 
   void cancelStartupWatch() => _startupWatch?.cancel();
+
+  /// Arms the startup watch of the stream opening again, with its full time.
+  void Function()? _armStartupWatch;
+
+  /// Whether [holdStartupWatch] stopped a startup watch.
+  bool _startupHeld = false;
+
+  /// Stops the startup watch while playback is paused on purpose, e.g. in
+  /// the background: no progress then is no failure of the stream.
+  void holdStartupWatch() {
+    if (_playbackAdvanced || _armStartupWatch == null) return;
+    _startupWatch?.cancel();
+    _startupHeld = true;
+  }
+
+  /// Playback goes on after [holdStartupWatch]: the stream has its full
+  /// startup time again.
+  void resumeStartupWatch() {
+    if (!_startupHeld) return;
+    _startupHeld = false;
+    _armStartupWatch?.call();
+  }
 
   /// The page found no further line or work to try.
   Future<void> finishFailure(String reason) async {

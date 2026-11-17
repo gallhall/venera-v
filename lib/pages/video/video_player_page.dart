@@ -434,6 +434,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     onHide: () {
       if (!App.isMobile) return;
       var p = active;
+      // Not a stream that fails to start: auto source switching would
+      // reopen it, playing, while the user is away.
+      playback.holdStartupWatch();
       p?.pause();
       p?.holdBuffering(true);
     },
@@ -602,6 +605,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           refreshNowPlaying();
           historyTimer?.cancel();
           if (playing) {
+            playback.resumeStartupWatch();
             watchProgress.playing();
             historyTimer = Timer.periodic(
               const Duration(seconds: 15),
