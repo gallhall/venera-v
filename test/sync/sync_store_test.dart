@@ -194,6 +194,64 @@ void main() {
       origin: Origin.normal,
     );
 
+    test('stored state matches the pure merge whatever the arrival order', () {
+      // Concurrent branches arriving one by one, in falling id order.
+      var vs = [
+        for (var d in ['z', 'm', 'a']) other(d, 1, {'n': d}),
+      ];
+      var s = SyncStore.create(path, now: now);
+      SyncState? last;
+      for (var v in vs) {
+        last = s.merge(
+          SyncState(
+            registers: {
+              item('1'): [v],
+            },
+          ),
+        );
+      }
+      var pure = mergeStates([
+        for (var v in vs)
+          SyncState(
+            registers: {
+              item('1'): [v],
+            },
+          ),
+      ]);
+      expect(s.load().canonical, pure.canonical);
+      expect(s.load().canonical, last!.canonical);
+      expect(s.branches(item('1')), pure.branches(item('1')));
+      s.dispose();
+    }, skip: skip);
+
+    test('one id with two bodies keeps the body the merger chose', () {
+      // Two copies of an identity: same dot and content, different HLC.
+      var later = other('peer', 1, {'n': 1}, hlc: 9);
+      var earlier = other('peer', 1, {'n': 1}, hlc: 2);
+      var chosen = mergeBranches([later, earlier]).single;
+      var s = SyncStore.create(path, now: now);
+      s.merge(
+        SyncState(
+          registers: {
+            item('1'): [later],
+          },
+        ),
+      );
+      var merged = s.merge(
+        SyncState(
+          registers: {
+            item('1'): [earlier],
+          },
+        ),
+      );
+      expect(merged.branches(item('1')), [chosen]);
+      expect(s.branches(item('1')), [chosen]);
+      s.dispose();
+      var again = SyncStore.openIfExists(path, now: now)!;
+      expect(again.branches(item('1')), [chosen]);
+      again.dispose();
+    }, skip: skip);
+
     test('keeps concurrent branches and moves the clock past theirs', () {
       var s = SyncStore.create(path, now: now);
       var mine = s.issue(item('1'), fields: {'n': 'mine'});

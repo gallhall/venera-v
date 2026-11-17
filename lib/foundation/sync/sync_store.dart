@@ -311,6 +311,9 @@ class SyncStore {
         _version(r['body'] as String),
       );
     }
+    for (var vs in registers.values) {
+      _sortBranches(vs);
+    }
     return SyncState(
       registers: registers,
       taints: _records('taints', merger.Taint.fromJson),
@@ -389,7 +392,7 @@ class SyncStore {
         ? candidates
         : merger.mergeBranches(candidates, causality: c, register: key.key);
     var keep = {for (var v in next) v.id};
-    var had = {for (var v in old) v.id};
+    var had = {for (var v in old) v.id: v};
     for (var v in old) {
       if (keep.contains(v.id)) continue;
       _db.execute('DELETE FROM versions WHERE reg_key = ? AND vid = ?', [
@@ -410,7 +413,9 @@ class SyncStore {
       }
     }
     for (var v in next) {
-      if (had.contains(v.id)) continue;
+      // Same id with another body (copies of an identity, spec §5.2): keep
+      // the body the merger chose, as a pure merge would.
+      if (had[v.id] == v) continue;
       _db.execute(
         'INSERT OR REPLACE INTO versions (reg_key, vid, body) VALUES (?, ?, ?)',
         [key.key, _vid(v), canonicalize(v.toJson())],
@@ -418,12 +423,12 @@ class SyncStore {
     }
   }
 
-  List<Version> _branches(RegisterKey key) => [
+  List<Version> _branches(RegisterKey key) => _sortBranches([
     for (var r in _db.select('SELECT body FROM versions WHERE reg_key = ?', [
       key.key,
     ]))
       _version(r['body'] as String),
-  ];
+  ]);
 
   merger.Causality _causality() => merger.Causality(
     taints: _records('taints', merger.Taint.fromJson),
@@ -475,6 +480,10 @@ class SyncStore {
       r['name'] as String,
   };
 }
+
+/// Branches in the order the merger gives them, (dot, hash).
+List<Version> _sortBranches(List<Version> vs) =>
+    vs..sort((a, b) => a.id.compareTo(b.id));
 
 String _vid(Version v) => canonicalize([v.dot.toJson(), v.hash]);
 

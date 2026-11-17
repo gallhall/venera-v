@@ -165,7 +165,14 @@ class SyncState {
           {
             'entity': k.entity,
             'reg': k.register,
-            'versions': [for (var v in registers[k]!) v.toJson()],
+            // Sorted here too, so the bytes never depend on how the list
+            // was built.
+            'versions': [
+              for (var v
+                  in registers[k]!.toList()
+                    ..sort((a, b) => a.id.compareTo(b.id)))
+                v.toJson(),
+            ],
           },
       ],
       'taints': [for (var t in taints.toList()..sort()) t.toJson()],
