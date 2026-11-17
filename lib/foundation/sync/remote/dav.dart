@@ -135,6 +135,7 @@ class DavPolicy {
     this.firstBackoff = const Duration(seconds: 1),
     this.busyWait = const Duration(seconds: 30),
     this.busyBudget = const Duration(minutes: 5),
+    this.minBusyWait = const Duration(seconds: 1),
     this.maxPages = 20,
   });
 
@@ -150,6 +151,9 @@ class DavPolicy {
 
   /// All 503 waits of one sync together; past it the sync fails.
   final Duration busyBudget;
+
+  /// The least a 503 waits, whatever `Retry-After` says.
+  final Duration minBusyWait;
 
   /// Pages of one listing (`Link: rel="next"`).
   final int maxPages;
@@ -268,9 +272,9 @@ class DavClient {
           );
         case 503:
           var wait = _retryAfter(r) ?? policy.busyWait;
-          if (wait < policy.busyWait && _retryAfter(r) == null) {
-            wait = policy.busyWait;
-          }
+          // A Retry-After of 0 or in the past still counts as a wait, so
+          // repeated 503s always run out of the budget.
+          if (wait < policy.minBusyWait) wait = policy.minBusyWait;
           if (_busyWaited + wait > policy.busyBudget) {
             throw DavException(
               DavErrorKind.busy,

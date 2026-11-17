@@ -170,6 +170,18 @@ void main() {
       expect(total, lessThanOrEqualTo(const Duration(minutes: 5)));
     });
 
+    test('503 with Retry-After 0 still runs out of the budget', () async {
+      dav.intercept = (_, _, _, _, _) =>
+          davStatus(503, headers: {'retry-after': '0'});
+      await expectLater(
+        client.get('x'),
+        throwsA(
+          isA<DavException>().having((e) => e.kind, 'kind', DavErrorKind.busy),
+        ),
+      );
+      expect(dav.count('GET'), lessThanOrEqualTo(301));
+    });
+
     test('429 backs off three times, then fails', () async {
       dav.intercept = (_, _, _, _, _) => davStatus(429);
       await expectLater(

@@ -646,6 +646,37 @@ void main() {
       },
     );
 
+    test('a publish cut short never blocks the next sync (L5)', () async {
+      var x = node(a), y = node(b);
+      x.write('1', 'v1');
+      await x.sync();
+      // The state upload fails for good: 507.
+      dav.intercept = (_, method, path, _, _) =>
+          method == 'PUT' && path.contains('/state-') ? davStatus(507) : null;
+      x.write('1', 'v2');
+      await expectLater(x.sync(), throwsA(isA<DavException>()));
+      // The state arrives, then the manifest PUT is lost for good.
+      dav.intercept = (_, method, path, _, _) =>
+          method == 'PUT' && path.contains('/manifest-')
+          ? throw const DavNetworkError('down')
+          : null;
+      await expectLater(x.sync(), throwsA(isA<DavException>()));
+      dav.intercept = null;
+      // The server is fine again: reading and publishing just work.
+      var p = await x.sync();
+      expect(p.outcome, PublishOutcome.published);
+      expect(p.manifest!.generation, 2);
+      await y.sync();
+      expect(y.shown('1'), 'v2');
+      // The state of the lost publish is an orphan, collected after a day;
+      // the one whose upload failed is forgotten too.
+      expect(filesOf(a, 'state'), hasLength(3));
+      clock.advance(const Duration(hours: 25));
+      await x.collect(await x.read());
+      expect(filesOf(a, 'state'), hasLength(2));
+      expect(x.book.pendingFiles, isEmpty);
+    });
+
     test('507 and 401 surface as their kinds; local state is kept', () async {
       var x = node(a);
       x.write('1', 'v');

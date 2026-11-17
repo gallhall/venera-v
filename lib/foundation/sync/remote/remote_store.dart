@@ -22,6 +22,7 @@ class RemoteBook {
     Set<String>? devices,
     this.confirmed,
     Map<String, int>? ownFiles,
+    Map<String, int>? pendingFiles,
     this.publishing,
     this.trust = const ServerTrust(),
     Set<Problem>? problems,
@@ -29,6 +30,7 @@ class RemoteBook {
   }) : peers = peers ?? {},
        devices = devices ?? {},
        ownFiles = ownFiles ?? {},
+       pendingFiles = pendingFiles ?? {},
        problems = problems ?? {};
 
   final String deviceId;
@@ -46,6 +48,12 @@ class RemoteBook {
 
   /// Files this device wrote and has not collected: path → write time (ms).
   final Map<String, int> ownFiles;
+
+  /// Files this device may have written, not known to have arrived: an
+  /// upload under way or one that failed. Their absence is no evidence of
+  /// anything (unlike [ownFiles], checked by L5); old pending states are
+  /// collected as orphans, pending manifests only forgotten.
+  final Map<String, int> pendingFiles;
 
   /// A publish begun but not confirmed (§5 step 2).
   Publishing? publishing;
@@ -643,8 +651,8 @@ class RemoteStore {
       stateSize: encoded.info.size,
     );
     book.publishing = pending;
-    book.ownFiles[statePath] = _now().millisecondsSinceEpoch;
-    book.ownFiles[manifestPath] = _now().millisecondsSinceEpoch;
+    book.pendingFiles[statePath] = _now().millisecondsSinceEpoch;
+    book.pendingFiles[manifestPath] = _now().millisecondsSinceEpoch;
     await save();
 
     // 3–4. Upload the state and make sure it arrived whole.
@@ -652,12 +660,17 @@ class RemoteStore {
       await dav.delete(statePath);
       if (!await _uploadState(book, statePath, encoded, highRisk: true)) {
         await dav.delete(statePath);
-        book.ownFiles.remove(statePath);
-        book.ownFiles.remove(manifestPath);
+        book.pendingFiles.remove(statePath);
+        book.pendingFiles.remove(manifestPath);
         await save();
         return const PublishResult(PublishOutcome.unconfirmed);
       }
     }
+    // The state is there and whole: from now on its absence would mean the
+    // server lost it (L5).
+    book.ownFiles[statePath] =
+        book.pendingFiles.remove(statePath) ?? _now().millisecondsSinceEpoch;
+    await save();
 
     // 5–7. The manifest, always read back.
     var acks = <String, ManifestRef>{};
@@ -691,6 +704,8 @@ class RemoteStore {
     }
     if (readBack == null || readBack.selfHash != manifest.selfHash) {
       await dav.delete(manifestPath);
+      book.pendingFiles.remove(manifestPath);
+      await save();
       return const PublishResult(PublishOutcome.unconfirmed);
     }
     _confirm(book, manifest, pending);
@@ -706,6 +721,11 @@ class RemoteStore {
       p.statePath.endsWith('/${m.state.file}');
 
   void _confirm(RemoteBook book, Manifest m, Publishing p) {
+    var now = _now().millisecondsSinceEpoch;
+    for (var path in [p.statePath, p.manifestPath]) {
+      book.ownFiles[path] =
+          book.pendingFiles.remove(path) ?? book.ownFiles[path] ?? now;
+    }
     book.confirmed = m;
     book.publishing = null;
   }
@@ -838,15 +858,26 @@ class RemoteStore {
 
     // Orphan states: older than a day, named by no manifest after a fresh
     // listing and read of every manifest of that shard.
+    var day = 24 * 3600 * 1000;
+    var current = book.publishing;
+    // Pending manifests never confirmed: forget them, never delete (one
+    // that did arrive is confirmed by the identity check instead).
+    book.pendingFiles.removeWhere(
+      (p, at) =>
+          RemotePaths.manifestGeneration(p.substring(p.lastIndexOf('/') + 1)) !=
+              null &&
+          p != current?.manifestPath &&
+          now.millisecondsSinceEpoch - at > day,
+    );
     var orphans = [
-      for (var e in book.ownFiles.entries)
+      for (var e in {...book.ownFiles, ...book.pendingFiles}.entries)
         if (RemotePaths.stateGeneration(
                   e.key.substring(e.key.lastIndexOf('/') + 1),
                 ) !=
                 null &&
             !referenced.contains(e.key) &&
             e.key != book.publishing?.statePath &&
-            now.millisecondsSinceEpoch - e.value > 24 * 3600 * 1000)
+            now.millisecondsSinceEpoch - e.value > day)
           e.key,
     ];
     for (var p in orphans) {
@@ -860,6 +891,7 @@ class RemoteStore {
       try {
         await dav.delete(p);
         book.ownFiles.remove(p);
+        book.pendingFiles.remove(p);
         deleted.add(p);
       } on DavException {
         // next time
