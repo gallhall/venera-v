@@ -96,7 +96,7 @@ class ReadingActivity {
     ]);
   }
 
-  /// Reading pauses this long without a page turn put the comic down.
+  /// The most one page counts: longer, the reader was left open.
   final Duration idleLimit;
 
   /// At least this much of an episode watched finishes it.
@@ -304,7 +304,8 @@ class _Session {
 
   void finish(String key) => _finished.add(key);
 
-  /// Null below [DurationRecords.minimum].
+  /// Null for a watching below [DurationRecords.minimum]; a comic opened
+  /// and seen is read, however briefly.
   DurationRecord? close({
     required DurationKind kind,
     required DurationWork work,
@@ -312,7 +313,9 @@ class _Session {
     int? group,
   }) {
     var elapsed = reading?.elapsed ?? playing!.elapsed;
-    if (elapsed < DurationRecords.minimum) return null;
+    if (kind == DurationKind.anime && elapsed < DurationRecords.minimum) {
+      return null;
+    }
     return DurationRecord(
       work: work,
       kind: kind,
@@ -326,7 +329,8 @@ class _Session {
 }
 
 /// Time spent reading: from the start or a page turn to the next page turn,
-/// unless more than [idleLimit] passed in between.
+/// at most [idleLimit] of it: a long page counts, a reader left open does
+/// not count on.
 class _ReadingTimer {
   _ReadingTimer({required Now now, required this.idleLimit})
     : _now = now,
@@ -339,7 +343,8 @@ class _ReadingTimer {
 
   Duration _gap(DateTime time) {
     var gap = time.difference(_last);
-    return gap > idleLimit || gap.isNegative ? Duration.zero : gap;
+    if (gap.isNegative) return Duration.zero;
+    return gap > idleLimit ? idleLimit : gap;
   }
 
   void pageTurned() {

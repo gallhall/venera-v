@@ -113,7 +113,7 @@ void main() {
       expect(saved, isEmpty);
     });
 
-    test('reading time stops after five minutes without a page turn', () {
+    test('a page looked at for long counts five minutes at most', () {
       var a = comic();
       a.pageShown();
       clock.advance(_minute);
@@ -123,7 +123,7 @@ void main() {
       clock.advance(_minute);
       position = (ep: 2, group: null);
       a.dispose();
-      expect(saved.single.seconds, 120);
+      expect(saved.single.seconds, 7 * 60);
       expect(saved.single.ep, 2);
       expect(saved.single.kind, DurationKind.comic);
     });
@@ -155,7 +155,7 @@ void main() {
       expect(saved.single.seconds, 60);
     });
 
-    test('chapters read to the end count once; short readings are dropped', () {
+    test('chapters read to the end count once', () {
       var a = comic();
       a.pageShown();
       a.chapterFinished('null-1');
@@ -164,13 +164,20 @@ void main() {
       a.pageShown();
       a.dispose();
       expect(saved.single.finished, 1);
+    });
+
+    test('a short look counts: opened and seen is read', () {
+      var a = comic();
+      a.pageShown();
+      clock.advance(const Duration(seconds: 5));
+      a.dispose();
+      expect(saved.single.seconds, 5);
 
       saved.clear();
       var b = comic();
       b.pageShown();
-      clock.advance(const Duration(seconds: 29));
       b.dispose();
-      expect(saved, isEmpty);
+      expect(saved.single.seconds, 0);
     });
   });
 

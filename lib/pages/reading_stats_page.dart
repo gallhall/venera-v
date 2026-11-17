@@ -75,7 +75,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
               ],
             ),
             SliverToBoxAdapter(child: buildFilters(context)),
-            if (stats.seconds == 0)
+            if (stats.works == 0)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: AppEmptyView(

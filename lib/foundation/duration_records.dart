@@ -41,7 +41,8 @@ class DurationWork {
   });
 }
 
-/// 时长记录: one reading or watching, of at least [DurationRecords.minimum].
+/// 时长记录: one reading, or one watching of at least
+/// [DurationRecords.minimum].
 class DurationRecord {
   final DurationWork work;
   final DurationKind kind;
@@ -184,7 +185,7 @@ class DurationRecords with ChangeNotifier {
 
   factory DurationRecords() => instance;
 
-  /// Shorter readings or watchings are not recorded.
+  /// Shorter watchings are not recorded; any reading is.
   static const minimum = Duration(seconds: 30);
 
   Database? _db;
