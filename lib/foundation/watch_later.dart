@@ -93,9 +93,13 @@ class WatchLaterItem implements Comic {
   int get hashCode => Object.hash(id, type);
 }
 
-/// The 稍后看 list: a table of `local_favorite.db`, so that it travels with
-/// the favorites when data is exported or synced. The local favorites
-/// attach it whenever they open the file.
+/// The 稍后看 list: a table of `history.db`, so that it travels with the
+/// history when data is exported or synced. The history attaches it
+/// whenever it opens the file.
+///
+/// It was first kept in `local_favorite.db`, where older versions take
+/// every table for a favorites folder and fail on this one; the local
+/// favorites copy its rows over ([adoptLegacy]) and drop it.
 ///
 /// Works are kept under their 代表条目 key ([WorkSubject.key]): anime as
 /// their subject, so a work bound to a subject is added as the subject, and
@@ -114,7 +118,6 @@ class WatchLater with ChangeNotifier {
 
   factory WatchLater() => _instance;
 
-  /// Not a favorites folder, though every other table of the file is one.
   static const table = '__watch_later';
 
   Database? _db;
@@ -123,13 +126,33 @@ class WatchLater with ChangeNotifier {
 
   WorkSubject get _subject => _subjects ?? WorkSubject();
 
-  /// Called by the local favorites with the database they opened.
+  /// Called by the history with the database it opened.
   void attach(Database db) {
     _open(db);
     _changed();
   }
 
-  void _open(Database db) {
+  /// Copies [items], the list as it was kept in `local_favorite.db`, into
+  /// [db], the history's file. What is there already wins.
+  static void adoptLegacy(Database db, List<WatchLaterItem> items) {
+    _createTable(db);
+    for (var item in items) {
+      db.execute(
+        'insert or ignore into "$table" (id, type, title, subtitle, cover, time) '
+        'values (?, ?, ?, ?, ?, ?);',
+        [
+          item.id,
+          item.type.value,
+          item.title,
+          item.subtitle,
+          item.cover,
+          item.time.millisecondsSinceEpoch,
+        ],
+      );
+    }
+  }
+
+  static void _createTable(Database db) {
     db.execute('''
       create table if not exists "$table" (
         id text not null,
@@ -141,6 +164,10 @@ class WatchLater with ChangeNotifier {
         primary key (id, type)
       );
     ''');
+  }
+
+  void _open(Database db) {
+    _createTable(db);
     _db = db;
   }
 
@@ -261,6 +288,9 @@ class WatchLater with ChangeNotifier {
     }
     _changed();
   }
+
+  /// The list changed in its file, e.g. by [adoptLegacy].
+  void reload() => _changed();
 
   void _changed() {
     _count = null;
