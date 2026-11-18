@@ -45,6 +45,26 @@ import UserNotifications
       }
       result(["status": status])
     }
+    // Background time for the sync's stage 6 (docs/sync/spec.md §9.3).
+    let syncChannel = FlutterMethodChannel(name: "venera/sync", binaryMessenger: controller.binaryMessenger)
+    syncChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "beginBackgroundTask":
+        var task: UIBackgroundTaskIdentifier = .invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "venera-sync") {
+          syncChannel.invokeMethod("backgroundTaskExpired", arguments: task.rawValue)
+          UIApplication.shared.endBackgroundTask(task)
+        }
+        result(task.rawValue)
+      case "endBackgroundTask":
+        if let raw = call.arguments as? Int {
+          UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: raw))
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
     nowPlaying = NowPlayingBridge(messenger: controller.binaryMessenger)
     methodChannel.setMethodCallHandler { (call, result) in
       if call.method == "getProxy" {

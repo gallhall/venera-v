@@ -11,6 +11,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/sync/sync_service.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/foundation/platform/app_channel.dart';
 import 'package:venera/network/download_notification.dart';
@@ -72,6 +73,8 @@ Future<void> init() async {
   } catch (e, s) {
     Log.error("init", "$e\n$s");
   }
+  // After the databases and the sources: finishes a sync a crash stopped.
+  await _step("Sync", SyncService.init).wait();
   CacheManager().setLimitSize(appdata.settings['cacheSize']);
   _checkOldConfigs();
   if (App.isAndroid) {

@@ -14,12 +14,29 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/utils/database.dart';
 
 import 'canonical_json.dart';
+import 'engine/plan.dart' show Plan, PlanOp, PlanStatus;
 import 'merger.dart' as merger;
 import 'sync_state.dart';
 import 'version.dart';
 
 /// The file name in the app's data directory.
 const syncDbName = 'sync.db';
+
+/// One safety restore point (spec §9.1): a verified zip of the business
+/// databases. [kind] is `first` (kept apart, §7.1) or `rotating`.
+class RestorePointRow {
+  const RestorePointRow(
+    this.path,
+    this.kind, {
+    required this.verified,
+    required this.createdAt,
+  });
+
+  final String path;
+  final String kind;
+  final bool verified;
+  final int createdAt;
+}
 
 /// Who this device is to the sync protocol (spec §4.2).
 class SyncIdentity {
@@ -623,6 +640,130 @@ class SyncStore {
         r['reason'] as String,
       ),
   ];
+
+  // ---- The redo plan (spec §9.3) ----
+
+  /// Writes [plan] with its ops; call inside the stage-5 [batch].
+  void writePlan(Plan plan) {
+    _checkWritable();
+    _db.execute(
+      'INSERT INTO plan (plan_id, created_at, status) VALUES (?, ?, ?)',
+      [plan.planId, _now(), plan.status.name],
+    );
+    var stmt = _db.prepare(
+      'INSERT INTO plan_ops (plan_id, op_id, db, tbl, key, before, after, '
+      'after_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    try {
+      for (var op in plan.ops) {
+        stmt.execute([
+          plan.planId,
+          op.opId,
+          op.db,
+          op.table,
+          op.key,
+          op.before,
+          op.after,
+          op.afterDigest,
+        ]);
+      }
+    } finally {
+      stmt.dispose();
+    }
+  }
+
+  /// The plan not yet finished, with the ops still to run; null when none.
+  Plan? openPlan() {
+    var rows = _db.select(
+      "SELECT plan_id, status FROM plan WHERE status != 'done' "
+      'ORDER BY created_at LIMIT 1',
+    );
+    if (rows.isEmpty) return null;
+    var id = rows.first['plan_id'] as String;
+    return Plan(id, [
+      for (var r in _db.select(
+        'SELECT * FROM plan_ops WHERE plan_id = ? AND done = 0 '
+        'ORDER BY op_id',
+        [id],
+      ))
+        PlanOp(
+          opId: r['op_id'] as int,
+          db: r['db'] as String,
+          table: r['tbl'] as String,
+          key: r['key'] as String,
+          before: r['before'] as String?,
+          after: r['after'] as String?,
+        ),
+    ], status: PlanStatus.values.byName(rows.first['status'] as String));
+  }
+
+  void setPlanStatus(String planId, PlanStatus status) {
+    _checkWritable();
+    _db.execute('UPDATE plan SET status = ? WHERE plan_id = ?', [
+      status.name,
+      planId,
+    ]);
+  }
+
+  /// Marks ops run (1) or skipped because the user changed the row (2).
+  void markOps(String planId, Iterable<int> done, Iterable<int> skipped) {
+    _checkWritable();
+    _transaction(() {
+      for (var (ids, mark) in [(done, 1), (skipped, 2)]) {
+        for (var id in ids) {
+          _db.execute(
+            'UPDATE plan_ops SET done = ? WHERE plan_id = ? AND op_id = ?',
+            [mark, planId, id],
+          );
+        }
+      }
+    });
+  }
+
+  /// Ops of [planId] skipped so far.
+  int skippedOps(String planId) =>
+      _db.select(
+            'SELECT count(*) AS n FROM plan_ops WHERE plan_id = ? AND done = 2',
+            [planId],
+          ).first['n']
+          as int;
+
+  /// Drops the ops of finished plans; the plan rows stay as a log.
+  void prunePlans() {
+    _checkWritable();
+    _db.execute(
+      "DELETE FROM plan_ops WHERE plan_id IN "
+      "(SELECT plan_id FROM plan WHERE status = 'done')",
+    );
+  }
+
+  // ---- Safety restore points (spec §9.1) ----
+
+  List<RestorePointRow> restorePoints() => [
+    for (var r in _db.select(
+      'SELECT * FROM restore_points ORDER BY created_at, path',
+    ))
+      RestorePointRow(
+        r['path'] as String,
+        r['kind'] as String,
+        verified: r['verified'] == 1,
+        createdAt: r['created_at'] as int,
+      ),
+  ];
+
+  void addRestorePoint(String path, String kind) {
+    _checkWritable();
+    _db.execute(
+      'INSERT OR REPLACE INTO restore_points (path, kind, verified, '
+      'created_at) VALUES (?, ?, 1, ?)',
+      [path, kind, _now()],
+    );
+  }
+
+  void removeRestorePoint(String path) {
+    _checkWritable();
+    _db.execute('DELETE FROM restore_points WHERE path = ?', [path]);
+  }
 
   /// Runs [body] in one transaction: everything it does through this store
   /// commits together or not at all.
