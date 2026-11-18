@@ -25,10 +25,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # flutter-version-file needs yq, which flutter-action installs from
+      # Chocolatey on Windows; when that feed is down the job cannot start.
+      # Read environment.flutter from pubspec.yaml here instead.
+      - id: flutter
+        shell: bash
+        run: |
+          v=$(sed -n 's/^  flutter: *\([0-9][0-9.]*\).*/\1/p' pubspec.yaml | head -1)
+          test -n "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
-          flutter-version-file: pubspec.yaml
+          flutter-version: ${{ steps.flutter.outputs.version }}
       - run: flutter pub get
       # sync.db tests need a system sqlite3: macOS has one, Ubuntu needs the
       # package; on Windows they skip (no sqlite3.dll outside an app build).

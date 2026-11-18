@@ -484,6 +484,17 @@ void clearUnfavoritedHistory() {
     _db.dispose();
   }
 
+  /// The connection of `history.db`, for the sync's scan.
+  Database get database => _db;
+
+  /// The file changed under the manager (a sync wrote it): drop what is
+  /// cached and tell the listeners.
+  void reload() {
+    cachedHistories.clear();
+    updateCache();
+    notifyListeners();
+  }
+
   void batchDeleteHistories(List<ComicID> histories) {
     if (histories.isEmpty) return;
     var deleted = <(String, int)>[];
