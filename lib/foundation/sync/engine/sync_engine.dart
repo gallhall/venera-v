@@ -211,6 +211,14 @@ class SyncEngine {
     }
     try {
       await resumePlan();
+      if (store.openPlan() != null) {
+        // Background time ran out while finishing the last plan: scanning
+        // rows it has not written yet would take their old content for new
+        // edits. Finish it first, on the next start or sync.
+        return report
+          ..outcome = SyncOutcome.partial
+          ..reason = 'writing will finish on the next start';
+      }
       RemoteRead? read;
       RemoteBook? book;
       var rs = remote(cancel);
@@ -361,6 +369,7 @@ class SyncEngine {
         tables: _tables,
         suspects: suspects,
         paused: report.paused,
+        keys: keys,
       );
       if (preview.ops.length > restorePointOps ||
           preview.deletes > restorePointDeletes) {
@@ -387,6 +396,7 @@ class SyncEngine {
         tables: _tables,
         suspects: suspects,
         paused: report.paused,
+        keys: keys,
       );
       for (var MapEntry(key: k, value: (digest, content))
           in draft.snapshots.entries) {

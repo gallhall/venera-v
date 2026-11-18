@@ -12,6 +12,8 @@ import 'package:venera/foundation/sync/engine/plan.dart';
 import 'package:venera/foundation/sync/engine/restore_points.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
 import 'package:venera/foundation/sync/local/source_keys.dart';
+import 'package:venera/foundation/sync/merger.dart';
+import 'package:venera/foundation/sync/version.dart';
 import 'package:venera/foundation/sync/local/sync_hooks.dart';
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
@@ -43,6 +45,16 @@ class TestLocal extends LocalSide {
   final Device device;
   int reloads = 0;
 
+  /// The sources installed on this device.
+  List<String> keys = installed;
+
+  /// Background time is up (iOS): stage 6 stops between batches.
+  bool expired = false;
+
+  @override
+  Future<T> background<T>(Future<T> Function(bool Function() expired) work) =>
+      work(() => expired);
+
   @override
   Database get historyDb => device.db;
 
@@ -53,7 +65,7 @@ class TestLocal extends LocalSide {
   bool get ready => true;
 
   @override
-  Iterable<String> installedKeys() => installed;
+  Iterable<String> installedKeys() => keys;
 
   @override
   void reload() => reloads++;
@@ -304,6 +316,62 @@ void main() {
     });
   });
 
+  group('sources not installed here', () {
+    test('wait in the state until the source is installed', () async {
+      var typeC = 'srcC'.hashCode;
+      b.local.keys = [...installed, 'srcC'];
+      b.putHistory('c1', type: typeC);
+      b.putLater('cl', type: typeC);
+      await b.sync();
+      var r = await a.sync();
+      expect(r.outcome, SyncOutcome.done, reason: '$r');
+      expect(r.unrepresentable, 2);
+      expect(a.history(), isEmpty);
+      expect(a.later(), isEmpty);
+      // No stand-in entity is made from it, nothing is suspected.
+      var before = a.store.load().canonical;
+      expect((await a.sync()).applied, 0);
+      expect(a.store.load().canonical, before);
+      expect(a.store.suspects(), isEmpty);
+      a.local.keys = [...installed, 'srcC'];
+      var after = await a.sync();
+      expect(after.unrepresentable, 0);
+      expect(a.history().keys, ['c1']);
+      expect(a.later(), {'cl:L'});
+      expect((await a.sync()).applied, 0);
+    });
+  });
+
+  test('aliases in force move a record to its new key', () {
+    var from = <Object>['h', 'int:7', '1'], to = <Object>['h', 'srcA', '1'];
+    var v = issue(
+      branches: const [],
+      device: 'dev',
+      counter: 1,
+      hlc: const Hlc(5),
+      fields: {'ep': 3, 'page': 1, 'max_page': 9, 'time': 5},
+    );
+    var state = SyncState(
+      registers: {
+        RegisterKey(from, 'pos'): [v],
+      },
+      aliases: [Alias(from, to)],
+    );
+    var draft = planWrites(state, const {});
+    expect(draft.ops, hasLength(1));
+    expect(RowTable.parse(draft.ops.single.after!).$1, to);
+    // Two aliases from one key conflict: neither is in force.
+    var conflicting = SyncState(
+      registers: state.registers,
+      aliases: [
+        Alias(from, to),
+        Alias(from, ['h', 'srcB', '1']),
+      ],
+    );
+    var d2 = planWrites(conflicting, const {});
+    expect(RowTable.parse(d2.ops.single.after!).$1, from);
+  });
+
   group('疑似删除', () {
     test(
       'a cleared table makes no tombstones and no repeated events',
@@ -374,6 +442,26 @@ void main() {
         expect(b.history(), a.history());
       });
     }
+
+    test('a plan still unfinished stops the sync before the scan', () async {
+      await prepare();
+      a.onPoint = (p) {
+        if (p == 'apply:before-mark') throw Crash();
+      };
+      await expectLater(a.sync(), throwsA(isA<Crash>()));
+      a.restart();
+      // The resumed plan runs out of background time at once.
+      a.local.expired = true;
+      var before = a.store.load().canonical;
+      var r = await a.sync();
+      expect(r.outcome, SyncOutcome.partial, reason: '$r');
+      expect(a.store.openPlan(), isNotNull);
+      expect(a.store.load().canonical, before, reason: 'nothing scanned');
+      a.local.expired = false;
+      var ok = await a.sync();
+      expect(ok.outcome, SyncOutcome.done, reason: '$ok');
+      expect(a.history().keys.toSet(), {'a1', 'b1', 'b2'});
+    });
 
     test('a plan left applying is finished at start', () async {
       await prepare();

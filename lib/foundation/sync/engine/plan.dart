@@ -331,10 +331,13 @@ PlanDraft planWrites(
   List<RowTable>? tables,
   Set<String> suspects = const {},
   Set<String> paused = const {},
+  SourceKeys? keys,
 }) {
   tables ??= defaultTables();
   var draft = PlanDraft();
-  var aliased = {for (var a in state.aliases) a.fromKey};
+  // Records as shown: an alias in force moves its `from` entity's branches
+  // onto its `to` entity; conflicting aliases move nothing (spec §5.4).
+  state = SyncState(registers: resolvedRegisters(state));
   var opId = 0;
   for (var t in tables) {
     if (paused.contains(t.kind)) continue;
@@ -344,9 +347,7 @@ PlanDraft planWrites(
     var entities = <String, List<Object>>{};
     for (var k in state.registers.keys) {
       if (k.entity.length < 3 || k.entity.first != t.kind) continue;
-      var ek = canonicalize(k.entity);
-      if (aliased.contains(ek)) continue;
-      entities[ek] = k.entity;
+      entities[canonicalize(k.entity)] = k.entity;
     }
     // Who each row should hold: row key → candidates (entity, registers).
     var wanted =
@@ -357,6 +358,16 @@ PlanDraft planWrites(
       if (suspects.contains(ek)) continue;
       var regs = t.shown(state, entity);
       if (regs == null) continue;
+      if (keys != null && !_roundTrips(keys, entity)) {
+        // A source not installed here: its type integer would read back as
+        // another key. Kept in the state until the source is installed.
+        draft.unrepresentable[ek] = Unrepresentable(
+          ek,
+          '',
+          'source ${entity[1]} is not installed',
+        );
+        continue;
+      }
       (wanted[t.rowKey(entity)] ??= []).add((entity, regs));
     }
     for (var rk in {...wanted.keys, ...rows.keys}) {
@@ -412,6 +423,12 @@ PlanDraft planWrites(
     }
   }
   return draft;
+}
+
+/// Whether [entity]'s row, once written, reads back as [entity].
+bool _roundTrips(SourceKeys keys, List<Object> entity) {
+  var source = entity[1] as String;
+  return keys.keyOf(localType(source)) == source;
 }
 
 void _snap(
