@@ -19,6 +19,8 @@ import 'package:venera/pages/follow_updates_page.dart';
 import 'package:venera/pages/history_page.dart';
 import 'package:venera/pages/image_favorites_page/image_favorites_page.dart';
 import 'package:venera/pages/search_page.dart';
+import 'package:venera/pages/sync_page.dart';
+import 'package:venera/foundation/sync/sync_controller.dart';
 import 'package:venera/pages/watch_later_page.dart';
 import 'package:venera/utils/data_sync.dart';
 import 'package:venera/utils/import_comic.dart';
@@ -87,7 +89,7 @@ class _HomePageState extends State<HomePage> {
       slivers: [
         SliverPadding(padding: EdgeInsets.only(top: context.padding.top)),
         const _SearchBar(),
-        const _SyncDataWidget(),
+        const _SyncCard(),
         _ContinueCard(),
         _HomeBentoGrid(
           followCount: followCount,
@@ -161,6 +163,41 @@ class _SearchBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Two-way sync on: 立即同步 (spec §9.2). Otherwise the full backup's
+/// upload and restore, as before.
+class _SyncCard extends StatefulWidget {
+  const _SyncCard();
+
+  @override
+  State<_SyncCard> createState() => _SyncCardState();
+}
+
+class _SyncCardState extends State<_SyncCard> {
+  @override
+  void initState() {
+    super.initState();
+    SyncController().addListener(_update);
+  }
+
+  @override
+  void dispose() {
+    SyncController().removeListener(_update);
+    super.dispose();
+  }
+
+  void _update() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (SyncController().enabled) {
+      return const SliverToBoxAdapter(child: SyncStatusCard());
+    }
+    return const _SyncDataWidget();
   }
 }
 

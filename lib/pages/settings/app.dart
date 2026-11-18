@@ -657,6 +657,25 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     autoSync = appdata.implicitData['webdavAutoSync'] ?? true;
   }
 
+  /// Turning two-way sync on saves the account first, then explains the
+  /// first sync (spec §7.1) before creating `sync.db`.
+  Future<void> onTwoWaySyncChanged(bool value) async {
+    if (!value) {
+      SyncController().disable();
+      setState(() {});
+      return;
+    }
+    if (url.trim().isEmpty || user.trim().isEmpty || pass.isEmpty) {
+      context.showMessage(message: "Fill in the WebDAV account first".tl);
+      return;
+    }
+    if (!await showFirstSyncDialog(context)) return;
+    appdata.settings['webdav'] = [url, user, pass];
+    appdata.saveData();
+    SyncController().enable();
+    if (mounted) setState(() {});
+  }
+
   void onAutoSyncChanged(bool value) {
     setState(() {
       autoSync = value;
@@ -762,6 +781,27 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                 onChanged: onAutoSyncChanged,
               ),
             ),
+            // Two-way sync is separate from the full backup (spec §2).
+            ListTile(
+              leading: const Icon(Icons.sync_alt_outlined),
+              title: Text("Two-way Sync".tl),
+              subtitle: Text(
+                "Merge History and Watch Later with your other devices".tl,
+              ),
+              contentPadding: EdgeInsets.zero,
+              trailing: Switch(
+                value: SyncController().enabled,
+                onChanged: onTwoWaySyncChanged,
+              ),
+            ),
+            if (SyncController().enabled)
+              ListTile(
+                leading: const Icon(Icons.manage_history_outlined),
+                title: Text("Sync status and conflicts".tl),
+                contentPadding: EdgeInsets.zero,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => showSubPage(context, const SyncPage()),
+              ),
             const SizedBox(height: 12),
             RadioGroup<bool>(
               groupValue: upload,
