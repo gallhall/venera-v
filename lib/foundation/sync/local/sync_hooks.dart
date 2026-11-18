@@ -45,6 +45,7 @@ abstract final class SyncHooks {
     if (list.isEmpty) return;
     _run('historyDeleted', (s, keys) {
       for (var (id, type) in list) {
+        if (!isSyncedSource(keys.keyOf(type))) continue;
         var entity = <Object>['h', keys.keyOf(type), id];
         for (var reg in const ['pos', 'info', 'read']) {
           _tombstone(s, RegisterKey(entity, reg));
@@ -72,6 +73,7 @@ abstract final class SyncHooks {
     if (list.isEmpty) return;
     _run('watchLaterWritten', (s, keys) {
       for (var i in list) {
+        if (!isSyncedSource(keys.keyOf(i.type))) continue;
         var rec = WatchLaterAdapter.recordOf(
           keys,
           id: i.id,
@@ -94,6 +96,7 @@ abstract final class SyncHooks {
     if (list.isEmpty) return;
     _run('watchLaterRemoved', (s, keys) {
       for (var (id, type) in list) {
+        if (!isSyncedSource(keys.keyOf(type))) continue;
         var entity = <Object>['w', keys.keyOf(type), id];
         _tombstone(s, RegisterKey(entity, 'item'));
         s.removeSuspect(canonicalize(entity));

@@ -16,6 +16,12 @@ int localType(String sourceKey) {
   return sourceKey.hashCode;
 }
 
+/// Whether records of [sourceKey] take part in sync. Local comics and
+/// videos (`local`) do not: their ids are numbered by each device, so the
+/// same id on two devices names different works, and their files are not on
+/// the other devices anyway (docs/sync/spec.md §5.4).
+bool isSyncedSource(String sourceKey) => sourceKey != 'local';
+
 /// Turns local `type` integers into sync source keys.
 class SourceKeys {
   SourceKeys(Iterable<String> installed) {

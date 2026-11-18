@@ -122,11 +122,12 @@ class HistoryAdapter implements SyncAdapter {
     try {
       return [
         for (var r in db.select('SELECT * FROM history'))
-          LocalRecord(
-            ['h', keys.keyOf(r['type'] as int), r['id'] as String],
-            registersOf(r),
-            time: r['time'] as int?,
-          ),
+          if (isSyncedSource(keys.keyOf(r['type'] as int)))
+            LocalRecord(
+              ['h', keys.keyOf(r['type'] as int), r['id'] as String],
+              registersOf(r),
+              time: r['time'] as int?,
+            ),
       ];
     } catch (e) {
       throw ScanAborted('the history cannot be read: $e');
@@ -201,15 +202,16 @@ class WatchLaterAdapter implements SyncAdapter {
     try {
       return [
         for (var r in db.select('SELECT * FROM "$table"'))
-          recordOf(
-            keys,
-            id: r['id'] as String,
-            type: r['type'] as int,
-            title: r['title'] as String? ?? '',
-            subtitle: r['subtitle'] as String? ?? '',
-            cover: r['cover'] as String? ?? '',
-            time: r['time'] as int? ?? 0,
-          ),
+          if (isSyncedSource(keys.keyOf(r['type'] as int)))
+            recordOf(
+              keys,
+              id: r['id'] as String,
+              type: r['type'] as int,
+              title: r['title'] as String? ?? '',
+              subtitle: r['subtitle'] as String? ?? '',
+              cover: r['cover'] as String? ?? '',
+              time: r['time'] as int? ?? 0,
+            ),
       ];
     } catch (e) {
       throw ScanAborted('稍后看 cannot be read: $e');

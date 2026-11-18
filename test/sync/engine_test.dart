@@ -316,6 +316,43 @@ void main() {
     });
   });
 
+  group('local works (spec §5.4)', () {
+    test('are never synced, and keep their row against a synced id', () async {
+      // A local comic and a local Watch Later item on A, numbered by A.
+      a.putHistory('2', type: 0, title: 'local on A');
+      a.putLater('l', type: 0);
+      // B's own local comic has the same id; B also reads a source work
+      // whose id is that number too.
+      b.putHistory('2', type: 0, title: 'local on B');
+      await a.sync();
+      await b.sync();
+      expect(b.history()['2']!.$4, 'local on B');
+      expect(b.later(), isEmpty, reason: 'local items are not sent');
+      for (var s in [a.store, b.store]) {
+        expect(
+          s.load().registers.keys.where((k) => k.entity[1] == 'local'),
+          isEmpty,
+        );
+      }
+      // A synced work with id 2 cannot take the row a local work holds.
+      b.deleteHistory('2', 0);
+      b.putHistory('2', type: typeB, title: 'source work');
+      await b.sync();
+      var r = await a.sync();
+      expect(r.outcome, SyncOutcome.done, reason: '$r');
+      expect(a.history()['2']!.$4, 'local on A');
+      expect(r.unrepresentable, 1);
+      // Deleting the local work makes no tombstone and no suspect, and
+      // frees the row for the synced work.
+      a.deleteHistory('2', 0);
+      var after = await a.sync();
+      expect(after.outcome, SyncOutcome.done, reason: '$after');
+      expect(a.store.suspects(), isEmpty);
+      expect(a.history()['2']!.$4, 'source work');
+      expect(after.unrepresentable, 0);
+    });
+  });
+
   group('sources not installed here', () {
     test('wait in the state until the source is installed', () async {
       var typeC = 'srcC'.hashCode;

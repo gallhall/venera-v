@@ -356,6 +356,9 @@ PlanDraft planWrites(
     for (var MapEntry(key: ek, value: entity) in entities.entries) {
       known.add(ek);
       if (suspects.contains(ek)) continue;
+      // Local works are never written from sync (spec §5.4), even when an
+      // older version of the app synced them.
+      if (!isSyncedSource('${entity[1]}')) continue;
       var regs = t.shown(state, entity);
       if (regs == null) continue;
       if (keys != null && !_roundTrips(keys, entity)) {
@@ -375,15 +378,32 @@ PlanDraft planWrites(
       List<Object>? current;
       if (before != null) current = RowTable.parse(before).$1;
       var candidates = wanted[rk] ?? const [];
-      (List<Object>, Map<String, Map<String, Object?>>)? keep;
-      if (candidates.isNotEmpty) {
-        keep = _choose(state, candidates, current);
+      if (current != null && !isSyncedSource('${current[1]}')) {
+        // A local work holds this row (the history keeps one row per id):
+        // it stays; what sync has for the id cannot be stored here.
         for (var c in candidates) {
-          if (identical(c, keep)) continue;
           var ek = canonicalize(c.$1);
           draft.unrepresentable[ek] = Unrepresentable(
             ek,
-            canonicalize(keep.$1),
+            canonicalize(current),
+            '${t.table} row is held by a local work',
+          );
+        }
+        continue;
+      }
+      (List<Object>, Map<String, Map<String, Object?>>)? keep;
+      if (candidates.isNotEmpty) {
+        keep = _choose(state, candidates, current);
+        // Compared by entity key: records have no identity, and
+        // identical() on them is false in AOT builds (every record was
+        // then listed as unrepresentable, "occupied" by itself).
+        var kept = canonicalize(keep.$1);
+        for (var c in candidates) {
+          var ek = canonicalize(c.$1);
+          if (ek == kept) continue;
+          draft.unrepresentable[ek] = Unrepresentable(
+            ek,
+            kept,
             '${t.table} keeps one row per ${t.kind == 'h' ? 'id' : 'key'}',
           );
         }
