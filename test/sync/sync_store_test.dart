@@ -145,6 +145,29 @@ void main() {
     }, skip: skip);
   }
 
+  test(
+    'a failing commit of a batch undoes it and leaves the store usable',
+    () {
+      var s = SyncStore.create(path, now: now);
+      var ends = 0;
+      s.faultHook = (p) {
+        // The inner issue's savepoint ends first, then the outer commit fails.
+        if (p == 'transaction:end' && ++ends == 2) throw Crash();
+      };
+      expect(
+        () => s.batch(() => s.issue(item('1'), fields: {'n': 1})),
+        throwsA(isA<Crash>()),
+      );
+      s.faultHook = null;
+      expect(s.branches(item('1')), isEmpty);
+      expect(s.identity.counter, 0);
+      var v = s.batch(() => s.issue(item('1'), fields: {'n': 2}));
+      expect(s.branches(item('1')), [v]);
+      s.dispose();
+    },
+    skip: skip,
+  );
+
   test('a failing hook never throws to the business code', () {
     var errors = <Object>[];
     var s = SyncStore.create(path, now: now, onError: (e, _) => errors.add(e));

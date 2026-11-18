@@ -226,20 +226,24 @@ class SyncStore {
   void _transaction(void Function() body) {
     var name = 's$_depth';
     _db.execute(_depth == 0 ? 'BEGIN IMMEDIATE' : 'SAVEPOINT $name');
+    var outer = _depth == 0;
     _depth++;
     try {
       body();
-      _depth--;
-      _db.execute(_depth == 0 ? 'COMMIT' : 'RELEASE $name');
+      _fault('transaction:end');
+      _db.execute(outer ? 'COMMIT' : 'RELEASE $name');
     } catch (_) {
-      _depth--;
-      if (_depth == 0) {
+      // Also reached when COMMIT/RELEASE itself fails (a full disk): the
+      // transaction is still open then, so undo it all the same.
+      if (outer) {
         _db.execute('ROLLBACK');
       } else {
         _db.execute('ROLLBACK TO $name');
         _db.execute('RELEASE $name');
       }
       rethrow;
+    } finally {
+      _depth--;
     }
   }
 
@@ -598,13 +602,16 @@ class SyncStore {
     ]);
   }
 
-  /// Puts [v], a version of [key], into the 同步存档 (spec §10).
+  /// Puts [v], a version of [key], into the 同步存档 (spec §10). Archiving
+  /// the same version of the same register again does nothing.
   void archive(RegisterKey key, Version v, String reason) {
     _checkWritable();
+    var body = canonicalize(v.toJson());
     _db.execute(
       'INSERT INTO archive (reg_key, body, reason, archived_at) '
-      'VALUES (?, ?, ?, ?)',
-      [key.key, canonicalize(v.toJson()), reason, _now()],
+      'SELECT ?, ?, ?, ? WHERE NOT EXISTS '
+      '(SELECT 1 FROM archive WHERE reg_key = ? AND body = ?)',
+      [key.key, body, reason, _now(), key.key, body],
     );
   }
 

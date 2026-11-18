@@ -419,6 +419,7 @@ void main() {
       var before = store.load().canonical;
       importBaselines(store, adapters(), hlc: Hlc(time));
       expect(store.load().canonical, before);
+      expect(store.archived(), hasLength(1));
       // The snapshot is set: the scan sees nothing new.
       expect(scan(store, adapters()).issued, isEmpty);
     });
