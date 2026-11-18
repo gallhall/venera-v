@@ -103,16 +103,27 @@ class SyncController with ChangeNotifier {
     _state = SyncUiState.running;
     _stage = null;
     notifyListeners();
+    var watch = Stopwatch()..start();
+    Log.info('Sync', 'sync started');
     SyncReport report;
     try {
       report = await (_runner ?? _runApp)(cancel, (s) {
         _stage = s;
+        Log.info('Sync', 'stage ${s.name}');
         notifyListeners();
       });
     } catch (e, st) {
       Log.error('Sync', 'sync failed: $e', st);
       report = SyncReport(SyncOutcome.failed, reason: '$e', error: e);
     }
+    // One line per sync: what happened, for the log and bug reports.
+    Log.info(
+      'Sync',
+      'sync ended in ${watch.elapsedMilliseconds} ms: $report'
+          '${report.error == null ? '' : ' (${report.error.runtimeType})'}'
+          ', published ${report.published}'
+          ', new suspects ${report.newSuspects.length}',
+    );
     _stage = null;
     _finish(report);
     _pruneArchive();
