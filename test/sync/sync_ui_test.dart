@@ -173,6 +173,23 @@ void main() {
     });
   });
 
+  testWidgets('an open page shows the result of a sync that ends', (
+    tester,
+  ) async {
+    var c = SyncController.forTest();
+    SyncController.instance = c;
+    await tester.pumpWidget(const MaterialApp(home: SuspectsPage()));
+    expect(find.textContaining('Confirm or keep them'), findsNothing);
+    c.debugReport(
+      SyncReport(
+        SyncOutcome.needsAttention,
+        reason: 'suspected deletions wait for confirmation',
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining('Confirm or keep them'), findsOneWidget);
+  });
+
   test('failure texts name the cause', () {
     String t(SyncReport r) =>
         statusText(SyncController.forTest()..debugReport(r));

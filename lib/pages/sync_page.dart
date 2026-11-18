@@ -204,7 +204,9 @@ class SyncPage extends StatefulWidget {
   State<SyncPage> createState() => _SyncPageState();
 }
 
-class _SyncPageState extends State<SyncPage> {
+/// Rebuilds a page whenever the controller changes: a sync that ends while
+/// the page is open shows its results at once.
+mixin _FollowsSync<T extends StatefulWidget> on State<T> {
   @override
   void initState() {
     super.initState();
@@ -220,7 +222,9 @@ class _SyncPageState extends State<SyncPage> {
   void _update() {
     if (mounted) setState(() {});
   }
+}
 
+class _SyncPageState extends State<SyncPage> with _FollowsSync {
   @override
   Widget build(BuildContext context) {
     var c = SyncController();
@@ -291,7 +295,7 @@ class SuspectsPage extends StatefulWidget {
   State<SuspectsPage> createState() => _SuspectsPageState();
 }
 
-class _SuspectsPageState extends State<SuspectsPage> {
+class _SuspectsPageState extends State<SuspectsPage> with _FollowsSync {
   @override
   Widget build(BuildContext context) {
     var c = SyncController();
@@ -356,7 +360,7 @@ class ConflictsPage extends StatefulWidget {
   State<ConflictsPage> createState() => _ConflictsPageState();
 }
 
-class _ConflictsPageState extends State<ConflictsPage> {
+class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
   @override
   Widget build(BuildContext context) {
     var c = SyncController();
@@ -403,9 +407,15 @@ class _ConflictsPageState extends State<ConflictsPage> {
 }
 
 /// 本机无法保存 (spec §9.7).
-class UnrepresentablePage extends StatelessWidget {
+class UnrepresentablePage extends StatefulWidget {
   const UnrepresentablePage({super.key});
 
+  @override
+  State<UnrepresentablePage> createState() => _UnrepresentablePageState();
+}
+
+class _UnrepresentablePageState extends State<UnrepresentablePage>
+    with _FollowsSync {
   @override
   Widget build(BuildContext context) {
     var store = SyncController().store;
@@ -440,7 +450,7 @@ class ArchivePage extends StatefulWidget {
   State<ArchivePage> createState() => _ArchivePageState();
 }
 
-class _ArchivePageState extends State<ArchivePage> {
+class _ArchivePageState extends State<ArchivePage> with _FollowsSync {
   static const _days = [30, 90, 180, 365, 3650];
 
   @override

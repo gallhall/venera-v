@@ -88,10 +88,17 @@ class SyncController with ChangeNotifier {
   }
 
   /// Turns it off; `sync.db` stays, so turning it on again goes on.
+  /// A sync still running is cancelled (or, in stage 6, finishes) and
+  /// keeps being tracked, so turning sync on again cannot start a second
+  /// one beside it.
   void disable() {
     appdata.implicitData['webdavSync'] = false;
     appdata.writeImplicitData();
-    _state = SyncUiState.idle;
+    if (running) {
+      _cancel?.cancel();
+    } else {
+      _state = SyncUiState.idle;
+    }
     notifyListeners();
   }
 
