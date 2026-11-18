@@ -15,6 +15,7 @@ import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/image_provider/image_favorites_provider.dart';
 import 'package:venera/foundation/local.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sync/local/sync_hooks.dart';
 import 'package:venera/pages/video/video_export.dart';
 import 'package:venera/utils/channel.dart';
 import 'package:venera/utils/database.dart';
@@ -367,12 +368,19 @@ class HistoryManager with ChangeNotifier {
   }
 
   void clearHistory() {
+    var rows = [
+      for (var r in _db.select('select id, type from history;'))
+        (r['id'] as String, r['type'] as int),
+    ];
     _db.execute("delete from history;");
+    // Only after the rows are gone: a failed clear issues no tombstone.
+    SyncHooks.historyDeleted(rows);
     updateCache();
     notifyListeners();
   }
 
 void clearUnfavoritedHistory() {
+  var deleted = <(String, int)>[];
   _db.execute('BEGIN TRANSACTION;');
   try {
     final idAndTypes = _db.select("""
@@ -386,6 +394,7 @@ void clearUnfavoritedHistory() {
           delete from history
           where id == ? and type == ?;
         """, [id, type.value]);
+        deleted.add((id, type.value));
       }
     }
     _db.execute('COMMIT;');
@@ -393,6 +402,7 @@ void clearUnfavoritedHistory() {
     _db.execute('ROLLBACK;');
     rethrow;
   }
+  SyncHooks.historyDeleted(deleted);
   updateCache();
   notifyListeners();
 }
@@ -402,6 +412,7 @@ void clearUnfavoritedHistory() {
       delete from history
       where id == ? and type == ?;
     """, [id, type.value]);
+    if (_db.updatedRows > 0) SyncHooks.historyDeleted([(id, type.value)]);
     updateCache();
     notifyListeners();
   }
@@ -475,6 +486,7 @@ void clearUnfavoritedHistory() {
 
   void batchDeleteHistories(List<ComicID> histories) {
     if (histories.isEmpty) return;
+    var deleted = <(String, int)>[];
     _db.execute('BEGIN TRANSACTION;');
     try {
       for (var history in histories) {
@@ -482,12 +494,14 @@ void clearUnfavoritedHistory() {
           delete from history
           where id == ? and type == ?;
         """, [history.id, history.type.value]);
+        if (_db.updatedRows > 0) deleted.add((history.id, history.type.value));
       }
       _db.execute('COMMIT;');
     } catch (e) {
       _db.execute('ROLLBACK;');
       rethrow;
     }
+    SyncHooks.historyDeleted(deleted);
     updateCache();
     notifyListeners();
   }
