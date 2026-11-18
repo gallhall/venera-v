@@ -9,6 +9,7 @@ import '../sync_state.dart';
 import '../sync_store.dart';
 import '../version.dart';
 import 'adapters.dart';
+import 'source_keys.dart';
 
 /// Suspected deletions of one kind past these pause that kind (§6.2). They
 /// only warn; nothing is ever deleted without the user.
@@ -60,6 +61,8 @@ ScanResult scan(SyncStore store, List<SyncAdapter> adapters) {
         var parts = parseStrictJson(regKey) as List;
         var entity = (parts[0] as List).cast<Object>();
         if (entity.isEmpty || entity.first != a.kind) continue;
+        // Records of a source that does not sync are never missing.
+        if (entity.length > 1 && !isSyncedSource('${entity[1]}')) continue;
         var ek = canonicalize(entity);
         if (present.contains(ek) || unrepresentable.contains(ek)) continue;
         missing.add(ek);

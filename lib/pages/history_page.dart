@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:venera/foundation/sync/sync_controller.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/comic_type.dart';
@@ -325,7 +326,10 @@ class _HistoryPageState extends State<HistoryPage> {
         onPressed: () => showConfirmDialog(
           context: context,
           title: 'Clear History'.tl,
-          content: 'Are you sure you want to clear your history?'.tl,
+          content: SyncController().enabled
+              ? '${'Are you sure you want to clear your history?'.tl}\n\n'
+                    '${'After clearing, the next sync also deletes these history records on your other devices.'.tl}'
+              : 'Are you sure you want to clear your history?'.tl,
           confirmText: 'Clear',
           btnColor: context.colorScheme.error,
           onConfirm: () => HistoryManager().clearHistory(),

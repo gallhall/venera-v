@@ -38,6 +38,23 @@ class RestorePointRow {
   final int createdAt;
 }
 
+/// One entry of the 同步存档.
+class ArchiveEntry {
+  const ArchiveEntry(
+    this.id,
+    this.key,
+    this.version,
+    this.reason,
+    this.archivedAt,
+  );
+
+  final int id;
+  final RegisterKey key;
+  final Version version;
+  final String reason;
+  final int archivedAt;
+}
+
 /// Who this device is to the sync protocol (spec §4.2).
 class SyncIdentity {
   const SyncIdentity({
@@ -640,6 +657,34 @@ class SyncStore {
         r['reason'] as String,
       ),
   ];
+
+  /// The 同步存档 newest first, for the archive page.
+  List<ArchiveEntry> archiveEntries() => [
+    for (var r in _db.select(
+      'SELECT id, reg_key, body, reason, archived_at FROM archive '
+      'ORDER BY archived_at DESC, id DESC',
+    ))
+      ArchiveEntry(
+        r['id'] as int,
+        _keyOf(r['reg_key'] as String),
+        _version(r['body'] as String),
+        r['reason'] as String,
+        r['archived_at'] as int,
+      ),
+  ];
+
+  /// Drops archive entries archived before [before] (ms): everything there
+  /// is resolved; unresolved conflicts stay in `versions` (spec §10).
+  int pruneArchive(int before) {
+    _checkWritable();
+    _db.execute('DELETE FROM archive WHERE archived_at < ?', [before]);
+    return _db.updatedRows;
+  }
+
+  void removeArchiveEntry(int id) {
+    _checkWritable();
+    _db.execute('DELETE FROM archive WHERE id = ?', [id]);
+  }
 
   // ---- The redo plan (spec §9.3) ----
 
