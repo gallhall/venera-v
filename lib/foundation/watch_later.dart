@@ -4,6 +4,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:venera/foundation/bangumi/work_subject.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/comic_type.dart';
+import 'package:venera/foundation/sync/local/sync_hooks.dart';
 
 /// A work in the 稍后看 list.
 class WatchLaterItem implements Comic {
@@ -231,7 +232,9 @@ class WatchLater with ChangeNotifier {
 
   /// Adds [item], or moves it to the top when it is there.
   void add(WatchLaterItem item) {
-    _insert(_normalize(item));
+    var kept = _normalize(item);
+    _insert(kept);
+    if (_db != null) SyncHooks.watchLaterWritten([kept._sync]);
     _changed();
   }
 
@@ -273,12 +276,17 @@ class WatchLater with ChangeNotifier {
   }
 
   void _delete(Iterable<WatchLaterItem> items) {
+    var db = _db;
+    if (db == null) return;
+    var gone = <(String, int)>[];
     for (var e in items) {
-      _db?.execute(
+      db.execute(
         'delete from "$table" where id = ? and type = ?;',
         [e.id, e.type.value],
       );
+      if (db.updatedRows > 0) gone.add((e.id, e.type.value));
     }
+    SyncHooks.watchLaterRemoved(gone);
   }
 
   /// Puts back removed [items] as they were.
@@ -286,6 +294,7 @@ class WatchLater with ChangeNotifier {
     for (var item in items) {
       _insert(item);
     }
+    if (_db != null) SyncHooks.watchLaterWritten([for (var i in items) i._sync]);
     _changed();
   }
 
@@ -296,4 +305,17 @@ class WatchLater with ChangeNotifier {
     _count = null;
     notifyListeners();
   }
+}
+
+extension on WatchLaterItem {
+  /// This item as the sync hooks take it.
+  ({String id, int type, String title, String subtitle, String cover, int time})
+  get _sync => (
+    id: id,
+    type: type.value,
+    title: title,
+    subtitle: subtitle,
+    cover: cover,
+    time: time.millisecondsSinceEpoch,
+  );
 }

@@ -219,13 +219,26 @@ class SyncStore {
     if (readOnly) throw SyncStoreReadOnly(schema);
   }
 
+  int _depth = 0;
+
+  /// One transaction; nested inside another it is a savepoint, so a failing
+  /// inner step undoes only itself.
   void _transaction(void Function() body) {
-    _db.execute('BEGIN IMMEDIATE');
+    var name = 's$_depth';
+    _db.execute(_depth == 0 ? 'BEGIN IMMEDIATE' : 'SAVEPOINT $name');
+    _depth++;
     try {
       body();
-      _db.execute('COMMIT');
+      _depth--;
+      _db.execute(_depth == 0 ? 'COMMIT' : 'RELEASE $name');
     } catch (_) {
-      _db.execute('ROLLBACK');
+      _depth--;
+      if (_depth == 0) {
+        _db.execute('ROLLBACK');
+      } else {
+        _db.execute('ROLLBACK TO $name');
+        _db.execute('RELEASE $name');
+      }
       rethrow;
     }
   }
@@ -470,6 +483,148 @@ class SyncStore {
         r['evicted_at'] as int,
       ),
   ];
+
+  // ---- Local bookkeeping of the scanner and hooks (spec §6, §9.7, §10) ----
+
+  /// Digest of every register as last seen in the business data:
+  /// register key → digest.
+  Map<String, String> snapshots() => {
+    for (var r in _db.select('SELECT entity_key, digest FROM snapshot'))
+      r['entity_key'] as String: r['digest'] as String,
+  };
+
+  String? snapshot(RegisterKey key) {
+    var rows = _db.select('SELECT digest FROM snapshot WHERE entity_key = ?', [
+      key.key,
+    ]);
+    return rows.isEmpty ? null : rows.first['digest'] as String;
+  }
+
+  /// The content stored with the snapshot of [key], if any.
+  String? snapshotContent(RegisterKey key) {
+    var rows = _db.select('SELECT content FROM snapshot WHERE entity_key = ?', [
+      key.key,
+    ]);
+    return rows.isEmpty ? null : rows.first['content'] as String?;
+  }
+
+  /// Sets ([digest] and the [content] it digests) or removes (null) the
+  /// snapshot of [key].
+  void setSnapshot(RegisterKey key, String? digest, {String? content}) {
+    _checkWritable();
+    if (digest == null) {
+      _db.execute('DELETE FROM snapshot WHERE entity_key = ?', [key.key]);
+    } else {
+      _db.execute(
+        'INSERT OR REPLACE INTO snapshot (entity_key, digest, content) '
+        'VALUES (?, ?, ?)',
+        [key.key, digest, content],
+      );
+    }
+  }
+
+  /// The dot already issued for history [key] at [time] with [contentHash].
+  Dot? historyDot(RegisterKey key, int time, String contentHash) {
+    var rows = _db.select(
+      'SELECT device_id, counter FROM history_dots '
+      'WHERE entity_key = ? AND time = ? AND content_hash = ?',
+      [key.key, time, contentHash],
+    );
+    if (rows.isEmpty) return null;
+    return Dot(rows.first['device_id'] as String, rows.first['counter'] as int);
+  }
+
+  void setHistoryDot(RegisterKey key, int time, String contentHash, Dot dot) {
+    _checkWritable();
+    _db.execute(
+      'INSERT OR REPLACE INTO history_dots '
+      '(entity_key, time, content_hash, device_id, counter) '
+      'VALUES (?, ?, ?, ?, ?)',
+      [key.key, time, contentHash, dot.device, dot.counter],
+    );
+  }
+
+  /// 疑似删除 by record (entity) key.
+  Map<String, ({String? content, int foundAt, String state})> suspects() => {
+    for (var r in _db.select(
+      'SELECT entity_key, content, found_at, state FROM suspects',
+    ))
+      r['entity_key'] as String: (
+        content: r['content'] as String?,
+        foundAt: r['found_at'] as int,
+        state: r['state'] as String,
+      ),
+  };
+
+  /// Records a 疑似删除 once; a known one is left as it is.
+  bool addSuspect(String entityKey, String? content) {
+    _checkWritable();
+    _db.execute(
+      'INSERT OR IGNORE INTO suspects (entity_key, content, found_at, state) '
+      "VALUES (?, ?, ?, 'pending')",
+      [entityKey, content, _now()],
+    );
+    return _db.updatedRows > 0;
+  }
+
+  void removeSuspect(String entityKey) {
+    _checkWritable();
+    _db.execute('DELETE FROM suspects WHERE entity_key = ?', [entityKey]);
+  }
+
+  /// Records this device cannot keep (spec §9.7), by entity key.
+  Set<String> unrepresentable() => {
+    for (var r in _db.select('SELECT entity_key FROM unrepresentable'))
+      r['entity_key'] as String,
+  };
+
+  void setUnrepresentable(
+    String entityKey, {
+    required String occupiedBy,
+    required String reason,
+  }) {
+    _checkWritable();
+    _db.execute(
+      'INSERT OR IGNORE INTO unrepresentable '
+      '(entity_key, occupied_by, reason, found_at) VALUES (?, ?, ?, ?)',
+      [entityKey, occupiedBy, reason, _now()],
+    );
+  }
+
+  void clearUnrepresentable(String entityKey) {
+    _checkWritable();
+    _db.execute('DELETE FROM unrepresentable WHERE entity_key = ?', [
+      entityKey,
+    ]);
+  }
+
+  /// Puts [v], a version of [key], into the 同步存档 (spec §10).
+  void archive(RegisterKey key, Version v, String reason) {
+    _checkWritable();
+    _db.execute(
+      'INSERT INTO archive (reg_key, body, reason, archived_at) '
+      'VALUES (?, ?, ?, ?)',
+      [key.key, canonicalize(v.toJson()), reason, _now()],
+    );
+  }
+
+  List<(RegisterKey, Version, String)> archived() => [
+    for (var r in _db.select('SELECT reg_key, body, reason FROM archive'))
+      (
+        _keyOf(r['reg_key'] as String),
+        _version(r['body'] as String),
+        r['reason'] as String,
+      ),
+  ];
+
+  /// Runs [body] in one transaction: everything it does through this store
+  /// commits together or not at all.
+  T batch<T>(T Function() body) {
+    _checkWritable();
+    late T out;
+    _transaction(() => out = body());
+    return out;
+  }
 
   /// Names of the tables, for tests and diagnostics.
   @visibleForTesting
