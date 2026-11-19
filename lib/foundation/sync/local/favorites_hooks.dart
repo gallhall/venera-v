@@ -169,7 +169,10 @@ abstract final class FavoritesHooks {
           ? a.store.favoriteTime(canonicalize(oldKey.entity))?.$1
           : (parseStrictJson(old) as Map)['addTime'] as int?;
       _removeItem(a, fromId, id, type, opId: op);
-      if (row != null && inserted.contains((id, type))) {
+      if (row != null &&
+          inserted.contains((id, type)) &&
+          isSyncedSource(source)) {
+        a.store.setFavoriteSource(toId, id, type, source);
         _writeItem(a, toId, row, added: added, inserted: true, opId: op);
       }
     }

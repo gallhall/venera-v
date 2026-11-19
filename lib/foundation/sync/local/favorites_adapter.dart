@@ -168,12 +168,16 @@ class FavoritesAdapter {
 
   /// Capture one consistent view of the legacy tables. Only sync.db holds IDs.
   FavoritesScan snapshot({required bool joining}) {
-    final names = favoriteTableNames(db);
+    // An initialized backup may omit whole folders. Validate the catalog
+    // even if there are no folder tables to probe.
+    db.select('SELECT folder_name, order_value FROM folder_order LIMIT 0');
+    db.select(
+      'SELECT folder_name, source_key, source_folder FROM folder_sync LIMIT 0',
+    );
+    final names = favoriteTableNames(db)..sort();
+    final available = names.toSet();
     final mapped = store.favoriteFolders();
     final byName = {for (final entry in mapped.entries) entry.value: entry.key};
-    if (!names.toSet().containsAll(mapped.values)) {
-      throw const ScanAborted('a mapped favorites table is missing');
-    }
     final folders = <String, FavoriteFolder>{};
     final records = <LocalRecord>[];
     final orderRecords = <LocalRecord>[];
@@ -181,7 +185,7 @@ class FavoritesAdapter {
     final sources = <(String, String, int), String>{};
     final ids = mapped.keys.toSet();
     final newMappings = <String, String>{};
-    for (final name in names..sort()) {
+    for (final name in names) {
       final folder = FavoriteFolder.read(db, name)!;
       final legacy = 'legacy:${unicode.nfc(name.trim())}';
       final id =
@@ -227,6 +231,13 @@ class FavoritesAdapter {
       );
     }
     store.batch(() {
+      // Only release stale physical names after the entire scan succeeds.
+      // Snapshots and protocol state remain available for suspected deletion.
+      for (final entry in mapped.entries) {
+        if (!available.contains(entry.value)) {
+          store.setFavoriteFolder(entry.key, null);
+        }
+      }
       for (final entry in newMappings.entries) {
         store.setFavoriteFolder(entry.key, entry.value);
       }

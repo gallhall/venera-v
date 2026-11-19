@@ -8,6 +8,7 @@ import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorite_tables.dart';
 import 'package:venera/foundation/favorites.dart';
+import 'package:venera/foundation/sync/canonical_json.dart';
 import 'package:venera/foundation/sync/engine/restore_points.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
 import 'package:venera/foundation/sync/local/favorites_adapter.dart';
@@ -83,7 +84,7 @@ class _Device extends LocalSide {
   @override
   late final Database historyDb;
   @override
-  late final Database favoritesDb;
+  late Database favoritesDb;
   @override
   Map<String, String> get databasePaths => {
     'history': '${dir.path}/history.db',
@@ -121,6 +122,20 @@ class _Device extends LocalSide {
   }
 
   FavoriteFolder? folder(String name) => FavoriteFolder.read(favoritesDb, name);
+
+  void restoreEmptyFavoritesBackup() {
+    final backup = '${dir.path}/restored-favorites.db';
+    final restored = sqlite3.open(backup);
+    try {
+      _schema(restored);
+    } finally {
+      restored.dispose();
+    }
+    final path = databasePaths['favorites']!;
+    favoritesDb.dispose();
+    File(backup).renameSync(path);
+    favoritesDb = sqlite3.open(path);
+  }
 
   void dispose() {
     store.dispose();
@@ -170,6 +185,14 @@ void main() {
           const MethodChannel('plugins.flutter.io/path_provider'),
           (_) async => dir.path,
         );
+    // Start with initialized settings so startup has no unawaited write
+    // that can outlive cleanup of this test's directory.
+    File(
+      '${dir.path}/appdata.json',
+    ).writeAsStringSync('{"settings":{"deviceId":"favorites-test-device"}}');
+    File('${dir.path}/implicitData.json').writeAsStringSync(
+      '{"btRawFilterMigrated":true,"btKeepFilesMigrated":true}',
+    );
     await appdata.init();
     LocalFavoritesManager.cache = null;
     final manager = LocalFavoritesManager();
@@ -461,6 +484,83 @@ void main() {
         'id',
       ], 'item');
       expect(b.store.branches(imported), isEmpty);
+    }, skip: skip);
+
+    for (final keep in [true, false]) {
+      test('导入缺少收藏夹的数据库备份后继续同步，${keep ? '保留' : '明确删除'}收藏夹', () async {
+        createFavoriteTable(a.favoritesDb, 'Collection');
+        _insert(a.favoritesDb, 'Collection', 'member');
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        expect((await b.sync()).outcome, SyncOutcome.done);
+        const folderId = 'legacy:Collection';
+        final folder = RegisterKey(['f', folderId], 'folder');
+        final member = RegisterKey(['i', folderId, _source, 'member'], 'item');
+        final suspect = canonicalize(folder.entity);
+
+        b.restoreEmptyFavoritesBackup();
+        a.historyDb.execute(
+          'INSERT INTO "__watch_later" VALUES (?, ?, ?, ?, ?, ?)',
+          ['new', _type, 'New item', '', '', 100],
+        );
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        final first = await b.sync();
+        expect(first.outcome, SyncOutcome.needsAttention);
+        expect(first.published, isTrue);
+        expect(first.newSuspects, [suspect]);
+        expect(
+          b.historyDb.select('SELECT id FROM "__watch_later"').single['id'],
+          'new',
+        );
+        expect(b.store.branches(folder).single.deleted, isFalse);
+        expect(b.store.branches(member).single.deleted, isFalse);
+        expect(b.folder('Collection'), isNull);
+        expect((await b.sync()).newSuspects, isEmpty);
+        expect(b.store.suspects().keys, [suspect]);
+
+        if (keep) {
+          keepRecord(b.store, suspect);
+          expect((await b.sync()).outcome, SyncOutcome.done);
+          expect(b.folder('Collection')!.rows.single.id, 'member');
+          expect(b.store.favoriteFolders(), {folderId: 'Collection'});
+        } else {
+          confirmDeletion(b.store, suspect);
+          expect((await b.sync()).outcome, SyncOutcome.done);
+          expect((await a.sync()).outcome, SyncOutcome.done);
+          expect(a.folder('Collection'), isNull);
+          expect(b.store.branches(member).single.deleted, isTrue);
+          expect(
+            b.store.archiveEntries().map((entry) => entry.key),
+            contains(member),
+          );
+        }
+      }, skip: skip);
+    }
+
+    test('卸载来源后移动收藏会在另一台设备一次同步中生效', () async {
+      createFavoriteTable(a.favoritesDb, 'From');
+      createFavoriteTable(a.favoritesDb, 'To');
+      _insert(a.favoritesDb, 'From', 'member');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+
+      a.sources = [];
+      a.attachHooks();
+      a.favoritesDb.execute('INSERT INTO "To" SELECT * FROM "From"');
+      a.favoritesDb.execute('DELETE FROM "From"');
+      FavoritesHooks.itemsMoved(
+        a.favoritesDb,
+        'From',
+        'To',
+        [('member', _type)],
+        {('member', _type)},
+      );
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      final received = await b.sync();
+      expect(received.outcome, SyncOutcome.done);
+      expect(received.unrepresentable, 0);
+      expect(b.folder('From')!.rows, isEmpty);
+      expect(b.folder('To')!.rows.single.id, 'member');
+      expect(b.folder('To')!.rows.single.time, _time);
     }, skip: skip);
 
     test('排序记录超过单版本大小上限时保留上一份远端状态', () async {

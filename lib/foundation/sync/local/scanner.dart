@@ -38,6 +38,7 @@ ScanResult scan(SyncStore store, List<SyncAdapter> adapters) {
     a.check();
   }
   var records = {for (var a in adapters) a.kind: a.read()};
+  final presentFolders = records['f']?.map((rec) => rec.entity[1]).toSet();
   var result = ScanResult();
   store.batch(() {
     var snaps = store.snapshots();
@@ -66,6 +67,14 @@ ScanResult scan(SyncStore store, List<SyncAdapter> adapters) {
         if (source != null && !isSyncedSource(source)) continue;
         var ek = canonicalize(entity);
         if (present.contains(ek) || unrepresentable.contains(ek)) continue;
+        if (entity case ['i', String folder, _, _]
+            when presentFolders != null &&
+                !presentFolders.contains(folder) &&
+                snaps.containsKey(RegisterKey(['f', folder], 'folder').key)) {
+          // One decision covers a missing folder and all its memberships.
+          if (suspects.containsKey(ek)) store.removeSuspect(ek);
+          continue;
+        }
         missing.add(ek);
       }
       var fresh = [

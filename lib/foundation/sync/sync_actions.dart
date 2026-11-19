@@ -7,6 +7,7 @@ library;
 import 'canonical_json.dart';
 import 'entity_rules.dart';
 import 'merger.dart';
+import 'local/source_keys.dart';
 import 'sync_state.dart';
 import 'sync_store.dart';
 import 'version.dart';
@@ -105,19 +106,55 @@ String titleOf(SyncState state, List<Object> entity) {
 List<Object> entityOf(String entityKey) =>
     (parseStrictJson(entityKey) as List).cast<Object>();
 
+Iterable<RegisterKey> _affectedRegisters(
+  SyncStore store,
+  List<Object> entity,
+) sync* {
+  for (final reg in registersOfKind(entity.first)) {
+    yield RegisterKey(entity, reg);
+  }
+  if (entity case ['f', String folder]) {
+    yield RegisterKey(['io', folder], 'order');
+    for (final key in store.load().registers.keys) {
+      if (key.entity case [
+        'i',
+        String id,
+        String source,
+        String _,
+      ] when id == folder && key.register == 'item' && isSyncedSource(source)) {
+        yield key;
+      }
+    }
+  }
+}
+
 /// The user confirms a 疑似删除: tombstones for the record, its shown
 /// content kept in the archive.
 void confirmDeletion(SyncStore store, String entityKey) {
   var entity = entityOf(entityKey);
   store.batch(() {
-    for (var reg in registersOfKind(entity.first)) {
-      var key = RegisterKey(entity, reg);
-      var shown = display(store.branches(key)).shown;
+    for (final key in _affectedRegisters(store, entity)) {
+      final branches = store.branches(key);
+      final shown = display(branches).shown;
       if (shown != null) {
-        store.archive(key, shown, 'confirmed deletion');
-        store.issue(key, deleted: true);
+        final retained = entity.first == 'f'
+            ? branches.where((v) => !v.deleted)
+            : [shown];
+        for (final version in retained) {
+          store.archive(key, version, 'confirmed deletion');
+        }
+        store.issue(
+          key,
+          deleted: true,
+          fields: {
+            if (key.register == 'folder') 'lastName': shown.fields['name'],
+          },
+        );
       }
       store.setSnapshot(key, null);
+      if (key.entity.first == 'i' && entity.first == 'f') {
+        store.removeSuspect(canonicalize(key.entity));
+      }
     }
     store.removeSuspect(entityKey);
   });
@@ -128,8 +165,11 @@ void confirmDeletion(SyncStore store, String entityKey) {
 void keepRecord(SyncStore store, String entityKey) {
   var entity = entityOf(entityKey);
   store.batch(() {
-    for (var reg in registersOfKind(entity.first)) {
-      store.setSnapshot(RegisterKey(entity, reg), null);
+    for (final key in _affectedRegisters(store, entity)) {
+      store.setSnapshot(key, null);
+      if (key.entity.first == 'i' && entity.first == 'f') {
+        store.removeSuspect(canonicalize(key.entity));
+      }
     }
     store.removeSuspect(entityKey);
   });
