@@ -221,7 +221,7 @@ void main() {
     // this check's business.
     keys.addAll([
       'Two-way Sync',
-      'Merge History and Watch Later with your other devices',
+      'Merge History, Watch Later, and local favorites with your other devices',
       'Sync status and conflicts',
       'Fill in the WebDAV account first',
       'After clearing, the next sync also deletes these history records on your other devices.',

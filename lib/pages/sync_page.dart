@@ -27,6 +27,9 @@ String reasonText(SyncReport r) {
   var e = r.error;
   var tooLarge = tooLargeOf(r);
   if (tooLarge != null) {
+    if (tooLarge.recordTooLarge) {
+      return 'A favorites record exceeds the sync size limit'.tl;
+    }
     return 'Sync data too large: @a records, @b metadata entries'.tlParams({
       'a': tooLarge.businessRecords,
       'b': tooLarge.metadata,
@@ -189,7 +192,7 @@ Future<bool> showFirstSyncDialog(BuildContext context) async {
     context: context,
     title: 'Turn on two-way sync'.tl,
     content:
-        'History and Watch Later are merged with your other devices. A safety restore point of this device is made first.\n\nRecords deleted before sync was turned on have no deletion record, so they may come back from other devices on the first sync.'
+        'History, Watch Later, and local favorites are merged with your other devices. A safety restore point of this device is made first.\n\nRecords deleted before sync was turned on have no deletion record, so they may come back from other devices on the first sync.'
             .tl,
     onConfirm: () => ok = true,
   );
@@ -230,7 +233,10 @@ class _SyncPageState extends State<SyncPage> with _FollowsSync {
     var c = SyncController();
     var store = c.store;
     var suspects = store?.suspects().length ?? 0;
-    var conflictCount = store == null ? 0 : conflicts(store).length;
+    var conflictCount = store == null
+        ? 0
+        : conflicts(store).length +
+              retainedFavoriteFolders(store.load()).length;
     var unrepresentable = store?.unrepresentable().length ?? 0;
     var archived = store?.archiveEntries().length ?? 0;
     return SubPage(
@@ -322,7 +328,11 @@ class _SuspectsPageState extends State<SuspectsPage> with _FollowsSync {
               ListTile(
                 title: Text(titleOf(state!, entityOf(ek))),
                 subtitle: Text(
-                  (entityOf(ek).first == 'h' ? 'History' : 'Watch Later').tl,
+                  (switch (entityOf(ek).first) {
+                    'h' => 'History',
+                    'w' => 'Watch Later',
+                    _ => 'Local Favorites',
+                  }).tl,
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -367,12 +377,23 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
     var store = c.store;
     var list = store == null ? const <SyncConflict>[] : conflicts(store);
     var state = store?.load();
+    final retained = state == null
+        ? const <String, String>{}
+        : retainedFavoriteFolders(state);
     return SubPage(
       title: 'Sync conflicts'.tl,
-      body: list.isEmpty
+      body: list.isEmpty && retained.isEmpty
           ? AppEmptyView(text: 'No sync conflicts'.tl)
           : ListView(
               children: [
+                for (final name in retained.values)
+                  ListTile(
+                    title: Text(name),
+                    subtitle: Text(
+                      'This folder was kept because it still has items edited on another device.'
+                          .tl,
+                    ),
+                  ),
                 for (var x in list)
                   ExpansionTile(
                     title: Text(titleOf(state!, x.key.entity)),

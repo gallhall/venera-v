@@ -786,7 +786,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               leading: const Icon(Icons.sync_alt_outlined),
               title: Text("Two-way Sync".tl),
               subtitle: Text(
-                "Merge History and Watch Later with your other devices".tl,
+                "Merge History, Watch Later, and local favorites with your other devices".tl,
               ),
               contentPadding: EdgeInsets.zero,
               trailing: Switch(

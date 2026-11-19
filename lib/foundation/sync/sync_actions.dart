@@ -5,6 +5,7 @@
 library;
 
 import 'canonical_json.dart';
+import 'entity_rules.dart';
 import 'merger.dart';
 import 'sync_state.dart';
 import 'sync_store.dart';
@@ -25,7 +26,9 @@ class SyncConflict {
 /// Register names of an entity kind.
 List<String> registersOfKind(Object kind) => switch (kind) {
   'h' => const ['pos', 'info', 'read'],
-  'w' => const ['item'],
+  'w' || 'i' => const ['item'],
+  'f' => const ['folder'],
+  'fo' || 'io' => const ['order'],
   _ => const [],
 };
 
@@ -47,6 +50,27 @@ List<SyncConflict> conflicts(SyncStore store) {
   return out;
 }
 
+/// A deleted folder still visible because one of its items survived.
+Map<String, String> retainedFavoriteFolders(SyncState state) {
+  final registers = resolvedRegisters(state);
+  final live = <String>{
+    for (final entry in registers.entries)
+      if (entry.key.entity case [
+        'i',
+        String id,
+        String source,
+        String _,
+      ] when source != 'local' && entry.value.any((v) => !v.deleted))
+        id,
+  };
+  return {
+    for (final id in live)
+      if (registers[RegisterKey(['f', id], 'folder')] case final branches?
+          when branches.isNotEmpty && branches.every((v) => v.deleted))
+        id: folderName(branches) ?? id,
+  };
+}
+
 /// Keeps [chosen] as the register's content: a new version that has seen
 /// every branch, so it replaces them all; the others go to the archive.
 Version resolveConflict(SyncStore store, RegisterKey key, Version chosen) {
@@ -63,11 +87,19 @@ Version resolveConflict(SyncStore store, RegisterKey key, Version chosen) {
 
 /// The title to show for [entity], from what the state shows.
 String titleOf(SyncState state, List<Object> entity) {
-  var reg = entity.first == 'h' ? 'info' : 'item';
+  final reg = switch (entity.first) {
+    'h' => 'info',
+    'f' || 'io' => 'folder',
+    _ => 'item',
+  };
+  if (entity.first == 'f' || entity.first == 'io') {
+    return folderName(state.branches(RegisterKey(['f', entity[1]], reg))) ??
+        '${entity[1]}';
+  }
   var v = display(state.branches(RegisterKey(entity, reg))).shown;
-  var t = v?.fields['title'];
+  var t = v?.fields['title'] ?? v?.fields['name'];
   if (t is String && t.isNotEmpty) return t;
-  return entity.length > 2 ? '${entity[2]}' : canonicalize(entity);
+  return entity.length > 2 ? '${entity.last}' : canonicalize(entity);
 }
 
 List<Object> entityOf(String entityKey) =>

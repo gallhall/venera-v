@@ -62,7 +62,8 @@ ScanResult scan(SyncStore store, List<SyncAdapter> adapters) {
         var entity = (parts[0] as List).cast<Object>();
         if (entity.isEmpty || entity.first != a.kind) continue;
         // Records of a source that does not sync are never missing.
-        if (entity.length > 1 && !isSyncedSource('${entity[1]}')) continue;
+        final source = entitySource(entity);
+        if (source != null && !isSyncedSource(source)) continue;
         var ek = canonicalize(entity);
         if (present.contains(ek) || unrepresentable.contains(ek)) continue;
         missing.add(ek);
@@ -97,8 +98,9 @@ Version? recordRegister(
   RegisterKey key,
   Map<String, Object?> fields,
   String? snapshot,
-  int? time,
-) {
+  int? time, {
+  String? opId,
+}) {
   var digest = digestOf(fields);
   if (digest == snapshot) return null;
   var content = canonicalize(fields);
@@ -121,7 +123,7 @@ Version? recordRegister(
       return null;
     }
   }
-  var v = store.issue(key, fields: write, notBefore: time);
+  var v = store.issue(key, fields: write, notBefore: time, opId: opId);
   if (time != null && key.entity.first == 'h') {
     store.setHistoryDot(key, time, digest, v.dot);
   }

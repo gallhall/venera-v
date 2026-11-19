@@ -22,6 +22,12 @@ int localType(String sourceKey) {
 /// the other devices anyway (docs/sync/spec.md §5.4).
 bool isSyncedSource(String sourceKey) => sourceKey != 'local';
 
+String? entitySource(List<Object> entity) => switch (entity) {
+  ['h' || 'w', String source, String _] => source,
+  ['i', String _, String source, String _] => source,
+  _ => null,
+};
+
 /// Turns local `type` integers into sync source keys.
 class SourceKeys {
   SourceKeys(Iterable<String> installed) {
@@ -69,21 +75,20 @@ List<Alias> pendingAliases(
 }) {
   var known = <String>{
     for (var k in state.registers.keys)
-      if (k.entity.length > 1 && k.entity[1] is String) k.entity[1] as String,
+      if (entitySource(k.entity) case final String source) source,
   };
   var aliased = {for (var a in state.aliases) a.fromKey};
   var out = <String, Alias>{};
   for (var k in state.registers.keys) {
-    if (k.entity.length < 3) continue;
-    var kind = k.entity[0];
-    if (kind != 'h' && kind != 'w') continue;
-    var source = k.entity[1];
-    if (source is! String || !source.startsWith('int:')) continue;
+    final source = entitySource(k.entity);
+    if (source == null || !source.startsWith('int:')) continue;
     var type = int.tryParse(source.substring(4));
     if (type == null) continue;
     var target = keys.migrationTarget(type, known);
     if (target == null) continue;
-    var alias = Alias(k.entity, [kind, target, ...k.entity.skip(2)]);
+    final targetEntity = [...k.entity];
+    targetEntity[k.entity.first == 'i' ? 2 : 1] = target;
+    var alias = Alias(k.entity, targetEntity);
     if (aliased.contains(alias.fromKey) || keep.contains(alias.fromKey)) {
       continue;
     }

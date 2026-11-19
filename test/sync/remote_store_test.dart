@@ -638,7 +638,7 @@ void main() {
             isA<PublishTooLarge>().having(
               (e) => e.businessRecords,
               'records',
-              3,
+              4, // Three items and their visible folder.
             ),
           ),
         );
