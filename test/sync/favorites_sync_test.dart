@@ -131,6 +131,10 @@ class _Device extends LocalSide {
     } finally {
       restored.dispose();
     }
+    replaceFavoritesWith(backup);
+  }
+
+  void replaceFavoritesWith(String backup) {
     final path = databasePaths['favorites']!;
     favoritesDb.dispose();
     File(backup).renameSync(path);
@@ -566,6 +570,88 @@ void main() {
       expect(b.folder('From')!.rows, isEmpty);
       expect(b.folder('To')!.rows.single.id, 'member');
       expect(b.folder('To')!.rows.single.time, _time);
+    }, skip: skip);
+
+    test('旧备份的 UUID 收藏夹和旧名称匹配墓碑，整夹保留在存档', () async {
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      a.attachHooks();
+      createFavoriteTable(a.favoritesDb, 'Original');
+      FavoritesHooks.folderCreated(a.favoritesDb, 'Original');
+      _insert(a.favoritesDb, 'Original', 'known');
+      FavoritesHooks.itemsWritten(a.favoritesDb, 'Original', [
+        ('known', _type),
+      ], inserted: true);
+      final id = a.store.favoriteFolders().keys.single;
+      expect(id, isNot(startsWith('legacy:')));
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      final backup = '${a.dir.path}/before-rename.db';
+      a.favoritesDb.execute('VACUUM INTO ?', [backup]);
+      final restored = sqlite3.open(backup);
+      try {
+        _insert(restored, 'Original', 'only-in-backup');
+      } finally {
+        restored.dispose();
+      }
+      renameFavoriteTable(a.favoritesDb, 'Original', 'Renamed');
+      FavoritesHooks.folderRenamed(a.favoritesDb, 'Original', 'Renamed');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      b.attachHooks();
+      final before = b.folder('Renamed')!;
+      dropFavoriteTable(b.favoritesDb, 'Renamed');
+      FavoritesHooks.foldersDeleted(b.favoritesDb, {'Renamed': before.rows});
+      expect((await b.sync()).outcome, SyncOutcome.done);
+
+      a.store.prepareBackupRejoin();
+      a.replaceFavoritesWith(backup);
+      final result = await a.sync();
+      expect(result.outcome, SyncOutcome.done, reason: '$result');
+      expect(favoriteTableNames(a.favoritesDb), isEmpty);
+      expect(
+        a.store.branches(RegisterKey(['f', id], 'folder')).single.deleted,
+        isTrue,
+      );
+      for (final work in ['known', 'only-in-backup']) {
+        final key = RegisterKey(['i', id, _source, work], 'item');
+        expect(
+          a.store.archiveEntries().map((entry) => entry.key),
+          contains(key),
+        );
+        expect(a.store.branches(key).where((v) => !v.deleted), isEmpty);
+      }
+      expect(
+        a.store.branches(RegisterKey(['f', 'legacy:Original'], 'folder')),
+        isEmpty,
+      );
+    }, skip: skip);
+
+    test('旧备份中的同名收藏夹身份不明确时保留本机数据并暂停', () async {
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      for (final device in [a, b]) {
+        device.attachHooks();
+        createFavoriteTable(device.favoritesDb, 'Shared');
+        FavoritesHooks.folderCreated(device.favoritesDb, 'Shared');
+      }
+      _insert(a.favoritesDb, 'Shared', 'kept');
+      a.attachHooks();
+      FavoritesHooks.itemsWritten(a.favoritesDb, 'Shared', [
+        ('kept', _type),
+      ], inserted: true);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      a.store.prepareBackupRejoin();
+      final state = a.store.load().canonical;
+      final result = await a.sync();
+      expect(result.outcome, SyncOutcome.failed);
+      expect(
+        result.reason,
+        'a restored favorites folder cannot be matched unambiguously',
+      );
+      expect(result.published, isFalse);
+      expect(a.store.needsRejoin, isTrue);
+      expect(a.store.load().canonical, state);
+      expect(a.folder('Shared')!.rows.single.id, 'kept');
     }, skip: skip);
 
     test('排序记录超过单版本大小上限时保留上一份远端状态', () async {

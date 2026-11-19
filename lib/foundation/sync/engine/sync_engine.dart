@@ -31,6 +31,8 @@ import 'plan.dart';
 import 'remote_book_codec.dart';
 import 'restore_points.dart';
 
+export '../sync_store.dart' show SyncMeta;
+
 /// What started a sync. Phase 1 only uses [manual] (§9.6).
 enum SyncTrigger { manual, timer, resume }
 
@@ -85,6 +87,8 @@ class SyncReport {
   /// Kinds paused for too many suspected deletions (§6.2).
   final paused = <String>{};
 
+  bool _verifiedRestorePoint = false;
+
   /// Suspected deletions found this time.
   final newSuspects = <String>[];
 
@@ -133,19 +137,6 @@ abstract class LocalSide {
   /// up: stage 6 then stops between batches.
   Future<T> background<T>(Future<T> Function(bool Function() expired) work) =>
       work(() => false);
-}
-
-/// Marks in `meta`.
-abstract final class SyncMeta {
-  /// Set once the first join (§7.1) has committed.
-  static const joined = 'joined';
-
-  /// Set by restoring a full backup (§7.2): join again with baselines.
-  static const needsRejoin = 'needs_rejoin';
-
-  /// Set when a restore point is due whatever the change count (§9.1):
-  /// a `sync.db` schema migration, a rescue, a remote format upgrade.
-  static const restorePointDue = 'restore_point_due';
 }
 
 /// Change counts past these get a restore point first (§9.1).
@@ -299,10 +290,9 @@ class SyncEngine {
     RemoteStore rs,
     CancelToken cancel,
   ) async {
-    var joining =
-        store.meta(SyncMeta.joined) == null ||
-        store.meta(SyncMeta.needsRejoin) != null;
-    var firstJoin = store.meta(SyncMeta.joined) == null;
+    final rejoining = store.needsRejoin;
+    final firstJoin = store.meta(SyncMeta.joined) == null;
+    final joining = firstJoin || rejoining;
     // ---- 1 scan ----
     cancel.check();
     _stage(report, SyncStage.scan);
@@ -323,7 +313,7 @@ class SyncEngine {
       }
       // Joining: everything local becomes baselines in stage 5, not
       // versions now.
-      if (favorites != null) {
+      if (favorites != null && !rejoining) {
         favorites.execute('BEGIN');
         try {
           _migrateFavoriteSources(keys);
@@ -358,20 +348,17 @@ class SyncEngine {
     cancel.check();
     _stage(report, SyncStage.download);
     var book = loadRemoteBook(store, deviceName: deviceName);
-    var read = await rs.read(book);
+    // Rejoining requires a verified remote state, even at a known head.
+    var read = await rs.read(book, verifyKnownHeads: rejoining);
     // ---- 3 merge ----
     cancel.check();
     _stage(report, SyncStage.merge);
     var incoming = read.incoming;
-    if (joining && store.meta(SyncMeta.needsRejoin) != null) {
-      // §7.2: a remote with files but no valid state is not guessed at.
-      var hasHeads = read.devices.values.any((d) => d.heads.isNotEmpty);
-      if (!hasHeads && read.invalid.isNotEmpty) {
-        report
-          ..outcome = SyncOutcome.failed
-          ..reason = 'the remote state is invalid';
-        return (read, book);
-      }
+    if (rejoining && read.hasRemoteData && !read.hasValidState) {
+      report
+        ..outcome = SyncOutcome.failed
+        ..reason = 'the remote state is invalid';
+      return (read, book);
     }
     var merged = mergeStates([store.load(), incoming]);
     // ---- 4 check ----
@@ -386,6 +373,7 @@ class SyncEngine {
       return (read, book);
     }
     var suspects = store.suspects().keys.toSet();
+    Set<RegisterKey> archivedFavorites = const {};
     FavoritePlan? planFavoriteWrites(SyncState state, int startId) {
       final captured = favoriteScan;
       return captured == null
@@ -399,11 +387,14 @@ class SyncEngine {
               suspects: suspects,
               paused: report.paused,
               startId: startId,
+              archivedBaselines: archivedFavorites,
             );
     }
 
     String? kind;
-    if (firstJoin) {
+    if (rejoining) {
+      kind = RestoreKind.rotating;
+    } else if (firstJoin) {
       if (!restorePoints.hasFirst) kind = RestoreKind.first;
     } else if (joining ||
         (joiningFavorites && favorites != null) ||
@@ -426,82 +417,100 @@ class SyncEngine {
         kind = RestoreKind.rotating;
       }
     }
-    if (kind != null) await restorePoints.create(kind);
+    if (kind != null) {
+      await restorePoints.create(kind);
+      report._verifiedRestorePoint = true;
+    }
     // ---- 5 plan: protocol state, plan and snapshots in one transaction ----
     cancel.check();
     _stage(report, SyncStage.plan);
-    if (joiningFavorites && favorites != null) {
-      // Include edits made while waiting for WebDAV or the first restore
-      // point. Earlier captures are never announced as the final baseline.
-      favorites.execute('BEGIN');
-      try {
-        favoriteScan = FavoritesAdapter(
-          favorites,
-          store,
-          keys,
-        ).snapshot(joining: true);
-      } finally {
-        if (!favorites.autocommit) favorites.execute('COMMIT');
-      }
-    }
     Plan? plan;
-    store.batch(() {
-      store.merge(incoming);
-      if (joining) {
-        importBaselines(store, adapters, hlc: store.clock);
-        store.setMeta(SyncMeta.joined, '1');
-        store.setMeta(SyncMeta.needsRejoin, null);
-      }
-      if (joiningFavorites && favoriteScan != null) {
-        importBaselines(
-          store,
-          favoriteScan.adapters(baseline: true),
-          hlc: store.clock,
-        );
-        store.setMeta(favoritesJoined, '1');
-      }
-      store.setMeta(SyncMeta.restorePointDue, null);
-      var state = store.load();
-      var draft = planWrites(
-        state,
-        rows,
-        tables: _tables,
-        suspects: suspects,
-        paused: report.paused,
-        keys: keys,
-      );
-      for (var MapEntry(key: k, value: (digest, content))
-          in draft.snapshots.entries) {
-        store.setSnapshot(k, digest, content: content);
-      }
-      final favoriteDraft = planFavoriteWrites(state, draft.ops.length);
-      if (favoriteDraft != null && favoriteDraft.applied) {
-        draft.ops.addAll(favoriteDraft.ops);
-        draft.unrepresentable.addAll(favoriteDraft.unrepresentable);
-        draft.decidedKinds.addAll(favoriteKinds);
-        for (final entry in favoriteDraft.snapshots.entries) {
-          saveFavoriteSnapshot(store, entry.key, entry.value);
+    // The baseline and its compare-and-set rows must describe the same
+    // snapshot, including reading progress written while WebDAV was busy.
+    if (joining) db.execute('BEGIN');
+    try {
+      store.batch(() {
+        store.merge(incoming);
+        final observed = rejoining ? store.load() : null;
+        if (joining) {
+          rows = {
+            for (final table in _tables)
+              '${table.db}/${table.table}': table.readAll(db, keys),
+          };
+          importBaselines(
+            store,
+            adapters,
+            hlc: store.clock,
+            observed: observed,
+          );
+          store.setMeta(SyncMeta.joined, '1');
+          store.setMeta(SyncMeta.needsRejoin, null);
         }
-      }
-      for (var ek in store.unrepresentable()) {
-        var kindOf = (parseStrictJson(ek) as List).first;
-        if (draft.decidedKinds.contains(kindOf)) store.clearUnrepresentable(ek);
-      }
-      for (var u in draft.unrepresentable.values) {
-        store.setUnrepresentable(
-          u.entityKey,
-          occupiedBy: u.occupiedBy,
-          reason: u.reason,
+        if (joiningFavorites && favorites != null) {
+          favorites.execute('BEGIN');
+          try {
+            final adapter = FavoritesAdapter(favorites, store, keys);
+            if (observed != null) adapter.matchRestoredFolders(observed);
+            final captured = favoriteScan = adapter.snapshot(joining: true);
+            final baselines = importBaselines(
+              store,
+              captured.adapters(baseline: true),
+              hlc: store.clock,
+              observed: observed,
+            );
+            archivedFavorites = baselines.archived.toSet();
+          } finally {
+            if (!favorites.autocommit) favorites.execute('COMMIT');
+          }
+          store.setMeta(favoritesJoined, '1');
+        }
+        store.setMeta(SyncMeta.restorePointDue, null);
+        var state = store.load();
+        var draft = planWrites(
+          state,
+          rows,
+          tables: _tables,
+          suspects: suspects,
+          paused: report.paused,
+          keys: keys,
         );
-      }
-      if (draft.ops.isNotEmpty) {
-        plan = Plan(const Uuid().v4(), draft.ops);
-        store.writePlan(plan!);
-      }
-      _advanceBook(book, read);
-      saveRemoteBook(store, book);
-      _fault('plan:before-commit');
-    });
+        for (var MapEntry(key: k, value: (digest, content))
+            in draft.snapshots.entries) {
+          store.setSnapshot(k, digest, content: content);
+        }
+        final favoriteDraft = planFavoriteWrites(state, draft.ops.length);
+        if (favoriteDraft != null && favoriteDraft.applied) {
+          draft.ops.addAll(favoriteDraft.ops);
+          draft.unrepresentable.addAll(favoriteDraft.unrepresentable);
+          draft.decidedKinds.addAll(favoriteKinds);
+          for (final entry in favoriteDraft.snapshots.entries) {
+            saveFavoriteSnapshot(store, entry.key, entry.value);
+          }
+        }
+        for (var ek in store.unrepresentable()) {
+          var kindOf = (parseStrictJson(ek) as List).first;
+          if (draft.decidedKinds.contains(kindOf)) {
+            store.clearUnrepresentable(ek);
+          }
+        }
+        for (var u in draft.unrepresentable.values) {
+          store.setUnrepresentable(
+            u.entityKey,
+            occupiedBy: u.occupiedBy,
+            reason: u.reason,
+          );
+        }
+        if (draft.ops.isNotEmpty) {
+          plan = Plan(const Uuid().v4(), draft.ops);
+          store.writePlan(plan!);
+        }
+        _advanceBook(book, read);
+        saveRemoteBook(store, book);
+        _fault('plan:before-commit');
+      });
+    } finally {
+      if (joining && !db.autocommit) db.execute('COMMIT');
+    }
     _fault('plan:after-commit');
     report.unrepresentable = store.unrepresentable().length;
     // ---- 6 apply: not cancellable ----
@@ -697,7 +706,8 @@ class SyncEngine {
         state,
         read: read,
         save: save,
-        highRisk: report.applied > restorePointOps,
+        highRisk:
+            report._verifiedRestorePoint || report.applied > restorePointOps,
       );
       _fault('publish:after');
       switch (r.outcome) {

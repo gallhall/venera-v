@@ -25,6 +25,7 @@ import 'engine/sync_engine.dart';
 import 'local/sync_hooks.dart';
 import 'remote/remote_store.dart';
 import 'sync_store.dart';
+import 'sync_store_files.dart';
 
 /// The app's business data, as the engine sees it.
 class AppLocalSide extends LocalSide {
@@ -120,14 +121,60 @@ abstract final class SyncService {
 
   static String get restoreDir => '${App.dataPath}/sync_restore_points';
 
+  static bool _restoringBackup = false;
+
+  static SyncStore? _open({required bool create, bool restoring = false}) =>
+      openLocalSyncStore(
+        _path,
+        create: create,
+        previouslyUsed: restoring || appdata.implicitData['webdavSync'] is bool,
+        onError: (e, st) => Log.error('Sync', '$e', st),
+      );
+
+  /// Full restore and two-way sync may each replace business data.
+  /// Only one may run at a time, including during database reopen.
+  static Future<T> withBackupRestore<T>(Future<T> Function() restore) async {
+    if (_restoringBackup || (_current?.running ?? false)) {
+      throw StateError(
+        'Wait for the current sync or backup restore to finish.',
+      );
+    }
+    _restoringBackup = true;
+    try {
+      return await restore();
+    } finally {
+      _restoringBackup = false;
+    }
+  }
+
+  /// Called once a backup is accepted, before replacing either database.
+  static void prepareBackupRestore() {
+    final current = store;
+    if (current != null) {
+      current.prepareBackupRejoin();
+      return;
+    }
+    final opened = _open(create: true, restoring: true)!;
+    try {
+      opened.prepareBackupRejoin();
+    } catch (_) {
+      opened.dispose();
+      rethrow;
+    }
+    _connect(opened);
+  }
+
+  static void _checkNotRestoring() {
+    if (_restoringBackup) {
+      throw StateError('Wait for the backup restore to finish.');
+    }
+  }
+
   /// At start, after the databases and the sources: opens `sync.db` if
   /// sync was ever turned on, connects the hooks and finishes a plan left
   /// by a crash, before any sync may run.
   static Future<void> init() async {
-    var s = SyncStore.openIfExists(
-      _path,
-      onError: (e, st) => Log.error('Sync', '$e', st),
-    );
+    var s = _open(create: false);
     if (s == null) return;
     _connect(s);
     if (s.readOnly) return;
@@ -144,14 +191,10 @@ abstract final class SyncService {
 
   /// Creates `sync.db` when sync is turned on (the first sync joins).
   static SyncStore enable() {
+    _checkNotRestoring();
     var s = store;
     if (s != null) return s;
-    s =
-        SyncStore.openIfExists(_path) ??
-        SyncStore.create(
-          _path,
-          onError: (e, st) => Log.error('Sync', '$e', st),
-        );
+    s = _open(create: true)!;
     _connect(s);
     return s;
   }
@@ -168,6 +211,7 @@ abstract final class SyncService {
   /// The one engine of this app run, so one sync at a time (§9.6); each
   /// sync uses the [remote] last given (the WebDAV settings may change).
   static SyncEngine engine(RemoteStore Function(CancelToken) remote) {
+    _checkNotRestoring();
     _remote = remote;
     var s = store ?? enable();
     return _current ??= _engine(s, (c) => _remote!(c));

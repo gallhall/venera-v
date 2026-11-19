@@ -67,6 +67,9 @@ String reasonText(SyncReport r) {
       'Writing will finish on the next start'.tl,
     'the upload could not be confirmed; retried next sync' =>
       'The upload could not be confirmed; it is retried next time'.tl,
+    'a restored favorites folder cannot be matched unambiguously' =>
+      'The restored favorites folder matches multiple folders. Rename it and try again'
+          .tl,
     'the remote state is invalid' =>
       'The sync data on the server is invalid; nothing was changed'.tl,
     'network error while publishing' => 'Network error while uploading'.tl,

@@ -8,6 +8,7 @@ import 'package:sqlite3/sqlite3.dart' hide Version;
 import 'package:venera/foundation/sync/merger.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
 import 'package:venera/foundation/sync/sync_store.dart';
+import 'package:venera/foundation/sync/sync_store_files.dart';
 import 'package:venera/foundation/sync/version.dart';
 
 bool _sqliteAvailable() {
@@ -44,6 +45,69 @@ void main() {
   test('without sync.db, sync is off and nothing is created', () {
     expect(SyncStore.openIfExists(path, now: now), isNull);
     expect(File(path).existsSync(), isFalse);
+  }, skip: skip);
+
+  test('existing sync witness selects rejoin even with no database left', () {
+    expect(openLocalSyncStore(path, create: false), isNull);
+    final first = openLocalSyncStore(path, create: true)!;
+    final id = first.identity.deviceId;
+    expect(first.needsRejoin, isFalse);
+    first.dispose();
+    // Model losing the complete SQLite file set, regardless of WAL retention.
+    for (final suffix in ['', '-wal', '-shm', '-journal']) {
+      final file = File('$path$suffix');
+      if (file.existsSync()) file.deleteSync();
+    }
+    expect(openLocalSyncStore(path, create: false), isNull);
+    final recovered = openLocalSyncStore(path, create: true)!;
+    expect(recovered.identity.deviceId, isNot(id));
+    expect(recovered.needsRejoin, isTrue);
+    recovered.dispose();
+    final again = openLocalSyncStore(path, create: false)!;
+    expect(again.needsRejoin, isTrue);
+    again.dispose();
+  }, skip: skip);
+
+  test('interrupted quarantine finishes before opening a new identity', () {
+    final pending = Directory('$path.recovering')..createSync();
+    File('${pending.path}/$syncDbName').writeAsStringSync('original file');
+    File('$path-wal').writeAsStringSync('original wal');
+    File('$path-shm').writeAsStringSync('original shm');
+    final store = openLocalSyncStore(path, create: false)!;
+    expect(store.needsRejoin, isTrue);
+    expect(pending.existsSync(), isFalse);
+    final saved = dir.listSync().whereType<Directory>().single;
+    for (final (suffix, text) in [
+      ('', 'file'),
+      ('-wal', 'wal'),
+      ('-shm', 'shm'),
+    ]) {
+      expect(
+        File('${saved.path}/$syncDbName$suffix').readAsStringSync(),
+        'original $text',
+      );
+    }
+    store.dispose();
+  }, skip: skip);
+
+  test('a database without its identity does not reuse the old state', () {
+    final store = openLocalSyncStore(path, create: true)!;
+    final id = store.identity.deviceId;
+    store.issue(item('old'), fields: {'name': 'Old'});
+    store.dispose();
+    final damaged = sqlite3.open(path);
+    damaged.execute('DELETE FROM identity');
+    damaged.dispose();
+
+    final recovered = openLocalSyncStore(path, create: false)!;
+    expect(recovered.identity.deviceId, isNot(id));
+    expect(recovered.needsRejoin, isTrue);
+    expect(recovered.branches(item('old')), isEmpty);
+    expect(
+      dir.listSync().whereType<Directory>().single.path,
+      contains('sync.db.unreadable-'),
+    );
+    recovered.dispose();
   }, skip: skip);
 
   test('create makes an identity that survives reopening', () {

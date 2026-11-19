@@ -166,6 +166,59 @@ class FavoritesAdapter {
   final SyncStore store;
   final SourceKeys keys;
 
+  /// Restore physical bindings only when the legacy table name has one
+  /// known identity. A complete backup contains no folder IDs.
+  void matchRestoredFolders(SyncState observed) {
+    final current = store.favoriteFolders();
+    final candidates = <String, Set<String>>{};
+    String normalized(String name) => unicode.nfc(name.trim());
+    void addName(String id, String name) {
+      (candidates[normalized(name)] ??= {}).add(id);
+    }
+
+    void addVersion(RegisterKey key, Map<String, Object?> fields) {
+      if (key.entity case ['f', String id] when key.register == 'folder') {
+        if (id.startsWith('legacy:')) {
+          addName(id, id.substring('legacy:'.length));
+        }
+        if (fields['name'] case final String name) addName(id, name);
+        if (fields['lastName'] case final String name) addName(id, name);
+      }
+    }
+
+    current.forEach(addName);
+    for (final (id, name) in store.favoritePastLabels()) {
+      addName(id, name);
+    }
+    for (final entry in observed.registers.entries) {
+      if (entry.key.entity.firstOrNull != 'f') continue;
+      for (final version in entry.value) {
+        addVersion(entry.key, version.fields);
+      }
+    }
+    for (final (key, version) in store.historicalFolders()) {
+      addVersion(key, version.fields);
+    }
+
+    final restored = <String, String>{};
+    for (final name in favoriteTableNames(db)) {
+      final ids = candidates[normalized(name)];
+      if (ids == null) continue;
+      if (ids.length != 1 || restored.containsKey(ids.single)) {
+        throw const ScanAborted(
+          'a restored favorites folder cannot be matched unambiguously',
+        );
+      }
+      restored[ids.single] = name;
+    }
+    for (final entry in current.entries) {
+      if (restored[entry.key] != entry.value) {
+        store.setFavoriteFolder(entry.key, null);
+      }
+    }
+    restored.forEach(store.setFavoriteFolder);
+  }
+
   /// Capture one consistent view of the legacy tables. Only sync.db holds IDs.
   FavoritesScan snapshot({required bool joining}) {
     // An initialized backup may omit whole folders. Validate the catalog

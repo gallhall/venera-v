@@ -19,6 +19,11 @@ abstract final class SyncHooks {
   /// The open `sync.db`; null while sync is off, and the hooks do nothing.
   static SyncStore? store;
 
+  static bool get enabled {
+    final s = store;
+    return s != null && !s.readOnly && !s.needsRejoin;
+  }
+
   /// The installed sources' keys, to name `type` integers.
   static Iterable<String> Function() installedKeys = () => const [];
 
@@ -32,6 +37,7 @@ abstract final class SyncHooks {
     var s = store;
     if (s == null || s.readOnly) return;
     try {
+      if (s.needsRejoin) return;
       s.batch(() => f(s, SourceKeys(installedKeys())));
     } catch (e, st) {
       Log.error('Sync', 'hook $what failed: $e', st);

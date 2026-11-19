@@ -33,6 +33,7 @@ FavoritePlan planFavorites(
   required Set<String> suspects,
   required Set<String> paused,
   required int startId,
+  Set<RegisterKey> archivedBaselines = const {},
 }) {
   final draft = FavoritePlan();
   // Orders and names depend on the whole set of folders and items.
@@ -93,6 +94,14 @@ FavoritePlan planFavorites(
           ? canonicalize(effective)
           : raw;
       physicalIdentity[row.rowKey] = entity;
+      if (archivedBaselines.contains(
+            RegisterKey(favoriteEntity(id, localSource, row.id), 'item'),
+          ) &&
+          !known.contains(entity)) {
+        patch[RegisterKey(favoriteEntity(id, localSource, row.id), 'item')] =
+            null;
+        continue;
+      }
       if (!known.contains(entity) ||
           suspects.contains(raw) ||
           suspects.contains(entity)) {
