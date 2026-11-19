@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 
@@ -9,6 +10,7 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sync/sync_service.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:zip_flutter/zip_flutter.dart';
@@ -44,7 +46,10 @@ Future<File> exportAppData([bool sync = true]) async {
   return cacheFile;
 }
 
-Future<void> importAppData(File file, [bool checkVersion = false]) async {
+Future<void> importAppData(File file, [bool checkVersion = false]) =>
+    SyncService.withBackupRestore(() => _importAppData(file, checkVersion));
+
+Future<void> _importAppData(File file, bool checkVersion) async {
   var cacheDirPath = FilePath.join(App.cachePath, 'temp_data');
   var cacheDir = Directory(cacheDirPath);
   if (cacheDir.existsSync()) {
@@ -66,12 +71,15 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
         return;
       }
     }
-    if (await historyFile.exists()) {
-      _replaceData(historyFile, "history.db",
+    final hasHistory = await historyFile.exists();
+    final hasFavorites = await localFavoriteFile.exists();
+    if (hasHistory || hasFavorites) SyncService.prepareBackupRestore();
+    if (hasHistory) {
+      await _replaceData(historyFile, "history.db",
           close: HistoryManager().close, open: HistoryManager().init);
     }
-    if (await localFavoriteFile.exists()) {
-      _replaceData(localFavoriteFile, "local_favorite.db",
+    if (hasFavorites) {
+      await _replaceData(localFavoriteFile, "local_favorite.db",
           close: LocalFavoritesManager().close,
           open: LocalFavoritesManager().init);
     }
@@ -81,11 +89,13 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
       appdata.syncData(data);
     }
     if (await cookieFile.exists()) {
-      _replaceData(cookieFile, "cookie.db",
+      await _replaceData(cookieFile, "cookie.db",
           close: () => SingleInstanceCookieJar.instance?.dispose(),
-          open: () => SingleInstanceCookieJar.instance =
-              SingleInstanceCookieJar(FilePath.join(App.dataPath, "cookie.db"))
-                ..init());
+          open: () {
+            SingleInstanceCookieJar.instance = SingleInstanceCookieJar(
+              FilePath.join(App.dataPath, "cookie.db"),
+            )..init();
+          });
     }
     var comicSourceDir = FilePath.join(cacheDirPath, "comic_source");
     if (Directory(comicSourceDir).existsSync()) {
@@ -114,8 +124,12 @@ Future<void> importAppData(File file, [bool checkVersion = false]) async {
 /// another volume, where a rename fails: the old one is only replaced once
 /// the new one is there, and is kept when it does not get there. It was
 /// deleted before the new one was moved, and lost when that failed.
-void _replaceData(File file, String name,
-    {required void Function() close, required void Function() open}) {
+Future<void> _replaceData(
+  File file,
+  String name, {
+  required void Function() close,
+  required FutureOr<void> Function() open,
+}) async {
   var target = FilePath.join(App.dataPath, name);
   var staged = File('$target.importing');
   try {
@@ -127,8 +141,11 @@ void _replaceData(File file, String name,
   try {
     staged.renameSync(target);
   } finally {
-    staged.deleteIfExistsSync();
-    open();
+    try {
+      staged.deleteIfExistsSync();
+    } finally {
+      await open();
+    }
   }
 }
 

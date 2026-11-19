@@ -5,6 +5,7 @@
 // PATH).
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' hide Version;
@@ -19,6 +20,7 @@ import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
 import 'package:venera/foundation/sync/sync_store.dart';
+import 'package:venera/foundation/sync/sync_store_files.dart';
 
 import 'support/memory_dav.dart';
 
@@ -90,7 +92,7 @@ class Device {
   String get historyPath => '${dir.path}/history.db';
   String get restoreDir => '${dir.path}/restore';
 
-  void open() {
+  void open({bool recoverSyncStore = false}) {
     db = sqlite3.open(historyPath);
     db.execute('''
       create table if not exists history (id text primary key, title text,
@@ -101,9 +103,10 @@ class Device {
         type int not null, title text, subtitle text, cover text, time int,
         primary key (id, type))''');
     var path = '${dir.path}/$syncDbName';
-    store =
-        SyncStore.openIfExists(path, now: _now, durable: false) ??
-        SyncStore.create(path, now: _now, durable: false);
+    store = recoverSyncStore
+        ? openLocalSyncStore(path, create: true, previouslyUsed: true)!
+        : SyncStore.openIfExists(path, now: _now, durable: false) ??
+              SyncStore.create(path, now: _now, durable: false);
     local = TestLocal(this);
     void fault(String p) => onPoint?.call(p);
     engine = SyncEngine(
@@ -224,6 +227,172 @@ void main() {
       root.deleteSync(recursive: true);
     } catch (_) {}
   });
+
+  test('rejoining declines a nonempty remote tree without a state', () async {
+    a.putHistory('local', page: 3);
+    a.store.setMeta(SyncMeta.needsRejoin, '1');
+    dav.dirs.add('venera-sync');
+    dav.files['venera-sync/unrecognized.json'] = Uint8List.fromList([1]);
+    final before = dav.snapshot();
+    final result = await a.sync();
+    expect(result.outcome, SyncOutcome.failed);
+    expect(result.published, isFalse);
+    expect(a.history()['local']!.$3, 3);
+    expect(a.store.load().registers, isEmpty);
+    expect(dav.snapshot().files, before.files);
+  });
+
+  test(
+    'rejoining revalidates a known head before importing baselines',
+    () async {
+      a.putHistory('existing', page: 1);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      final statePath = dav.files.keys.singleWhere(
+        (p) => p.contains('/state-'),
+      );
+      dav.files[statePath] = Uint8List.fromList([1]);
+      a.store.prepareBackupRejoin();
+      a.putHistory('restored', page: 2);
+      final state = a.store.load().canonical;
+      final result = await a.sync();
+      expect(result.outcome, SyncOutcome.needsAttention);
+      expect(result.reason, 'the remote listing is unreliable (L4)');
+      expect(result.published, isFalse);
+      expect(a.store.needsRejoin, isTrue);
+      expect(a.store.load().canonical, state);
+      expect(a.history()['restored']!.$3, 2);
+    },
+  );
+
+  test(
+    'restored history rejoins from baselines and keeps identity and tombstones',
+    () async {
+      const gone = 'deleted';
+      const kept = 'edited';
+      const conflicting = 'older local progress';
+      a.putHistory(gone, page: 1);
+      a.putHistory(kept, page: 1);
+      a.putHistory(conflicting, page: 1);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      final backup = '${root.path}/old-history.db';
+      a.db.execute('VACUUM INTO ?', [backup]);
+      final older = sqlite3.open(backup);
+      try {
+        // An offline edit was saved in this backup and never reached WebDAV.
+        older.execute('UPDATE history SET page = 2 WHERE id = ?', [
+          conflicting,
+        ]);
+      } finally {
+        older.dispose();
+      }
+      b.deleteHistory(gone, typeA);
+      b.putHistory(kept, page: 4);
+      b.putHistory(conflicting, page: 4);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+
+      final identity = a.store.identity;
+      final state = a.store.load().canonical;
+      a.store.writePlan(const Plan('before-import', []));
+      a.store.prepareBackupRejoin();
+      expect(a.store.openPlan(), isNull);
+      expect(a.store.snapshots(), isEmpty);
+      a.close();
+      File(backup).renameSync(a.historyPath);
+      a.open();
+      expect(a.store.needsRejoin, isTrue);
+
+      a.onPoint = (point) {
+        if (point == 'restore:verify') {
+          throw const RestorePointFailed('injected');
+        }
+      };
+      var result = await a.sync();
+      expect(result.outcome, SyncOutcome.failed);
+      expect(result.published, isFalse);
+      expect(a.history()[gone]!.$3, 1);
+      expect(a.store.load().canonical, state);
+      expect(a.store.needsRejoin, isTrue);
+      a.onPoint = null;
+
+      result = await a.sync();
+      expect(
+        result.outcome,
+        SyncOutcome.done,
+        reason: '$result ${result.error}',
+      );
+      expect(result.newSuspects, isEmpty);
+      expect(a.history().containsKey(gone), isFalse);
+      expect(a.history()[kept]!.$3, 4);
+      expect(a.store.identity.deviceId, identity.deviceId);
+      expect(a.store.identity.counter, identity.counter);
+      expect(a.store.needsRejoin, isFalse);
+      expect(a.store.restorePoints().map((r) => r.kind), [
+        RestoreKind.first,
+        RestoreKind.rotating,
+      ]);
+      expect(
+        a.store.archiveEntries().map((e) => e.key.entity.last),
+        contains(gone),
+      );
+      expect(
+        a.store.archiveEntries().any(
+          (e) => e.key.entity.last == kept && e.version.fields['page'] == 1,
+        ),
+        isTrue,
+      );
+      final alternatives = a.store.branches(
+        RegisterKey(['h', 'srcA', conflicting], 'pos'),
+      );
+      expect(
+        alternatives.any((v) => v.isBaseline && v.fields['page'] == 2),
+        isTrue,
+      );
+    },
+  );
+
+  for (final corrupt in [false, true]) {
+    test(
+      '${corrupt ? 'corrupt' : 'missing'} sync.db rejoins under a new identity',
+      () async {
+        a.putHistory('deleted', page: 2);
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        expect((await b.sync()).outcome, SyncOutcome.done);
+        b.deleteHistory('deleted', typeA);
+        expect((await b.sync()).outcome, SyncOutcome.done);
+        final oldId = a.store.identity.deviceId;
+        final path = '${a.dir.path}/$syncDbName';
+        a.close();
+        if (corrupt) {
+          File(
+            path,
+          ).writeAsStringSync('invalid SQLite data'.padRight(2048, 'x'));
+        } else {
+          File(path).deleteSync();
+        }
+        a.open(recoverSyncStore: true);
+        expect(a.store.identity.deviceId, isNot(oldId));
+        expect(a.store.needsRejoin, isTrue);
+        final result = await a.sync();
+        expect(result.outcome, SyncOutcome.done);
+        expect(a.history(), isEmpty);
+        expect(result.newSuspects, isEmpty);
+        expect(a.store.identity.counter, 0);
+        expect(a.store.restorePoints().single.verified, isTrue);
+        expect(
+          a.store.archiveEntries().map((e) => e.key.entity.last),
+          contains('deleted'),
+        );
+        expect(
+          a.dir.listSync().whereType<Directory>().any(
+            (entity) => entity.path.contains('sync.db.unreadable-'),
+          ),
+          corrupt,
+        );
+      },
+    );
+  }
 
   group('two devices', () {
     test('converge both ways, history and 稍后看', () async {

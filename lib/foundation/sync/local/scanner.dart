@@ -158,6 +158,7 @@ BaselineResult importBaselines(
   SyncStore store,
   List<SyncAdapter> adapters, {
   required Hlc hlc,
+  SyncState? observed,
 }) {
   for (var a in adapters) {
     a.check();
@@ -165,6 +166,8 @@ BaselineResult importBaselines(
   var records = [for (var a in adapters) ...a.read()];
   var result = BaselineResult();
   var device = store.identity.deviceId;
+  final resolved = observed == null ? null : resolvedRegisters(observed);
+  final aliases = observed == null ? null : AliasResolution(observed.aliases);
   store.batch(() {
     var added = <RegisterKey, List<Version>>{};
     for (var rec in records) {
@@ -180,10 +183,45 @@ BaselineResult importBaselines(
           hlc: rec.time == null ? hlc : Hlc(rec.time!),
           fields: fields,
         );
-        switch (admitBaseline(store.branches(key), b)) {
+        final entity = aliases?.active[rec.key] ?? rec.entity;
+        final branches =
+            resolved?[RegisterKey(entity, e.key)] ?? store.branches(key);
+        final parent = switch (entity) {
+          ['h', String _, String _] when e.key != 'pos' => RegisterKey(
+            entity,
+            'pos',
+          ),
+          ['i' || 'io', String folder, ...] => RegisterKey([
+            'f',
+            folder,
+          ], 'folder'),
+          _ => null,
+        };
+        final parentBranches = parent == null ? null : resolved?[parent];
+        final deletedParent =
+            parentBranches != null &&
+            parentBranches.isNotEmpty &&
+            parentBranches.every((v) => v.deleted);
+        final admission =
+            deletedParent &&
+                (entity.first == 'h' || !branches.any((v) => !v.deleted))
+            ? BaselineAdmission.archive
+            : admitBaseline(branches, b);
+        switch (admission) {
           case BaselineAdmission.add:
-            added[key] = [b];
-            result.added.add(key);
+            // Restoring the same baseline dot after a later edit does not
+            // make it concurrent. Keep it recoverable locally.
+            if (observed?.branches(key).any((v) => dominates(v, b)) ?? false) {
+              store.archive(
+                key,
+                b,
+                'baseline superseded by an observed version',
+              );
+              result.archived.add(key);
+            } else {
+              added[key] = [b];
+              result.added.add(key);
+            }
           case BaselineAdmission.present:
             result.present.add(key);
           case BaselineAdmission.archive:

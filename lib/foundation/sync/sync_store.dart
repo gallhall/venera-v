@@ -22,6 +22,22 @@ import 'version.dart';
 /// The file name in the app's data directory.
 const syncDbName = 'sync.db';
 
+/// Persistent flags in the local sync store.
+abstract final class SyncMeta {
+  static const joined = 'joined';
+  static const needsRejoin = 'needs_rejoin';
+  static const restorePointDue = 'restore_point_due';
+}
+
+class SyncStoreCorrupt implements Exception {
+  const SyncStoreCorrupt(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'Invalid sync.db: $reason';
+}
+
 /// One safety restore point (spec §9.1): a verified zip of the business
 /// databases. [kind] is `first` (kept apart, §7.1) or `rotating`.
 class RestorePointRow {
@@ -119,37 +135,50 @@ class SyncStore {
     @visibleForTesting List<void Function(Database)>? migrations,
     @visibleForTesting bool durable = true,
     void Function(Object, StackTrace)? onError,
+    bool verify = false,
   }) {
     if (!File(path).existsSync()) return null;
-    var store = _open(path, now, migrations, durable, onError);
-    if (store._readIdentity() == null) {
+    var store = _open(path, now, migrations, durable, onError, verify: verify);
+    try {
+      if (store._readIdentity() != null) return store;
+      if (store.readOnly) throw SyncStoreReadOnly(store.schema);
+      if (verify) throw const SyncStoreCorrupt('identity is missing');
+    } catch (_) {
       store.dispose();
-      return null;
+      rethrow;
     }
-    return store;
+    store.dispose();
+    return null;
   }
 
   /// Creates `sync.db` with a new identity, or opens it if it has one
   /// (spec §7.1 step 3: the first sync).
   static SyncStore create(
     String path, {
+    bool rejoin = false,
     int Function()? now,
     @visibleForTesting List<void Function(Database)>? migrations,
     @visibleForTesting bool durable = true,
     void Function(Object, StackTrace)? onError,
   }) {
     var store = _open(path, now, migrations, durable, onError);
-    if (store.readOnly) throw SyncStoreReadOnly(store.schema);
-    store._transaction(() {
-      if (store._readIdentity() != null) return;
-      store._db.execute(
-        'INSERT INTO identity (id, device_id, instance_id, counter, '
-        'hlc_physical, hlc_logical) VALUES (1, ?, ?, 0, 0, 0)',
-        [const Uuid().v4().toLowerCase(), const Uuid().v4()],
-      );
-    });
-    store._hlc = const Hlc(0).tick(store._now());
-    return store;
+    try {
+      store._checkWritable();
+      store._transaction(() {
+        if (store._readIdentity() != null) return;
+        store._db.execute(
+          'INSERT INTO identity (id, device_id, instance_id, counter, '
+          'hlc_physical, hlc_logical) VALUES (1, ?, ?, 0, 0, 0)',
+          [const Uuid().v4().toLowerCase(), const Uuid().v4()],
+        );
+        if (rejoin) store.setMeta(SyncMeta.needsRejoin, '1');
+      });
+      store._hlc = store.identity.hlc.tick(store._now());
+      return store;
+    } catch (_) {
+      store.dispose();
+      rethrow;
+    }
   }
 
   static SyncStore _open(
@@ -157,19 +186,25 @@ class SyncStore {
     int Function()? now,
     List<void Function(Database)>? migrations,
     bool durable,
-    void Function(Object, StackTrace)? onError,
-  ) {
+    void Function(Object, StackTrace)? onError, {
+    bool verify = false,
+  }) {
     migrations ??= syncMigrations;
     var db = sqlite3.open(path);
     try {
       waitForLocks(db);
-      db.execute('PRAGMA journal_mode = WAL');
-      // FULL: a counter that was published must never come back after a
-      // power cut, or it would be issued twice (E1 against ourselves).
-      db.execute('PRAGMA synchronous = ${durable ? 'FULL' : 'OFF'}');
       var schema = _schemaOf(db);
       var readOnly = schema > migrations.length;
+      if (verify && !readOnly) {
+        final result = db.select('PRAGMA quick_check(1)');
+        if (result.length != 1 || result.single.values.first != 'ok') {
+          throw const SyncStoreCorrupt('integrity check failed');
+        }
+      }
       if (!readOnly) {
+        db.execute('PRAGMA journal_mode = WAL');
+        // FULL keeps published counters durable after power loss.
+        db.execute('PRAGMA synchronous = ${durable ? 'FULL' : 'OFF'}');
         for (var v = schema; v < migrations.length; v++) {
           db.execute('BEGIN IMMEDIATE');
           try {
@@ -183,7 +218,7 @@ class SyncStore {
             }
             db.execute('COMMIT');
           } catch (_) {
-            db.execute('ROLLBACK');
+            if (!db.autocommit) db.execute('ROLLBACK');
             rethrow;
           }
         }
@@ -208,7 +243,13 @@ class SyncStore {
     );
     if (hasMeta.isEmpty) return 0;
     var rows = db.select("SELECT value FROM meta WHERE key = 'schema'");
-    return rows.isEmpty ? 0 : int.parse(rows.first['value'] as String);
+    if (rows.isEmpty) return 0;
+    final value = rows.first['value'];
+    final schema = value is String ? int.tryParse(value) : null;
+    if (schema == null || schema < 0) {
+      throw const SyncStoreCorrupt('invalid schema marker');
+    }
+    return schema;
   }
 
   final Database _db;
@@ -228,6 +269,28 @@ class SyncStore {
   void Function(String point)? faultHook;
 
   SyncIdentity get identity => _readIdentity()!;
+
+  bool get needsRejoin => meta(SyncMeta.needsRejoin) != null;
+
+  /// The imported tables are a new local projection of the existing state.
+  /// Commit this before replacement so an interrupted restore is safe too.
+  void prepareBackupRejoin() {
+    batch(() {
+      setMeta(SyncMeta.needsRejoin, '1');
+      _db.execute('''
+        DELETE FROM snapshot;
+        DELETE FROM history_dots;
+        DELETE FROM suspects;
+        DELETE FROM unrepresentable;
+        DELETE FROM favorite_time;
+        DELETE FROM meta WHERE key GLOB 'favorite_read_order:*';
+        DELETE FROM plan_ops WHERE plan_id IN (
+          SELECT plan_id FROM plan WHERE status <> 'done'
+        );
+        DELETE FROM plan WHERE status <> 'done';
+      ''');
+    });
+  }
 
   /// The clock now, without issuing anything.
   Hlc get clock => _hlc;
@@ -267,13 +330,14 @@ class SyncStore {
       _fault('transaction:end');
       _db.execute(outer ? 'COMMIT' : 'RELEASE $name');
     } catch (_) {
-      // Also reached when COMMIT/RELEASE itself fails (a full disk): the
-      // transaction is still open then, so undo it all the same.
-      if (outer) {
-        _db.execute('ROLLBACK');
-      } else {
-        _db.execute('ROLLBACK TO $name');
-        _db.execute('RELEASE $name');
+      // SQLite can already have rolled back after an I/O error.
+      if (!_db.autocommit) {
+        if (outer) {
+          _db.execute('ROLLBACK');
+        } else {
+          _db.execute('ROLLBACK TO $name');
+          _db.execute('RELEASE $name');
+        }
       }
       rethrow;
     } finally {
@@ -498,14 +562,38 @@ class SyncStore {
       read(parseStrictJson(r['body'] as String)),
   ];
 
-  /// A value of the `meta` table, e.g. the "needs rejoin" mark (spec §7.2).
   Map<String, String> favoriteFolders() => {
     for (final row in _db.select('SELECT folder_id, table_name FROM folders'))
       row['folder_id'] as String: row['table_name'] as String,
   };
 
+  static const _favoriteLabelPrefix = 'favorite_label:';
+
+  /// Physical labels from before a rename or deletion, for old backups.
+  Iterable<(String, String)> favoritePastLabels() sync* {
+    for (final row in _db.select(
+      "SELECT value FROM meta WHERE key GLOB 'favorite_label:*'",
+    )) {
+      final [id as String, name as String] =
+          parseStrictJson(row['value'] as String) as List;
+      yield (id, name);
+    }
+  }
+
   void setFavoriteFolder(String id, String? name) {
     _checkWritable();
+    final previous =
+        _db.select('SELECT table_name FROM folders WHERE folder_id = ?', [
+              id,
+            ]).firstOrNull?['table_name']
+            as String?;
+    if (previous != null && previous != name) {
+      final label = canonicalize([id, previous]);
+      _db.execute('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [
+        '$_favoriteLabelPrefix$label',
+        label,
+      ]);
+    }
     if (name == null) {
       _db.execute('DELETE FROM folders WHERE folder_id = ?', [id]);
     } else {
@@ -567,6 +655,7 @@ class SyncStore {
     _db.execute('DELETE FROM favorite_time WHERE entity_key = ?', [key]);
   }
 
+  /// A value of the `meta` table, e.g. the "needs rejoin" mark (spec §7.2).
   String? meta(String key) {
     var rows = _db.select('SELECT value FROM meta WHERE key = ?', [key]);
     return rows.isEmpty ? null : rows.first['value'] as String;
@@ -596,6 +685,18 @@ class SyncStore {
         r['evicted_at'] as int,
       ),
   ];
+
+  /// Older folder labels can identify a restored legacy table after a rename.
+  Iterable<(RegisterKey, Version)> historicalFolders() sync* {
+    const prefix = '[["f",';
+    for (final row in _db.select(
+      'SELECT reg_key, body FROM evicted WHERE substr(reg_key, 1, 6) = ? '
+      'UNION SELECT reg_key, body FROM archive WHERE substr(reg_key, 1, 6) = ?',
+      [prefix, prefix],
+    )) {
+      yield (_keyOf(row['reg_key'] as String), _version(row['body'] as String));
+    }
+  }
 
   // ---- Local bookkeeping of the scanner and hooks (spec §6, §9.7, §10) ----
 

@@ -76,7 +76,7 @@ class RestorePoints {
     Future<void> work() async => _write(zip, dbs, fault);
     try {
       if (inIsolate && fault == null) {
-        await Isolate.run(() => _write(zip, dbs, null));
+        await _writeInIsolate(zip, dbs);
       } else {
         await work();
       }
@@ -108,6 +108,9 @@ class RestorePoints {
   }
 }
 
+Future<void> _writeInIsolate(String zip, Map<String, String> databases) =>
+    Isolate.run(() => _write(zip, databases, null));
+
 void _write(
   String zip,
   Map<String, String> databases,
@@ -119,7 +122,9 @@ void _write(
     var enc = ZipFileEncoder()..create(zip);
     try {
       for (var MapEntry(key: name, value: path) in databases.entries) {
-        if (!File(path).existsSync()) continue;
+        if (!File(path).existsSync()) {
+          throw RestorePointFailed('$name is missing');
+        }
         var copy = p.join(tmp.path, name);
         // A consistent copy even while the app writes the file.
         var db = sqlite3.open(path, mode: OpenMode.readOnly);
@@ -135,7 +140,7 @@ void _write(
     } finally {
       enc.closeSync();
     }
-    _verify(zip, databases.keys.where((n) => File(databases[n]!).existsSync()));
+    _verify(zip, databases.keys);
     fault?.call('restore:verify');
   } finally {
     try {

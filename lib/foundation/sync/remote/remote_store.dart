@@ -161,6 +161,12 @@ class RemoteRead {
   /// No `format-*.json` yet: the first publish writes one.
   bool formatMissing = false;
 
+  /// The namespace had entries, even if none was a usable state.
+  bool hasRemoteData = false;
+
+  bool get hasValidState =>
+      devices.values.any((device) => device.states.isNotEmpty);
+
   /// Retirement records read, by device.
   final retired = <String, Retired>{};
 
@@ -240,9 +246,13 @@ class RemoteStore {
   /// Reads every device (§4, §4.1). Throws [ListingUnreliable] or
   /// [RemoteFormatNewer] without touching anything; network and account
   /// errors come as [DavException].
-  Future<RemoteRead> read(RemoteBook book) async {
+  Future<RemoteRead> read(
+    RemoteBook book, {
+    bool verifyKnownHeads = false,
+  }) async {
     var result = RemoteRead();
     var top = await _list(RemotePaths.root, 'L2', listingLimits.devices) ?? [];
+    result.hasRemoteData = top.isNotEmpty;
     var formats = [
       for (var e in top)
         if (!e.isDir) RemotePaths.formatNumber(e.name),
@@ -269,7 +279,12 @@ class RemoteStore {
     }
     // L5: this device's own files are all still there (checked per shard).
     for (var d in listed) {
-      result.devices[d] = await _readDevice(d, book, result);
+      result.devices[d] = await _readDevice(
+        d,
+        book,
+        result,
+        verifyKnownHeads: verifyKnownHeads,
+      );
     }
     var own = book.ownFiles.keys.toSet();
     if (own.isNotEmpty && !listed.contains(book.deviceId)) {
@@ -346,8 +361,9 @@ class RemoteStore {
   Future<DeviceRead> _readDevice(
     String device,
     RemoteBook book,
-    RemoteRead result,
-  ) async {
+    RemoteRead result, {
+    bool verifyKnownHeads = false,
+  }) async {
     var dr = DeviceRead(device);
     var dirPath = RemotePaths.device(device);
     var dir = await _list(dirPath, 'L2', listingLimits.deviceDir) ?? [];
@@ -472,7 +488,10 @@ class RemoteStore {
       ];
       var broken = false;
       for (var h in heads) {
-        if (h.ref == known || dr.states.containsKey(h.ref)) continue;
+        if ((!verifyKnownHeads && h.ref == known) ||
+            dr.states.containsKey(h.ref)) {
+          continue;
+        }
         if (known != null && h.generation < known.generation) continue;
         var path = pathOf[h.ref]!;
         try {

@@ -14,12 +14,13 @@ import 'sync_hooks.dart';
 
 /// Local writes enter here only after the business transaction commits.
 abstract final class FavoritesHooks {
-  static bool get enabled => SyncHooks.store?.readOnly == false;
+  static bool get enabled => SyncHooks.enabled;
 
   static void _record(Database db, void Function(FavoritesAdapter) action) {
     final store = SyncHooks.store;
     if (store == null || store.readOnly) return;
     try {
+      if (store.needsRejoin) return;
       final adapter = FavoritesAdapter(
         db,
         store,
