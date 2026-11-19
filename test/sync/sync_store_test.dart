@@ -53,7 +53,11 @@ void main() {
     final id = first.identity.deviceId;
     expect(first.needsRejoin, isFalse);
     first.dispose();
-    File(path).deleteSync();
+    // Model losing the complete SQLite file set, regardless of WAL retention.
+    for (final suffix in ['', '-wal', '-shm', '-journal']) {
+      final file = File('$path$suffix');
+      if (file.existsSync()) file.deleteSync();
+    }
     expect(openLocalSyncStore(path, create: false), isNull);
     final recovered = openLocalSyncStore(path, create: true)!;
     expect(recovered.identity.deviceId, isNot(id));

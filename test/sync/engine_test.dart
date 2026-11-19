@@ -352,9 +352,9 @@ void main() {
     },
   );
 
-  for (final corrupt in [false, true]) {
+  for (final failure in ['missing', 'missing with sidecars', 'corrupt']) {
     test(
-      '${corrupt ? 'corrupt' : 'missing'} sync.db rejoins under a new identity',
+      '$failure sync.db rejoins under a new identity without reviving deleted rows',
       () async {
         a.putHistory('deleted', page: 2);
         expect((await a.sync()).outcome, SyncOutcome.done);
@@ -364,12 +364,21 @@ void main() {
         final oldId = a.store.identity.deviceId;
         final path = '${a.dir.path}/$syncDbName';
         a.close();
-        if (corrupt) {
+        // Some SQLite builds retain sidecars after closing the last handle.
+        for (final suffix in ['-wal', '-shm', '-journal']) {
+          final sidecar = File('$path$suffix');
+          if (sidecar.existsSync()) sidecar.deleteSync();
+        }
+        if (failure == 'corrupt') {
           File(
             path,
           ).writeAsStringSync('invalid SQLite data'.padRight(2048, 'x'));
         } else {
           File(path).deleteSync();
+          if (failure == 'missing with sidecars') {
+            File('$path-wal').writeAsStringSync('orphaned WAL');
+            File('$path-shm').writeAsStringSync('orphaned shared memory');
+          }
         }
         a.open(recoverSyncStore: true);
         expect(a.store.identity.deviceId, isNot(oldId));
@@ -384,12 +393,21 @@ void main() {
           a.store.archiveEntries().map((e) => e.key.entity.last),
           contains('deleted'),
         );
-        expect(
-          a.dir.listSync().whereType<Directory>().any(
-            (entity) => entity.path.contains('sync.db.unreadable-'),
-          ),
-          corrupt,
+        final quarantined = a.dir.listSync().whereType<Directory>().where(
+          (entity) => entity.path.contains('sync.db.unreadable-'),
         );
+        expect(quarantined, hasLength(failure == 'missing' ? 0 : 1));
+        if (failure == 'missing with sidecars') {
+          final dir = quarantined.single.path;
+          expect(
+            File('$dir/$syncDbName-wal').readAsStringSync(),
+            'orphaned WAL',
+          );
+          expect(
+            File('$dir/$syncDbName-shm').readAsStringSync(),
+            'orphaned shared memory',
+          );
+        }
       },
     );
   }
