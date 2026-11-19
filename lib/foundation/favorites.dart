@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:isolate';
@@ -219,7 +220,7 @@ class LocalFavoritesManager with ChangeNotifier {
 
   void reload() {
     counts.clear();
-    initCounts();
+    unawaited(initCounts());
     notifyListeners();
   }
 
@@ -286,25 +287,26 @@ class LocalFavoritesManager with ChangeNotifier {
     } else {
       appdata.settings['followUpdatesFolder'] = null;
     }
-    initCounts();
+    await initCounts();
     isInitialized = true;
   }
 
-  void initCounts() {
+  Future<void> initCounts() {
     for (var folder in folderNames) {
       counts[folder] = count(folder);
     }
-    _initHashedIds(folderNames, _dbPath).then((value) {
-      _hashedIds = value;
-      notifyListeners();
-    });
+    return refreshHashedIds();
   }
 
-  void refreshHashedIds() {
-    _initHashedIds(folderNames, _dbPath).then((value) {
-      _hashedIds = value;
-      notifyListeners();
-    });
+  Future<void> refreshHashedIds() async {
+    final folders = folderNames;
+    _hashedIds = folders.isEmpty ? {} : await _initHashedIds(folders, _dbPath);
+    notifyListeners();
+  }
+
+  void _addHashedId(String id, int type) {
+    final hash = id.hashCode ^ type;
+    _hashedIds[hash] = (_hashedIds[hash] ?? 0) + 1;
   }
 
   void reduceHashedId(String id, int type) {
@@ -698,8 +700,7 @@ class LocalFavoritesManager with ChangeNotifier {
     } else {
       counts[folder] = counts[folder]! + 1;
     }
-    var hash = comic.id.hashCode ^ comic.type.value;
-    _hashedIds[hash] = (_hashedIds[hash] ?? 0) + 1;
+    _addHashedId(comic.id, comic.type.value);
     FavoritesHooks.itemsWritten(_db, folder, [(comic.id, comic.type.value)], inserted: true);
     notifyListeners();
     return true;
@@ -754,8 +755,7 @@ class LocalFavoritesManager with ChangeNotifier {
       restored = true;
       counts[folder] = count(folder);
       for (final row in inserted) {
-        final hash = (row['id'] as String).hashCode ^ (row['type'] as int);
-        _hashedIds[hash] = (_hashedIds[hash] ?? 0) + 1;
+        _addHashedId(row['id'] as String, row['type'] as int);
       }
       FavoritesHooks.itemsWritten(_db, folder, [
         for (final row in inserted) (row['id'] as String, row['type'] as int),
@@ -822,19 +822,36 @@ class LocalFavoritesManager with ChangeNotifier {
     }
     counts[sourceFolder] = count(sourceFolder);
     counts[targetFolder] = count(targetFolder);
-    refreshHashedIds();
+    for (final (id, type) in inserted) {
+      _addHashedId(id, type);
+    }
+    for (final (id, type) in removed) {
+      reduceHashedId(id, type);
+    }
     notifyListeners();
   }
 
   /// delete a folder
   void deleteFolder(String name) {
-    final rows = FavoritesHooks.enabled
-        ? FavoriteFolder.read(_db, name)?.rows ?? const <FavoriteRow>[]
-        : const <FavoriteRow>[];
-    _transaction(() => dropFavoriteTable(_db, name));
+    var rows = const <FavoriteRow>[];
+    late List<(String, int)> removed;
+    _transaction(() {
+      if (FavoritesHooks.enabled) {
+        rows = FavoriteFolder.read(_db, name)!.rows;
+        removed = [for (final row in rows) (row.id, row.type)];
+      } else {
+        removed = [
+          for (final row in _db.select('SELECT id, type FROM ${favoriteTable(name)}'))
+            (row['id'] as String, row['type'] as int),
+        ];
+      }
+      dropFavoriteTable(_db, name);
+    });
     FavoritesHooks.foldersDeleted(_db, {name: rows});
     counts.remove(name);
-    refreshHashedIds();
+    for (final (id, type) in removed) {
+      reduceHashedId(id, type);
+    }
     notifyListeners();
   }
 

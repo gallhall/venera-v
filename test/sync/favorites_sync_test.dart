@@ -268,7 +268,11 @@ void main() {
       favoriteAdded(_time),
     );
     manager.batchCopyFavorites('Renamed', target, [comic]);
+    manager.deleteComicWithId(target, '1', ComicType(_type));
+    expect(manager.isExist('1', ComicType(_type)), isTrue);
+    manager.batchCopyFavorites('Renamed', target, [comic]);
     manager.moveFavorite('Renamed', spare, '1', ComicType(_type));
+    expect(manager.totalComics, 1);
     noChanges();
     manager.batchMoveFavorites(spare, target, [comic]);
     noChanges();
@@ -281,6 +285,7 @@ void main() {
     manager.deleteComicWithId(spare, '1', ComicType(_type));
     manager.addComic(spare, comic);
     manager.deleteFolder(spare);
+    expect(manager.totalComics, 0);
     noChanges();
     expect(
       store
