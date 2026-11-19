@@ -91,7 +91,7 @@ class SyncStoreReadOnly implements Exception {
 
 /// Schema migrations: entry i takes the schema from version i to i + 1.
 /// `meta.schema` only grows.
-final List<void Function(Database)> syncMigrations = [_schema1];
+final List<void Function(Database)> syncMigrations = [_schema1, _schema2];
 
 /// This device's sync store. Not thread safe: one per isolate, each with its
 /// own connection; SQLite locks the file between them.
@@ -294,6 +294,7 @@ class SyncStore {
     Map<String, Object?> fields = const {},
     bool deleted = false,
     int? notBefore,
+    String? opId,
   }) {
     _checkWritable();
     late Version v;
@@ -324,6 +325,12 @@ class SyncStore {
         'INSERT INTO issued (reg_key, counter, hash) VALUES (?, ?, ?)',
         [key.key, v.dot.counter, v.hash],
       );
+      if (opId != null) {
+        _db.execute(
+          'UPDATE issued SET op_id = ? WHERE reg_key = ? AND counter = ?',
+          [opId, key.key, v.dot.counter],
+        );
+      }
       _fault('issue:commit');
     });
     _hlc = hlc;
@@ -492,6 +499,74 @@ class SyncStore {
   ];
 
   /// A value of the `meta` table, e.g. the "needs rejoin" mark (spec §7.2).
+  Map<String, String> favoriteFolders() => {
+    for (final row in _db.select('SELECT folder_id, table_name FROM folders'))
+      row['folder_id'] as String: row['table_name'] as String,
+  };
+
+  void setFavoriteFolder(String id, String? name) {
+    _checkWritable();
+    if (name == null) {
+      _db.execute('DELETE FROM folders WHERE folder_id = ?', [id]);
+    } else {
+      _db.execute(
+        'INSERT INTO folders (folder_id, table_name) VALUES (?, ?) '
+        'ON CONFLICT (folder_id) DO UPDATE SET table_name = excluded.table_name',
+        [id, name],
+      );
+    }
+  }
+
+  String? favoriteSource(String folderId, String workId, int type) {
+    final rows = _db.select(
+      'SELECT source FROM favorite_sources WHERE folder_id = ? AND work_id = ? AND type = ?',
+      [folderId, workId, type],
+    );
+    return rows.firstOrNull?['source'] as String?;
+  }
+
+  void setFavoriteSource(
+    String folderId,
+    String workId,
+    int type,
+    String? source,
+  ) {
+    _checkWritable();
+    if (source == null) {
+      _db.execute(
+        'DELETE FROM favorite_sources WHERE folder_id = ? AND work_id = ? AND type = ?',
+        [folderId, workId, type],
+      );
+    } else {
+      _db.execute(
+        'INSERT OR REPLACE INTO favorite_sources VALUES (?, ?, ?, ?)',
+        [folderId, workId, type, source],
+      );
+    }
+  }
+
+  (int, String?)? favoriteTime(String key) {
+    final rows = _db.select(
+      'SELECT time, last_seen FROM favorite_time WHERE entity_key = ?',
+      [key],
+    );
+    if (rows.isEmpty) return null;
+    return (rows.single['time'] as int, rows.single['last_seen'] as String?);
+  }
+
+  void setFavoriteTime(String key, int added, String seen) {
+    _checkWritable();
+    _db.execute(
+      'INSERT OR REPLACE INTO favorite_time (entity_key, time, last_seen) VALUES (?, ?, ?)',
+      [key, added, seen],
+    );
+  }
+
+  void forgetFavoriteTime(String key) {
+    _checkWritable();
+    _db.execute('DELETE FROM favorite_time WHERE entity_key = ?', [key]);
+  }
+
   String? meta(String key) {
     var rows = _db.select('SELECT value FROM meta WHERE key = ?', [key]);
     return rows.isEmpty ? null : rows.first['value'] as String;
@@ -840,6 +915,20 @@ Version _version(String body) => Version.fromJson(parseStrictJson(body));
 RegisterKey _keyOf(String key) {
   var parts = parseStrictJson(key) as List;
   return RegisterKey((parts[0] as List).cast<Object>(), parts[1] as String);
+}
+
+void _schema2(Database db) {
+  db.execute('ALTER TABLE favorite_time ADD COLUMN last_seen TEXT');
+  db.execute('ALTER TABLE issued ADD COLUMN op_id TEXT');
+  db.execute('''
+    CREATE TABLE favorite_sources (
+      folder_id TEXT NOT NULL,
+      work_id TEXT NOT NULL,
+      type INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      PRIMARY KEY (folder_id, work_id, type)
+    )
+  ''');
 }
 
 /// Schema 1: every table of spec §10. Protocol state (identity, versions,

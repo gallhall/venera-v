@@ -23,8 +23,10 @@ import '../remote/remote_store.dart';
 import '../sync_state.dart';
 import '../sync_store.dart';
 import '../local/adapters.dart';
+import '../local/favorites_adapter.dart';
 import '../local/scanner.dart';
 import '../local/source_keys.dart';
+import 'favorites_plan.dart';
 import 'plan.dart';
 import 'remote_book_codec.dart';
 import 'restore_points.dart';
@@ -108,6 +110,11 @@ class SyncReport {
 abstract class LocalSide {
   /// The main connection of `history.db`, for the scan.
   Database get historyDb;
+
+  Database? get favoritesDb => null;
+  bool get newestFavoritesFirst => true;
+  String translateFavoriteTags(List<String> tags) => '';
+  void favoriteFolderChanged(String? before, String? after) {}
 
   /// Paths of the business databases by name, for stage 6's own
   /// connections and for restore points.
@@ -302,6 +309,9 @@ class SyncEngine {
     var keys = SourceKeys(local.installedKeys());
     var adapters = _adapters(keys);
     var db = local.historyDb;
+    final favorites = local.favoritesDb;
+    final joiningFavorites = joining || store.meta(favoritesJoined) == null;
+    FavoritesScan? favoriteScan;
     late Map<String, Map<String, String>> rows;
     ScanResult? scanned;
     // One read transaction: the rows the plan compares against are exactly
@@ -313,7 +323,26 @@ class SyncEngine {
       }
       // Joining: everything local becomes baselines in stage 5, not
       // versions now.
-      if (!joining) scanned = scan(store, adapters);
+      if (favorites != null) {
+        favorites.execute('BEGIN');
+        try {
+          _migrateFavoriteSources(keys);
+          favoriteScan = FavoritesAdapter(
+            favorites,
+            store,
+            keys,
+          ).snapshot(joining: joiningFavorites);
+        } finally {
+          if (!favorites.autocommit) favorites.execute('COMMIT');
+        }
+      }
+      if (!joining) {
+        scanned = scan(store, [
+          ...adapters,
+          if (!joiningFavorites && favoriteScan != null)
+            ...favoriteScan.adapters(),
+        ]);
+      }
       rows = {for (var t in _tables) '${t.db}/${t.table}': t.readAll(db, keys)};
     } finally {
       if (!db.autocommit) db.execute('COMMIT');
@@ -357,10 +386,28 @@ class SyncEngine {
       return (read, book);
     }
     var suspects = store.suspects().keys.toSet();
+    FavoritePlan? planFavoriteWrites(SyncState state, int startId) {
+      final captured = favoriteScan;
+      return captured == null
+          ? null
+          : planFavorites(
+              state,
+              store,
+              captured,
+              keys,
+              newestFirst: local.newestFavoritesFirst,
+              suspects: suspects,
+              paused: report.paused,
+              startId: startId,
+            );
+    }
+
     String? kind;
     if (firstJoin) {
       if (!restorePoints.hasFirst) kind = RestoreKind.first;
-    } else if (joining || store.meta(SyncMeta.restorePointDue) != null) {
+    } else if (joining ||
+        (joiningFavorites && favorites != null) ||
+        store.meta(SyncMeta.restorePointDue) != null) {
       kind = RestoreKind.rotating;
     } else {
       var preview = planWrites(
@@ -371,8 +418,11 @@ class SyncEngine {
         paused: report.paused,
         keys: keys,
       );
-      if (preview.ops.length > restorePointOps ||
-          preview.deletes > restorePointDeletes) {
+      final favoritePreview = planFavoriteWrites(merged, preview.ops.length);
+      if (preview.ops.length + (favoritePreview?.changes ?? 0) >
+              restorePointOps ||
+          preview.deletes + (favoritePreview?.deletes ?? 0) >
+              restorePointDeletes) {
         kind = RestoreKind.rotating;
       }
     }
@@ -380,6 +430,20 @@ class SyncEngine {
     // ---- 5 plan: protocol state, plan and snapshots in one transaction ----
     cancel.check();
     _stage(report, SyncStage.plan);
+    if (joiningFavorites && favorites != null) {
+      // Include edits made while waiting for WebDAV or the first restore
+      // point. Earlier captures are never announced as the final baseline.
+      favorites.execute('BEGIN');
+      try {
+        favoriteScan = FavoritesAdapter(
+          favorites,
+          store,
+          keys,
+        ).snapshot(joining: true);
+      } finally {
+        if (!favorites.autocommit) favorites.execute('COMMIT');
+      }
+    }
     Plan? plan;
     store.batch(() {
       store.merge(incoming);
@@ -387,6 +451,14 @@ class SyncEngine {
         importBaselines(store, adapters, hlc: store.clock);
         store.setMeta(SyncMeta.joined, '1');
         store.setMeta(SyncMeta.needsRejoin, null);
+      }
+      if (joiningFavorites && favoriteScan != null) {
+        importBaselines(
+          store,
+          favoriteScan.adapters(baseline: true),
+          hlc: store.clock,
+        );
+        store.setMeta(favoritesJoined, '1');
       }
       store.setMeta(SyncMeta.restorePointDue, null);
       var state = store.load();
@@ -401,6 +473,15 @@ class SyncEngine {
       for (var MapEntry(key: k, value: (digest, content))
           in draft.snapshots.entries) {
         store.setSnapshot(k, digest, content: content);
+      }
+      final favoriteDraft = planFavoriteWrites(state, draft.ops.length);
+      if (favoriteDraft != null && favoriteDraft.applied) {
+        draft.ops.addAll(favoriteDraft.ops);
+        draft.unrepresentable.addAll(favoriteDraft.unrepresentable);
+        draft.decidedKinds.addAll(favoriteKinds);
+        for (final entry in favoriteDraft.snapshots.entries) {
+          saveFavoriteSnapshot(store, entry.key, entry.value);
+        }
       }
       for (var ek in store.unrepresentable()) {
         var kindOf = (parseStrictJson(ek) as List).first;
@@ -434,6 +515,44 @@ class SyncEngine {
     return (read, book);
   }
 
+  void _migrateFavoriteSources(SourceKeys keys) {
+    final state = store.load();
+    final aliases = pendingAliases(
+      state,
+      keys,
+    ).where((alias) => alias.from.first == 'i');
+    store.batch(() {
+      if (aliases.isNotEmpty) store.merge(SyncState(aliases: aliases));
+      final resolved = AliasResolution(store.load().aliases);
+      for (final entry in resolved.active.entries) {
+        final target = entry.value;
+        if (target.first != 'i' ||
+            keys.keyOf(localType(entitySource(target)!)) !=
+                entitySource(target)) {
+          continue;
+        }
+        final from = RegisterKey(
+          (parseStrictJson(entry.key) as List).cast<Object>(),
+          'item',
+        );
+        final to = RegisterKey(target, 'item');
+        final snapshot = store.snapshot(from);
+        if (snapshot != null && store.snapshot(to) == null) {
+          store.setSnapshot(to, snapshot, content: store.snapshotContent(from));
+        }
+        final source = entitySource(target)!;
+        final type = localType(source);
+        final folder = target[1] as String;
+        final work = target[3] as String;
+        if (store.favoriteSource(folder, work, type) == from.entity[2]) {
+          store.setFavoriteSource(folder, work, type, source);
+        }
+        store.setSnapshot(from, null);
+        store.removeSuspect(entry.key);
+      }
+    });
+  }
+
   /// The heads read become known; registries name more devices.
   void _advanceBook(RemoteBook book, RemoteRead read) {
     var me = book.deviceId;
@@ -462,15 +581,44 @@ class SyncEngine {
       }
       for (var MapEntry(key: name, value: ops) in byDb.entries) {
         var path = local.databasePaths[name]!;
-        for (var i = 0; i < ops.length; i += planBatchSize) {
+        final favoriteBatch = name == favoritesKind;
+        // A folder can contain many rows. Check the remaining background
+        // time between folders, while each folder stays atomic.
+        final batchSize = favoriteBatch ? 1 : planBatchSize;
+        for (var i = 0; i < ops.length; i += batchSize) {
           if (expired()) return false;
           var batch = ops.sublist(
             i,
-            i + planBatchSize > ops.length ? ops.length : i + planBatchSize,
+            i + batchSize > ops.length ? ops.length : i + batchSize,
           );
-          var r = await _applyBatch(path, batch, keys);
+          final r = favoriteBatch
+              ? await _applyFavorites(path, batch)
+              : await _applyBatch(path, batch, keys);
           _fault('apply:before-mark');
-          store.markOps(plan.planId, r.done, r.skipped);
+          final changed = <(String?, String?)>[];
+          store.batch(() {
+            if (favoriteBatch) {
+              final done = r.done.toSet();
+              final mappings = store.favoriteFolders();
+              for (final op in batch) {
+                if (!done.contains(op.opId)) continue;
+                final action = FavoriteOperation(op);
+                if (!action.ownsMapping(mappings)) {
+                  r.done.remove(op.opId);
+                  r.skipped.add(op.opId);
+                  continue;
+                }
+                action.finish(store);
+                if (action.from != action.to) {
+                  changed.add((action.from, action.to));
+                }
+              }
+            }
+            store.markOps(plan.planId, r.done, r.skipped);
+          });
+          for (final (before, after) in changed) {
+            local.favoriteFolderChanged(before, after);
+          }
           written += r.done.length;
           _fault('apply:after-mark');
           // Let the UI run between batches.
@@ -488,6 +636,24 @@ class SyncEngine {
     });
     local.reload();
     return (written, skipped);
+  }
+
+  Future<BatchResult> _applyFavorites(String path, List<PlanOp> ops) async {
+    final mappings = store.favoriteFolders();
+    final translations = <String, String>{};
+    for (final op in ops) {
+      if (op.after == null) continue;
+      for (final row in FavoriteFolder.parse(op.after!).rows) {
+        translations.putIfAbsent(
+          row.tags,
+          () => local.translateFavoriteTags(row.tagList),
+        );
+      }
+    }
+    if (inIsolate && fault == null) {
+      return _applyFavoriteIsolate(path, ops, mappings, translations);
+    }
+    return _applyFavoriteFile(path, ops, mappings, translations, fault: fault);
   }
 
   Future<BatchResult> _applyBatch(
@@ -586,4 +752,33 @@ class SyncEngine {
   ];
 
   void _fault(String point) => fault?.call(point);
+}
+
+Future<BatchResult> _applyFavoriteIsolate(
+  String path,
+  List<PlanOp> ops,
+  Map<String, String> mappings,
+  Map<String, String> translations,
+) => Isolate.run(() => _applyFavoriteFile(path, ops, mappings, translations));
+
+BatchResult _applyFavoriteFile(
+  String path,
+  List<PlanOp> ops,
+  Map<String, String> mappings,
+  Map<String, String> translations, {
+  void Function(String)? fault,
+}) {
+  final db = sqlite3.open(path);
+  try {
+    db.execute('PRAGMA busy_timeout = 5000');
+    return applyFavoriteBatch(
+      db,
+      ops,
+      mappings,
+      (tags) => translations[tags.join(',')] ?? '',
+      fault: fault,
+    );
+  } finally {
+    db.dispose();
+  }
 }

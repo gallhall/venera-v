@@ -10,10 +10,14 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+
+import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/watch_later.dart';
+
 import 'package:sqlite3/sqlite3.dart' hide Version;
 
 import 'engine/restore_points.dart';
@@ -30,12 +34,43 @@ class AppLocalSide extends LocalSide {
   Database get historyDb => HistoryManager().database;
 
   @override
+  Database get favoritesDb => LocalFavoritesManager().database;
+
+  @override
   Map<String, String> get databasePaths => {
     'history': '${App.dataPath}/history.db',
+    'favorites': '${App.dataPath}/local_favorite.db',
   };
 
   @override
-  bool get ready => HistoryManager().isInitialized;
+  bool get newestFavoritesFirst =>
+      appdata.settings['newFavoriteAddTo'] != 'end';
+
+  @override
+  String translateFavoriteTags(List<String> tags) =>
+      LocalFavoritesManager.translateTags(tags);
+
+  @override
+  void favoriteFolderChanged(String? before, String? after) {
+    if (before == null || appdata.settings['followUpdatesFolder'] != before) {
+      return;
+    }
+    appdata.settings['followUpdatesFolder'] = after;
+    // Persist this device-only reference without triggering a WebDAV backup.
+    unawaited(
+      appdata.saveData(false).catchError((Object error, StackTrace stack) {
+        Log.error(
+          'Sync',
+          'saving local favorites settings failed: $error',
+          stack,
+        );
+      }),
+    );
+  }
+
+  @override
+  bool get ready =>
+      HistoryManager().isInitialized && LocalFavoritesManager().isInitialized;
 
   @override
   Iterable<String> installedKeys() => ComicSource.all().map((s) => s.key);
@@ -44,6 +79,7 @@ class AppLocalSide extends LocalSide {
   void reload() {
     HistoryManager().reload();
     WatchLater().reload();
+    LocalFavoritesManager().reload();
   }
 
   /// On iOS, stage 6 asks for background time (§9.3); when it runs out the
@@ -147,7 +183,10 @@ abstract final class SyncService {
     restorePoints: RestorePoints(
       s,
       dir: restoreDir,
-      databases: {'history.db': '${App.dataPath}/history.db'},
+      databases: {
+        'history.db': '${App.dataPath}/history.db',
+        'local_favorite.db': '${App.dataPath}/local_favorite.db',
+      },
     ),
   );
 }

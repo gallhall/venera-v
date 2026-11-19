@@ -86,6 +86,17 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
         });
       }
     } else {
+      if (!manager.existsFolder(widget.folder)) {
+        setState(() {
+          comics = [];
+          networkSource = null;
+          networkFolder = null;
+        });
+        return;
+      }
+      final (source, folder) = manager.findLinked(widget.folder);
+      networkSource = source;
+      networkFolder = folder;
       var folderComics = manager.folderComics(widget.folder);
       if (folderComics < _asyncDataFetchLimit) {
         comics = manager.getFolderComics(widget.folder);
@@ -299,7 +310,8 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
               onTap: favPage.showFolderSelector,
             ),
             actions: [
-              if (networkSource != null && !isAllFolder)
+              if (networkSource != null && !isAllFolder &&
+                  ComicSource.find(networkSource!) != null)
                 IconButton(
                   tooltip: "Sync".tl,
                   icon: const Icon(Icons.sync_outlined),

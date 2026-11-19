@@ -429,7 +429,12 @@ int countBusinessRecords(SyncState s) {
     var kind = e.key.entity.isEmpty ? '' : e.key.entity.first;
     if (kind == 'fo' || kind == 'io') continue;
     if (kind == 'h' && e.key.register != 'pos') continue;
-    if (e.value.any((v) => !v.deleted)) shown.add(canonicalize(e.key.entity));
+    if (e.value.any((v) => !v.deleted)) {
+      shown.add(canonicalize(e.key.entity));
+      if (e.key.entity case ['i', String folder, String _, String _]) {
+        shown.add(canonicalize(['f', folder]));
+      }
+    }
   }
   return shown.length;
 }
@@ -452,11 +457,13 @@ class PublishTooLarge implements Exception {
     required this.compressedBytes,
     required this.businessRecords,
     required this.metadata,
+    this.recordTooLarge = false,
   });
 
   final int compressedBytes;
   final int businessRecords;
   final int metadata;
+  final bool recordTooLarge;
 
   @override
   String toString() =>
@@ -484,6 +491,7 @@ abstract final class StateFile {
     required int generation,
     required String fileName,
     PublishLimits limits = const PublishLimits(),
+    StateLimits readLimits = const StateLimits(),
   }) {
     var records = countBusinessRecords(state);
     var json = utf8.encode(
@@ -495,12 +503,31 @@ abstract final class StateFile {
       }),
     );
     var bytes = Uint8List.fromList(gzip.encode(json));
-    if (bytes.length > limits.compressedBytes ||
+    // New favorites registers (in particular whole-folder order lists)
+    // must fit the same per-version limit that readers enforce.
+    final recordTooLarge = state.registers.entries.any((entry) {
+      if (!const {
+        'f',
+        'i',
+        'fo',
+        'io',
+      }.contains(entry.key.entity.firstOrNull)) {
+        return false;
+      }
+      return entry.value.any(
+        (version) =>
+            utf8.encode(canonicalize(version.toJson())).length >
+            readLimits.versionBytes,
+      );
+    });
+    if (recordTooLarge ||
+        bytes.length > limits.compressedBytes ||
         records > limits.businessRecords) {
       throw PublishTooLarge(
         compressedBytes: bytes.length,
         businessRecords: records,
         metadata: countMetadata(state),
+        recordTooLarge: recordTooLarge,
       );
     }
     var maxCounter = 0;

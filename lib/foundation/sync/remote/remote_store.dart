@@ -569,6 +569,7 @@ class RemoteStore {
       generation: (book.confirmed?.generation ?? 0) + 1,
       fileName: '',
       limits: publishLimits,
+      readLimits: stateLimits,
     );
     ManifestRef? prev = book.confirmed?.ref;
     var generation = (book.confirmed?.generation ?? 0) + 1;
@@ -636,6 +637,7 @@ class RemoteStore {
       generation: generation,
       fileName: stateName,
       limits: publishLimits,
+      readLimits: stateLimits,
     );
     if (read.formatMissing) {
       await dav.put(

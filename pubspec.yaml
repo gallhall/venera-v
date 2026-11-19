@@ -120,6 +120,7 @@ dependencies:
   # bytes for the info hash of many .torrent files (see torrent_parser.dart).
   dtorrent_task_v2:
     path: packages/dtorrent_task_v2
+  unorm_dart: 0.3.3
 
 dev_dependencies:
   flutter_test:

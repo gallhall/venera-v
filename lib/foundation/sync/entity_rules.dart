@@ -26,7 +26,10 @@ String? folderName(Iterable<Version> folderBranches) {
   var shown = display(folderBranches).shown;
   if (shown != null) return shown.fields['name'] as String?;
   for (var v
-      in folderBranches.toList()..sort((a, b) => b.hlc.compareTo(a.hlc))) {
+      in folderBranches.toList()..sort((a, b) {
+        final clock = b.hlc.compareTo(a.hlc);
+        return clock == 0 ? b.id.compareTo(a.id) : clock;
+      })) {
     var n = v.fields['lastName'];
     if (n is String) return n;
   }
@@ -44,13 +47,23 @@ List<String> displayOrder(
   Map<String, int> live, {
   required bool newestFirst,
 }) {
+  final order = shownOrder?.fields['order'];
+  return completeOrder(
+    order is List ? order.whereType<String>() : const [],
+    live,
+    newestFirst: newestFirst,
+  );
+}
+
+List<String> completeOrder(
+  Iterable<String> order,
+  Map<String, int> live, {
+  required bool newestFirst,
+}) {
   var listed = <String>[];
   var seen = <String>{};
-  var order = shownOrder?.fields['order'];
-  if (order is List) {
-    for (var k in order.whereType<String>()) {
-      if (live.containsKey(k) && seen.add(k)) listed.add(k);
-    }
+  for (var key in order) {
+    if (live.containsKey(key) && seen.add(key)) listed.add(key);
   }
   var rest = [
     for (var k in live.keys)
