@@ -531,7 +531,9 @@ void main() {
   var regression = File('test/sync/regression_seeds.txt')
       .readAsLinesSync()
       .map((l) => l.trim())
-      .where((l) => l.isNotEmpty && !l.startsWith('#'));
+      .where(
+        (l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('e2e:'),
+      );
 
   test('regression seeds', () {
     for (var line in regression) {

@@ -7,8 +7,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' hide Version;
+import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/sync/engine/plan.dart';
 import 'package:venera/foundation/sync/engine/restore_points.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
@@ -21,6 +25,9 @@ import 'package:venera/foundation/sync/remote/remote_store.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
 import 'package:venera/foundation/sync/sync_store.dart';
 import 'package:venera/foundation/sync/sync_store_files.dart';
+import 'package:venera/foundation/sync/sync_controller.dart';
+import 'package:venera/pages/history_page.dart';
+import 'package:venera/utils/translations.dart';
 
 import 'support/memory_dav.dart';
 
@@ -92,7 +99,10 @@ class Device {
   String get historyPath => '${dir.path}/history.db';
   String get restoreDir => '${dir.path}/restore';
 
-  void open({bool recoverSyncStore = false}) {
+  void open({
+    bool recoverSyncStore = false,
+    List<void Function(Database)>? migrations,
+  }) {
     db = sqlite3.open(historyPath);
     db.execute('''
       create table if not exists history (id text primary key, title text,
@@ -105,8 +115,18 @@ class Device {
     var path = '${dir.path}/$syncDbName';
     store = recoverSyncStore
         ? openLocalSyncStore(path, create: true, previouslyUsed: true)!
-        : SyncStore.openIfExists(path, now: _now, durable: false) ??
-              SyncStore.create(path, now: _now, durable: false);
+        : SyncStore.openIfExists(
+                path,
+                now: _now,
+                durable: false,
+                migrations: migrations,
+              ) ??
+              SyncStore.create(
+                path,
+                now: _now,
+                durable: false,
+                migrations: migrations,
+              );
     local = TestLocal(this);
     void fault(String p) => onPoint?.call(p);
     engine = SyncEngine(
@@ -633,6 +653,91 @@ void main() {
     );
   }
 
+  test('P11 stale read and metadata cannot resurrect history', () async {
+    a.putHistory('book', page: 1, read: '1');
+    expect((await a.sync()).outcome, SyncOutcome.done);
+    expect((await b.sync()).outcome, SyncOutcome.done);
+    b.db.execute(
+      "UPDATE history SET title = 'older info', readEpisode = '1,2' WHERE id = 'book'",
+    );
+    a.deleteHistory('book', typeA);
+    expect((await a.sync()).outcome, SyncOutcome.done);
+    expect((await b.sync()).outcome, SyncOutcome.done);
+    expect((await a.sync()).outcome, SyncOutcome.done);
+    for (final d in [a, b]) {
+      expect(d.history(), isEmpty);
+      final position = RegisterKey(['h', 'srcA', 'book'], 'pos');
+      expect(d.store.branches(position).single.deleted, isTrue);
+    }
+    b.putHistory('book', page: 6);
+    expect((await b.sync()).outcome, SyncOutcome.done);
+    expect((await a.sync()).outcome, SyncOutcome.done);
+    expect(a.history()['book']!.$3, 6);
+  });
+
+  testWidgets(
+    'cancel clear history preserves versions; confirm syncs tombstones',
+    (tester) async {
+      await tester.runAsync(() async {
+        App.dataPath = a.dir.path;
+        App.cachePath = (Directory('${a.dir.path}/cache')..createSync()).path;
+        await AppTranslation.init();
+        await HistoryManager().init();
+        addTearDown(HistoryManager().close);
+        final previousLanguage = appdata.settings['language'];
+        appdata.settings['language'] = 'en-US';
+        addTearDown(() => appdata.settings['language'] = previousLanguage);
+      });
+      SyncController.instance = SyncController.forTest(store: a.store);
+      addTearDown(() => SyncController.instance = null);
+      // Start with an empty view so the widget only exercises the clear
+      // action, without loading comic source artwork.
+      await tester.pumpWidget(const MaterialApp(home: HistoryPage()));
+      await tester.runAsync(() async {
+        a.putHistory('one');
+        a.putHistory('two');
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        expect((await b.sync()).outcome, SyncOutcome.done);
+      });
+      SyncHooks.store = a.store;
+      SyncHooks.installedKeys = () => installed;
+      final before = a.store.load().canonical;
+      final open = find.byTooltip('Clear History');
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('the next sync also deletes these history records'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(a.history().keys, unorderedEquals(['one', 'two']));
+      expect(a.store.load().canonical, before);
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Clear'));
+      await tester.pumpAndSettle();
+      expect(a.history(), isEmpty);
+      for (final id in ['one', 'two']) {
+        for (final register in ['pos', 'info', 'read']) {
+          expect(
+            a.store
+                .branches(RegisterKey(['h', 'srcA', id], register))
+                .single
+                .deleted,
+            isTrue,
+          );
+        }
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        expect((await b.sync()).outcome, SyncOutcome.done);
+        expect(b.history(), isEmpty);
+      });
+    },
+  );
+
   group('two devices', () {
     test('converge both ways, history and 稍后看', () async {
       a.putHistory('1', ep: 2, read: '2,1');
@@ -946,6 +1051,27 @@ void main() {
   });
 
   group('safety restore points (spec §9.1)', () {
+    test(
+      'upgrading sync.db requires a verified point even with no row changes',
+      () async {
+        final c = Device('c', Directory('${root.path}/c')..createSync(), dav)
+          ..open(migrations: syncMigrations.take(2).toList());
+        addTearDown(c.close);
+        c.putHistory('old');
+        expect((await c.sync()).outcome, SyncOutcome.done);
+        expect(c.store.restorePoints().single.kind, RestoreKind.first);
+        c.restart();
+        expect(c.store.schema, syncMigrations.length);
+        final after = await c.sync();
+        expect(after.outcome, SyncOutcome.done);
+        expect(after.applied, 0);
+        expect(c.store.restorePoints().map((r) => (r.kind, r.verified)), [
+          (RestoreKind.first, true),
+          (RestoreKind.rotating, true),
+        ]);
+      },
+    );
+
     test('many changes make one; a failing one stops before stage 5', () async {
       for (var i = 0; i < restorePointOps + 5; i++) {
         b.putHistory('b$i', type: typeB);

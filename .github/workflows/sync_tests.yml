@@ -1,6 +1,6 @@
 name: "sync tests"
 # The sync Merger and canonical hashes must agree on every platform
-# (docs/sync/testing.md P14), so these pure tests run on all three CI hosts.
+# (docs/sync/testing.md P14). Run the SQLite simulations on the same hosts.
 on:
   pull_request:
     paths:
@@ -39,8 +39,19 @@ jobs:
           channel: "stable"
           flutter-version: ${{ steps.flutter.outputs.version }}
       - run: flutter pub get
-      # sync.db tests need a system sqlite3: macOS has one, Ubuntu needs the
-      # package; on Windows they skip (no sqlite3.dll outside an app build).
+      # The end-to-end suite requires SQLite. macOS has it, Ubuntu needs
+      # the package, and Windows loads the DLL from the runner's PATH.
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y libsqlite3-dev
       - run: flutter test test/sync/
+        env:
+          # The full sweep runs on Linux. Windows and macOS each exercise
+          # all 14 fault points twice, plus every recorded regression seed.
+          SYNC_E2E_COUNT: ${{ runner.os == 'Linux' && '500' || '28' }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sync-regressions-${{ matrix.os }}
+          path: |
+            test/sync/regression_seeds.txt
+            build/sync-simulation-failures/
