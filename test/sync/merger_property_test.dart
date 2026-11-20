@@ -27,9 +27,11 @@ class SimDevice extends TestDevice {
 
   /// Versions this device once held and then dropped as dominated.
   final buried = <Vid>{};
+  final evictionTimes = <Vid, int>{};
 
   /// Counter at which this identity was copied, if it was.
   int? copyPoint;
+  bool copied = false;
 }
 
 class Sim {
@@ -53,6 +55,9 @@ class Sim {
   int nextId = 0;
   int copiesMade = 0;
   int lostTainted = 0;
+  int taintedAtRisk = 0;
+  final measuredLoss = <(int, int), int>{};
+  final beforeConvergence = <SimDevice, SyncState>{};
 
   Never fail(String what) => throw TestFailure(
     '$what\nseed=$seed copies=$copies devices=${devices.length}\n'
@@ -77,6 +82,9 @@ class Sim {
       now += rng.nextInt(5000);
       this.step();
       if (!copies && step % 50 == 49) algebra();
+    }
+    if (copies) {
+      beforeConvergence.addEntries(devices.map((d) => MapEntry(d, d.state)));
     }
     converge();
     finalChecks();
@@ -136,7 +144,8 @@ class Sim {
 
   /// Merges [incoming] into [d] and checks nothing it dropped comes back.
   void absorb(SimDevice d, SyncState incoming) {
-    var before = {...vids(d.state), ...vids(incoming)};
+    final held = vids(d.state);
+    var before = {...held, ...vids(incoming)};
     d.pullState(incoming);
     var after = vids(d.state);
     if (!copies) {
@@ -144,6 +153,25 @@ class Sim {
       var back = after.intersection(d.buried);
       check(back.isEmpty, 'P4: ${d.id} took back dominated $back');
       d.buried.addAll(before.difference(after));
+    } else {
+      for (final id in held.difference(after)) {
+        final original = oracle[id];
+        if (original == null) continue;
+        if (after.any(
+          (replacement) =>
+              replacement.$1 == id.$1 &&
+              issuer[replacement] != issuer[id] &&
+              oracle[replacement] != null &&
+              dominates(
+                oracle[replacement]!,
+                original,
+                causality: d.state.causality,
+                register: id.$1,
+              ),
+        )) {
+          d.evictionTimes.putIfAbsent(id, () => now);
+        }
+      }
     }
   }
 
@@ -329,8 +357,10 @@ class Sim {
       ..clock = d.clock
       ..issued = {...d.issued}
       ..state = d.state
-      ..copyPoint = d.counter;
+      ..copyPoint = d.counter
+      ..copied = true;
     d.copyPoint ??= d.counter;
+    d.copied = true;
     devices.add(copy);
     log.add('copy identity ${d.id} at ${d.counter}');
   }
@@ -416,17 +446,20 @@ class Sim {
       // overwritten by a later write of the same machine.
       var supersededByOwn = {
         for (var MapEntry(key: u, value: seen) in observed.entries)
-          for (var v in seen)
-            if (issuer[v] == issuer[u]) v,
+          if (oracle[u]?.origin != Origin.rescued)
+            for (var v in seen)
+              if (issuer[v] == issuer[u]) v,
       };
-      for (var MapEntry(key: (reg, id), value: v) in oracle.entries) {
-        if (c.isTainted(v.dot) &&
-            !present.contains((reg, id)) &&
-            c.rescuesOf(reg, id).isEmpty &&
-            !supersededByOwn.contains((reg, id))) {
-          lostTainted++;
-        }
-      }
+      final candidates = {
+        for (final e in oracle.entries)
+          if (c.isTainted(e.value.dot) && !supersededByOwn.contains(e.key))
+            e.key,
+      };
+      taintedAtRisk = candidates.length;
+      lostTainted = candidates
+          .where((e) => !present.contains(e) && c.rescuesOf(e.$1, e.$2).isEmpty)
+          .length;
+      _measureRetainedCopies(candidates);
       return;
     }
     // P3: a version is gone exactly when someone wrote after seeing it.
@@ -455,6 +488,41 @@ class Sim {
           expected.containsAll(growOnlyShown(s.branches(readSet), 'read')),
       'P10: read set ${growOnlyShown(s.branches(readSet), 'read')} != $expected',
     );
+  }
+
+  /// Loss of recoverable originals immediately before the final exchange,
+  /// if a seeded fraction of the machines involved in cloning disappears.
+  /// The rolling old remote snapshots remain available in this model.
+  void _measureRetainedCopies(Set<Vid> candidates) {
+    final cohort = devices.where((d) => d.copied).toList()
+      ..shuffle(Random(seed ^ 104729));
+    for (final percentage in [0, 50, 100]) {
+      final gone = cohort.take(cohort.length * percentage ~/ 100).toSet();
+      final alive = beforeConvergence.keys.where((d) => !gone.contains(d));
+      final available = <Vid>{};
+      for (final state in [
+        ...old,
+        for (final d in alive) beforeConvergence[d]!,
+      ]) {
+        available.addAll(vids(state));
+        available.addAll(state.rescues.map((r) => (r.registerKey, r.from)));
+      }
+      for (final retention in [0, 30]) {
+        final cutoff =
+            now +
+            Duration.millisecondsPerDay -
+            retention * Duration.millisecondsPerDay;
+        final retained = {
+          ...available,
+          for (final d in alive)
+            for (final e in d.evictionTimes.entries)
+              if (e.value >= cutoff) e.key,
+        };
+        measuredLoss[(retention, percentage)] = candidates
+            .difference(retained)
+            .length;
+      }
+    }
   }
 }
 
@@ -486,15 +554,30 @@ void main() {
     '${count ~/ 4} random seeds with identity copies (P9)',
     () {
       var lost = 0;
+      var atRisk = 0;
+      final measured = <(int, int), int>{};
       for (var seed = 0; seed < count ~/ 4; seed++) {
         var sim = Sim(100000 + seed, copies: true)..run();
         lost += sim.lostTainted;
+        atRisk += sim.taintedAtRisk;
+        for (final e in sim.measuredLoss.entries) {
+          measured.update(e.key, (n) => n + e.value, ifAbsent: () => e.value);
+        }
       }
       // Measured, not asserted (testing.md P9, limitations.md L1).
       printOnFailure(
         'tainted versions lost before their copy found out: $lost',
       );
-      print('P9: tainted versions lost before their copy found out: $lost');
+      print(
+        'P9 active-state simulation: $lost/$atRisk tainted candidates lost',
+      );
+      for (final MapEntry(key: (days, percent), value: lost)
+          in measured.entries) {
+        print(
+          'P9 storage model: buffer ${days}d, $percent% of cloned cohort lost, '
+          '$lost/$atRisk candidates unavailable',
+        );
+      }
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );

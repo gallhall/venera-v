@@ -10,6 +10,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart' show RHttpAdapter;
 
 import 'engine/sync_engine.dart';
+import 'engine/remote_book_codec.dart';
 import 'remote/dav.dart';
 import 'remote/remote_files.dart';
 import 'remote/remote_store.dart';
@@ -26,6 +27,16 @@ typedef SyncRunner =
       CancelToken cancel,
       void Function(SyncStage) onStage,
     );
+
+typedef SyncDevice = ({
+  String id,
+  String name,
+  int generation,
+  bool local,
+  bool retired,
+  bool archived,
+  bool isolated,
+});
 
 class SyncController with ChangeNotifier {
   SyncController._();
@@ -61,6 +72,43 @@ class SyncController with ChangeNotifier {
   }
 
   SyncStore? get store => _store ?? SyncService.store;
+
+  bool get identityIsolated {
+    final s = store;
+    return s != null && !s.readOnly && s.identityIsolated;
+  }
+
+  List<SyncDevice> get devices {
+    final s = store;
+    if (s == null || s.readOnly) return [];
+    final book = loadRemoteBook(s);
+    final state = s.load();
+    final retired = {for (final r in state.retired) r.device};
+    final archived = s.archivedDevices();
+    final ids = {...book.devices, ...book.peers.keys, ...retired}
+      ..remove(book.deviceId);
+    return [
+      for (final id in [book.deviceId, ...(ids.toList()..sort())])
+        (
+          id: id,
+          name: book.names[id] ?? '',
+          generation: id == book.deviceId
+              ? book.confirmed?.generation ?? 0
+              : book.peers[id]?.generation ?? 0,
+          local: id == book.deviceId,
+          retired: retired.contains(id),
+          archived: archived.contains(id),
+          isolated: state.causality.taintStart(id) != null,
+        ),
+    ];
+  }
+
+  void setDeviceArchived(String device, bool archived) {
+    final s = store;
+    if (running || s == null || s.readOnly) return;
+    s.setDeviceArchived(device, archived);
+    notifyListeners();
+  }
 
   SyncUiState _state = SyncUiState.idle;
   SyncUiState get state => _state;
@@ -103,7 +151,10 @@ class SyncController with ChangeNotifier {
   }
 
   /// 立即同步. While a sync runs, returns that one.
-  Future<SyncReport?> syncNow() async {
+  Future<SyncReport?> syncNow({
+    bool rescueIdentity = false,
+    String? retireDevice,
+  }) async {
     if (!enabled) return null;
     if (running) return null;
     var cancel = _cancel = CancelToken();
@@ -114,11 +165,21 @@ class SyncController with ChangeNotifier {
     Log.info('Sync', 'sync started');
     SyncReport report;
     try {
-      report = await (_runner ?? _runApp)(cancel, (s) {
+      void onStage(SyncStage s) {
         _stage = s;
         Log.info('Sync', 'stage ${s.name}');
         notifyListeners();
-      });
+      }
+
+      final runner = _runner;
+      report = runner != null
+          ? await runner(cancel, onStage)
+          : await _runApp(
+              cancel,
+              onStage,
+              rescueIdentity: rescueIdentity,
+              retireDevice: retireDevice,
+            );
     } catch (e, st) {
       Log.error('Sync', 'sync failed: $e', st);
       report = SyncReport(SyncOutcome.failed, reason: '$e', error: e);
@@ -188,8 +249,10 @@ class SyncController with ChangeNotifier {
 
   Future<SyncReport> _runApp(
     CancelToken cancel,
-    void Function(SyncStage) onStage,
-  ) async {
+    void Function(SyncStage) onStage, {
+    required bool rescueIdentity,
+    required String? retireDevice,
+  }) async {
     var config = (appdata.settings['webdav'] as List).cast<String>();
     var dio = Dio()..httpClientAdapter = RHttpAdapter();
     var engine = SyncService.engine(
@@ -208,9 +271,15 @@ class SyncController with ChangeNotifier {
 
     engine.stage.addListener(listener);
     try {
-      return await engine.run(SyncTrigger.manual, cancel: cancel);
+      return await engine.run(
+        SyncTrigger.manual,
+        cancel: cancel,
+        rescueIdentity: rescueIdentity,
+        retireDevice: retireDevice,
+      );
     } finally {
       engine.stage.removeListener(listener);
+      dio.close();
     }
   }
 }

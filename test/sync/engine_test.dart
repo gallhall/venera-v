@@ -137,6 +137,24 @@ class Device {
     open();
   }
 
+  void copyFrom(Device original) {
+    close();
+    for (final name in ['history.db', syncDbName]) {
+      final destination = '${dir.path}/$name';
+      for (final suffix in ['', '-wal', '-shm', '-journal']) {
+        final file = File('$destination$suffix');
+        if (file.existsSync()) file.deleteSync();
+      }
+      final source = sqlite3.open('${original.dir.path}/$name');
+      try {
+        source.execute('VACUUM INTO ?', [destination]);
+      } finally {
+        source.dispose();
+      }
+    }
+    open();
+  }
+
   Future<SyncReport> sync() => engine.run(SyncTrigger.manual);
 
   void putHistory(
@@ -227,6 +245,96 @@ void main() {
       root.deleteSync(recursive: true);
     } catch (_) {}
   });
+
+  test(
+    'a copied identity keeps merging locally while publication is isolated',
+    () async {
+      a.putHistory('shared');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      b.copyFrom(a);
+      final copiedId = a.store.identity.deviceId;
+      a.putHistory('only-a', page: 2);
+      b.putHistory('only-b', page: 3);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      final files = dav.snapshot().files;
+
+      final result = await b.sync();
+      expect(result.outcome, SyncOutcome.needsAttention);
+      expect(result.published, isFalse);
+      expect(b.store.identity.deviceId, copiedId);
+      expect(b.store.load().causality.taintStart(copiedId), 1);
+      final evidence = b.store.load().taints.expand((t) => t.evidence);
+      expect(evidence, containsAll(['E3:$copiedId', 'E5:$copiedId']));
+      expect(b.history().keys, containsAll(['shared', 'only-a', 'only-b']));
+      expect(dav.snapshot().files, files);
+
+      b.onPoint = (point) {
+        if (point == 'restore:verify') {
+          throw const RestorePointFailed('injected');
+        }
+      };
+      final unsafe = await b.engine.run(
+        SyncTrigger.manual,
+        rescueIdentity: true,
+      );
+      expect(unsafe.outcome, SyncOutcome.failed);
+      expect(b.store.identity.deviceId, copiedId);
+      expect(b.store.load().rescues, isEmpty);
+      expect(dav.snapshot().files, files);
+      b.onPoint = null;
+
+      b.store.faultHook = (point) {
+        if (point == 'rescue:before-commit') throw Crash();
+      };
+      await expectLater(
+        b.engine.run(SyncTrigger.manual, rescueIdentity: true),
+        throwsA(isA<Crash>()),
+      );
+      expect(b.store.identity.deviceId, copiedId);
+      expect(b.store.load().rescues, isEmpty);
+      expect(dav.snapshot().files, files);
+      b.restart();
+      final rescuedB = await b.engine.run(
+        SyncTrigger.manual,
+        rescueIdentity: true,
+      );
+      expect(rescuedB.outcome, SyncOutcome.done, reason: '$rescuedB');
+      expect(rescuedB.published, isTrue);
+      final newB = b.store.identity.deviceId;
+      expect(newB, isNot(copiedId));
+      final mappingsB = b.store.load().rescues;
+      expect(mappingsB, isNotEmpty);
+      expect(mappingsB.map((r) => r.entity.last).toSet(), {'only-b'});
+      expect(mappingsB.every((r) => r.to.device == newB), isTrue);
+
+      expect((await a.sync()).outcome, SyncOutcome.needsAttention);
+      final rescuedA = await a.engine.run(
+        SyncTrigger.manual,
+        rescueIdentity: true,
+      );
+      expect(rescuedA.outcome, SyncOutcome.done, reason: '$rescuedA');
+      expect(a.store.identity.deviceId, isNot(anyOf(copiedId, newB)));
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect(a.store.load().canonical, b.store.load().canonical);
+      expect(b.store.load().rescues.map((r) => r.entity.last).toSet(), {
+        'only-a',
+        'only-b',
+      });
+      expect(a.history(), b.history());
+      expect(
+        b.store.restorePoints().any(
+          (r) => r.kind == RestoreKind.rotating && r.verified,
+        ),
+        isTrue,
+      );
+      final retiredCopy = await a.engine.run(
+        SyncTrigger.manual,
+        retireDevice: copiedId,
+      );
+      expect(retiredCopy.outcome, SyncOutcome.done, reason: '$retiredCopy');
+      expect(a.store.load().retired.single.device, copiedId);
+    },
+  );
 
   test('rejoining declines a nonempty remote tree without a state', () async {
     a.putHistory('local', page: 3);
@@ -411,6 +519,64 @@ void main() {
       },
     );
   }
+
+  test(
+    'retired device rejoins under a new identity with its offline edits',
+    () async {
+      b.putHistory('from-b');
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      final oldB = b.store.identity.deviceId;
+      final refused = await a.engine.run(
+        SyncTrigger.manual,
+        retireDevice: oldB,
+      );
+      expect(refused.outcome, SyncOutcome.needsAttention);
+      expect(
+        dav.files.keys.where((path) => path.contains('/retired-')),
+        isEmpty,
+      );
+      expect((await a.sync()).outcome, SyncOutcome.done);
+
+      b.putHistory('offline-b', page: 4);
+      final retired = await a.engine.run(
+        SyncTrigger.manual,
+        retireDevice: oldB,
+      );
+      expect(retired.outcome, SyncOutcome.done, reason: '$retired');
+      expect(a.store.load().retired.single.device, oldB);
+      expect(
+        dav.files.keys.where((path) => path.contains('/retired-')),
+        hasLength(1),
+      );
+      expect(
+        dav.files.keys.where(
+          (path) => path.contains('/$oldB/') && path.contains('/state-'),
+        ),
+        isEmpty,
+      );
+      expect(
+        dav.files.keys.where(
+          (path) => path.contains('/$oldB/') && path.contains('/manifest-'),
+        ),
+        hasLength(1),
+      );
+
+      final returned = await b.sync();
+      expect(returned.outcome, SyncOutcome.needsAttention, reason: '$returned');
+      expect(returned.published, isFalse);
+      expect(b.store.identity.deviceId, oldB);
+      expect(b.history()['offline-b']!.$3, 4);
+      final recovered = await b.engine.run(
+        SyncTrigger.manual,
+        rescueIdentity: true,
+      );
+      expect(recovered.outcome, SyncOutcome.done, reason: '$recovered');
+      expect(b.store.identity.deviceId, isNot(oldB));
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect(a.history()['offline-b']!.$3, 4);
+      expect(a.history(), b.history());
+    },
+  );
 
   group('two devices', () {
     test('converge both ways, history and 稍后看', () async {

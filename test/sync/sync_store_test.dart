@@ -409,6 +409,96 @@ void main() {
     }, skip: skip);
   });
 
+  test(
+    'evictions expire after 30 days only when no state or rescue needs them',
+    () {
+      final store = SyncStore.create(path, now: now);
+      final key = item('retained');
+      final original = store.issue(key, fields: {'n': 'original'});
+      final later = issue(
+        branches: [original],
+        device: 'peer',
+        counter: 1,
+        hlc: Hlc(time + 1),
+        fields: {'n': 'replacement'},
+      );
+      store.merge(
+        SyncState(
+          registers: {
+            key: [later],
+          },
+        ),
+      );
+      expect(store.evicted().single.$2, original);
+      time += SyncStore.evictionRetention.inMilliseconds;
+      expect(store.hasExpiredEvictions, isFalse);
+      store.pruneEvicted([store.load()]);
+      expect(store.evicted(), hasLength(1));
+      time++;
+      expect(store.hasExpiredEvictions, isTrue);
+      store.pruneEvicted([
+        store.load(),
+        SyncState(
+          registers: {
+            key: [original],
+          },
+        ),
+      ]);
+      expect(store.evicted(), hasLength(1));
+      store.pruneEvicted([
+        SyncState(
+          rescues: [
+            Rescue(original.id, key.entity, key.register, Dot('peer', 1)),
+          ],
+        ),
+      ]);
+      expect(store.evicted(), hasLength(1));
+      store.prepareBackupRejoin();
+      store.pruneEvicted([store.load()]);
+      expect(store.evicted(), hasLength(1));
+      store.setMeta(SyncMeta.needsRejoin, null);
+      store.pruneEvicted([store.load()]);
+      expect(store.evicted(), isEmpty);
+      store.dispose();
+    },
+    skip: skip,
+  );
+
+  test(
+    'rescue uses the issued body when another copy sent the same content',
+    () {
+      final store = SyncStore.create(path, now: now);
+      final key = item('collision');
+      final mine = store.issue(key, fields: {'n': 'same content'});
+      final copied = Version(
+        dot: mine.dot,
+        vv: mine.vv.withEntry('unobserved-peer', 1),
+        hlc: const Hlc(1),
+        fields: mine.fields,
+        deleted: false,
+        origin: Origin.normal,
+      );
+      expect(copied.id, mine.id);
+      store.merge(
+        SyncState(
+          registers: {
+            key: [copied],
+          },
+        ),
+      );
+      expect(store.identityIsolated, isTrue);
+      expect(store.branches(key), [copied]);
+      expect(store.rescueIdentity(SyncState.empty), 1);
+      final branches = store.branches(key);
+      final recovered = branches.singleWhere((v) => v.origin == Origin.rescued);
+      expect(branches, contains(copied));
+      expect(recovered.hlc, mine.hlc);
+      expect(recovered.vv['unobserved-peer'], 0);
+      store.dispose();
+    },
+    skip: skip,
+  );
+
   group('schema', () {
     void v2(Database db) => db.execute('CREATE TABLE extra (x INTEGER)');
 

@@ -26,6 +26,7 @@ import '../local/adapters.dart';
 import '../local/favorites_adapter.dart';
 import '../local/scanner.dart';
 import '../local/source_keys.dart';
+import '../merger.dart' show Taint;
 import 'favorites_plan.dart';
 import 'plan.dart';
 import 'remote_book_codec.dart';
@@ -88,6 +89,10 @@ class SyncReport {
   final paused = <String>{};
 
   bool _verifiedRestorePoint = false;
+  bool _identityIsolated = false;
+  bool _identityRetired = false;
+  bool _identityRescued = false;
+  bool identityConflict = false;
 
   /// Suspected deletions found this time.
   final newSuspects = <String>[];
@@ -179,11 +184,21 @@ class SyncEngine {
   bool get running => _running != null;
 
   /// Runs one sync; while one runs, returns that one (§9.6).
-  Future<SyncReport> run(SyncTrigger trigger, {CancelToken? cancel}) {
-    return _running ??= _run(cancel ?? CancelToken()).whenComplete(() {
-      _running = null;
-      stage.value = null;
-    });
+  Future<SyncReport> run(
+    SyncTrigger trigger, {
+    CancelToken? cancel,
+    bool rescueIdentity = false,
+    String? retireDevice,
+  }) {
+    return _running ??=
+        _run(
+          cancel ?? CancelToken(),
+          rescueIdentity,
+          retireDevice,
+        ).whenComplete(() {
+          _running = null;
+          stage.value = null;
+        });
   }
 
   /// Finishes a plan left by a crash (§9.3). Call at start, before any
@@ -200,7 +215,11 @@ class SyncEngine {
     stage.value = s;
   }
 
-  Future<SyncReport> _run(CancelToken cancel) async {
+  Future<SyncReport> _run(
+    CancelToken cancel,
+    bool rescueIdentity,
+    String? retireDevice,
+  ) async {
     var report = SyncReport(SyncOutcome.done);
     if (store.readOnly) {
       return report
@@ -221,8 +240,19 @@ class SyncEngine {
       RemoteBook? book;
       var rs = remote(cancel);
       for (var round = 0; ; round++) {
-        (read, book) = await _round(report, rs, cancel);
+        final before = store.identity.deviceId;
+        (read, book) = await _round(
+          report,
+          rs,
+          cancel,
+          rescueIdentity: rescueIdentity,
+          retireDevice: retireDevice,
+        );
         if (report.outcome != SyncOutcome.done) return report;
+        if (store.identity.deviceId != before) {
+          rescueIdentity = false;
+          continue;
+        }
         var open = store.openPlan();
         if (open != null) {
           // Not finished: stage 6 stopped between batches (iOS time up).
@@ -234,6 +264,13 @@ class SyncEngine {
         cancel.check();
       }
       // ---- 7 publish ----
+      if (report._identityIsolated) {
+        return report
+          ..outcome = SyncOutcome.needsAttention
+          ..reason = report._identityRetired
+              ? 'this device has been retired'
+              : 'this device identity is in conflict';
+      }
       cancel.check();
       _stage(report, SyncStage.publish);
       await _publish(report, rs, read, book);
@@ -260,6 +297,11 @@ class SyncEngine {
       return report
         ..outcome = SyncOutcome.failed
         ..reason = 'the safety restore point failed: ${e.reason}'
+        ..error = e;
+    } on RetirementBlocked catch (e) {
+      return report
+        ..outcome = SyncOutcome.needsAttention
+        ..reason = e.reason
         ..error = e;
     } on ListingUnreliable catch (e) {
       return report
@@ -288,9 +330,12 @@ class SyncEngine {
   Future<(RemoteRead, RemoteBook)> _round(
     SyncReport report,
     RemoteStore rs,
-    CancelToken cancel,
-  ) async {
+    CancelToken cancel, {
+    required bool rescueIdentity,
+    required String? retireDevice,
+  }) async {
     final rejoining = store.needsRejoin;
+    final counterBeforeScan = store.identity.counter;
     final firstJoin = store.meta(SyncMeta.joined) == null;
     final joining = firstJoin || rejoining;
     // ---- 1 scan ----
@@ -349,28 +394,108 @@ class SyncEngine {
     _stage(report, SyncStage.download);
     var book = loadRemoteBook(store, deviceName: deviceName);
     // Rejoining requires a verified remote state, even at a known head.
-    var read = await rs.read(book, verifyKnownHeads: rejoining);
+    var read = await rs.read(
+      book,
+      verifyKnownHeads: rejoining || rescueIdentity || retireDevice != null,
+    );
     // ---- 3 merge ----
     cancel.check();
     _stage(report, SyncStage.merge);
-    var incoming = read.incoming;
+    final current = store.load();
+    final downloaded = read.incoming;
+    final me = book.deviceId;
+    var incoming = mergeStates([
+      downloaded,
+      SyncState(
+        taints: [
+          ...rs.ownIdentityEvidence(book, read, counterBeforeScan),
+          for (final r in {...current.retired, ...downloaded.retired})
+            if (r.device == me) Taint(me, r.lastCounter + 1, ['retired:$me']),
+        ],
+      ),
+    ]);
     if (rejoining && read.hasRemoteData && !read.hasValidState) {
       report
         ..outcome = SyncOutcome.failed
         ..reason = 'the remote state is invalid';
       return (read, book);
     }
-    var merged = mergeStates([store.load(), incoming]);
+    var merged = mergeStates([current, incoming]);
+    report.identityConflict = merged.taints.any(
+      (t) => t.evidence.any((e) => !e.startsWith('retired:')),
+    );
+    if (merged.taints.isNotEmpty) {
+      final newEvidence = merged.causality.taintStarts.entries.any((e) {
+        final previous = current.causality.taintStart(e.key);
+        return previous == null || e.value < previous;
+      });
+      incoming = mergeStates([
+        incoming,
+        store.retainedForRescue(merged.causality),
+        if (newEvidence || rescueIdentity)
+          await rs.recoverHistorical(read, merged),
+      ]);
+      merged = mergeStates([current, incoming]);
+    }
     // ---- 4 check ----
     cancel.check();
     _stage(report, SyncStage.check);
-    var me = store.identity.deviceId;
-    if (merged.taints.any((t) => t.device == me)) {
-      // Identity conflict: rescue first (§8.4, ticket 11).
-      report
-        ..outcome = SyncOutcome.needsAttention
-        ..reason = 'this device identity is in conflict';
-      return (read, book);
+    report._identityIsolated = merged.causality.taintStart(me) != null;
+    report._identityRetired = merged.retired.any((r) => r.device == me);
+    if (report._identityIsolated) {
+      // Remember the isolation even if a restore point or a local write fails.
+      store.merge(SyncState(taints: merged.taints, retired: merged.retired));
+      if (rescueIdentity) {
+        await restorePoints.create(RestoreKind.rotating);
+        report._verifiedRestorePoint = true;
+        cancel.check();
+        _stage(report, SyncStage.plan);
+        store.batch(() {
+          final confirmed = book.confirmed;
+          final ownedHead =
+              confirmed != null &&
+              (read.devices[book.deviceId]?.heads.any(
+                    (h) =>
+                        h.ref == confirmed.ref &&
+                        h.instanceId == book.instanceId,
+                  ) ??
+                  false);
+          store.rescueIdentity(
+            incoming,
+            confirmedHeadHash: ownedHead ? confirmed.selfHash : null,
+          );
+          final id = store.identity;
+          final freshBook = RemoteBook(
+            deviceId: id.deviceId,
+            instanceId: id.instanceId,
+            deviceName: book.deviceName,
+            devices: {...book.devices, book.deviceId},
+            names: {...book.names},
+            retiredCleanup: {...book.retiredCleanup},
+            peers: {
+              ...book.peers,
+              if (book.confirmed != null) book.deviceId: book.confirmed!.ref,
+            },
+          );
+          _advanceBook(freshBook, read);
+          saveRemoteBook(store, freshBook);
+        });
+        report._identityRescued = true;
+        return (read, book);
+      }
+    }
+    if (retireDevice != null && !report._identityIsolated) {
+      final record = await rs.retire(
+        book,
+        read,
+        merged,
+        retireDevice,
+        archived: store.archivedDevices(),
+      );
+      incoming = mergeStates([
+        incoming,
+        SyncState(retired: [record]),
+      ]);
     }
     var suspects = store.suspects().keys.toSet();
     Set<RegisterKey> archivedFavorites = const {};
@@ -393,7 +518,7 @@ class SyncEngine {
 
     String? kind;
     if (rejoining) {
-      kind = RestoreKind.rotating;
+      if (!report._identityRescued) kind = RestoreKind.rotating;
     } else if (firstJoin) {
       if (!restorePoints.hasFirst) kind = RestoreKind.first;
     } else if (joining ||
@@ -569,6 +694,9 @@ class SyncEngine {
       book.devices.add(d.device);
       if (d.device != me && d.latest != null) {
         book.peers[d.device] = d.latest!.ref;
+        if (d.latest!.deviceName.isNotEmpty) {
+          book.names[d.device] = d.latest!.deviceName;
+        }
       }
       for (var h in d.heads) {
         book.devices.addAll(h.registry);
@@ -706,15 +834,28 @@ class SyncEngine {
         state,
         read: read,
         save: save,
+        publisherCounter: store.identity.counter,
         highRisk:
-            report._verifiedRestorePoint || report.applied > restorePointOps,
+            report._verifiedRestorePoint ||
+            store.meta(SyncMeta.rescuePublishDue) != null ||
+            report.applied > restorePointOps,
       );
       _fault('publish:after');
       switch (r.outcome) {
         case PublishOutcome.published:
           report.published = true;
+          store.setMeta(SyncMeta.rescuePublishDue, null);
           try {
-            await rs.collect(book, read, state, save: save);
+            await rs.collect(
+              book,
+              read,
+              state,
+              save: save,
+              archived: store.archivedDevices(),
+              pruneEvicted: store.hasExpiredEvictions
+                  ? store.pruneEvicted
+                  : null,
+            );
           } on DavException {
             // Collected next time.
           } on DavNetworkError {
@@ -726,9 +867,14 @@ class SyncEngine {
             ..reason = 'the upload could not be confirmed; retried next sync';
         case PublishOutcome.identityConflict:
           if (r.taint != null) store.merge(SyncState(taints: [r.taint!]));
+          final retired =
+              r.taint?.evidence.any((e) => e.startsWith('retired:')) ?? false;
           report
+            ..identityConflict = report.identityConflict || !retired
             ..outcome = SyncOutcome.needsAttention
-            ..reason = 'this device identity is in conflict';
+            ..reason = retired
+                ? 'this device has been retired'
+                : 'this device identity is in conflict';
       }
       await save();
     } on PublishTooLarge catch (e) {

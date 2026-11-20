@@ -224,6 +224,7 @@ abstract final class SyncService {
     store: s,
     local: AppLocalSide(),
     remote: remote,
+    deviceName: Platform.operatingSystem,
     restorePoints: RestorePoints(
       s,
       dir: restoreDir,

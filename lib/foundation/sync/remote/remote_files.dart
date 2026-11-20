@@ -178,6 +178,54 @@ class ManifestRef {
   String toString() => 'g$generation#${hash.substring(0, 8)}';
 }
 
+/// An immutable retirement record tied to the verified final manifest.
+class RetirementFile {
+  const RetirementFile(this.record, this.head, this.executor);
+
+  final Retired record;
+  final ManifestRef head;
+  final String executor;
+
+  Map<String, Object?> _body() => {
+    ...record.toJson(),
+    'head': head.toJson(),
+    'executor': executor,
+  };
+
+  String get selfHash => canonicalHash(_body());
+  Uint8List encode() => _canonicalBytes({..._body(), 'selfHash': selfHash});
+
+  static RetirementFile decode(Uint8List bytes) {
+    final json = _parse(bytes);
+    if (json is! Map || json['executor'] is! String) {
+      throw const RemoteFileInvalid('retirement record');
+    }
+    final Retired record;
+    try {
+      record = Retired.fromJson(json);
+    } on FormatException {
+      throw const RemoteFileInvalid('retirement record');
+    }
+    final executor = json['executor'] as String;
+    final head = ManifestRef.fromJson(json['head']);
+    final marker = RetirementFile(record, head, executor);
+    if (!RemotePaths.isDeviceId(record.device) ||
+        !RemotePaths.isDeviceId(executor) ||
+        executor == record.device ||
+        record.generation != head.generation ||
+        record.lastCounter < 0 ||
+        json['selfHash'] != marker.selfHash) {
+      throw const RemoteFileInvalid('retirement record');
+    }
+    return marker;
+  }
+
+  bool names(Manifest manifest) =>
+      record.device == manifest.device &&
+      head == manifest.ref &&
+      record.lastCounter == manifest.state.maxCounter;
+}
+
 /// What a manifest says about its state file.
 class StateInfo {
   const StateInfo({
@@ -196,7 +244,8 @@ class StateInfo {
   final int registers;
   final int versions;
 
-  /// The highest counter of the publisher's own dots in the state.
+  /// The latest counter issued by the publisher at publication. Older
+  /// manifests only recorded the highest surviving dot.
   final int maxCounter;
   final Hlc maxHlc;
 
@@ -490,6 +539,7 @@ abstract final class StateFile {
     required String device,
     required int generation,
     required String fileName,
+    int? publisherCounter,
     PublishLimits limits = const PublishLimits(),
     StateLimits readLimits = const StateLimits(),
   }) {
@@ -530,7 +580,7 @@ abstract final class StateFile {
         recordTooLarge: recordTooLarge,
       );
     }
-    var maxCounter = 0;
+    var maxCounter = publisherCounter ?? 0;
     var maxHlc = const Hlc(0);
     var versions = 0;
     for (var vs in state.registers.values) {
@@ -620,7 +670,18 @@ abstract final class StateFile {
     }
     if (records > limits.records) throw const RemoteLimitExceeded('records');
     try {
-      return SyncState.fromJson(j);
+      final state = SyncState.fromJson(j);
+      if (info.maxCounter < 0 ||
+          state.registers.values.any(
+            (versions) => versions.any(
+              (v) =>
+                  v.dot.device == device &&
+                  (v.dot.counter ?? 0) > info.maxCounter,
+            ),
+          )) {
+        throw const RemoteFileInvalid('publisher counter');
+      }
+      return state;
     } on FormatException catch (e) {
       throw RemoteFileInvalid('state: ${e.message}');
     } on CanonicalJsonException catch (e) {
