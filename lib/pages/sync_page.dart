@@ -65,6 +65,8 @@ String reasonText(SyncReport r) {
       'Another device uses the same sync identity'.tl,
     'this device has been retired' =>
       'This device was retired. Rejoin using a new identity'.tl,
+    'historical recovery will retry next sync' =>
+      'Recovery from older versions will retry on the next sync'.tl,
     'device retirement needs verified acknowledgements' =>
       'Other devices have yet to confirm this device’s latest sync. You can archive it now and try retirement again later'
           .tl,

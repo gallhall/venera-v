@@ -578,6 +578,61 @@ void main() {
     },
   );
 
+  for (final listingFails in [false, true]) {
+    test(
+      'healthy device retries historical ${listingFails ? 'listing' : 'download'} after restart',
+      () async {
+        final c = Device('c', Directory('${root.path}/c')..createSync(), dav)
+          ..open();
+        addTearDown(c.close);
+        const item = 'recoverable';
+        final key = RegisterKey(['w', 'srcA', item], 'item');
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        a.putLater(item, title: 'historical edit');
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        final original = a.store.branches(key).single;
+        a.putLater(item, title: 'current edit');
+        expect((await a.sync()).outcome, SyncOutcome.done);
+        expect(a.store.branches(key), isNot(contains(original)));
+
+        final author = a.store.identity.deviceId;
+        c.store.merge(
+          SyncState(
+            taints: [
+              Taint(author, 1, ['fixture']),
+            ],
+          ),
+        );
+        expect((await c.sync()).outcome, SyncOutcome.done);
+        final historyFile = dav.files.keys.singleWhere(
+          (path) =>
+              path.contains('/$author/') && path.contains('/state-0000000002-'),
+        );
+        final shard = historyFile.substring(0, historyFile.lastIndexOf('/'));
+        var listings = 0;
+        dav.intercept = (_, method, path, _, _) {
+          if (listingFails
+              ? method == 'PROPFIND' && path == shard && ++listings > 1
+              : method == 'GET' && path == historyFile) {
+            throw const DavNetworkError('temporary failure');
+          }
+          return null;
+        };
+        final first = await b.sync();
+        expect(first.published, isTrue);
+        expect(b.store.identityIsolated, isFalse);
+        expect(b.store.load().causality.taintStart(author), 1);
+        expect(b.store.branches(key), isNot(contains(original)));
+
+        dav.intercept = null;
+        b.restart();
+        expect((await b.sync()).outcome, SyncOutcome.done);
+        expect(b.store.branches(key), contains(original));
+        expect(first.outcome, SyncOutcome.partial);
+      },
+    );
+  }
+
   group('two devices', () {
     test('converge both ways, history and 稍后看', () async {
       a.putHistory('1', ep: 2, read: '2,1');

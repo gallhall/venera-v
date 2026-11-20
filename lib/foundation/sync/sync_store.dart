@@ -28,6 +28,7 @@ abstract final class SyncMeta {
   static const needsRejoin = 'needs_rejoin';
   static const restorePointDue = 'restore_point_due';
   static const rescuePublishDue = 'rescue_publish_due';
+  static const historicalRecoveryPending = 'historical_recovery_pending';
 }
 
 class SyncStoreCorrupt implements Exception {

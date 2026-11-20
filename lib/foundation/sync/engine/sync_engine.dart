@@ -267,7 +267,9 @@ class SyncEngine {
       if (report._identityIsolated) {
         return report
           ..outcome = SyncOutcome.needsAttention
-          ..reason = report._identityRetired
+          ..reason = store.meta(SyncMeta.historicalRecoveryPending) != null
+              ? 'historical recovery will retry next sync'
+              : report._identityRetired
               ? 'this device has been retired'
               : 'this device identity is in conflict';
       }
@@ -281,6 +283,10 @@ class SyncEngine {
         // Waiting for the user comes before partial (§9.2).
         report.outcome = SyncOutcome.needsAttention;
         report.reason ??= 'suspected deletions wait for confirmation';
+      } else if (open &&
+          store.meta(SyncMeta.historicalRecoveryPending) != null) {
+        report.outcome = SyncOutcome.partial;
+        report.reason ??= 'historical recovery will retry next sync';
       } else if (report.outcome == SyncOutcome.done &&
           (report.paused.isNotEmpty || report.skipped > 0)) {
         report.outcome = SyncOutcome.partial;
@@ -424,16 +430,27 @@ class SyncEngine {
     report.identityConflict = merged.taints.any(
       (t) => t.evidence.any((e) => !e.startsWith('retired:')),
     );
+    ({SyncState state, bool complete})? recoveredHistory;
     if (merged.taints.isNotEmpty) {
       final newEvidence = merged.causality.taintStarts.entries.any((e) {
         final previous = current.causality.taintStart(e.key);
         return previous == null || e.value < previous;
       });
+      final pending = store.meta(SyncMeta.historicalRecoveryPending) != null;
+      if (newEvidence || rescueIdentity || pending) {
+        if (newEvidence || !pending) {
+          // Remember the evidence and the retry before a network request.
+          store.batch(() {
+            store.merge(SyncState(taints: merged.taints));
+            store.setMeta(SyncMeta.historicalRecoveryPending, '1');
+          });
+        }
+        recoveredHistory = await rs.recoverHistorical(read, merged);
+      }
       incoming = mergeStates([
         incoming,
         store.retainedForRescue(merged.causality),
-        if (newEvidence || rescueIdentity)
-          await rs.recoverHistorical(read, merged),
+        if (recoveredHistory != null) recoveredHistory.state,
       ]);
       merged = mergeStates([current, incoming]);
     }
@@ -445,7 +462,7 @@ class SyncEngine {
     if (report._identityIsolated) {
       // Remember the isolation even if a restore point or a local write fails.
       store.merge(SyncState(taints: merged.taints, retired: merged.retired));
-      if (rescueIdentity) {
+      if (rescueIdentity && recoveredHistory?.complete == true) {
         await restorePoints.create(RestoreKind.rotating);
         report._verifiedRestorePoint = true;
         cancel.check();
@@ -464,6 +481,7 @@ class SyncEngine {
             incoming,
             confirmedHeadHash: ownedHead ? confirmed.selfHash : null,
           );
+          store.setMeta(SyncMeta.historicalRecoveryPending, null);
           final id = store.identity;
           final freshBook = RemoteBook(
             deviceId: id.deviceId,
@@ -556,6 +574,9 @@ class SyncEngine {
     try {
       store.batch(() {
         store.merge(incoming);
+        if (recoveredHistory?.complete == true) {
+          store.setMeta(SyncMeta.historicalRecoveryPending, null);
+        }
         final observed = rejoining ? store.load() : null;
         if (joining) {
           rows = {
@@ -845,6 +866,7 @@ class SyncEngine {
         case PublishOutcome.published:
           report.published = true;
           store.setMeta(SyncMeta.rescuePublishDue, null);
+          if (store.meta(SyncMeta.historicalRecoveryPending) != null) break;
           try {
             await rs.collect(
               book,

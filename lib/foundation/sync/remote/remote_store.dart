@@ -1003,11 +1003,18 @@ class RemoteStore {
 
   /// Reads older verified files for versions affected by newly discovered
   /// taints. Unavailable historical files do not turn into delete evidence.
-  Future<SyncState> recoverHistorical(RemoteRead read, SyncState state) async {
+  Future<({SyncState state, bool complete})> recoverHistorical(
+    RemoteRead read,
+    SyncState state,
+  ) async {
     var recovered = SyncState.empty;
+    var complete = true;
     for (final device in read.devices.values) {
       final manifests = await _allManifests(device.device);
-      if (manifests == null) continue;
+      if (manifests == null) {
+        complete = false;
+        continue;
+      }
       for (final m in manifests.values) {
         if (device.states.containsKey(m.ref)) continue;
         try {
@@ -1041,16 +1048,21 @@ class RemoteStore {
               },
             ),
           ]);
-        } on RemoteFileInvalid {
-          // A retained file may have been reclaimed before the collision.
+        } on RemoteFileInvalid catch (e) {
+          // A retired device can legitimately keep its final manifest
+          // without its state file. Other missing files may reappear.
+          if (e.reason == 'state file missing' &&
+              read.retirements[device.device]?.head != m.ref) {
+            complete = false;
+          }
         } on DavException {
-          // Attempt other known copies.
+          complete = false;
         } on DavNetworkError {
-          // Attempt other known copies.
+          complete = false;
         }
       }
     }
-    return recovered;
+    return (state: recovered, complete: complete);
   }
 
   Future<SyncState> _verifiedState(Manifest manifest) async {
