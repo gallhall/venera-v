@@ -63,6 +63,15 @@ String reasonText(SyncReport r) {
       'Some records disappeared on this device. Confirm or keep them'.tl,
     'this device identity is in conflict' =>
       'Another device uses the same sync identity'.tl,
+    'this device has been retired' =>
+      'This device was retired. Rejoin using a new identity'.tl,
+    'historical recovery will retry next sync' =>
+      'Recovery from older versions will retry on the next sync'.tl,
+    'device retirement needs verified acknowledgements' =>
+      'Other devices have yet to confirm this device’s latest sync. You can archive it now and try retirement again later'
+          .tl,
+    'device retirement could not be confirmed' =>
+      'The server did not confirm retirement. Check again on the next sync'.tl,
     'writing will finish on the next start' =>
       'Writing will finish on the next start'.tl,
     'the upload could not be confirmed; retried next sync' =>
@@ -248,6 +257,22 @@ class _SyncPageState extends State<SyncPage> with _FollowsSync {
         children: [
           const SyncStatusCard(),
           ListTile(
+            leading: const Icon(Icons.devices_outlined),
+            title: Text('Sync devices'.tl),
+            subtitle: c.identityIsolated
+                ? Text('This device needs a new sync identity'.tl)
+                : null,
+            onTap: () => showSubPage(context, const SyncDevicesPage()),
+          ),
+          if (c.lastReport?.identityConflict ?? false)
+            ListTile(
+              leading: const Icon(Icons.warning_amber_outlined),
+              title: Text(
+                'Some edits may be unavailable if all copies were lost before the identity conflict was found'
+                    .tl,
+              ),
+            ),
+          ListTile(
             leading: const Icon(Icons.report_outlined),
             title: Text('Needs attention'.tl),
             subtitle: Text('Suspected deletions: @n'.tlParams({'n': suspects})),
@@ -279,6 +304,137 @@ class _SyncPageState extends State<SyncPage> with _FollowsSync {
             trailing: Text('$archived'),
             onTap: () => showSubPage(context, const ArchivePage()),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class SyncDevicesPage extends StatefulWidget {
+  const SyncDevicesPage({super.key});
+
+  @override
+  State<SyncDevicesPage> createState() => _SyncDevicesPageState();
+}
+
+enum _DeviceAction { archive, unarchive, retire }
+
+class _SyncDevicesPageState extends State<SyncDevicesPage> with _FollowsSync {
+  Future<void> _recover(
+    BuildContext context,
+    SyncController c,
+  ) => showConfirmDialog(
+    context: context,
+    title: 'Rejoin with a new identity'.tl,
+    content:
+        'A verified safety restore point is created first. Edits still available on this device are carried over'
+            .tl,
+    onConfirm: () => c.syncNow(rescueIdentity: true),
+  );
+
+  Future<void> _act(
+    BuildContext context,
+    SyncController c,
+    SyncDevice device,
+    _DeviceAction action,
+  ) async {
+    if (action == _DeviceAction.unarchive) {
+      c.setDeviceArchived(device.id, false);
+      return;
+    }
+    final retire = action == _DeviceAction.retire;
+    await showConfirmDialog(
+      context: context,
+      title: retire ? 'Retire sync device'.tl : 'Archive sync device'.tl,
+      content: retire
+          ? 'Retirement requires confirmed copies of this device’s latest sync. The old identity cannot publish again'
+                .tl
+          : 'Archiving keeps the device’s files and excludes its acknowledgements from this device’s cleanup checks'
+                .tl,
+      onConfirm: () async {
+        if (retire) {
+          await c.syncNow(retireDevice: device.id);
+        } else {
+          c.setDeviceArchived(device.id, true);
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = SyncController();
+    return SubPage(
+      title: 'Sync devices'.tl,
+      body: ListView(
+        children: [
+          if (c.running || c.lastReport != null)
+            ListTile(
+              title: Text(statusText(c)),
+              trailing: c.running
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancel'.tl,
+                      onPressed: c.canCancel ? c.cancel : null,
+                    )
+                  : null,
+            ),
+          if (c.identityIsolated)
+            ListTile(
+              title: Text('Rejoin with a new identity'.tl),
+              leading: const Icon(Icons.sync_problem_outlined),
+              onTap: c.enabled && !c.running
+                  ? () => _recover(context, c)
+                  : null,
+            ),
+          for (final device in c.devices)
+            ListTile(
+              leading: Icon(
+                device.local
+                    ? Icons.devices_outlined
+                    : Icons.device_unknown_outlined,
+              ),
+              title: Text(
+                device.local
+                    ? 'This device'.tl
+                    : device.name.isEmpty
+                    ? 'Sync device'.tl
+                    : device.name,
+              ),
+              subtitle: Text(
+                [
+                  device.id,
+                  if (device.retired)
+                    'Retired'.tl
+                  else if (device.archived)
+                    'Archived on this device'.tl
+                  else if (device.isolated)
+                    'Identity conflict'.tl,
+                ].join('\n'),
+              ),
+              trailing: device.local || device.retired || c.running
+                  ? null
+                  : PopupMenuButton<_DeviceAction>(
+                      onSelected: (action) => _act(context, c, device, action),
+                      itemBuilder: (_) => [
+                        if (device.archived)
+                          PopupMenuItem(
+                            value: _DeviceAction.unarchive,
+                            child: Text('Unarchive sync device'.tl),
+                          )
+                        else
+                          PopupMenuItem(
+                            value: _DeviceAction.archive,
+                            child: Text('Archive sync device'.tl),
+                          ),
+                        if (c.enabled && device.generation > 0)
+                          PopupMenuItem(
+                            value: _DeviceAction.retire,
+                            child: Text('Retire sync device'.tl),
+                          ),
+                      ],
+                    ),
+            ),
         ],
       ),
     );

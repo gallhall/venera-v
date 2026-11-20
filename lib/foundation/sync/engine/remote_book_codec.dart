@@ -54,6 +54,13 @@ RemoteBook loadRemoteBook(SyncStore store, {String deviceName = ''}) {
           ),
     ownFiles: ints(j['ownFiles']),
     pendingFiles: ints(j['pendingFiles']),
+    retiredCleanup: Map<String, String>.from(
+      j['retiredCleanup'] as Map? ?? const {},
+    ),
+    deletingFiles: {
+      ...(j['deletingFiles'] as List? ?? const []).cast<String>(),
+    },
+    names: Map<String, String>.from(j['names'] as Map? ?? const {}),
     publishing: pub == null
         ? null
         : Publishing(
@@ -89,6 +96,9 @@ void saveRemoteBook(SyncStore store, RemoteBook book) {
           : base64Encode(book.confirmed!.encode()),
       'ownFiles': book.ownFiles,
       'pendingFiles': book.pendingFiles,
+      'retiredCleanup': book.retiredCleanup,
+      'deletingFiles': (book.deletingFiles.toList()..sort()),
+      'names': book.names,
       'publishing': p == null
           ? null
           : {

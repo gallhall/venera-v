@@ -132,6 +132,63 @@ void main() {
         p.startsWith('venera-sync/devices/$device/') && p.contains('/$kind-'),
   );
 
+  test(
+    'a stale publisher cannot reuse a retired identity; later files are E4',
+    () async {
+      final target = node(a);
+      final other = node(b);
+      target.write('published', 'before retirement');
+      await target.sync();
+      final before = await target.read();
+      final head = target.book.confirmed!;
+      await other.sync();
+      final read = await other.store.read(other.book, verifyKnownHeads: true);
+      await other.store.retire(other.book, read, other.state, a);
+
+      target.write('offline', 'unsent edit');
+      final blocked = await target.publish(before);
+      expect(blocked.outcome, PublishOutcome.identityConflict);
+      expect(filesOf(a, 'manifest'), hasLength(1));
+      expect(blocked.taint?.from, head.state.maxCounter + 1);
+
+      // An already-queued write from a legacy client can still race the marker.
+      final generation = head.generation + 1;
+      const nonce = 'late0001';
+      final encoded = StateFile.encode(
+        target.state,
+        device: a,
+        generation: generation,
+        fileName: RemotePaths.stateName(generation, nonce),
+      );
+      final late = Manifest(
+        device: a,
+        deviceName: '',
+        instanceId: head.instanceId,
+        generation: generation,
+        prev: head.ref,
+        state: encoded.info,
+        registry: [a, b],
+        acks: const {},
+        publishedAt: clock.now,
+      );
+      dav.files[RemotePaths.file(a, generation, encoded.info.file)] =
+          encoded.bytes;
+      dav.files[RemotePaths.file(
+        a,
+        generation,
+        RemotePaths.manifestName(generation, nonce),
+      )] = late
+          .encode();
+      final observer = node(c);
+      final seen = await observer.read();
+      expect(seen.taints.single.from, head.state.maxCounter + 1);
+      expect(seen.taints.single.evidence, ['E4:$a']);
+      expect(observer.shown('offline'), 'unsent edit');
+      expect(await other.collect(await other.read()), isEmpty);
+      expect(filesOf(a, 'manifest'), hasLength(2));
+    },
+  );
+
   group('basics', () {
     test('two devices exchange their changes', () async {
       var x = node(a), y = node(b);
@@ -779,7 +836,19 @@ void main() {
         x.write('1', 'more');
         await x.sync();
         clock.advance(const Duration(days: 9));
-        expect(await x.collect(await x.read()), isEmpty);
+        var pruned = false;
+        final read = await x.read();
+        expect(
+          await x.store.collect(
+            x.book,
+            read,
+            x.state,
+            save: () async {},
+            pruneEvicted: (_) => pruned = true,
+          ),
+          isEmpty,
+        );
+        expect(pruned, isFalse);
         expect(dav.files, contains('venera-sync/devices/$a/g000000/notes.txt'));
       },
     );

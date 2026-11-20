@@ -27,6 +27,8 @@ abstract final class SyncMeta {
   static const joined = 'joined';
   static const needsRejoin = 'needs_rejoin';
   static const restorePointDue = 'restore_point_due';
+  static const rescuePublishDue = 'rescue_publish_due';
+  static const historicalRecoveryPending = 'historical_recovery_pending';
 }
 
 class SyncStoreCorrupt implements Exception {
@@ -107,7 +109,11 @@ class SyncStoreReadOnly implements Exception {
 
 /// Schema migrations: entry i takes the schema from version i to i + 1.
 /// `meta.schema` only grows.
-final List<void Function(Database)> syncMigrations = [_schema1, _schema2];
+final List<void Function(Database)> syncMigrations = [
+  _schema1,
+  _schema2,
+  _schema3,
+];
 
 /// This device's sync store. Not thread safe: one per isolate, each with its
 /// own connection; SQLite locks the file between them.
@@ -272,6 +278,23 @@ class SyncStore {
 
   bool get needsRejoin => meta(SyncMeta.needsRejoin) != null;
 
+  bool get identityIsolated =>
+      _causality().taintStart(identity.deviceId) != null;
+
+  Set<String> archivedDevices() => {
+    for (final r in _db.select(
+      "SELECT value FROM meta WHERE key GLOB 'archived_device:*'",
+    ))
+      r['value'] as String,
+  };
+
+  void setDeviceArchived(String device, bool archived) {
+    if (device == identity.deviceId) {
+      throw ArgumentError('cannot archive this device');
+    }
+    setMeta('archived_device:$device', archived ? device : null);
+  }
+
   /// The imported tables are a new local projection of the existing state.
   /// Commit this before replacement so an interrupted restore is safe too.
   void prepareBackupRejoin() {
@@ -384,17 +407,8 @@ class SyncStore {
         [v.dot.counter, hlc.physical, hlc.logical],
       );
       _fault('issue:counter');
+      _recordIssued(key, v, opId: opId);
       _writeRegister(key, branches, [...branches, v], _causality());
-      _db.execute(
-        'INSERT INTO issued (reg_key, counter, hash) VALUES (?, ?, ?)',
-        [key.key, v.dot.counter, v.hash],
-      );
-      if (opId != null) {
-        _db.execute(
-          'UPDATE issued SET op_id = ? WHERE reg_key = ? AND counter = ?',
-          [opId, key.key, v.dot.counter],
-        );
-      }
       _fault('issue:commit');
     });
     _hlc = hlc;
@@ -420,10 +434,178 @@ class SyncStore {
 
   /// Whether this device issued version [id] of register [key] itself (as
   /// opposed to another copy of its identity, spec §8.4).
-  bool issuedHere(RegisterKey key, VersionId id) => _db.select(
-    'SELECT 1 FROM issued WHERE reg_key = ? AND counter = ? AND hash = ?',
-    [key.key, id.dot.counter, id.hash],
-  ).isNotEmpty;
+  bool issuedHere(RegisterKey key, VersionId id) => _issued(key, id).isNotEmpty;
+
+  ResultSet _issued(RegisterKey key, VersionId id) => schema >= 3
+      ? _db.select(
+          'SELECT body_hash FROM issued WHERE device = ? AND reg_key = ? '
+          'AND counter = ? AND hash = ?',
+          [id.dot.device, key.key, id.dot.counter, id.hash],
+        )
+      : _db.select(
+          'SELECT NULL AS body_hash FROM issued '
+          'WHERE reg_key = ? AND counter = ? AND hash = ?',
+          [key.key, id.dot.counter, id.hash],
+        );
+
+  bool _issuedVersionHere(
+    RegisterKey key,
+    Version v, {
+    bool requireBody = false,
+  }) {
+    final row = _issued(key, v.id).firstOrNull;
+    if (row == null) return false;
+    final body = row['body_hash'] as String?;
+    return body == null ? !requireBody : body == canonicalHash(v.toJson());
+  }
+
+  void _recordIssued(RegisterKey key, Version version, {String? opId}) {
+    if (schema >= 3) {
+      _db.execute(
+        'INSERT INTO issued (device, reg_key, counter, hash, body_hash, op_id) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          version.dot.device,
+          key.key,
+          version.dot.counter,
+          version.hash,
+          canonicalHash(version.toJson()),
+          opId,
+        ],
+      );
+    } else {
+      // Historical schemas are used by migration tests.
+      _db.execute(
+        'INSERT INTO issued (reg_key, counter, hash) VALUES (?, ?, ?)',
+        [key.key, version.dot.counter, version.hash],
+      );
+      if (opId != null) {
+        _db.execute(
+          'UPDATE issued SET op_id = ? WHERE reg_key = ? AND counter = ?',
+          [opId, key.key, version.dot.counter],
+        );
+      }
+    }
+  }
+
+  /// Retained versions to reconsider when the effective taint grows.
+  SyncState retainedForRescue(merger.Causality causality) {
+    final registers = <RegisterKey, List<Version>>{};
+    void retain(RegisterKey key, Version version) {
+      (registers[key] ??= []).add(version);
+    }
+
+    final tainted = causality.taintStarts.keys.toSet();
+    final coveringColumn = schema >= 3 ? 'covering' : 'NULL AS covering';
+    for (final row in _db.select(
+      'SELECT reg_key, body, $coveringColumn FROM evicted',
+    )) {
+      final version = _version(row['body'] as String);
+      final raw = row['covering'] as String?;
+      final couldBeAffected =
+          raw == null || (parseStrictJson(raw) as List).any(tainted.contains);
+      if (causality.isTainted(version.dot) || couldBeAffected) {
+        retain(_keyOf(row['reg_key'] as String), version);
+      }
+    }
+    for (final e in archiveEntries()) {
+      if (causality.isTainted(e.version.dot)) retain(e.key, e.version);
+    }
+    return SyncState(registers: registers);
+  }
+
+  /// Rotates the identity and re-issues this copy's originals in one
+  /// transaction. Incoming originals are never issued on this copy's behalf.
+  int rescueIdentity(SyncState incoming, {String? confirmedHeadHash}) {
+    _checkWritable();
+    return batch(() {
+      final old = identity;
+      final current = load();
+      final preview = mergeStates([current, incoming]);
+      final causality = preview.causality;
+      final from = causality.taintStart(old.deviceId);
+      if (from == null) {
+        throw StateError('this device identity is not isolated');
+      }
+      final retained = retainedForRescue(causality);
+      final collidedCounters = {
+        for (final t in preview.taints)
+          if (t.device == old.deviceId &&
+              t.evidence.contains('E1:${old.deviceId}:${t.from}'))
+            t.from,
+      };
+      final originals = <(RegisterKey, VersionId), Version>{};
+      for (final source in [current, incoming, retained]) {
+        for (final entry in source.registers.entries) {
+          final key = entry.key;
+          for (final v in entry.value) {
+            if (v.dot.device == old.deviceId &&
+                causality.isTainted(v.dot) &&
+                causality.rescuesOf(key.key, v.id).isEmpty &&
+                _issuedVersionHere(
+                  key,
+                  v,
+                  // An old issue row without a body hash cannot prove
+                  // authorship of causal metadata at a collided counter.
+                  requireBody: collidedCounters.contains(v.dot.counter),
+                )) {
+              originals.putIfAbsent((key, v.id), () => v);
+            }
+          }
+        }
+      }
+      final device = const Uuid().v4().toLowerCase();
+      _db.execute('UPDATE identity SET pending_device_id = ? WHERE id = 1', [
+        device,
+      ]);
+      final reissued = merger.rescueOwn(
+        originals.entries.map(
+          (e) => (
+            entity: e.key.$1.entity,
+            register: e.key.$1.register,
+            version: e.value,
+          ),
+        ),
+        device: device,
+        firstCounter: 1,
+        causality: causality,
+      );
+      final registers = <RegisterKey, List<Version>>{};
+      final rescues = <merger.Rescue>[];
+      for (final (source, version, rescue) in reissued) {
+        final key = RegisterKey(source.entity, source.register);
+        _recordIssued(key, version);
+        (registers[key] ??= []).add(version);
+        rescues.add(rescue);
+      }
+      merge(
+        mergeStates([
+          incoming,
+          retained,
+          SyncState(
+            registers: registers,
+            rescues: rescues,
+            taints: [
+              ...preview.taints,
+              if (confirmedHeadHash != null)
+                merger.Taint(old.deviceId, from, [
+                  'handoff:$confirmedHeadHash:$device',
+                ]),
+            ],
+          ),
+        ]),
+      );
+      prepareBackupRejoin();
+      _db.execute(
+        'UPDATE identity SET device_id = pending_device_id, instance_id = ?, '
+        'counter = ?, pending_device_id = NULL WHERE id = 1',
+        [const Uuid().v4(), reissued.length],
+      );
+      setMeta(SyncMeta.rescuePublishDue, '1');
+      _fault('rescue:before-commit');
+      return reissued.length;
+    });
+  }
 
   /// The whole protocol state.
   SyncState load() {
@@ -521,28 +703,55 @@ class SyncStore {
         key.key,
         _vid(v),
       ]);
-      var byOwn = next.any(
+      final covering = next
+          .where((u) => merger.dominates(u, v, causality: c, register: key.key))
+          .toList();
+      final locallyIssued = merged && _issuedVersionHere(key, v);
+      final byOwn = covering.any(
         (u) =>
             u.dot.device == v.dot.device &&
-            merger.dominates(u, v, causality: c, register: key.key),
+            (!locallyIssued || _issuedVersionHere(key, u)),
       );
       if (!byOwn) {
-        _db.execute(
-          'INSERT OR IGNORE INTO evicted (reg_key, vid, body, evicted_at) '
-          'VALUES (?, ?, ?, ?)',
-          [key.key, _vid(v), canonicalize(v.toJson()), _now()],
-        );
+        _rememberEvicted(key, v, covering);
       }
     }
     for (var v in next) {
       // Same id with another body (copies of an identity, spec §5.2): keep
       // the body the merger chose, as a pure merge would.
       if (had[v.id] == v) continue;
+      final previous = had[v.id];
+      if (previous != null && _issuedVersionHere(key, previous)) {
+        _rememberEvicted(key, previous, [v]);
+      }
       _db.execute(
         'INSERT OR REPLACE INTO versions (reg_key, vid, body) VALUES (?, ?, ?)',
         [key.key, _vid(v), canonicalize(v.toJson())],
       );
     }
+  }
+
+  void _rememberEvicted(
+    RegisterKey key,
+    Version v,
+    Iterable<Version> covering,
+  ) {
+    final body = canonicalize(v.toJson());
+    if (schema < 3) {
+      _db.execute(
+        'INSERT OR IGNORE INTO evicted (reg_key, vid, body, evicted_at) '
+        'VALUES (?, ?, ?, ?)',
+        [key.key, _vid(v), body, _now()],
+      );
+      return;
+    }
+    final devices = {for (final u in covering) ...u.vv.entries.keys}.toList()
+      ..sort();
+    _db.execute(
+      'INSERT OR IGNORE INTO evicted (reg_key, vid, body, evicted_at, covering) '
+      'VALUES (?, ?, ?, ?, ?)',
+      [key.key, _vid(v), body, _now(), canonicalize(devices)],
+    );
   }
 
   List<Version> _branches(RegisterKey key) => _sortBranches([
@@ -685,6 +894,54 @@ class SyncStore {
         r['evicted_at'] as int,
       ),
   ];
+
+  static const evictionRetention = Duration(days: 30);
+
+  bool get hasExpiredEvictions =>
+      schema >= 3 &&
+      _db.select(
+        'SELECT 1 FROM evicted WHERE covering IS NOT NULL AND evicted_at < ? LIMIT 1',
+        [_now() - evictionRetention.inMilliseconds],
+      ).isNotEmpty;
+
+  /// Called only when every in-service head has been verified and there is
+  /// no unfinished taint. Old rows without covering evidence stay retained.
+  void pruneEvicted(Iterable<SyncState> verified) {
+    if (schema < 3 ||
+        needsRejoin ||
+        identityIsolated ||
+        meta(SyncMeta.rescuePublishDue) != null) {
+      return;
+    }
+    final protected = <(String, VersionId)>{};
+    final rescued = <Dot>{};
+    for (final state in verified) {
+      for (final e in state.registers.entries) {
+        protected.addAll(e.value.map((v) => (e.key.key, v.id)));
+      }
+      for (final r in state.rescues) {
+        protected.add((r.registerKey, r.from));
+        rescued.add(r.to);
+      }
+    }
+    batch(() {
+      final cutoff = _now() - evictionRetention.inMilliseconds;
+      for (final row in _db.select(
+        'SELECT reg_key, vid, body FROM evicted WHERE evicted_at < ? AND covering IS NOT NULL',
+        [cutoff],
+      )) {
+        final key = row['reg_key'] as String;
+        final v = _version(row['body'] as String);
+        if (protected.contains((key, v.id)) || rescued.contains(v.dot)) {
+          continue;
+        }
+        _db.execute('DELETE FROM evicted WHERE reg_key = ? AND vid = ?', [
+          key,
+          row['vid'],
+        ]);
+      }
+    });
+  }
 
   /// Older folder labels can identify a restored legacy table after a rename.
   Iterable<(RegisterKey, Version)> historicalFolders() sync* {
@@ -853,8 +1110,36 @@ class SyncStore {
   /// is resolved; unresolved conflicts stay in `versions` (spec §10).
   int pruneArchive(int before) {
     _checkWritable();
-    _db.execute('DELETE FROM archive WHERE archived_at < ?', [before]);
-    return _db.updatedRows;
+    if (_db.select('SELECT 1 FROM taints LIMIT 1').isEmpty) {
+      _db.execute('DELETE FROM archive WHERE archived_at < ?', [before]);
+      return _db.updatedRows;
+    }
+    // A collision must not delete the only surviving original, but it
+    // does not extend retention of unrelated resolved entries.
+    final state = load();
+    final causality = state.causality;
+    final mappingTargets = state.rescues.map((r) => r.to).toSet();
+    return batch(() {
+      var n = 0;
+      for (final row in _db.select(
+        'SELECT id, reg_key, body FROM archive WHERE archived_at < ?',
+        [before],
+      )) {
+        final v = _version(row['body'] as String);
+        final key = _keyOf(row['reg_key'] as String);
+        if (causality.isTainted(v.dot) ||
+            v.vv.entries.keys.any(
+              (id) => causality.clip(v.vv, id) < v.vv[id],
+            ) ||
+            causality.rescuesOf(key.key, v.id).isNotEmpty ||
+            mappingTargets.contains(v.dot)) {
+          continue;
+        }
+        _db.execute('DELETE FROM archive WHERE id = ?', [row['id']]);
+        n += _db.updatedRows;
+      }
+      return n;
+    });
   }
 
   void removeArchiveEntry(int id) {
@@ -1029,6 +1314,28 @@ void _schema2(Database db) {
       source TEXT NOT NULL,
       PRIMARY KEY (folder_id, work_id, type)
     )
+  ''');
+}
+
+void _schema3(Database db) {
+  db.execute('''
+    ALTER TABLE evicted ADD COLUMN covering TEXT;
+    ALTER TABLE issued RENAME TO issued_v2;
+    CREATE TABLE issued (
+      device TEXT NOT NULL,
+      reg_key TEXT NOT NULL,
+      counter INTEGER NOT NULL,
+      hash TEXT NOT NULL,
+      body_hash TEXT,
+      op_id TEXT,
+      PRIMARY KEY (device, reg_key, counter, hash)
+    );
+    INSERT INTO issued (device, reg_key, counter, hash, op_id)
+      SELECT identity.device_id, issued_v2.reg_key, issued_v2.counter,
+             issued_v2.hash, issued_v2.op_id FROM issued_v2, identity;
+    DROP TABLE issued_v2;
+    INSERT OR IGNORE INTO meta (key, value)
+      SELECT 'restore_point_due', '1' FROM identity;
   ''');
 }
 
