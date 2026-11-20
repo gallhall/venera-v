@@ -901,6 +901,29 @@ void main() {
       expect(dav.files, contains(orphan));
     });
 
+    test('an incomplete fresh listing prevents orphan cleanup', () async {
+      final x = node(a);
+      await x.sync();
+      final orphan =
+          'venera-sync/devices/$a/g000000/state-0000000009-orphan04.json.gz';
+      dav.files[orphan] = Uint8List(3);
+      x.book.ownFiles[orphan] = clock.now.millisecondsSinceEpoch;
+      clock.advance(const Duration(hours: 25));
+      final read = await x.read();
+      final complete = dav.snapshot();
+      dav.staleTree = (
+        files: {
+          for (final entry in complete.files.entries)
+            if (!entry.key.contains('/manifest-')) entry.key: entry.value,
+        },
+        dirs: complete.dirs,
+      );
+      expect(await x.collect(read), isEmpty);
+      expect(dav.files.keys, unorderedEquals(complete.files.keys));
+      dav.staleTree = null;
+      expect(await x.collect(await x.read()), [orphan]);
+    });
+
     test('an old orphan nobody names is collected', () async {
       var x = node(a);
       await x.sync();

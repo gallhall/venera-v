@@ -625,6 +625,60 @@ void main() {
       );
     }, skip: skip);
 
+    test('阅读、本机写入和旧备份各自保留正确的收藏日期语义', () async {
+      const folder = 'Dates';
+      const readAt = '2025-03-05 12:12:22';
+      const backupAt = '2025-03-06 12:12:22';
+      final table = favoriteTable(folder);
+      final key = RegisterKey(['i', 'legacy:Dates', _source, 'work'], 'item');
+      createFavoriteTable(a.favoritesDb, folder);
+      _insert(a.favoritesDb, folder, 'work');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      final baseline = a.store.branches(key).single;
+      expect(baseline.fields['addTime'], favoriteAdded(_time));
+
+      final previous = a.folder(folder)!.rows.single;
+      a.favoritesDb.execute('UPDATE $table SET time = ?', [readAt]);
+      a.attachHooks();
+      FavoritesHooks.read(a.favoritesDb, folder, previous, readAt);
+      final sequence = a.store.identity.counter;
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect(a.store.identity.counter, sequence);
+      expect(a.store.branches(key).single.id, baseline.id);
+      expect(a.folder(folder)!.rows.single.time, readAt);
+      expect(b.folder(folder)!.rows.single.time, _time);
+
+      b.favoritesDb.execute('UPDATE $table SET name = ?', ['Edited on B']);
+      b.attachHooks();
+      FavoritesHooks.itemsWritten(b.favoritesDb, folder, [('work', _type)]);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect(a.folder(folder)!.rows.single.time, readAt);
+      expect(a.folder(folder)!.rows.single.name, 'Edited on B');
+      final edited = a.store.branches(key).single;
+      expect(edited.fields['addTime'], favoriteAdded(_time));
+
+      final backup = '${a.dir.path}/old-dates.db';
+      a.favoritesDb.execute('VACUUM INTO ?', [backup]);
+      final restored = sqlite3.open(backup);
+      try {
+        restored.execute('UPDATE $table SET time = ?', [backupAt]);
+      } finally {
+        restored.dispose();
+      }
+      a.store.prepareBackupRejoin();
+      a.replaceFavoritesWith(backup);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect(
+        b.store.branches(key).where((v) => !v.isBaseline).single.id,
+        edited.id,
+      );
+      expect(b.folder(folder)!.rows.single.time, _time);
+    }, skip: skip);
+
     test('旧备份中的同名收藏夹身份不明确时保留本机数据并暂停', () async {
       expect((await a.sync()).outcome, SyncOutcome.done);
       expect((await b.sync()).outcome, SyncOutcome.done);
