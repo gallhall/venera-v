@@ -322,7 +322,7 @@ class SyncEngine {
     } on DavException catch (e) {
       return report
         ..outcome = SyncOutcome.failed
-        ..reason = e.message
+        ..reason = e.kind == DavErrorKind.network ? 'network error' : e.message
         ..error = e;
     } on DavNetworkError catch (e) {
       return report
@@ -911,7 +911,9 @@ class SyncEngine {
         ..outcome = e.kind == DavErrorKind.auth
             ? SyncOutcome.failed
             : SyncOutcome.partial
-        ..reason = e.message
+        ..reason = e.kind == DavErrorKind.network
+            ? 'network error while publishing'
+            : e.message
         ..error = e;
     } on DavNetworkError catch (e) {
       await save();

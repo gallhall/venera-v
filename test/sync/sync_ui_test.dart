@@ -160,6 +160,50 @@ void main() {
       expect(find.textContaining('Authentication failed'), findsOneWidget);
     });
 
+    testWidgets('download disconnection shows a retry message', (tester) async {
+      controller();
+      await tester.pumpWidget(frame());
+      await tester.tap(find.byKey(const ValueKey('sync-now')));
+      await finish(
+        tester,
+        SyncReport(
+          SyncOutcome.failed,
+          error: const DavException(DavErrorKind.network, 'unknown'),
+        )..stage = SyncStage.download,
+      );
+      expect(find.textContaining('Sync failed'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'WebDAV connection failed. Check your network and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('unknown'), findsNothing);
+    });
+
+    testWidgets('upload disconnection explains the saved local changes', (
+      tester,
+    ) async {
+      controller();
+      await tester.pumpWidget(frame());
+      await tester.tap(find.byKey(const ValueKey('sync-now')));
+      await finish(
+        tester,
+        SyncReport(
+          SyncOutcome.partial,
+          error: const DavException(DavErrorKind.network, 'transport details'),
+        )..stage = SyncStage.publish,
+      );
+      expect(find.textContaining('Partly synced'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Local changes saved. Upload interrupted. Try syncing again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('transport details'), findsNothing);
+    });
+
     testWidgets('a cancelled sync goes back to idle', (tester) async {
       var c = controller();
       await tester.pumpWidget(frame());
@@ -299,6 +343,81 @@ void main() {
       expect(store.branches(key), [v]);
       expect(store.archived().single.$2.fields['title'], 'B');
     });
+
+    testWidgets(
+      'ordering conflicts have readable titles and show their branches',
+      (tester) async {
+        const folder = 'folder-identifier';
+        const missingFolder = 'missing-folder-identifier';
+        final folderOrder = RegisterKey(['fo'], 'order');
+        var counter = 0;
+
+        Version version(String device, Map<String, Object?> fields) {
+          counter++;
+          return merger.issue(
+            branches: const [],
+            device: device,
+            counter: counter,
+            hlc: Hlc(time + counter),
+            fields: fields,
+          );
+        }
+
+        const a = '00000000-0000-4000-8000-aaaaaaaaaaaa';
+        const b = '00000000-0000-4000-8000-bbbbbbbbbbbb';
+        List<Version> order() => [
+          version(a, {
+            'order': ['first', 'second'],
+          }),
+          version(b, {
+            'order': ['second', 'first'],
+          }),
+        ];
+
+        store.merge(
+          SyncState(
+            registers: {
+              RegisterKey(['f', folder], 'folder'): [
+                version(a, {'name': 'Weekend reading'}),
+              ],
+              folderOrder: order(),
+              RegisterKey(['io', folder], 'order'): order(),
+              RegisterKey(['io', missingFolder], 'order'): order(),
+            },
+          ),
+        );
+        SyncController.instance = SyncController.forTest(store: store);
+        await tester.pumpWidget(const MaterialApp(home: ConflictsPage()));
+
+        final allFolders = find.text('Favorite folder order');
+        expect(allFolders, findsOneWidget);
+        expect(
+          find.text('Favorite item order in Weekend reading'),
+          findsOneWidget,
+        );
+        expect(find.text('Favorite item order'), findsOneWidget);
+        expect(find.text('["fo"]'), findsNothing);
+        expect(find.text('order'), findsNothing);
+        expect(find.textContaining(missingFolder), findsNothing);
+        expect(conflicts(store), hasLength(3));
+        await tester.tap(allFolders);
+        await tester.pumpAndSettle();
+        expect(find.text('Keep this'), findsNWidgets(2));
+        await tester.tap(find.text('Keep this').last);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+        expect(store.branches(folderOrder).single.fields['order'], [
+          'first',
+          'second',
+        ]);
+        expect(conflicts(store), hasLength(2));
+
+        await tester.pumpWidget(const MaterialApp(home: ArchivePage()));
+        await tester.pumpAndSettle();
+        expect(allFolders, findsOneWidget);
+        expect(find.text('["fo"]'), findsNothing);
+      },
+    );
 
     test(
       'a confirmed deletion makes tombstones; a kept one is written back',

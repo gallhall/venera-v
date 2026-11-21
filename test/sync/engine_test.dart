@@ -266,6 +266,51 @@ void main() {
     } catch (_) {}
   });
 
+  for (final stage in [SyncStage.download, SyncStage.publish]) {
+    test('${stage.name} disconnection keeps data and retries safely', () async {
+      a.putHistory('shared');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      final downloading = stage == SyncStage.download;
+      final author = downloading ? a : b;
+      author.putHistory('shared', page: 2);
+      if (downloading) {
+        expect((await a.sync()).outcome, SyncOutcome.done);
+      }
+      final before = b.history();
+      dav.intercept = (_, method, path, _, _) {
+        final cut = downloading
+            ? method == 'PROPFIND' && path.startsWith('venera-sync/devices')
+            : method == 'PUT' && path.contains('/state-');
+        if (cut) throw const DavNetworkError('transport details');
+        return null;
+      };
+
+      final failed = await b.sync();
+      expect(failed.stage, stage);
+      expect(
+        failed.outcome,
+        downloading ? SyncOutcome.failed : SyncOutcome.partial,
+      );
+      expect(
+        failed.error,
+        isA<DavException>().having((e) => e.kind, 'kind', DavErrorKind.network),
+      );
+      expect(
+        failed.reason,
+        downloading ? 'network error' : 'network error while publishing',
+      );
+      expect(failed.published, isFalse);
+      expect(b.history(), before);
+      dav.intercept = null;
+
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect(a.history()['shared']!.$3, 2);
+      expect(b.history()['shared']!.$3, 2);
+    });
+  }
+
   test(
     'a copied identity keeps merging locally while publication is isolated',
     () async {
