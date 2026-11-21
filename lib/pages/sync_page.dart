@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
+import 'package:venera/foundation/sync/entity_rules.dart';
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
 import 'package:venera/foundation/sync/sync_actions.dart';
@@ -21,6 +22,11 @@ String stageText(SyncStage? s) => switch (s) {
   SyncStage.apply => 'Writing, please wait'.tl,
   SyncStage.publish => 'Uploading'.tl,
 };
+
+String _networkFailureText(SyncReport report) =>
+    report.outcome == SyncOutcome.partial && report.stage == SyncStage.publish
+    ? 'Local changes saved. Upload interrupted. Try syncing again.'.tl
+    : 'WebDAV connection failed. Check your network and try again.'.tl;
 
 /// The reason of a report, for the user.
 String reasonText(SyncReport r) {
@@ -45,10 +51,11 @@ String reasonText(SyncReport r) {
       DavErrorKind.insufficientStorage => 'Not enough space on the server'.tl,
       DavErrorKind.busy =>
         'The server is busy or requests are too frequent. Try again later'.tl,
+      DavErrorKind.network => _networkFailureText(r),
       _ => e.message,
     };
   }
-  if (e is DavNetworkError) return 'Network error'.tl;
+  if (e is DavNetworkError) return _networkFailureText(r);
   if (e is ListingUnreliable) {
     return 'The remote listing is unreliable; nothing was merged or published'
         .tl;
@@ -81,7 +88,8 @@ String reasonText(SyncReport r) {
           .tl,
     'the remote state is invalid' =>
       'The sync data on the server is invalid; nothing was changed'.tl,
-    'network error while publishing' => 'Network error while uploading'.tl,
+    'network error' ||
+    'network error while publishing' => _networkFailureText(r),
     var other => other,
   };
 }
@@ -521,6 +529,23 @@ class _SuspectsPageState extends State<SuspectsPage> with _FollowsSync {
   }
 }
 
+String? _orderingTitle(SyncState state, RegisterKey key) {
+  if (key.register != 'order') return null;
+  switch (key.entity) {
+    case ['fo']:
+      return 'Favorite folder order'.tl;
+    case ['io', String folder]:
+      final name = folderName(
+        state.branches(RegisterKey(['f', folder], 'folder')),
+      );
+      return name == null || name.isEmpty
+          ? 'Favorite item order'.tl
+          : 'Favorite item order in @folder'.tlParams({'folder': name});
+    default:
+      return null;
+  }
+}
+
 /// 同步冲突: each lost branch can be restored as a new version.
 class ConflictsPage extends StatefulWidget {
   const ConflictsPage({super.key});
@@ -553,10 +578,11 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
                           .tl,
                     ),
                   ),
-                for (var x in list)
-                  ExpansionTile(
-                    title: Text(titleOf(state!, x.key.entity)),
-                    subtitle: Text(x.key.register),
+                ...list.map((x) {
+                  final orderTitle = _orderingTitle(state!, x.key);
+                  return ExpansionTile(
+                    title: Text(orderTitle ?? titleOf(state, x.key.entity)),
+                    subtitle: orderTitle == null ? Text(x.key.register) : null,
                     children: [
                       for (var v in [x.shown, ...x.others])
                         ListTile(
@@ -579,7 +605,8 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
                           ),
                         ),
                     ],
-                  ),
+                  );
+                }),
               ],
             ),
     );
@@ -672,7 +699,9 @@ class _ArchivePageState extends State<ArchivePage> with _FollowsSync {
           else
             for (var e in entries)
               ListTile(
-                title: Text(titleOf(state, e.key.entity)),
+                title: Text(
+                  _orderingTitle(state, e.key) ?? titleOf(state, e.key.entity),
+                ),
                 subtitle: Text(
                   '${_archiveReason(e.reason)} · '
                   '${DateTime.fromMillisecondsSinceEpoch(e.archivedAt).toString().split('.')[0]}\n'
