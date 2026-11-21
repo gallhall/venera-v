@@ -20,6 +20,19 @@ String favoriteReadOrder(String folderId) => 'favorite_read_order:$folderId';
 String favoriteItemOrderKey(String source, String workId) =>
     canonicalize([source, workId]);
 
+(String, String)? parseFavoriteItemOrderKey(String key) {
+  try {
+    if (parseStrictJson(key) case [String source, String workId]) {
+      return (source, workId);
+    }
+  } on FormatException {
+    return null;
+  } on CanonicalJsonException {
+    return null;
+  }
+  return null;
+}
+
 List<Object> favoriteEntity(String folderId, String source, String workId) => [
   'i',
   folderId,
