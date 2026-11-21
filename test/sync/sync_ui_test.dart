@@ -10,6 +10,7 @@ import 'package:sqlite3/sqlite3.dart' hide Version;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/sync/canonical_json.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
+import 'package:venera/foundation/sync/local/favorites_adapter.dart';
 import 'package:venera/foundation/sync/merger.dart' as merger;
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_files.dart';
@@ -348,6 +349,7 @@ void main() {
       'ordering conflicts have readable titles and show their branches',
       (tester) async {
         const folder = 'folder-identifier';
+        const otherFolder = 'other-folder-identifier';
         const missingFolder = 'missing-folder-identifier';
         final folderOrder = RegisterKey(['fo'], 'order');
         var counter = 0;
@@ -365,13 +367,9 @@ void main() {
 
         const a = '00000000-0000-4000-8000-aaaaaaaaaaaa';
         const b = '00000000-0000-4000-8000-bbbbbbbbbbbb';
-        List<Version> order() => [
-          version(a, {
-            'order': ['first', 'second'],
-          }),
-          version(b, {
-            'order': ['second', 'first'],
-          }),
+        List<Version> order(List<String> entries) => [
+          version(a, {'order': entries}),
+          version(b, {'order': entries.reversed.toList()}),
         ];
 
         store.merge(
@@ -380,9 +378,15 @@ void main() {
               RegisterKey(['f', folder], 'folder'): [
                 version(a, {'name': 'Weekend reading'}),
               ],
-              folderOrder: order(),
-              RegisterKey(['io', folder], 'order'): order(),
-              RegisterKey(['io', missingFolder], 'order'): order(),
+              RegisterKey(['f', otherFolder], 'folder'): [
+                version(a, {'name': 'Read later'}),
+              ],
+              folderOrder: order([folder, missingFolder, otherFolder]),
+              RegisterKey(['io', folder], 'order'): order(['first', 'second']),
+              RegisterKey(['io', missingFolder], 'order'): order([
+                'first',
+                'second',
+              ]),
             },
           ),
         );
@@ -402,13 +406,20 @@ void main() {
         expect(conflicts(store), hasLength(3));
         await tester.tap(allFolders);
         await tester.pumpAndSettle();
+        const kept = '1. Weekend reading\n2. Unknown folder\n3. Read later';
+        const discarded =
+            '1. Read later\n2. Unknown folder\n3. Weekend reading';
+        expect(find.text(kept), findsOneWidget);
+        expect(find.text(discarded), findsOneWidget);
+        expect(find.textContaining('folder-identifier'), findsNothing);
         expect(find.text('Keep this'), findsNWidgets(2));
         await tester.tap(find.text('Keep this').last);
         await tester.pump(const Duration(seconds: 4));
         await tester.pumpAndSettle();
         expect(store.branches(folderOrder).single.fields['order'], [
-          'first',
-          'second',
+          folder,
+          missingFolder,
+          otherFolder,
         ]);
         expect(conflicts(store), hasLength(2));
 
@@ -416,6 +427,90 @@ void main() {
         await tester.pumpAndSettle();
         expect(allFolders, findsOneWidget);
         expect(find.text('["fo"]'), findsNothing);
+        expect(find.textContaining(discarded), findsOneWidget);
+        expect(find.textContaining('folder-identifier'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'item order previews resolve source aliases and keep every slot',
+      (tester) async {
+        const folder = 'library';
+        const localDevice = '00000000-0000-4000-8000-aaaaaaaaaaaa';
+        const remoteDevice = '00000000-0000-4000-8000-bbbbbbbbbbbb';
+        const work = 'same-id';
+        final orderKey = RegisterKey(['io', folder], 'order');
+        final oldWork = favoriteEntity(folder, 'int:123', work);
+        final migratedWork = favoriteEntity(folder, 'source-a', work);
+        final otherWork = favoriteEntity(folder, 'source-b', work);
+        final order = [
+          favoriteItemOrderKey('int:123', work),
+          favoriteItemOrderKey('missing-source', 'missing-work'),
+          'invalid-entry',
+          favoriteItemOrderKey('source-b', work),
+        ];
+        var counter = 0;
+        Version version(String device, Map<String, Object?> fields) =>
+            merger.issue(
+              branches: const [],
+              device: device,
+              counter: ++counter,
+              hlc: Hlc(time + counter),
+              fields: fields,
+            );
+        store.merge(
+          SyncState(
+            registers: {
+              RegisterKey(['f', folder], 'folder'): [
+                version(localDevice, {'name': 'Weekend reading'}),
+              ],
+              RegisterKey(migratedWork, 'item'): [
+                version(localDevice, {'name': 'First comic'}),
+              ],
+              RegisterKey(otherWork, 'item'): [
+                version(localDevice, {'name': 'Second comic'}),
+              ],
+              orderKey: [
+                version(localDevice, {'order': order}),
+                version(remoteDevice, {'order': order.reversed.toList()}),
+              ],
+            },
+            aliases: [Alias(oldWork, migratedWork)],
+          ),
+        );
+        SyncController.instance = SyncController.forTest(store: store);
+        await tester.pumpWidget(const MaterialApp(home: ConflictsPage()));
+        await tester.tap(find.text('Favorite item order in Weekend reading'));
+        await tester.pumpAndSettle();
+
+        const discarded =
+            '1. Second comic\n2. Unknown work\n3. Unknown work\n'
+            '4. First comic';
+        expect(find.text(discarded), findsOneWidget);
+        expect(
+          find.text(
+            '1. First comic\n2. Unknown work\n3. Unknown work\n'
+            '4. Second comic',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('same-id'), findsNothing);
+        expect(find.textContaining('invalid-entry'), findsNothing);
+        await tester.tap(find.text('Keep this').last);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+        expect(store.branches(orderKey).single.fields['order'], order);
+
+        store.archive(
+          orderKey,
+          version(remoteDevice, {'order': <String>[]}),
+          'resolved conflict',
+        );
+        await tester.pumpWidget(const MaterialApp(home: ArchivePage()));
+        await tester.pumpAndSettle();
+        expect(find.textContaining(discarded), findsOneWidget);
+        expect(find.textContaining('Empty order'), findsOneWidget);
+        expect(find.textContaining('source-b'), findsNothing);
       },
     );
 

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/context.dart';
+import 'package:venera/foundation/sync/canonical_json.dart' show canonicalize;
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
 import 'package:venera/foundation/sync/entity_rules.dart';
+import 'package:venera/foundation/sync/local/favorites_adapter.dart';
+import 'package:venera/foundation/sync/merger.dart' show display;
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
 import 'package:venera/foundation/sync/sync_actions.dart';
@@ -546,6 +549,56 @@ String? _orderingTitle(SyncState state, RegisterKey key) {
   }
 }
 
+class _OrderPreview {
+  _OrderPreview(this.state);
+
+  final SyncState state;
+  late final _aliases = AliasResolution(state.aliases);
+  late final _registers = state.aliases.isEmpty
+      ? state.registers
+      : resolvedRegisters(state);
+
+  String? _workTitle(String folder, String entry) {
+    final item = parseFavoriteItemOrderKey(entry);
+    if (item == null) return null;
+    final (source, work) = item;
+    final entity = favoriteEntity(folder, source, work);
+    final target = _aliases.active[canonicalize(entity)] ?? entity;
+    final shown = display(
+      _registers[RegisterKey(target, 'item')] ?? const [],
+    ).shown;
+    final name = shown?.fields['name'];
+    return name is String ? name : null;
+  }
+
+  String describe(RegisterKey key, Version version) {
+    if (version.deleted || key.register != 'order') return _fieldsText(version);
+    final String? Function(String) nameOf;
+    final String unknown;
+    switch (key.entity) {
+      case ['fo']:
+        nameOf = (id) =>
+            folderName(state.branches(RegisterKey(['f', id], 'folder')));
+        unknown = 'Unknown folder'.tl;
+      case ['io', String folder]:
+        nameOf = (entry) => _workTitle(folder, entry);
+        unknown = 'Unknown work'.tl;
+      default:
+        return _fieldsText(version);
+    }
+
+    final order = version.fields['order'];
+    if (order is! List || order.isEmpty) return 'Empty order'.tl;
+    final lines = <String>[];
+    for (final (index, entry) in order.indexed) {
+      final name = entry is String ? nameOf(entry) : null;
+      final label = name == null || name.trim().isEmpty ? unknown : name;
+      lines.add('${index + 1}. $label');
+    }
+    return lines.join('\n');
+  }
+}
+
 /// 同步冲突: each lost branch can be restored as a new version.
 class ConflictsPage extends StatefulWidget {
   const ConflictsPage({super.key});
@@ -560,10 +613,9 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
     var c = SyncController();
     var store = c.store;
     var list = store == null ? const <SyncConflict>[] : conflicts(store);
-    var state = store?.load();
-    final retained = state == null
-        ? const <String, String>{}
-        : retainedFavoriteFolders(state);
+    final state = store?.load() ?? SyncState.empty;
+    final preview = _OrderPreview(state);
+    final retained = retainedFavoriteFolders(state);
     return SubPage(
       title: 'Sync conflicts'.tl,
       body: list.isEmpty && retained.isEmpty
@@ -579,7 +631,7 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
                     ),
                   ),
                 ...list.map((x) {
-                  final orderTitle = _orderingTitle(state!, x.key);
+                  final orderTitle = _orderingTitle(state, x.key);
                   return ExpansionTile(
                     title: Text(orderTitle ?? titleOf(state, x.key.entity)),
                     subtitle: orderTitle == null ? Text(x.key.register) : null,
@@ -591,7 +643,9 @@ class _ConflictsPageState extends State<ConflictsPage> with _FollowsSync {
                                 ? 'Shown now'.tl
                                 : _when(v.hlc),
                           ),
-                          subtitle: Text(_fieldsText(v)),
+                          subtitle: Builder(
+                            builder: (_) => Text(preview.describe(x.key, v)),
+                          ),
                           trailing: TextButton(
                             onPressed: () {
                               resolveConflict(store!, x.key, v);
@@ -666,6 +720,7 @@ class _ArchivePageState extends State<ArchivePage> with _FollowsSync {
     var store = c.store;
     var entries = store?.archiveEntries() ?? const <ArchiveEntry>[];
     var state = store?.load() ?? SyncState.empty;
+    final preview = _OrderPreview(state);
     return SubPage(
       title: 'Sync archive'.tl,
       body: ListView(
@@ -702,10 +757,12 @@ class _ArchivePageState extends State<ArchivePage> with _FollowsSync {
                 title: Text(
                   _orderingTitle(state, e.key) ?? titleOf(state, e.key.entity),
                 ),
-                subtitle: Text(
-                  '${_archiveReason(e.reason)} · '
-                  '${DateTime.fromMillisecondsSinceEpoch(e.archivedAt).toString().split('.')[0]}\n'
-                  '${_fieldsText(e.version)}',
+                subtitle: Builder(
+                  builder: (_) => Text(
+                    '${_archiveReason(e.reason)} · '
+                    '${DateTime.fromMillisecondsSinceEpoch(e.archivedAt).toString().split('.')[0]}\n'
+                    '${preview.describe(e.key, e.version)}',
+                  ),
                 ),
                 isThreeLine: true,
               ),

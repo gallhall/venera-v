@@ -202,15 +202,7 @@ FavoritePlan planFavorites(
     for (final key in rawOrder?.whereType<String>() ?? const <String>[]) {
       // Keys outside the currently understood shape have no matching
       // membership. They cannot cause the underlying item to disappear.
-      Object? item;
-      try {
-        item = parseStrictJson(key);
-      } on FormatException {
-        continue;
-      } on CanonicalJsonException {
-        continue;
-      }
-      if (item case [String source, String work]) {
+      if (parseFavoriteItemOrderKey(key) case (String source, String work)) {
         final entity = canonicalize(favoriteEntity(id, source, work));
         final target = alias.active[entity];
         listed.add(target == null ? entity : canonicalize(target));

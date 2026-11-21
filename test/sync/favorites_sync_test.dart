@@ -708,6 +708,54 @@ void main() {
       expect(a.folder('Shared')!.rows.single.id, 'kept');
     }, skip: skip);
 
+    test('保留收藏项排序分支后，两端应用该分支的顺序', () async {
+      const folder = 'Reading';
+      createFavoriteTable(a.favoritesDb, folder);
+      _insert(a.favoritesDb, folder, 'first', title: 'First comic');
+      _insert(a.favoritesDb, folder, 'second', title: 'Second comic');
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+
+      final key = RegisterKey(['io', 'legacy:Reading'], 'order');
+      final second = favoriteItemOrderKey(_source, 'second');
+      final first = favoriteItemOrderKey(_source, 'first');
+      final chosen = a.store.issue(
+        key,
+        fields: {
+          'order': [second, 'unrecognized-entry', first],
+        },
+      );
+      b.store.issue(
+        key,
+        fields: {
+          'order': [first, second],
+        },
+      );
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+
+      final conflict = conflicts(
+        b.store,
+      ).singleWhere((entry) => entry.key == key);
+      final branch = [
+        conflict.shown,
+        ...conflict.others,
+      ].singleWhere((version) => version.id == chosen.id);
+      resolveConflict(b.store, key, branch);
+      expect((await b.sync()).outcome, SyncOutcome.done);
+      expect((await a.sync()).outcome, SyncOutcome.done);
+      for (final device in [a, b]) {
+        expect(device.folder(folder)!.rows.map((row) => row.name), [
+          'Second comic',
+          'First comic',
+        ]);
+        expect(
+          conflicts(device.store).any((entry) => entry.key == key),
+          isFalse,
+        );
+      }
+    }, skip: skip);
+
     test('排序记录超过单版本大小上限时保留上一份远端状态', () async {
       await a.sync();
       final previous = a.dav.files.keys.toSet();
