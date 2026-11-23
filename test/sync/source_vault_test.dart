@@ -34,7 +34,9 @@ class _Local extends VaultLocal {
 
   @override
   void check(RegisterKey key, VaultFields? value) {
-    if (key.entity.first != 'source' && key != bangumiSignIn) {
+    if (key.entity.first != 'source' &&
+        key != bangumiSignIn &&
+        !sourceSettings.any((name) => key == sourceSetting(name))) {
       throw const VaultFailure(VaultIssue.invalid);
     }
   }
@@ -99,7 +101,7 @@ void main() {
     temp.deleteSync(recursive: true);
   });
 
-  SourceVault node(_Local local, {VaultKey? using}) {
+  SourceVault node(VaultLocal local, {VaultKey? using}) {
     final store = SyncStore.create(
       '${temp.path}/${stores.length}.db',
       durable: false,
@@ -383,7 +385,7 @@ void main() {
   });
 
   test(
-    'app installs a synced video rule while keeping device settings',
+    'first sync installs a video rule and its settings without changing device settings',
     () async {
       App.dataPath = temp.path;
       Directory('${temp.path}/comic_source').createSync();
@@ -410,14 +412,23 @@ void main() {
           'subscription': 'https://fixtures.example/list',
         }),
       };
-      expect(await app.put(definition, null, data), isTrue);
-      expect(ComicSource.find(entry.key)?.isEnabled, isFalse);
-      final before = app.read()[settings];
       const change = {'json': '{"approved":true}'};
-      expect(await app.put(settings, vaultDigest(before), change), isTrue);
+      final sender = _Local()
+        ..values.addAll({...app.read(), definition: data, settings: change});
+      final left = node(sender);
+      final right = node(app);
+      expect(await sync(left), isNull);
+      expect(app.read()[definition], isNull);
+      expect(app.read()[settings], isNull);
+      expect(await sync(right), isNull);
+      expect(ComicSource.find(entry.key)?.isEnabled, isFalse);
       expect(app.read()[definition], data);
       expect(app.read()[settings], change);
       expect(appdata.settings['disabledComicSources'], [entry.key]);
+      expect(await sync(right), isNull);
+      expect(await sync(left), isNull);
+      expect(sender.values[settings], change);
+      expect(left.store.load().canonical, right.store.load().canonical);
     },
   );
 

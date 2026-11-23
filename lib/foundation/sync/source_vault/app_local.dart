@@ -171,9 +171,12 @@ class AppVaultLocal extends VaultLocal {
     }
     final data = source?.data ?? _diskData(name);
     if (key.register == 'settings') {
-      return source == null
+      // Installing the definition does not author settings. A receiver with
+      // no stored settings must still match the plan's absent snapshot.
+      final settings = data['settings'];
+      return source == null || settings == null
           ? null
-          : {'json': jsonEncode(data['settings'] ?? const <String, Object?>{})};
+          : {'json': jsonEncode(settings)};
     }
     final account = data['account'];
     return account == null
