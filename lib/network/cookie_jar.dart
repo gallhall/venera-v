@@ -107,7 +107,9 @@ class CookieJarSql {
 
     return cookies
         .where((element) =>
-            !expires.contains(element) && _checkPathMatch(uri, element.path))
+            !expires.contains(element) &&
+            (!element.secure || uri.scheme == 'https' || uri.scheme == 'wss') &&
+            _checkPathMatch(uri, element.path))
         .toList();
   }
 
@@ -187,6 +189,50 @@ class CookieJarSql {
     _db.execute('''
       DELETE FROM cookies;
     ''');
+  }
+
+  /// Cookies installed by an explicit login with manually entered values.
+  List<Cookie> cookiesMatchingLogin(Uri origin, Iterable<String> values) {
+    final matches = values.where((value) => value.isNotEmpty).toSet();
+    return [
+      for (final domain in [origin.host, '.${origin.host}'])
+        for (final cookie in _loadWithDomain(domain))
+          if (matches.contains(cookie.value)) cookie,
+    ];
+  }
+
+  /// Replaces only the session cookies attributed to this source's login.
+  /// Another source or a refreshed session may now own a previous row.
+  void replaceSourceLoginCookies(
+    List<Map<String, Object?>> previous,
+    List<Map<String, Object?>> next,
+  ) {
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      for (final row in previous) {
+        _db.execute(
+          'DELETE FROM cookies WHERE name = ? AND domain = ? AND path = ? AND value = ?',
+          [row['name'], row['domain'], row['path'], row['value']],
+        );
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final row in next) {
+        final expires = row['expires'] as int?;
+        if (expires != null && expires <= now) continue;
+        _db.execute(
+          'INSERT INTO cookies (name, value, domain, path, expires, secure, httpOnly) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name, domain, path) DO NOTHING',
+          [
+            row['name'], row['value'], row['domain'], row['path'], expires,
+            row['secure'] == true ? 1 : 0, row['httpOnly'] == true ? 1 : 0,
+          ],
+        );
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   void dispose() {

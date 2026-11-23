@@ -39,6 +39,18 @@ enum SyncTrigger { manual, timer, resume }
 
 enum SyncStage { scan, download, merge, check, plan, apply, publish }
 
+enum VaultIssue {
+  locked,
+  authentication,
+  invalid,
+  interrupted,
+  approval,
+  changed,
+  conflict,
+  localMissing,
+  tooLarge,
+}
+
 /// How a sync ended (§9.2).
 enum SyncOutcome {
   /// Everything synced; [SyncReport.unrepresentable] may still be > 0.
@@ -81,6 +93,7 @@ class SyncReport {
   /// Why it failed or needs attention, for the user.
   String? reason;
   Object? error;
+  VaultIssue? sourceVaultIssue;
 
   /// The last stage reached.
   SyncStage? stage;

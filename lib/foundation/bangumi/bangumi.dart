@@ -277,6 +277,12 @@ class BangumiManager with ChangeNotifier {
     appdata.settings['bangumiToken'] = '';
     appdata.settings['bangumiUser'] = null;
     appdata.saveData();
+    reloadSyncedSignIn();
+  }
+
+  void reloadSyncedSignIn() {
+    _api = null;
+    _progress = null;
     _marked.clear();
     _watching = null;
     notifyListeners();

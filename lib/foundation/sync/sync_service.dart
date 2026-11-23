@@ -122,6 +122,7 @@ abstract final class SyncService {
   static String get restoreDir => '${App.dataPath}/sync_restore_points';
 
   static bool _restoringBackup = false;
+  static bool _syncingSources = false;
 
   static SyncStore? _open({required bool create, bool restoring = false}) =>
       openLocalSyncStore(
@@ -134,7 +135,7 @@ abstract final class SyncService {
   /// Full restore and two-way sync may each replace business data.
   /// Only one may run at a time, including during database reopen.
   static Future<T> withBackupRestore<T>(Future<T> Function() restore) async {
-    if (_restoringBackup || (_current?.running ?? false)) {
+    if (_restoringBackup || _syncingSources || (_current?.running ?? false)) {
       throw StateError(
         'Wait for the current sync or backup restore to finish.',
       );
@@ -144,6 +145,16 @@ abstract final class SyncService {
       return await restore();
     } finally {
       _restoringBackup = false;
+    }
+  }
+
+  static Future<T> withSourceSync<T>(Future<T> Function() sync) async {
+    _checkNotRestoring();
+    _syncingSources = true;
+    try {
+      return await sync();
+    } finally {
+      _syncingSources = false;
     }
   }
 

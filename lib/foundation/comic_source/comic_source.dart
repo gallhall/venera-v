@@ -25,6 +25,7 @@ import 'package:venera/utils/translations.dart';
 import '../js_engine.dart';
 import '../kazumi/kazumi_source.dart';
 import '../platform/platform_capabilities.dart';
+import '../sync/source_vault/login_cookies.dart';
 import '../animeko/animeko_source.dart';
 import '../log.dart';
 import '../video/video_sniffer.dart';
@@ -64,7 +65,7 @@ class ComicSourceManager with ChangeNotifier, Init {
     await JsEngine().ensureInit();
     final path = "${App.dataPath}/comic_source";
     if (!(await Directory(path).exists())) {
-      Directory(path).create();
+      await Directory(path).create();
       return;
     }
     await for (var entity in Directory(path).list()) {
@@ -96,11 +97,23 @@ class ComicSourceManager with ChangeNotifier, Init {
     }
   }
 
-  Future reload() async {
+  Future reload({bool notify = true}) async {
     _sources.clear();
     JsEngine().runCode("ComicSource.sources = {};");
     await doInit();
-    notifyListeners();
+    if (notify) notifyListeners();
+  }
+
+  void replaceSyncedSource(String key, ComicSource? source) {
+    final index = _sources.indexWhere((s) => s.key == key);
+    if (source == null) {
+      if (index >= 0) _sources.removeAt(index);
+      JsEngine().runCode('delete ComicSource.sources[${jsonEncode(key)}]');
+    } else if (index < 0) {
+      _sources.add(source);
+    } else {
+      _sources[index] = source;
+    }
   }
 
   void add(ComicSource source) {
@@ -203,7 +216,8 @@ class ComicSource {
 
   var data = <String, dynamic>{};
 
-  bool get isLogged => data["account"] != null;
+  bool get isLogged =>
+      data["account"] != null && data[sourceLoginNeedsValidation] != true;
 
   final String filePath;
 
@@ -292,14 +306,17 @@ class ComicSource {
     }
     _isSaving = true;
     var file = File("${App.dataPath}/comic_source/$key.data");
-    if (!await file.exists()) {
-      await file.create(recursive: true);
+    try {
+      await file.parent.create(recursive: true);
+      await writeStringAtomically(file, jsonEncode(data));
+    } finally {
+      _isSaving = false;
     }
-    await file.writeAsString(jsonEncode(data));
-    _isSaving = false;
     // Uploads only with automatic backup on.
     DataSync().onDataChanged();
   }
+
+  bool get dataSaveInProgress => _isSaving || _haveWaitingTask;
 
   Future<bool> reLogin() async {
     if (data["account"] == null) {

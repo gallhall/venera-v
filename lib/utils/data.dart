@@ -10,6 +10,8 @@ import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/favorites.dart';
 import 'package:venera/foundation/history.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sync/source_vault/app_local.dart';
+import 'package:venera/foundation/sync/source_vault/login_cookies.dart';
 import 'package:venera/foundation/sync/sync_service.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/utils/ext.dart';
@@ -19,7 +21,8 @@ import 'io.dart';
 
 Future<File> exportAppData([bool sync = true]) async {
   var time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  var cacheFilePath = FilePath.join(App.cachePath, '$time.venera');
+  var cachePath = App.cachePath;
+  var cacheFilePath = FilePath.join(cachePath, '$time.venera');
   var cacheFile = File(cacheFilePath);
   var dataPath = App.dataPath;
   if (await cacheFile.exists()) {
@@ -35,13 +38,29 @@ Future<File> exportAppData([bool sync = true]) async {
     zipFile.addFile("local_favorite.db", localFavoriteFile);
     zipFile.addFile("appdata.json", appdata);
     zipFile.addFile("cookie.db", cookies);
-    for (var file
-        in Directory(FilePath.join(dataPath, "comic_source")).listSync()) {
-      if (file is File) {
-        zipFile.addFile("comic_source/${file.name}", file.path);
+    Directory? filtered;
+    try {
+      for (var file
+          in Directory(FilePath.join(dataPath, "comic_source")).listSync()) {
+        if (file is! File || file.name.endsWith('.tmp')) continue;
+        final legacy = file.name.endsWith('.data')
+            ? legacySourceData(file.readAsStringSync())
+            : null;
+        var sourcePath = file.path;
+        if (legacy != null) {
+          filtered ??= Directory(cachePath).createTempSync('legacy-sources-');
+          sourcePath = FilePath.join(filtered.path, file.name);
+          File(sourcePath).writeAsStringSync(legacy);
+        }
+        zipFile.addFile("comic_source/${file.name}", sourcePath);
+      }
+    } finally {
+      try {
+        zipFile.close();
+      } finally {
+        filtered?.deleteSync(recursive: true);
       }
     }
-    zipFile.close();
   });
   return cacheFile;
 }
@@ -73,6 +92,7 @@ Future<void> _importAppData(File file, bool checkVersion) async {
     }
     final hasHistory = await historyFile.exists();
     final hasFavorites = await localFavoriteFile.exists();
+    AppVaultLocal.markBackupRestore();
     if (hasHistory || hasFavorites) SyncService.prepareBackupRestore();
     if (hasHistory) {
       await _replaceData(historyFile, "history.db",
