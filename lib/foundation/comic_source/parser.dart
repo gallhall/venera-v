@@ -83,7 +83,11 @@ class ComicSourceParser {
     }
   }
 
-  Future<ComicSource> parse(String js, String filePath) async {
+  Future<ComicSource> parse(
+    String js,
+    String filePath, {
+    String? replacingSyncedKey,
+  }) async {
     js = js.replaceAll("\r\n", "\n");
     var line1 = js
         .split('\n')
@@ -119,8 +123,11 @@ class ComicSourceParser {
         );
       }
     }
+    if (replacingSyncedKey != null && key != replacingSyncedKey) {
+      throw ComicSourceParseException("Unexpected source key");
+    }
     for (var source in ComicSource.all()) {
-      if (source.key == key) {
+      if (source.key == key && key != replacingSyncedKey) {
         throw ComicSourceParseException("key($key) already exists");
       }
     }
@@ -239,6 +246,8 @@ class ComicSourceParser {
         return SourceScript.guard(() async {
           await _js.run("account.login", [account, pwd]);
           var source = ComicSource.find(_key!)!;
+          source.data.remove(sourceLoginInputs);
+          source.data.remove(sourceLoginNeedsValidation);
           source.data["account"] = <String>[account, pwd];
           source.saveData();
           return const Res(true);
@@ -273,8 +282,8 @@ class ComicSourceParser {
         try {
           var res = await _js.run("account.loginWithCookies.validate", [cookies]);
           return res;
-        } catch (e, s) {
-          Log.error("Network", "$e\n$s");
+        } catch (e) {
+          Log.error("Network", "Cookie validation failed (${e.runtimeType})");
           return false;
         }
       };

@@ -8,6 +8,8 @@ import 'package:venera/foundation/sync/local/favorites_adapter.dart';
 import 'package:venera/foundation/sync/merger.dart' show display;
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
+import 'package:venera/foundation/sync/source_vault/crypto.dart';
+import 'package:venera/foundation/sync/source_vault/vault.dart' show VaultChoice;
 import 'package:venera/foundation/sync/sync_actions.dart';
 import 'package:venera/foundation/sync/sync_controller.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
@@ -68,7 +70,7 @@ String reasonText(SyncReport r) {
         .tl;
   }
   return switch (r.reason) {
-    null => '',
+    null => _vaultIssueText(r.sourceVaultIssue),
     'suspected deletions wait for confirmation' =>
       'Some records disappeared on this device. Confirm or keep them'.tl,
     'this device identity is in conflict' =>
@@ -95,6 +97,37 @@ String reasonText(SyncReport r) {
     'network error while publishing' => _networkFailureText(r),
     var other => other,
   };
+}
+
+String _vaultIssueText(VaultIssue? issue) => switch (issue) {
+  null => '',
+  VaultIssue.locked => 'Source sync is locked. Unlock it in Two-way Sync.'.tl,
+  VaultIssue.authentication => 'The source sync passphrase is wrong or the encrypted data was changed.'.tl,
+  VaultIssue.invalid => 'Encrypted sources could not be verified. Check that all devices use the same passphrase.'.tl,
+  VaultIssue.interrupted => 'Encrypted source sync was interrupted. Try again.'.tl,
+  VaultIssue.approval => 'Some JavaScript sources are waiting for approval.'.tl,
+  VaultIssue.changed => 'Sources changed during sync. Try again.'.tl,
+  VaultIssue.conflict => 'There are conflicting source or sign-in changes. Both versions are kept.'.tl,
+  VaultIssue.localMissing => 'A source or sign-in disappeared without a recorded removal. Encrypted source sync is paused.'.tl,
+  VaultIssue.tooLarge => 'Encrypted source data exceeds the size limit.'.tl,
+};
+
+Future<bool> _confirmSyncedScript(
+  BuildContext context,
+  String source,
+  String version,
+  String digest,
+) async {
+  if (!context.mounted) return false;
+  var approved = false;
+  await showConfirmDialog(
+    context: context,
+    title: 'Run a synced source script?'.tl,
+    content: 'Source @s · Version @v\nSHA-256: @h\nOnly continue if you trust the device that shared this script.'
+        .tlParams({'s': source, 'v': version, 'h': digest}),
+    onConfirm: () => approved = true,
+  );
+  return approved;
 }
 
 /// One line about the last sync.
@@ -200,7 +233,10 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
               )
             : FilledButton.tonal(
                 key: const ValueKey('sync-now'),
-                onPressed: c.syncNow,
+                onPressed: () => c.syncNow(
+                  approveSourceScript: (s, v, h) =>
+                      _confirmSyncedScript(context, s, v, h),
+                ),
                 child: Text('Sync now'.tl),
               ),
       ),
@@ -228,6 +264,94 @@ class SyncPage extends StatefulWidget {
 
   @override
   State<SyncPage> createState() => _SyncPageState();
+}
+
+Future<void> _sourcePassphraseDialog(
+  BuildContext context,
+  SyncController controller,
+) => showDialog<void>(
+  context: context,
+  builder: (_) => _SourcePassphraseDialog(controller),
+);
+
+class _SourcePassphraseDialog extends StatefulWidget {
+  const _SourcePassphraseDialog(this.controller);
+  final SyncController controller;
+
+  @override
+  State<_SourcePassphraseDialog> createState() => _SourcePassphraseDialogState();
+}
+
+class _SourcePassphraseDialogState extends State<_SourcePassphraseDialog> {
+  final _input = TextEditingController();
+  bool _visible = false;
+  bool _invalid = false;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Encrypted sources and sign-ins'.tl),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Generate a passphrase on the first device, then enter the same passphrase on your other devices. Save it somewhere safe. It cannot be recovered from WebDAV.'.tl,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _input,
+            obscureText: !_visible,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              labelText: 'Source sync passphrase'.tl,
+              errorText: _invalid ? 'Enter a valid source sync passphrase'.tl : null,
+              suffixIcon: IconButton(
+                tooltip: (_visible ? 'Hide passphrase' : 'Show passphrase').tl,
+                onPressed: () => setState(() => _visible = !_visible),
+                icon: Icon(_visible ? Icons.visibility_off : Icons.visibility),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() {
+              _input.text = VaultKey.generatePassphrase();
+              _invalid = false;
+              _visible = true;
+            }),
+            child: Text('Generate a passphrase'.tl),
+          ),
+          Text(
+            'Full backups have their own settings and can still contain sign-ins.'.tl,
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: Text('Cancel'.tl),
+      ),
+      FilledButton(
+        onPressed: () {
+          try {
+            widget.controller.unlockSourceSync(_input.text);
+            Navigator.of(context).pop();
+          } on VaultAuthentication {
+            setState(() => _invalid = true);
+          }
+        },
+        child: Text('Unlock'.tl),
+      ),
+    ],
+  );
 }
 
 /// Rebuilds a page whenever the controller changes: a sync that ends while
@@ -267,6 +391,32 @@ class _SyncPageState extends State<SyncPage> with _FollowsSync {
       body: ListView(
         children: [
           const SyncStatusCard(),
+          if (c.enabled)
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: Text('Encrypted sources and sign-ins'.tl),
+              subtitle: Text([
+                c.sourceSyncUnlocked
+                    ? 'Unlocked until the app closes'.tl
+                    : c.sourceSyncEnabled ? 'Locked'.tl : 'Off'.tl,
+                if (c.lastReport?.sourceVaultIssue case final VaultIssue issue)
+                  _vaultIssueText(issue),
+              ].join('\n')),
+              onTap: c.running ? null : () => _sourcePassphraseDialog(context, c),
+              trailing: c.sourceSyncEnabled
+                  ? IconButton(
+                      tooltip: 'Turn off source sync on this device'.tl,
+                      onPressed: c.running ? null : c.disableSourceSync,
+                      icon: const Icon(Icons.link_off),
+                    )
+                  : null,
+            ),
+          if (c.sourceChoices.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.call_split_outlined),
+              title: Text('Source conflicts and archive'.tl),
+              onTap: () => showSubPage(context, const _SourceConflictsPage()),
+            ),
           ListTile(
             leading: const Icon(Icons.devices_outlined),
             title: Text('Sync devices'.tl),
@@ -318,6 +468,74 @@ class _SyncPageState extends State<SyncPage> with _FollowsSync {
         ],
       ),
     );
+  }
+}
+
+class _SourceConflictsPage extends StatefulWidget {
+  const _SourceConflictsPage();
+
+  @override
+  State<_SourceConflictsPage> createState() => _SourceConflictsPageState();
+}
+
+class _SourceConflictsPageState extends State<_SourceConflictsPage> with _FollowsSync {
+  @override
+  Widget build(BuildContext context) {
+    final c = SyncController();
+    final items = c.sourceChoices;
+    return SubPage(
+      title: 'Source conflicts and archive'.tl,
+      body: ListView(
+        children: [
+          if (c.running) const LinearProgressIndicator(),
+          for (final choice in items)
+            ListTile(
+              title: Text(choice.key.entity.last.toString()),
+              subtitle: Text(_choiceText(choice)),
+              trailing: TextButton(
+                onPressed: c.running ? null : () => _useVersion(context, c, choice),
+                child: Text('Use this version'.tl),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _choiceText(VaultChoice choice) {
+    final kind = switch (choice.key.register) {
+      'login' => 'Sign-in'.tl,
+      'definition' => 'Source definition'.tl,
+      _ => 'Source settings'.tl,
+    };
+    final operation = choice.deleted
+        ? 'Deleted'.tl
+        : choice.archived ? 'Archived'.tl : 'Concurrent version'.tl;
+    final fingerprint = choice.branch.hash.substring(0, 8);
+    final date = choice.at > 0 && choice.at < 8640000000000000
+        ? MaterialLocalizations.of(context).formatShortDate(
+            DateTime.fromMillisecondsSinceEpoch(choice.at),
+          )
+        : null;
+    return [kind, operation, if (date != null) date, fingerprint].join(' · ');
+  }
+
+  Future<void> _useVersion(
+    BuildContext context, SyncController controller, VaultChoice choice,
+  ) async {
+    var confirmed = false;
+    await showConfirmDialog(
+      context: context,
+      title: 'Use this version'.tl,
+      content: 'This change will sync to your other devices. Restoring an old sign-in may require logging in again.'.tl,
+      onConfirm: () => confirmed = true,
+    );
+    if (confirmed && context.mounted) {
+      await controller.syncNow(
+        sourceChoice: choice,
+        approveSourceScript: (s, v, h) => _confirmSyncedScript(context, s, v, h),
+      );
+    }
   }
 }
 

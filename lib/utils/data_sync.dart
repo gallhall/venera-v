@@ -49,10 +49,14 @@ class DataSync with ChangeNotifier {
     // Nothing is downloaded here: a full backup would replace local data at
     // every start.
     LocalFavoritesManager().addListener(onDataChanged);
-    ComicSourceManager().addListener(onDataChanged);
+    ComicSourceManager().addListener(() {
+      if (!refreshingSyncedSources) onDataChanged();
+    });
     // 稍后看 lives in history.db and notifies on its own.
     WatchLater().addListener(onDataChanged);
   }
+
+  static bool refreshingSyncedSources = false;
 
   /// Data changed: upload a full backup if automatic backup is on.
   void onDataChanged() {

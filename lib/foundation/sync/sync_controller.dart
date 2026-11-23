@@ -3,8 +3,13 @@
 /// is separate and has its own switch (§2).
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart' show Dio;
 import 'package:flutter/foundation.dart';
+import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/network/app_dio.dart' show RHttpAdapter;
@@ -14,6 +19,9 @@ import 'engine/remote_book_codec.dart';
 import 'remote/dav.dart';
 import 'remote/remote_files.dart';
 import 'remote/remote_store.dart';
+import 'source_vault/app_local.dart';
+import 'source_vault/crypto.dart';
+import 'source_vault/vault.dart';
 import 'sync_actions.dart';
 import 'sync_service.dart';
 import 'sync_store.dart';
@@ -61,6 +69,52 @@ class SyncController with ChangeNotifier {
   SyncRunner? _runner;
   SyncStore? _store;
   bool? _enabledForTest;
+  VaultKey? _sourceKey;
+  String? _unlockedProfile;
+  List<VaultChoice> _sourceChoices = const [];
+
+  List<VaultChoice> get sourceChoices =>
+      sourceSyncUnlocked ? _sourceChoices : const [];
+
+  String? get _sourceProfile {
+    final config = appdata.settings['webdav'];
+    if (config is! List ||
+        config.length != 3 ||
+        config.any((e) => e is! String)) {
+      return null;
+    }
+    return sha256
+        .convert(utf8.encode(jsonEncode(config.take(2).toList())))
+        .toString();
+  }
+
+  bool get sourceSyncEnabled =>
+      _sourceProfile != null &&
+      appdata.implicitData['webdavSourceSync'] == _sourceProfile;
+
+  bool get sourceSyncUnlocked =>
+      _sourceKey != null && _unlockedProfile == _sourceProfile;
+
+  void unlockSourceSync(String passphrase) {
+    final profile = _sourceProfile;
+    if (running || !enabled || profile == null) return;
+    _sourceKey = VaultKey.fromPassphrase(passphrase);
+    _sourceChoices = const [];
+    _unlockedProfile = profile;
+    appdata.implicitData['webdavSourceSync'] = profile;
+    appdata.writeImplicitData();
+    notifyListeners();
+  }
+
+  void disableSourceSync() {
+    if (running) return;
+    _sourceKey = null;
+    _sourceChoices = const [];
+    _unlockedProfile = null;
+    appdata.implicitData.remove('webdavSourceSync');
+    appdata.writeImplicitData();
+    notifyListeners();
+  }
 
   /// Two-way sync is on (and a WebDAV account is set).
   bool get enabled {
@@ -142,6 +196,9 @@ class SyncController with ChangeNotifier {
   void disable() {
     appdata.implicitData['webdavSync'] = false;
     appdata.writeImplicitData();
+    _sourceKey = null;
+    _unlockedProfile = null;
+    _sourceChoices = const [];
     if (running) {
       _cancel?.cancel();
     } else {
@@ -154,6 +211,8 @@ class SyncController with ChangeNotifier {
   Future<SyncReport?> syncNow({
     bool rescueIdentity = false,
     String? retireDevice,
+    ScriptApproval? approveSourceScript,
+    VaultChoice? sourceChoice,
   }) async {
     if (!enabled) return null;
     if (running) return null;
@@ -179,6 +238,8 @@ class SyncController with ChangeNotifier {
               onStage,
               rescueIdentity: rescueIdentity,
               retireDevice: retireDevice,
+              approveSourceScript: approveSourceScript,
+              sourceChoice: sourceChoice,
             );
     } catch (e, st) {
       Log.error('Sync', 'sync failed: $e', st);
@@ -252,34 +313,119 @@ class SyncController with ChangeNotifier {
     void Function(SyncStage) onStage, {
     required bool rescueIdentity,
     required String? retireDevice,
+    required ScriptApproval? approveSourceScript,
+    required VaultChoice? sourceChoice,
   }) async {
     var config = (appdata.settings['webdav'] as List).cast<String>();
     var dio = Dio()..httpClientAdapter = RHttpAdapter();
-    var engine = SyncService.engine(
-      (c) => RemoteStore(
-        DavClient(
-          HttpDavTransport(dio, user: config[1], password: config[2]),
-          Uri.parse(config[0]),
-          isCancelled: c.check,
-        ),
-      ),
+    final dav = DavClient(
+      HttpDavTransport(dio, user: config[1], password: config[2]),
+      Uri.parse(config[0]),
+      isCancelled: cancel.check,
     );
-    void listener() {
-      var s = engine.stage.value;
-      if (s != null) onStage(s);
-    }
 
-    engine.stage.addListener(listener);
     try {
-      return await engine.run(
-        SyncTrigger.manual,
-        cancel: cancel,
-        rescueIdentity: rescueIdentity,
-        retireDevice: retireDevice,
-      );
+      final sourceIssue =
+          sourceSyncEnabled && !rescueIdentity && retireDevice == null
+          ? await _runSourceSync(
+              dav,
+              cancel,
+              onStage,
+              approveSourceScript,
+              sourceChoice,
+            )
+          : null;
+      var engine = SyncService.engine((_) => RemoteStore(dav));
+      void listener() {
+        var s = engine.stage.value;
+        if (s != null) onStage(s);
+      }
+
+      engine.stage.addListener(listener);
+      try {
+        final report = await engine.run(
+          SyncTrigger.manual,
+          cancel: cancel,
+          rescueIdentity: rescueIdentity,
+          retireDevice: retireDevice,
+        );
+        report.sourceVaultIssue = sourceIssue;
+        if (report.outcome == SyncOutcome.done && sourceIssue != null) {
+          report.outcome = SyncOutcome.partial;
+        }
+        return report;
+      } finally {
+        engine.stage.removeListener(listener);
+      }
     } finally {
-      engine.stage.removeListener(listener);
       dio.close();
+    }
+  }
+
+  Future<VaultIssue?> _runSourceSync(
+    DavClient dav,
+    CancelToken cancel,
+    void Function(SyncStage) onStage,
+    ScriptApproval? approveSourceScript,
+    VaultChoice? sourceChoice,
+  ) async {
+    final key = _sourceKey;
+    if (!sourceSyncUnlocked || key == null) return VaultIssue.locked;
+    try {
+      return await SyncService.withSourceSync(() async {
+        final file = '${App.dataPath}/source-sync-${_sourceProfile!}.db';
+        final store =
+            SyncStore.openIfExists(file, verify: true) ??
+            SyncStore.create(file);
+        try {
+          final issue =
+              await SourceVault(
+                store,
+                AppVaultLocal(),
+                RemoteStore(
+                  VaultDav(dav, key),
+                  stateLimits: vaultStateLimits,
+                  publishLimits: vaultPublishLimits,
+                  listingLimits: const ListingLimits(devices: 20),
+                ),
+              ).run(
+                cancel,
+                keyIdentity: key.keyId,
+                approveScript:
+                    approveSourceScript ??
+                    (source, version, digest) async => false,
+                onStage: onStage,
+                choice: sourceChoice,
+              );
+          store.pruneArchive(
+            DateTime.now()
+                .subtract(Duration(days: archiveDays))
+                .millisecondsSinceEpoch,
+          );
+          _sourceChoices = List.unmodifiable(vaultChoices(store));
+          return issue;
+        } finally {
+          store.dispose();
+        }
+      });
+    } on SyncCancelled {
+      return VaultIssue.interrupted;
+    } on VaultAuthentication {
+      return VaultIssue.authentication;
+    } on VaultFailure catch (e) {
+      return e.issue;
+    } on PublishTooLarge {
+      return VaultIssue.tooLarge;
+    } on DavException catch (e) {
+      return e.kind == DavErrorKind.protocol && e.message == 'file is too large'
+          ? VaultIssue.tooLarge
+          : VaultIssue.interrupted;
+    } on FileSystemException {
+      return VaultIssue.changed;
+    } catch (e) {
+      // Source files and data can contain secrets even in exception messages.
+      Log.warning('Sync', 'encrypted source sync stopped (${e.runtimeType})');
+      return VaultIssue.invalid;
     }
   }
 }

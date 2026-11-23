@@ -10,6 +10,8 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/kazumi/kazumi_source.dart';
 import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/log.dart';
+import 'package:venera/foundation/sync/source_vault/login_cookies.dart';
+import 'package:venera/foundation/sync/source_vault/app_local.dart';
 import 'package:venera/network/app_dio.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/pages/kazumi_rules_page.dart';
@@ -433,7 +435,8 @@ class _BodyState extends State<_Body> {
       btnColor: context.colorScheme.error,
       onConfirm: () {
         var file = File(source.filePath);
-        file.delete();
+        AppVaultLocal.markSourceRemoved(source.key);
+        file.deleteSync();
         ComicSourceManager().remove(source.key);
         _validatePages();
         App.forceRebuild();
@@ -1383,6 +1386,16 @@ class _ComicSourceCardState extends State<_ComicSourceCard> {
       yield ListTile(
         title: Text("Log out".tl),
         onTap: () {
+          final previous = source.data.remove(sourceLoginCookies);
+          if (previous is List) {
+            SingleInstanceCookieJar.instance?.replaceSourceLoginCookies(
+              previous.whereType<Map>().map(Map<String, Object?>.from).toList(),
+              const [],
+            );
+          }
+          source.data.remove('_localStorage');
+          source.data.remove(sourceLoginInputs);
+          source.data.remove(sourceLoginNeedsValidation);
           source.data["account"] = null;
           source.account?.logout();
           source.saveData();
@@ -1484,6 +1497,15 @@ class _LoginPageState extends State<_LoginPage> {
                       child: Text("Continue".tl),
                     ),
                   ),
+                if (widget.source.data[sourceLoginInputs] case List values
+                    when widget.source.data[sourceLoginNeedsValidation] == true &&
+                        widget.config.validateCookies != null &&
+                        values.length == widget.config.cookieFields?.length &&
+                        values.every((value) => value is String))
+                  TextButton(
+                    onPressed: loading ? null : () => _loginWithCookies(values.cast<String>()),
+                    child: Text('Use synced login credentials'.tl),
+                  ),
                 const SizedBox(height: 24),
                 if (widget.config.loginWebsite != null)
                   TextButton(
@@ -1546,25 +1568,35 @@ class _LoginPageState extends State<_LoginPage> {
         }
       });
     } else if (widget.config.validateCookies != null) {
-      setState(() {
-        loading = true;
-      });
-      var cookies = widget.config.cookieFields!
-          .map((e) => _cookies[e] ?? '')
-          .toList();
-      widget.config.validateCookies!(cookies).then((value) {
-        if (value) {
-          widget.source.data['account'] = 'ok';
-          widget.source.saveData();
-          context.pop();
-        } else {
-          context.showMessage(message: "Invalid cookies".tl);
-          setState(() {
-            loading = false;
-          });
-        }
-      });
+      _loginWithCookies(widget.config.cookieFields!.map((e) => _cookies[e] ?? '').toList());
     }
+  }
+
+  Future<void> _loginWithCookies(List<String> values) async {
+    setState(() => loading = true);
+    final valid = await widget.config.validateCookies!(values);
+    if (!mounted) return;
+    if (!valid) {
+      context.showMessage(message: "Invalid cookies".tl);
+      setState(() => loading = false);
+      return;
+    }
+    final origin = Uri.tryParse(widget.config.loginWebsite ?? '');
+    final jar = SingleInstanceCookieJar.instance;
+    final data = widget.source.data;
+    if (origin != null && origin.host.isNotEmpty && jar != null) {
+      data[sourceLoginCookies] = captureSourceLoginCookies(
+        origin, jar.cookiesMatchingLogin(origin, values),
+      );
+    } else {
+      data.remove(sourceLoginCookies);
+    }
+    data[sourceLoginInputs] = List.of(values);
+    data.remove(sourceLoginNeedsValidation);
+    data.remove('_localStorage');
+    data['account'] = 'ok';
+    await widget.source.saveData();
+    if (mounted) context.pop();
   }
 
   void loginWithWebview() async {
@@ -1584,6 +1616,11 @@ class _LoginPageState extends State<_LoginPage> {
           }
         }
         widget.source.data['_localStorage'] = mappedLocalStorage;
+        widget.source.data.remove(sourceLoginInputs);
+        widget.source.data.remove(sourceLoginNeedsValidation);
+        widget.source.data[sourceLoginCookies] = captureSourceLoginCookies(
+          Uri.parse(url), cookies,
+        );
         await widget.source.saveData();
         SingleInstanceCookieJar.instance?.saveFromResponse(
           Uri.parse(url),
@@ -1659,6 +1696,11 @@ class _LoginPageState extends State<_LoginPage> {
           Log.error("ComicSourcePage", "Failed to parse localStorage JSON\n$e");
         }
         widget.source.data['_localStorage'] = localStorage;
+        widget.source.data.remove(sourceLoginInputs);
+        widget.source.data.remove(sourceLoginNeedsValidation);
+        widget.source.data[sourceLoginCookies] = captureSourceLoginCookies(
+          Uri.parse(url), cookies,
+        );
         await widget.source.saveData();
         success = true;
         widget.config.onLoginWithWebviewSuccess?.call();

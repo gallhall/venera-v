@@ -206,6 +206,7 @@ class DavClient {
     Uri url, {
     Map<String, String> headers = const {},
     Uint8List? body,
+    int? maxBytes,
   }) async {
     isCancelled?.call();
     var last = _lastStart;
@@ -215,6 +216,10 @@ class DavClient {
     }
     _lastStart = _now();
     requests++;
+    final http = transport;
+    if (maxBytes != null && http is HttpDavTransport) {
+      return http.getBounded(url, maxBytes);
+    }
     return transport.send(
       method,
       url,
@@ -233,12 +238,15 @@ class DavClient {
     Map<String, String> headers = const {},
     Uint8List? body,
     void Function()? onRetried,
+    int? maxBytes,
   }) => _serial(() async {
     var attempt = 0;
     while (true) {
       DavResponse r;
       try {
-        r = await _sendOnce(method, url, headers: headers, body: body);
+        r = await _sendOnce(
+          method, url, headers: headers, body: body, maxBytes: maxBytes,
+        );
       } on DavNetworkError catch (e) {
         if (attempt >= policy.retries) {
           throw DavException(DavErrorKind.network, e.message, path: url.path);
@@ -409,8 +417,8 @@ class DavClient {
   }
 
   /// The content of [path]; null when it does not exist.
-  Future<Uint8List?> get(String path) async {
-    var r = await _send('GET', url(path));
+  Future<Uint8List?> get(String path, {int? maxBytes}) async {
+    var r = await _send('GET', url(path), maxBytes: maxBytes);
     if (r.status == 404) return null;
     if (r.status != 200) {
       throw DavException(
@@ -419,6 +427,9 @@ class DavClient {
         path: path,
         status: r.status,
       );
+    }
+    if (maxBytes != null && r.body.length > maxBytes) {
+      throw const DavException(DavErrorKind.protocol, 'file is too large');
     }
     return r.body;
   }
@@ -644,6 +655,37 @@ class HttpDavTransport implements DavTransport {
 
   final Dio dio;
   final String _auth;
+
+  Future<DavResponse> getBounded(Uri url, int maxBytes) async {
+    try {
+      final r = await dio.getUri<ResponseBody>(
+        url,
+        options: Options(
+          headers: {'Authorization': _auth, 'Cache-Control': 'no-cache'},
+          responseType: ResponseType.stream,
+          followRedirects: false,
+          validateStatus: (_) => true,
+        ),
+      );
+      final data = BytesBuilder(copy: false);
+      final headers = <String, String>{};
+      r.headers.forEach((k, v) => headers[k.toLowerCase()] = v.join(', '));
+      await for (final chunk in r.data!.stream) {
+        if (r.statusCode != 200) break;
+        if (data.length + chunk.length > maxBytes) {
+          throw const DavException(DavErrorKind.protocol, 'file is too large');
+        }
+        data.add(chunk);
+      }
+      return DavResponse(
+        r.statusCode ?? 0,
+        data.takeBytes(),
+        headers: headers,
+      );
+    } on DioException catch (e) {
+      throw DavNetworkError(e.type.name);
+    }
+  }
 
   @override
   Future<DavResponse> send(
