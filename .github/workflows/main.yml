@@ -1,12 +1,18 @@
 name: Build ALL
 run-name: Build ALL
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ios_playback_diagnostics:
+        description: Enable playback diagnostics in the iOS test IPA
+        type: boolean
+        default: false
   release:
     types: [published]
 
 jobs:
   Build_MacOS:
+    if: inputs.ios_playback_diagnostics != true
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v3
@@ -87,7 +93,10 @@ jobs:
           architecture: x64
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign --dart-define-from-file=dart_defines.json
+      - name: Expose the selected iOS video renderer
+        if: inputs.ios_playback_diagnostics == true
+        run: dart patch/ios_video_diagnostics.dart
+      - run: flutter build ios --release --no-codesign --no-pub --dart-define-from-file=dart_defines.json --dart-define=IOS_PLAYBACK_DIAGNOSTICS=${{ inputs.ios_playback_diagnostics == true }}
       - run: |
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
@@ -103,6 +112,7 @@ jobs:
           name: ios_build
           path: result/
   Build_Android:
+    if: inputs.ios_playback_diagnostics != true
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -142,6 +152,7 @@ jobs:
           name: apks
           path: build/app/outputs/apk/release
   Build_Windows:
+    if: inputs.ios_playback_diagnostics != true
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
@@ -175,6 +186,7 @@ jobs:
           name: windows_build
           path: build/windows/Venera-*
   Build_Linux:
+    if: inputs.ios_playback_diagnostics != true
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -235,6 +247,7 @@ jobs:
           name: arch_build
           path: build/linux/arch/
   Build_Linux_ARM64:
+    if: inputs.ios_playback_diagnostics != true
     runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4

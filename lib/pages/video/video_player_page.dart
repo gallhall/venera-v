@@ -643,6 +643,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     var p = active;
     var elapsed = DateTime.now().difference(event.openTime).inMilliseconds;
     if (p != null) {
+      p.startIosDiagnostics(torrent: lease?.isTorrent == true);
       unawaited(p.describeOutput().then((output) {
         Log.info('Video', 'Started after $elapsed ms: $output');
       }));

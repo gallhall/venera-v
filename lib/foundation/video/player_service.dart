@@ -16,6 +16,7 @@ import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
 import 'package:venera/foundation/video/anime4k.dart';
 import 'package:venera/foundation/video/anime4k_assets.dart';
+import 'package:venera/foundation/video/ios_playback_diagnostics.dart';
 import 'package:venera/foundation/video/stream_failures.dart';
 import 'package:venera/foundation/video/system_subtitle_fonts.dart';
 import 'package:venera/network/cookie_jar.dart';
@@ -231,12 +232,16 @@ class PlayerService implements VideoPlayback {
         },
       ),
       _player.stream.completed.listen(_onCompleted),
-      _player.stream.buffering.listen(_onBuffering),
+      _player.stream.buffering.listen((buffering) {
+        _iosDiagnostics?.setPlaying(isPlaying && !buffering);
+        _onBuffering(buffering);
+      }),
       _player.stream.videoParams.listen((_) {
         _updateAnime4kSource();
         _scheduleAnime4kRenderSize();
       }),
       _player.stream.playing.listen((playing) {
+        _iosDiagnostics?.setPlaying(playing && !isBuffering);
         if (playing) {
           _checkAnime4k();
         }
@@ -716,6 +721,58 @@ class PlayerService implements VideoPlayback {
             '${e.value}=${values[e.key + 4] ?? '?'}').join(', ')}';
   }
 
+  IosPlaybackDiagnostics? _iosDiagnostics;
+
+  void startIosDiagnostics({required bool torrent}) {
+    if (!IosPlaybackDiagnostics.enabled || !Platform.isIOS ||
+        _disposed || _player.state.completed || _iosDiagnostics != null) {
+      return;
+    }
+    final diagnostics = _iosDiagnostics = IosPlaybackDiagnostics(
+      source: torrent ? 'bt' : 'non-bt',
+      read: _sampleIosPlayback,
+      log: (line) => Log.info('iOS Playback', line),
+    );
+    diagnostics.start(playing: isPlaying && !isBuffering);
+  }
+
+  Future<IosVideoSample> _sampleIosPlayback() async {
+    Future<String> thermal() async {
+      try {
+        final sample = await PlatformCapabilities.instance.thermal.sample();
+        return IosPlaybackDiagnostics.thermalName(sample?['status']);
+      } catch (_) {
+        return 'unknown';
+      }
+    }
+    Future<String> renderer() async {
+      try {
+        final handle = await _player.handle.timeout(const Duration(seconds: 1));
+        return IosPlaybackDiagnostics.rendererOf(handle);
+      } catch (_) {
+        return 'unknown';
+      }
+    }
+    final values = await Future.wait([
+      thermal(),
+      _anime4kProperty('hwdec-current'),
+      _anime4kProperty('current-vo'),
+      renderer(),
+    ]);
+    return (
+      thermal: values[0] ?? 'unknown',
+      hwdec: values[1] ?? 'unknown',
+      vo: values[2] ?? 'unknown',
+      renderer: values[3] ?? 'unknown',
+      anime4k: _effectiveAnime4kPreset.name,
+    );
+  }
+
+  void _endIosDiagnostics(String reason) {
+    _iosDiagnostics?.finish(reason);
+    _iosDiagnostics = null;
+  }
+
   Future<String?> _anime4kProperty(String name) async {
     final platform = _player.platform;
     if (_disposed || platform is! NativePlayer) {
@@ -1126,6 +1183,7 @@ class PlayerService implements VideoPlayback {
     Duration? start,
     bool play = true,
   }) async {
+    _endIosDiagnostics('reopen');
     ++_anime4kCheck;
     _anime4kOutputSize = null;
     ++_anime4kGeneration;
@@ -1477,6 +1535,7 @@ class PlayerService implements VideoPlayback {
   @override
   Future<void> dispose() async {
     if (_disposed) return;
+    _endIosDiagnostics('dispose');
     _disposed = true;
     ++_anime4kCheck;
     _anime4kSizeTimer?.cancel();
