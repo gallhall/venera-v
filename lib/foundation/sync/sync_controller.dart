@@ -388,6 +388,7 @@ class SyncController with ChangeNotifier {
                   publishLimits: vaultPublishLimits,
                   listingLimits: const ListingLimits(devices: 20),
                 ),
+                deviceName: Platform.operatingSystem,
               ).run(
                 cancel,
                 keyIdentity: key.keyId,
@@ -402,7 +403,9 @@ class SyncController with ChangeNotifier {
                 .subtract(Duration(days: archiveDays))
                 .millisecondsSinceEpoch,
           );
-          _sourceChoices = List.unmodifiable(vaultChoices(store));
+          _sourceChoices = List.unmodifiable(
+            vaultChoices(store, markCurrent: issue != VaultIssue.changed),
+          );
           return issue;
         } finally {
           store.dispose();

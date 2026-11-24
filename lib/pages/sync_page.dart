@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
+import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/context.dart';
 import 'package:venera/foundation/sync/canonical_json.dart' show canonicalize;
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
@@ -490,7 +491,10 @@ class _SourceConflictsPageState extends State<_SourceConflictsPage> with _Follow
           if (c.running) const LinearProgressIndicator(),
           for (final choice in items)
             ListTile(
-              title: Text(choice.key.entity.last.toString()),
+              leading: choice.current
+                  ? const Icon(Icons.check_circle_outline)
+                  : null,
+              title: Text(_choiceTitle(choice)),
               subtitle: Text(_choiceText(choice)),
               trailing: TextButton(
                 onPressed: c.running ? null : () => _useVersion(context, c, choice),
@@ -502,22 +506,57 @@ class _SourceConflictsPageState extends State<_SourceConflictsPage> with _Follow
     );
   }
 
+  String _choiceTitle(VaultChoice choice) => switch (choice.key.entity) {
+    ['source-setting', 'comicSourceListUrl'] => 'Comic source list address'.tl,
+    ['source-setting', 'kazumiRuleRepoUrl'] =>
+      'Kazumi rule repository address'.tl,
+    ['source-setting', 'animekoSubscriptionUrl'] =>
+      'Animeko subscription address'.tl,
+    ['source-account', 'bangumi'] => 'Bangumi',
+    ['source', String key] => ComicSource.find(key)?.name ?? 'Unknown source'.tl,
+    _ => 'Source settings'.tl,
+  };
+
+  String _choiceDevice(VaultChoice choice) {
+    final number = choice.peerNumber;
+    if (number == null) return 'This device'.tl;
+    final platform = switch (choice.deviceName) {
+      'windows' => 'Windows',
+      'android' => 'Android',
+      'ios' => 'iOS',
+      'macos' => 'macOS',
+      'linux' => 'Linux',
+      'fuchsia' => 'Fuchsia',
+      _ => null,
+    };
+    final device = 'Device @n'.tlParams({'n': number});
+    return platform == null ? device : '$platform · $device';
+  }
+
   String _choiceText(VaultChoice choice) {
     final kind = switch (choice.key.register) {
       'login' => 'Sign-in'.tl,
       'definition' => 'Source definition'.tl,
       _ => 'Source settings'.tl,
     };
-    final operation = choice.deleted
-        ? 'Deleted'.tl
-        : choice.archived ? 'Archived'.tl : 'Concurrent version'.tl;
-    final fingerprint = choice.branch.hash.substring(0, 8);
+    final operation = choice.archived
+        ? 'Archived'.tl
+        : choice.current ? 'Currently in use'.tl : 'Concurrent version'.tl;
     final date = choice.at > 0 && choice.at < 8640000000000000
         ? MaterialLocalizations.of(context).formatShortDate(
             DateTime.fromMillisecondsSinceEpoch(choice.at),
           )
         : null;
-    return [kind, operation, if (date != null) date, fingerprint].join(' · ');
+    return [
+      [
+        operation,
+        _choiceDevice(choice),
+        if (choice.deleted) 'Deleted'.tl,
+        if (choice.key.entity.first != 'source-setting') kind,
+        if (date != null) date,
+      ].join(' · '),
+      if (choice.address != null) choice.address!,
+    ].join('\n');
   }
 
   Future<void> _useVersion(

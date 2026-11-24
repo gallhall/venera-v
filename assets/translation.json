@@ -1,5 +1,10 @@
 {
   "zh_CN": {
+    "Comic source list address": "漫画源列表地址",
+    "Kazumi rule repository address": "Kazumi 规则仓库地址",
+    "Animeko subscription address": "Animeko 订阅地址",
+    "Currently in use": "当前生效",
+    "Device @n": "设备 @n",
     "A source or sign-in disappeared without a recorded removal. Encrypted source sync is paused.": "检测到源或登录凭据缺失，且没有对应的删除记录。加密源同步已暂停。",
     "Encrypted source data exceeds the size limit.": "加密源数据超过大小限制。",
     "Use synced login credentials": "使用已同步的登录凭据",
@@ -1135,6 +1140,11 @@
     "Fill in the WebDAV account first": "请先填写 WebDAV 账号"
   },
   "zh_TW": {
+    "Comic source list address": "漫畫來源清單網址",
+    "Kazumi rule repository address": "Kazumi 規則倉庫網址",
+    "Animeko subscription address": "Animeko 訂閱網址",
+    "Currently in use": "目前生效",
+    "Device @n": "裝置 @n",
     "A source or sign-in disappeared without a recorded removal. Encrypted source sync is paused.": "偵測到來源或登入憑證遺失，且沒有對應的刪除記錄。加密來源同步已暫停。",
     "Encrypted source data exceeds the size limit.": "加密來源資料超過大小限制。",
     "Use synced login credentials": "使用已同步的登入憑證",
