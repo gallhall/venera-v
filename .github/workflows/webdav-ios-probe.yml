@@ -1,0 +1,46 @@
+name: Build WebDAV iOS acceptance probe
+
+on:
+  push:
+    branches: [codex/webdav-ios-acceptance-probe]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.4
+          architecture: x64
+      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - name: Build unsigned device application
+        working-directory: qa/venera-sync-probe
+        run: |
+          flutter pub get --enforce-lockfile
+          dart analyze lib
+          flutter build ios --release --no-codesign
+      - name: Package and verify the IPA
+        working-directory: qa/venera-sync-probe
+        run: |
+          set -euo pipefail
+          app=build/ios/iphoneos/Runner.app
+          test -s "$app/Runner"
+          test -s "$app/Frameworks/App.framework/App"
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = io.venerav.qa.veneraSyncProbe
+          mkdir -p output/Payload
+          ditto "$app" output/Payload/Runner.app
+          cd output
+          zip -qry venera-sync-probe-ios.ipa Payload
+          unzip -tq venera-sync-probe-ios.ipa
+          shasum -a 256 venera-sync-probe-ios.ipa > venera-sync-probe-ios.ipa.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: venera-sync-probe-ios
+          path: qa/venera-sync-probe/output/venera-sync-probe-ios.ipa*
+          if-no-files-found: error
