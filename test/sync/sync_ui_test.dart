@@ -9,11 +9,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' hide Version;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/sync/canonical_json.dart';
+import 'package:venera/foundation/sync/engine/remote_book_codec.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
 import 'package:venera/foundation/sync/local/favorites_adapter.dart';
 import 'package:venera/foundation/sync/merger.dart' as merger;
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_files.dart';
+import 'package:venera/foundation/sync/source_vault/vault.dart';
 import 'package:venera/foundation/sync/sync_actions.dart';
 import 'package:venera/foundation/sync/sync_controller.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
@@ -29,6 +31,13 @@ bool _sqliteAvailable() {
   } catch (_) {
     return false;
   }
+}
+
+class _SourcePreviewController extends SyncController {
+  _SourcePreviewController(this.sourceChoices) : super.forTest();
+
+  @override
+  final List<VaultChoice> sourceChoices;
 }
 
 void main() {
@@ -323,6 +332,58 @@ void main() {
       hlc: Hlc(hlc),
       fields: {'title': title, 'subtitle': '', 'cover': '', 'time': 1},
     );
+
+    testWidgets('source conflicts show the applied version and redact URLs', (
+      tester,
+    ) async {
+      final setting = sourceSetting('comicSourceListUrl');
+      const other = '00000000-0000-4000-8000-bbbbbbbbbbbb';
+      final local = store.issue(
+        setting,
+        fields: {
+          'url':
+              'https://private-user:private-password@catalog.example/private-path?token=private-query#private-fragment',
+        },
+      );
+      final incoming = merger.issue(
+        branches: const [],
+        device: other,
+        counter: 1,
+        hlc: Hlc(time + 10),
+        fields: {'url': 'https://android.example:8443/feed'},
+      );
+      store.merge(
+        SyncState(
+          registers: {
+            setting: [incoming],
+          },
+        ),
+      );
+      store.setSnapshot(setting, vaultDigest(local.fields));
+      final book = loadRemoteBook(store)..names[other] = 'android';
+      saveRemoteBook(store, book);
+      SyncController.instance = _SourcePreviewController(vaultChoices(store));
+
+      await tester.pumpWidget(const MaterialApp(home: SyncPage()));
+      await tester.tap(find.text('Source conflicts and archive'));
+      await tester.pumpAndSettle();
+      expect(find.text('Comic source list address'), findsNWidgets(2));
+      expect(
+        find.textContaining('Currently in use · This device'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Android · Device 1'), findsOneWidget);
+      expect(find.textContaining('https://catalog.example/…'), findsOneWidget);
+      expect(
+        find.textContaining('https://android.example:8443/…'),
+        findsOneWidget,
+      );
+      expect(find.text('Use this version'), findsNWidgets(2));
+      expect(find.textContaining('comicSourceListUrl'), findsNothing);
+      expect(find.textContaining('private-'), findsNothing);
+      expect(find.textContaining(local.hash.substring(0, 8)), findsNothing);
+      expect(find.textContaining(incoming.hash.substring(0, 8)), findsNothing);
+    });
 
     test('a conflict is listed, and keeping a branch resolves it', () {
       var a = peer('00000000-0000-4000-8000-aaaaaaaaaaaa', 'A', time + 5);

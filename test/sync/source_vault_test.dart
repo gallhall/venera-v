@@ -101,7 +101,11 @@ void main() {
     temp.deleteSync(recursive: true);
   });
 
-  SourceVault node(VaultLocal local, {VaultKey? using}) {
+  SourceVault node(
+    VaultLocal local, {
+    VaultKey? using,
+    String deviceName = '',
+  }) {
     final store = SyncStore.create(
       '${temp.path}/${stores.length}.db',
       durable: false,
@@ -116,6 +120,7 @@ void main() {
         stateLimits: vaultStateLimits,
         publishLimits: vaultPublishLimits,
       ),
+      deviceName: deviceName,
     );
   }
 
@@ -353,12 +358,74 @@ void main() {
       b.values[login] = refresh;
       await sync(left);
       expect(await sync(right), VaultIssue.conflict);
-      final choice = vaultChoices(right.store).singleWhere((c) => !c.deleted);
+      final choices = vaultChoices(right.store);
+      expect(choices.singleWhere((c) => c.current).deleted, isTrue);
+      final choice = choices.singleWhere((c) => !c.deleted);
       expect(await sync(right, choice: choice), isNull);
       await sync(left);
       expect(a.values[login], refresh);
       expect(b.values[login], refresh);
       expect(right.store.archiveEntries(), isNotEmpty);
+    },
+  );
+
+  test(
+    'address choices show their device and survive selection on both peers',
+    () async {
+      final setting = sourceSetting('comicSourceListUrl');
+      const windowsValue = {
+        'url':
+            'https://login:password@windows.example:8443/private-token?key=query-secret#fragment-secret',
+      };
+      const androidValue = {'url': 'http://[2001:db8::1]:8080/another-secret'};
+      final a = _Local()..values[setting] = windowsValue;
+      final b = _Local()..values[setting] = androidValue;
+      final left = node(a, deviceName: 'windows');
+      final right = node(b);
+      expect(await sync(left), isNull);
+      expect(await sync(right), VaultIssue.conflict);
+      expect(await sync(left), VaultIssue.conflict);
+
+      final oldPeer = vaultChoices(
+        left.store,
+      ).singleWhere((c) => c.peerNumber != null);
+      expect(oldPeer.deviceName, isEmpty);
+      final upgraded = SourceVault(
+        right.store,
+        b,
+        right.remote,
+        deviceName: 'android',
+      );
+      expect(await sync(upgraded), VaultIssue.conflict);
+      expect(await sync(left), VaultIssue.conflict);
+
+      final choices = vaultChoices(left.store);
+      final local = choices.singleWhere((c) => c.peerNumber == null);
+      final peer = choices.singleWhere((c) => c.peerNumber == 1);
+      expect(local.address, 'https://windows.example:8443/…');
+      expect(peer.address, 'http://[2001:db8::1]:8080/…');
+      expect(peer.deviceName, 'android');
+      expect(
+        choices.singleWhere((c) => c.current).address,
+        a.values[setting] == windowsValue ? local.address : peer.address,
+      );
+      expect(
+        vaultChoices(left.store, markCurrent: false).any((c) => c.current),
+        isFalse,
+      );
+
+      final alternative = choices.singleWhere((c) => !c.current);
+      final chosen = alternative.peerNumber == null
+          ? windowsValue
+          : androidValue;
+      expect(await sync(left, choice: alternative), isNull);
+      expect(await sync(upgraded), isNull);
+      expect(a.values[setting], chosen);
+      expect(b.values[setting], chosen);
+      final archive = vaultChoices(left.store).single;
+      expect(archive.archived, isTrue);
+      expect(archive.current, isFalse);
+      expect(archive.address, choices.singleWhere((c) => c.current).address);
     },
   );
 

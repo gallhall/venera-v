@@ -20,7 +20,7 @@ class VaultFailure implements Exception {
   final VaultIssue issue;
 }
 
-/// Identifiers and timestamps only. Secret fields never enter UI state.
+/// Conflict selection and display metadata. Raw register values are omitted.
 class VaultChoice {
   const VaultChoice(
     this.key,
@@ -29,6 +29,10 @@ class VaultChoice {
     this.at,
     this.deleted, {
     this.archived = false,
+    required this.current,
+    required this.peerNumber,
+    required this.deviceName,
+    this.address,
   });
 
   final RegisterKey key;
@@ -37,33 +41,97 @@ class VaultChoice {
   final int at;
   final bool deleted;
   final bool archived;
+  final bool current;
+  final int? peerNumber;
+  final String deviceName;
+  final String? address;
 }
 
 String _revision(List<Version> branches) =>
     canonicalHash((branches.map((v) => v.body).toList()..sort()));
 
-List<VaultChoice> vaultChoices(SyncStore store) {
+List<VaultChoice> vaultChoices(SyncStore store, {bool markCurrent = true}) {
   final state = store.load();
+  final book = loadRemoteBook(store);
+  final archive = store.archiveEntries().where((item) => !item.version.deleted);
+  final peers = {
+    ...book.devices,
+    for (final branches in state.registers.values)
+      for (final version in branches) version.dot.device,
+    for (final item in archive) item.version.dot.device,
+  }..remove(book.deviceId);
+  final orderedPeers = peers.toList()..sort();
+  final numbers = {
+    for (var i = 0; i < orderedPeers.length; i++) orderedPeers[i]: i + 1,
+  };
+
   VaultChoice choice(
     RegisterKey key,
     Version version, {
     bool archived = false,
-  }) => VaultChoice(
-    key,
-    version.id,
-    _revision(state.branches(key)),
-    version.hlc.physical,
-    version.deleted,
-    archived: archived,
-  );
+    Version? current,
+  }) {
+    final device = version.dot.device;
+    return VaultChoice(
+      key,
+      version.id,
+      _revision(state.branches(key)),
+      version.hlc.physical,
+      version.deleted,
+      archived: archived,
+      current: current?.id == version.id,
+      peerNumber: numbers[device],
+      deviceName: book.names[device] ?? '',
+      address: key.entity.first == 'source-setting' && !version.deleted
+          ? _addressPreview(version.fields['url'])
+          : null,
+    );
+  }
+
+  Iterable<VaultChoice> conflict(
+    RegisterKey key,
+    List<Version> branches,
+  ) sync* {
+    Version? current;
+    if (markCurrent) {
+      final snapshot = store.snapshot(key);
+      final projected = _projectedVersion(state, key);
+      if (projected != null && snapshot == vaultDigest(_value(projected))) {
+        current = projected;
+      } else if (snapshot != null) {
+        // A script can still be waiting for approval on this device.
+        current = branches
+            .where((v) => !v.deleted && vaultDigest(v.fields) == snapshot)
+            .firstOrNull;
+      }
+    }
+    for (final version in branches) {
+      yield choice(key, version, current: current);
+    }
+  }
+
   return [
     for (final entry in state.registers.entries)
-      if (entry.value.length > 1)
-        for (final version in entry.value) choice(entry.key, version),
-    for (final entry in store.archiveEntries())
-      if (!entry.version.deleted)
-        choice(entry.key, entry.version, archived: true),
+      if (entry.value.length > 1) ...conflict(entry.key, entry.value),
+    for (final item in archive) choice(item.key, item.version, archived: true),
   ];
+}
+
+String? _addressPreview(Object? value) {
+  final uri = value is String ? Uri.tryParse(value) : null;
+  if (uri == null ||
+      (uri.scheme != 'https' && uri.scheme != 'http') ||
+      uri.host.isEmpty) {
+    return null;
+  }
+  // Tokens can appear anywhere after the host, including in path segments.
+  final origin = Uri(scheme: uri.scheme, host: uri.host, port: uri.port).origin;
+  final redacted =
+      uri.userInfo.isNotEmpty ||
+      (uri.path.isNotEmpty && uri.path != '/') ||
+      uri.hasQuery ||
+      uri.hasFragment;
+  return redacted ? '$origin/…' : origin;
 }
 
 /// A script is executable. Approval is tied to the exact content.
@@ -121,31 +189,38 @@ const _redoPosition = 'source_redo_position';
 const _restore = 'source_restore_generation';
 const _keyIdentity = 'source_key_identity';
 
+Version? _projectedVersion(SyncState state, RegisterKey key) {
+  final branches = state.branches(key);
+  if (key.entity.first == 'source' && key.register != 'definition') {
+    final definitions = state.branches(
+      sourceRegister(key.entity.last as String, 'definition'),
+    );
+    if (definitions.isNotEmpty && definitions.every((v) => v.deleted)) {
+      return null;
+    }
+  }
+  // A logout concurrent with a refresh or change to an offline session
+  // wins. Logging in after observing that logout creates a new session.
+  if (key.register == 'login') {
+    final logout = branches.where((v) => v.deleted).firstOrNull;
+    if (logout != null) return logout;
+  }
+  return display(branches).shown ?? branches.firstOrNull;
+}
+
+VaultFields? _value(Version? version) =>
+    version == null || version.deleted ? null : version.fields;
+
 /// Uses the existing version vectors, baseline admission, and immutable
 /// publication in a separate store. Vault snapshots are never included in the
 /// history/favorites protocol or legacy backup.
 class SourceVault {
-  SourceVault(this.store, this.local, this.remote);
+  SourceVault(this.store, this.local, this.remote, {this.deviceName = ''});
 
   final SyncStore store;
   final VaultLocal local;
   final RemoteStore remote;
-
-  VaultFields? _shown(SyncState state, RegisterKey key) {
-    final branches = state.branches(key);
-    if (key.entity.first == 'source' && key.register != 'definition') {
-      final definitions = state.branches(
-        sourceRegister(key.entity.last as String, 'definition'),
-      );
-      if (definitions.isNotEmpty && definitions.every((v) => v.deleted)) {
-        return null;
-      }
-    }
-    // A logout concurrent with a refresh or change to an offline session
-    // wins. Logging in after observing that logout creates a new session.
-    if (key.register == 'login' && branches.any((v) => v.deleted)) return null;
-    return display(branches).shown?.fields;
-  }
+  final String deviceName;
 
   void _check(SyncState state) {
     if (state.aliases.isNotEmpty ||
@@ -172,7 +247,7 @@ class SourceVault {
     if (previousKey != null && previousKey != keyIdentity) {
       throw const VaultFailure(VaultIssue.authentication);
     }
-    final book = loadRemoteBook(store);
+    final book = loadRemoteBook(store, deviceName: deviceName);
     onStage(SyncStage.download);
     final read = await remote.read(book, verifyKnownHeads: true);
     if (!read.formatMissing) {
@@ -284,7 +359,12 @@ class SourceVault {
         if (device.device == book.deviceId) continue;
         book.devices.add(device.device);
         final latest = device.latest;
-        if (latest != null) book.peers[device.device] = latest.ref;
+        if (latest != null) {
+          book.peers[device.device] = latest.ref;
+          if (latest.deviceName.isNotEmpty) {
+            book.names[device.device] = latest.deviceName;
+          }
+        }
         for (final head in device.heads) {
           book.devices.addAll(head.registry);
         }
@@ -299,7 +379,7 @@ class SourceVault {
       ..sort((a, b) => _applyOrder(a).compareTo(_applyOrder(b)));
     onStage(SyncStage.check);
     for (final key in ordered) {
-      final after = _shown(merged, key);
+      final after = _value(_projectedVersion(merged, key));
       final expected = vaultDigest(before[key]);
       final digest = vaultDigest(after);
       if (expected == digest) continue;
@@ -333,7 +413,9 @@ class SourceVault {
     // Compare against this device's confirmed state, not the display values.
     // A new concurrent branch or tombstone still needs to be published.
     final published = read.devices[book.deviceId]?.states.values.firstOrNull;
-    if (book.publishing != null || published?.canonical != merged.canonical) {
+    if (book.publishing != null ||
+        published?.canonical != merged.canonical ||
+        (deviceName.isNotEmpty && book.confirmed?.deviceName != deviceName)) {
       onStage(SyncStage.publish);
       final result = await remote.publish(
         book,
@@ -383,7 +465,7 @@ class SourceVault {
     for (var i = start; i < ops.length; i++) {
       final op = ops[i];
       final key = RegisterKey((op[0] as List).cast<Object>(), op[1] as String);
-      final after = _shown(state, key);
+      final after = _value(_projectedVersion(state, key));
       final applied = await local.put(
         key,
         op[2] == '' ? null : op[2] as String,
