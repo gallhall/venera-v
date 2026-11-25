@@ -1,6 +1,7 @@
 // The WebDAV access layer: errors and retries (spec §11), request pacing
 // (protocol.md §7) and whole listings (protocol.md §4.1 L1).
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -25,6 +26,42 @@ class FakeTime {
 
 Uint8List bytes(String s) => Uint8List.fromList(utf8.encode(s));
 
+class InterruptedBodyAdapter implements HttpClientAdapter {
+  InterruptedBodyAdapter(
+    this.interruptions, {
+    this.failure = const HttpException('connection closed'),
+  });
+
+  final int interruptions;
+  final Object failure;
+  int requests = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final interrupted = ++requests <= interruptions;
+    Stream<Uint8List> body() async* {
+      yield bytes('pref');
+      if (interrupted) throw failure;
+      yield bytes('ix');
+    }
+
+    return ResponseBody(
+      body(),
+      200,
+      headers: {
+        'content-length': ['6'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 void main() {
   late MemoryDav dav;
   late FakeTime time;
@@ -35,6 +72,76 @@ void main() {
     time = FakeTime();
     client = DavClient(dav, dav.root, sleep: time.sleep, now: () => time.now);
   });
+
+  test(
+    'bounded downloads retry a cut response body without keeping bytes',
+    () async {
+      final dio = Dio()..httpClientAdapter = InterruptedBodyAdapter(1);
+      addTearDown(() => dio.close(force: true));
+      final client = DavClient(
+        HttpDavTransport(dio, user: 'test', password: ''),
+        dav.root,
+        sleep: time.sleep,
+        now: () => time.now,
+      );
+
+      expect(await client.get('state', maxBytes: 6), bytes('prefix'));
+      expect(client.requests, 2);
+      expect(time.waits, [const Duration(seconds: 1)]);
+    },
+  );
+
+  test('rate-limited maintenance does not use foreground retries', () async {
+    dav.intercept = (_, _, _, _, _) => davStatus(503);
+    await expectLater(
+      client.withMaintenanceBudget(() => client.get('state')),
+      throwsA(isA<DavMaintenanceDeferred>()),
+    );
+    expect(client.requests, 1);
+    expect(time.waits, isEmpty);
+    dav.intercept = null;
+    expect(await client.get('state'), isNull);
+    expect(client.requests, 2);
+  });
+
+  test(
+    'persistent bounded body errors exhaust the network retry policy',
+    () async {
+      // RHttpAdapter can send an object that does not implement Exception.
+      final dio = Dio()
+        ..httpClientAdapter = InterruptedBodyAdapter(4, failure: Object());
+      addTearDown(() => dio.close(force: true));
+      final client = DavClient(
+        HttpDavTransport(dio, user: 'test', password: ''),
+        dav.root,
+        sleep: time.sleep,
+        now: () => time.now,
+      );
+
+      await expectLater(
+        client.get('state', maxBytes: 6),
+        throwsA(
+          isA<DavException>().having(
+            (error) => error.kind,
+            'kind',
+            DavErrorKind.network,
+          ),
+        ),
+      );
+      expect(client.requests, 4);
+      await expectLater(
+        client.get('state', maxBytes: 5),
+        throwsA(
+          isA<DavException>().having(
+            (error) => error.kind,
+            'kind',
+            DavErrorKind.protocol,
+          ),
+        ),
+      );
+      expect(client.requests, 5);
+    },
+  );
 
   group('listing', () {
     test('lists files and directories, decoding names', () async {

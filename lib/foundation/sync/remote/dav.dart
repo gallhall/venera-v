@@ -17,6 +17,7 @@ class DavEntry {
     required this.isDir,
     this.size,
     this.sha256,
+    this.etag,
   });
 
   /// The last path segment, decoded.
@@ -27,6 +28,7 @@ class DavEntry {
   /// A SHA-256 the server reports for the content (e.g. `oc:checksums`),
   /// lowercase hex.
   final String? sha256;
+  final String? etag;
 
   @override
   String toString() => isDir ? '$name/' : '$name ($size)';
@@ -107,6 +109,17 @@ class DavNetworkError implements Exception {
   String toString() => 'DavNetworkError: $message';
 }
 
+/// Best-effort cleanup used its request budget or the server deferred it.
+class DavMaintenanceDeferred implements Exception {
+  const DavMaintenanceDeferred();
+}
+
+class _MaintenanceBudget {
+  _MaintenanceBudget(this.remaining);
+
+  int remaining;
+}
+
 /// A listing that cannot be trusted to be complete (protocol.md §4.1 L1).
 class DavListingUnreliable implements Exception {
   const DavListingUnreliable(this.path, this.reason);
@@ -137,6 +150,7 @@ class DavPolicy {
     this.busyBudget = const Duration(minutes: 5),
     this.minBusyWait = const Duration(seconds: 1),
     this.maxPages = 20,
+    this.maintenanceRequests = 160,
   });
 
   /// Between the starts of two requests.
@@ -157,6 +171,9 @@ class DavPolicy {
 
   /// Pages of one listing (`Link: rel="next"`).
   final int maxPages;
+
+  /// Maximum requests for one cleanup, including pages and retries.
+  final int maintenanceRequests;
 }
 
 /// The WebDAV client of one sync. Requests go one at a time; the [root] is
@@ -191,6 +208,15 @@ class DavClient {
   /// Requests sent, including pages and retries.
   int requests = 0;
 
+  _MaintenanceBudget? get _maintenance =>
+      Zone.current[this] as _MaintenanceBudget?;
+
+  /// Cleanup is optional. Independent foreground requests keep their policy.
+  Future<T> withMaintenanceBudget<T>(Future<T> Function() run) => runZoned(
+    run,
+    zoneValues: {this: _MaintenanceBudget(policy.maintenanceRequests)},
+  );
+
   Uri url(String path) =>
       root.resolve(path.split('/').map(Uri.encodeComponent).join('/'));
 
@@ -209,6 +235,11 @@ class DavClient {
     int? maxBytes,
   }) async {
     isCancelled?.call();
+    final maintenance = _maintenance;
+    if (maintenance != null) {
+      if (maintenance.remaining <= 0) throw const DavMaintenanceDeferred();
+      maintenance.remaining--;
+    }
     var last = _lastStart;
     if (last != null) {
       var gap = _now().difference(last);
@@ -245,7 +276,11 @@ class DavClient {
       DavResponse r;
       try {
         r = await _sendOnce(
-          method, url, headers: headers, body: body, maxBytes: maxBytes,
+          method,
+          url,
+          headers: headers,
+          body: body,
+          maxBytes: maxBytes,
         );
       } on DavNetworkError catch (e) {
         if (attempt >= policy.retries) {
@@ -279,6 +314,7 @@ class DavClient {
             status: 507,
           );
         case 503:
+          if (_maintenance != null) throw const DavMaintenanceDeferred();
           var wait = _retryAfter(r) ?? policy.busyWait;
           // A Retry-After of 0 or in the past still counts as a wait, so
           // repeated 503s always run out of the budget.
@@ -297,6 +333,7 @@ class DavClient {
           continue;
         case 423:
         case 429:
+          if (_maintenance != null) throw const DavMaintenanceDeferred();
           if (attempt >= policy.retries) {
             throw DavException(
               DavErrorKind.busy,
@@ -341,6 +378,12 @@ class DavClient {
       '<d:resourcetype/><d:getcontentlength/>'
       '</d:prop></d:propfind>';
 
+  static const _propfindCollection =
+      '<?xml version="1.0" encoding="utf-8"?>'
+      '<d:propfind xmlns:d="DAV:"><d:prop>'
+      '<d:resourcetype/><d:getcontentlength/><d:getetag/>'
+      '</d:prop></d:propfind>';
+
   static const _propfindStat =
       '<?xml version="1.0" encoding="utf-8"?>'
       '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop>'
@@ -356,6 +399,9 @@ class DavClient {
     var next = first;
     var out = <DavEntry>[];
     var seen = <String>{};
+    final body = utf8.encode(
+      _maintenance == null ? _propfindList : _propfindCollection,
+    );
     for (var page = 1; ; page++) {
       if (page > policy.maxPages) {
         throw DavListingUnreliable(path, 'more than ${policy.maxPages} pages');
@@ -367,7 +413,7 @@ class DavClient {
           'Depth': '1',
           'Content-Type': 'application/xml; charset=utf-8',
         },
-        body: utf8.encode(_propfindList),
+        body: body,
       );
       if (r.status == 404 && page == 1) return null;
       if (r.status != 207) {
@@ -539,6 +585,7 @@ class DavClient {
       bool? isDir;
       int? size;
       String? sha;
+      String? etag;
       for (var ps in _children(resp, 'propstat')) {
         var st = _children(ps, 'status').firstOrNull?.innerText ?? '';
         if (_isStatus(st, 404)) continue;
@@ -553,6 +600,9 @@ class DavClient {
                 isDir = p.childElements.any((c) => c.localName == 'collection');
               case 'getcontentlength':
                 size = int.tryParse(p.innerText.trim());
+              case 'getetag':
+                final tag = p.innerText.trim();
+                if (tag.isNotEmpty && tag.length <= 1024) etag = tag;
               case 'checksums':
                 for (var token in p.innerText.split(RegExp(r'\s+'))) {
                   if (token.toUpperCase().startsWith('SHA256:')) {
@@ -579,7 +629,7 @@ class DavClient {
       }
       out.add((
         self,
-        DavEntry(name: name, isDir: isDir, size: size, sha256: sha),
+        DavEntry(name: name, isDir: isDir, size: size, sha256: sha, etag: etag),
       ));
     }
     if (strict && !out.any((e) => e.$1)) {
@@ -670,18 +720,33 @@ class HttpDavTransport implements DavTransport {
       final data = BytesBuilder(copy: false);
       final headers = <String, String>{};
       r.headers.forEach((k, v) => headers[k.toLowerCase()] = v.join(', '));
-      await for (final chunk in r.data!.stream) {
-        if (r.statusCode != 200) break;
-        if (data.length + chunk.length > maxBytes) {
-          throw const DavException(DavErrorKind.protocol, 'file is too large');
+      final chunks = StreamIterator(r.data!.stream);
+      Future<bool> nextChunk() async {
+        try {
+          return await chunks.moveNext();
+        } catch (_) {
+          // Dio hands off the stream before the response body finishes.
+          // Transport errors can escape directly from it.
+          throw const DavNetworkError('response body interrupted');
         }
-        data.add(chunk);
       }
-      return DavResponse(
-        r.statusCode ?? 0,
-        data.takeBytes(),
-        headers: headers,
-      );
+
+      try {
+        while (await nextChunk()) {
+          if (r.statusCode != 200) break;
+          final chunk = chunks.current;
+          if (data.length + chunk.length > maxBytes) {
+            throw const DavException(
+              DavErrorKind.protocol,
+              'file is too large',
+            );
+          }
+          data.add(chunk);
+        }
+      } finally {
+        await chunks.cancel();
+      }
+      return DavResponse(r.statusCode ?? 0, data.takeBytes(), headers: headers);
     } on DioException catch (e) {
       throw DavNetworkError(e.type.name);
     }

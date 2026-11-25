@@ -30,6 +30,8 @@ class RemoteBook {
     this.trust = const ServerTrust(),
     Set<Problem>? problems,
     this.publishes = 0,
+    this.collectionDeferredAt,
+    Map<String, CollectionManifest>? collectionManifests,
   }) : peers = peers ?? {},
        devices = devices ?? {},
        ownFiles = ownFiles ?? {},
@@ -37,7 +39,8 @@ class RemoteBook {
        retiredCleanup = retiredCleanup ?? {},
        deletingFiles = deletingFiles ?? {},
        names = names ?? {},
-       problems = problems ?? {};
+       problems = problems ?? {},
+       collectionManifests = collectionManifests ?? {};
 
   final String deviceId;
   final String deviceName;
@@ -74,6 +77,26 @@ class RemoteBook {
 
   /// Publishes so far, for the spot check every 10th.
   int publishes;
+
+  /// Local backoff after optional maintenance consumed its budget.
+  DateTime? collectionDeferredAt;
+
+  /// Verified immutable manifests from an unfinished cleanup, keyed by path.
+  Map<String, CollectionManifest> collectionManifests;
+}
+
+class CollectionManifest {
+  const CollectionManifest(this.manifest, {this.size, this.etag});
+
+  final Manifest manifest;
+  final int? size;
+  final String? etag;
+
+  bool matches(DavEntry entry) =>
+      !entry.isDir &&
+      (size != null || etag != null) &&
+      size == entry.size &&
+      etag == entry.etag;
 }
 
 /// A publish in progress, written before the first PUT.
@@ -116,6 +139,7 @@ class DeviceRead {
 
   /// Every valid manifest read, by generation.
   final manifests = <Manifest>[];
+  final _verifiedManifestPaths = <String, Manifest>{};
 
   /// Valid manifests no other valid manifest names as `prev`.
   final heads = <Manifest>[];
@@ -261,9 +285,13 @@ class RemoteStore {
   /// Reads every device (§4, §4.1). Throws [ListingUnreliable] or
   /// [RemoteFormatNewer] without touching anything; network and account
   /// errors come as [DavException].
-  Future<RemoteRead> read(
+  Future<RemoteRead> read(RemoteBook book, {bool verifyKnownHeads = false}) =>
+      _read(book, verifyKnownHeads: verifyKnownHeads);
+
+  Future<RemoteRead> _read(
     RemoteBook book, {
-    bool verifyKnownHeads = false,
+    required bool verifyKnownHeads,
+    Map<String, CollectionManifest>? collectionManifests,
   }) async {
     var result = RemoteRead();
     var top = await _list(RemotePaths.root, 'L2', listingLimits.devices) ?? [];
@@ -293,12 +321,18 @@ class RemoteStore {
       }
     }
     // L5: this device's own files are all still there (checked per shard).
-    for (var d in listed) {
+    // For cleanup, verify our chain after the peers whose acks we depend on.
+    final order = listed.toList();
+    if (verifyKnownHeads && order.remove(book.deviceId)) {
+      order.add(book.deviceId);
+    }
+    for (var d in order) {
       result.devices[d] = await _readDevice(
         d,
         book,
         result,
         verifyKnownHeads: verifyKnownHeads,
+        collectionManifests: collectionManifests,
       );
     }
     var own = book.ownFiles.keys.toSet().difference(book.deletingFiles);
@@ -378,6 +412,7 @@ class RemoteStore {
     RemoteBook book,
     RemoteRead result, {
     bool verifyKnownHeads = false,
+    Map<String, CollectionManifest>? collectionManifests,
   }) async {
     var dr = DeviceRead(device);
     var dirPath = RemotePaths.device(device);
@@ -416,6 +451,7 @@ class RemoteStore {
     var listing = <String, Set<String>>{};
     var byRef = <ManifestRef, Manifest>{};
     var pathOf = <ManifestRef, String>{};
+    final resumed = <ManifestRef, String>{};
     var invalidRefs = <ManifestRef>{};
     Future<void> readShard(int shard) async {
       var path = RemotePaths.shard(device, shard);
@@ -431,17 +467,29 @@ class RemoteStore {
             !markers.any((marker) => marker.head.generation == g)) {
           continue;
         }
-        var bytes = await dav.get('$path/${e.name}');
-        if (bytes == null) {
-          result.invalid.add(Problem(device, g, 'manifest vanished'));
-          continue;
-        }
+        final file = '$path/${e.name}';
+        final prior = collectionManifests?[file];
         try {
-          var m = Manifest.decode(bytes);
+          final reused = prior != null && prior.matches(e);
+          final Manifest m;
+          if (reused) {
+            m = prior.manifest;
+          } else {
+            collectionManifests?.remove(file);
+            final bytes = await dav.get(file);
+            if (bytes == null) {
+              throw const RemoteFileInvalid('manifest vanished');
+            }
+            m = Manifest.decode(bytes);
+          }
           if (m.device != device || m.generation != g) {
             throw const RemoteFileInvalid('device or generation');
           }
           if (m.format > syncFormat) throw RemoteFormatNewer(m.format);
+          if (verifyKnownHeads &&
+              (m.format != syncFormat || RemotePaths.shardOf(g) != shard)) {
+            throw const RemoteFileInvalid('manifest format or shard');
+          }
           if (RemotePaths.stateGeneration(m.state.file) != m.generation ||
               (!listing[path]!.contains(m.state.file) &&
                   !markers.any((marker) => marker.names(m)))) {
@@ -449,6 +497,18 @@ class RemoteStore {
           }
           byRef[m.ref] = m;
           pathOf[m.ref] = path;
+          if (collectionManifests != null &&
+              (e.size != null || e.etag != null)) {
+            if (reused) resumed[m.ref] = file;
+            collectionManifests[file] = CollectionManifest(
+              m,
+              size: e.size,
+              etag: e.etag,
+            );
+          }
+          if (verifyKnownHeads) {
+            dr._verifiedManifestPaths['$path/${e.name}'] = m;
+          }
         } on RemoteFileInvalid catch (err) {
           result.invalid.add(Problem(device, g, err.reason));
         }
@@ -547,6 +607,10 @@ class RemoteStore {
       ];
       var broken = false;
       for (var h in heads) {
+        // The latest state and acks must come from a live head, even when
+        // its immutable manifest was already checked in an earlier round.
+        final file = resumed.remove(h.ref);
+        if (file != null) await _verifyCollectionManifest(file, h);
         if ((marker?.head == h.ref &&
                 !listing[pathOf[h.ref]]!.contains(h.state.file)) ||
             (!verifyKnownHeads && h.ref == known) ||
@@ -606,6 +670,16 @@ class RemoteStore {
       result.taints.add(Taint(device, retired.lastCounter + 1, ['E4:$device']));
     }
     return dr;
+  }
+
+  Future<void> _verifyCollectionManifest(String path, Manifest expected) async {
+    final bytes = await dav.get(path);
+    try {
+      if (bytes != null && Manifest.decode(bytes).ref == expected.ref) return;
+    } on RemoteFileInvalid {
+      // A corrupt manifest is treated the same as a changed reference.
+    }
+    throw ListingUnreliable('L4', 'a manifest changed during cleanup');
   }
 
   Manifest? _commonAncestor(
@@ -1180,15 +1254,47 @@ class RemoteStore {
     final me = book.deviceId;
     final head = book.confirmed;
     final now = _now();
+    final deferred = book.collectionDeferredAt;
+    if (deferred != null &&
+        !now.isBefore(deferred) &&
+        now.difference(deferred) < const Duration(minutes: 30)) {
+      return const [];
+    }
     final cutoff = now.subtract(const Duration(days: 1)).millisecondsSinceEpoch;
-    final ownCandidates =
+    final weekAgo = now
+        .subtract(const Duration(days: 7))
+        .millisecondsSinceEpoch;
+    final oldGeneration =
         head != null &&
-        (head.generation > 3 ||
-            book.deletingFiles.isNotEmpty ||
-            [
-              ...book.ownFiles.values,
-              ...book.pendingFiles.values,
-            ].any((t) => t < cutoff));
+        book.ownFiles.entries.any((entry) {
+          if (entry.value >= weekAgo) return false;
+          final name = entry.key.substring(entry.key.lastIndexOf('/') + 1);
+          final generation = RemotePaths.manifestGeneration(name);
+          // The successor's age matters. The head and the two before it stay.
+          return generation != null && generation <= head.generation - 2;
+        });
+    final pending = book.publishing;
+    final orphanCandidates =
+        book.deletingFiles.isNotEmpty ||
+        book.pendingFiles.entries.any(
+          (entry) =>
+              entry.value < cutoff &&
+              entry.key != pending?.manifestPath &&
+              entry.key != pending?.statePath,
+        ) ||
+        book.ownFiles.entries.any((entry) {
+          if (entry.value >= cutoff || entry.key == pending?.statePath) {
+            return false;
+          }
+          final split = entry.key.lastIndexOf('/') + 1;
+          final name = entry.key.substring(split);
+          if (RemotePaths.stateGeneration(name) == null) return false;
+          final manifest =
+              '${entry.key.substring(0, split)}'
+              'manifest-${name.substring(6, name.length - 8)}.json';
+          return !book.ownFiles.containsKey(manifest);
+        });
+    final ownCandidates = head != null && (oldGeneration || orphanCandidates);
     final retirementCandidates = read.retirements.values.any(
       (r) => r.executor == me,
     );
@@ -1197,35 +1303,72 @@ class RemoteStore {
       return const [];
     }
 
-    final RemoteRead fresh;
-    try {
-      fresh = await this.read(book, verifyKnownHeads: true);
-    } on ListingUnreliable {
-      return const [];
-    } on RemoteFormatNewer {
-      return const [];
-    }
-    final verified = mergeStates([state, fresh.incoming]);
-    if (fresh.invalid.isNotEmpty) return const [];
-    final closed = _closedTaints(book, fresh, verified, archived);
-    if (verified.causality.taintStarts.keys.any((id) => !closed.contains(id))) {
-      return const [];
-    }
-    final inactive = {...archived, ...closed};
-    pruneEvicted?.call([
-      verified,
-      for (final d in fresh.devices.values) ...d.states.values,
-    ]);
-
     final deleted = <String>[];
-    if (ownCandidates &&
-        !fresh.retired.containsKey(me) &&
-        fresh.devices[me]?.heads.singleOrNull?.ref == head.ref) {
-      await _collectOwn(book, fresh, head, now, inactive, deleted, save);
-    }
-    for (final marker in fresh.retirements.values) {
-      if (marker.executor == me) {
-        await _collectRetired(book, fresh, marker, inactive, deleted, save);
+    final progress = Map.of(book.collectionManifests);
+    var deferredAgain = false;
+    try {
+      await dav.withMaintenanceBudget(() async {
+        final fresh = await _read(
+          book,
+          verifyKnownHeads: true,
+          collectionManifests: progress,
+        );
+        final listed = {
+          for (final device in fresh.devices.values)
+            ...device._verifiedManifestPaths.keys,
+        };
+        progress.removeWhere((path, _) => !listed.contains(path));
+        final verified = mergeStates([state, fresh.incoming]);
+        if (fresh.invalid.isNotEmpty) return;
+        final closed = _closedTaints(book, fresh, verified, archived);
+        if (verified.causality.taintStarts.keys.any(
+          (id) => !closed.contains(id),
+        )) {
+          return;
+        }
+        final inactive = {...archived, ...closed};
+        pruneEvicted?.call([
+          verified,
+          for (final d in fresh.devices.values) ...d.states.values,
+        ]);
+
+        if (ownCandidates &&
+            !fresh.retired.containsKey(me) &&
+            fresh.devices[me]?.heads.singleOrNull?.ref == head.ref) {
+          await _collectOwn(
+            book,
+            fresh,
+            head,
+            now,
+            inactive,
+            deleted,
+            save,
+            oldGeneration: oldGeneration,
+            orphans: orphanCandidates,
+          );
+        }
+        for (final marker in fresh.retirements.values) {
+          if (marker.executor == me) {
+            await _collectRetired(book, fresh, marker, inactive, deleted, save);
+          }
+        }
+      });
+    } on ListingUnreliable {
+      return deleted;
+    } on RemoteFormatNewer {
+      return deleted;
+    } on DavMaintenanceDeferred {
+      deferredAgain = true;
+      book.collectionDeferredAt = _now();
+      for (final path in deleted) {
+        progress.remove(path);
+      }
+      book.collectionManifests = progress;
+      await save();
+    } finally {
+      if (!deferredAgain && book.collectionManifests.isNotEmpty) {
+        book.collectionManifests.clear();
+        await save();
       }
     }
     return deleted;
@@ -1238,10 +1381,13 @@ class RemoteStore {
     DateTime now,
     Set<String> archived,
     List<String> deleted,
-    Future<void> Function() save,
-  ) async {
+    Future<void> Function() save, {
+    required bool oldGeneration,
+    required bool orphans,
+  }) async {
     final me = book.deviceId;
-    final all = await _allManifests(me);
+    // The maintenance read already verified every listed shard and manifest.
+    final all = fresh.devices[me]?._verifiedManifestPaths;
     final chain = all == null ? null : _singleChain(all, head.ref);
     if (chain == null) return;
     final members = _members(book, fresh, archived)..remove(me);
@@ -1261,9 +1407,10 @@ class RemoteStore {
 
     // A predecessor may be removed only when its next generation is old
     // enough and durably acknowledged. Start at the oldest end of the chain.
-    for (var i = chain.length - 1; i > 0; i--) {
+    for (var i = oldGeneration ? chain.length - 1 : 0; i > 0; i--) {
       final older = chain[i];
-      final next = chain[i - 1].value;
+      final successor = chain[i - 1];
+      final next = successor.value;
       if (older.value.generation >= head.generation - 2 ||
           next.generation > minAck ||
           now.difference(next.publishedAt) <= const Duration(days: 7)) {
@@ -1278,17 +1425,52 @@ class RemoteStore {
           !book.ownFiles.containsKey(statePath)) {
         continue;
       }
+      await _verifyCollectionManifest(older.key, older.value);
+      await _verifyCollectionManifest(successor.key, next);
       if (!await _deleteOwn(book, older.key, deleted, save)) break;
       if (!await _deleteOwn(book, statePath, deleted, save)) break;
     }
 
-    // Re-list every shard and read every remaining manifest before deleting
-    // any orphan, including files that a failed upload may have left.
-    final after = await _allManifests(me);
-    if (after == null || _singleChain(after, head.ref) == null) return;
+    if (orphans && deleted.isEmpty) {
+      // If historical deletes changed the listing, check orphans in a later
+      // round with a freshly verified tree.
+      await _collectOrphans(book, now, all!, deleted, save);
+    }
+
+    // The only directories considered are those emptied by this cleanup
+    // and strictly older than the current writer's shard.
+    final headShard = RemotePaths.shardOf(head.generation);
+    final emptied = {
+      for (final p in deleted)
+        if (p.startsWith('${RemotePaths.device(me)}/'))
+          p.substring(0, p.lastIndexOf('/')),
+    };
+    for (final path in emptied) {
+      final shard = RemotePaths.shardNumber(
+        path.substring(path.lastIndexOf('/') + 1),
+      );
+      if (shard == null || shard >= headShard) continue;
+      try {
+        final children = await _list(path, 'L2', listingLimits.shard);
+        if (children != null && children.isEmpty) await dav.delete(path);
+      } on ListingUnreliable {
+        break;
+      } on DavException {
+        // Leave the empty directory for later.
+      }
+    }
+  }
+
+  Future<void> _collectOrphans(
+    RemoteBook book,
+    DateTime now,
+    Map<String, Manifest> after,
+    List<String> deleted,
+    Future<void> Function() save,
+  ) async {
     final referenced = {
       for (final m in after.values)
-        RemotePaths.file(me, m.generation, m.state.file),
+        RemotePaths.file(book.deviceId, m.generation, m.state.file),
     };
     final cutoff = now.subtract(const Duration(days: 1)).millisecondsSinceEpoch;
     final pending = book.publishing;
@@ -1321,30 +1503,18 @@ class RemoteStore {
           path,
     };
     for (final path in candidates) {
-      if (!await _deleteOwn(book, path, deleted, save)) break;
-    }
-
-    // The only directories considered are those emptied by this cleanup
-    // and strictly older than the current writer's shard.
-    final headShard = RemotePaths.shardOf(head.generation);
-    final emptied = {
-      for (final p in deleted)
-        if (p.startsWith('${RemotePaths.device(me)}/'))
-          p.substring(0, p.lastIndexOf('/')),
-    };
-    for (final path in emptied) {
-      final shard = RemotePaths.shardNumber(
+      // A manifest can only reference a state from its own generation.
+      final generation = RemotePaths.stateGeneration(
         path.substring(path.lastIndexOf('/') + 1),
       );
-      if (shard == null || shard >= headShard) continue;
-      try {
-        final children = await _list(path, 'L2', listingLimits.shard);
-        if (children != null && children.isEmpty) await dav.delete(path);
-      } on ListingUnreliable {
-        break;
-      } on DavException {
-        // Leave the empty directory for later.
+      if (generation != null) {
+        for (final entry in after.entries) {
+          if (entry.value.generation == generation) {
+            await _verifyCollectionManifest(entry.key, entry.value);
+          }
+        }
       }
+      if (!await _deleteOwn(book, path, deleted, save)) break;
     }
   }
 
@@ -1389,30 +1559,29 @@ class RemoteStore {
         )) {
       return;
     }
-    final all = await _allManifests(target);
+    final all = device?._verifiedManifestPaths;
     final chain = all == null ? null : _singleChain(all, head.ref);
     if (chain == null) return;
-    final states = <String>{};
     try {
       for (final entry in chain) {
         final m = entry.value;
         final path = RemotePaths.file(target, m.generation, m.state.file);
-        if (!marker.names(m)) {
+        if (!marker.names(m) && book.retiredCleanup[path] != marker.selfHash) {
           await _verifiedState(m);
         }
-        states.add(path);
+        // Safe to resume verifying the rest of the retired chain under the
+        // same marker. No state is deleted before all manifests are checked.
+        book.retiredCleanup[path] = marker.selfHash;
       }
     } on RemoteFileInvalid {
       return;
     }
     // Persist authority to retry deleting a state after its old manifest
     // has already been removed. The final manifest and marker stay.
-    for (final path in states) {
-      book.retiredCleanup[path] = marker.selfHash;
-    }
     await save();
     for (final old in chain.skip(1).toList().reversed) {
       try {
+        await _verifyCollectionManifest(old.key, old.value);
         await dav.delete(old.key);
         deleted.add(old.key);
       } on DavException {

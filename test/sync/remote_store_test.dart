@@ -4,11 +4,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/sync/engine/remote_book_codec.dart';
 import 'package:venera/foundation/sync/merger.dart';
 import 'package:venera/foundation/sync/remote/dav.dart';
 import 'package:venera/foundation/sync/remote/remote_files.dart';
 import 'package:venera/foundation/sync/remote/remote_store.dart';
 import 'package:venera/foundation/sync/sync_state.dart';
+import 'package:venera/foundation/sync/sync_store.dart';
 import 'package:venera/foundation/sync/version.dart';
 
 import 'support/memory_dav.dart';
@@ -769,6 +771,126 @@ void main() {
         clock.advance(const Duration(days: 3));
       }
     }
+
+    test(
+      '130 young generations do not consume the sync request quota',
+      () async {
+        final writer = node(a);
+        for (var i = 0; i < 130; i++) {
+          expect((await writer.sync()).outcome, PublishOutcome.published);
+        }
+        var requests = 0;
+        dav.intercept = (_, _, _, _, _) =>
+            ++requests > 600 ? davStatus(503) : null;
+        for (var i = 0; i < 3; i++) {
+          final read = await writer.read();
+          expect(
+            (await writer.publish(read)).outcome,
+            PublishOutcome.published,
+          );
+          final syncRequests = requests;
+          expect(await writer.collect(read), isEmpty);
+          expect(requests, syncRequests, reason: 'no eligible maintenance');
+        }
+        expect((await writer.read()).devices[a]!.latest!.generation, 133);
+
+        dav.intercept = null;
+        clock.advance(const Duration(days: 8));
+        final aged = await writer.read();
+        final before = dav.log.length;
+        expect(await writer.collect(aged), isNotEmpty);
+        expect(dav.log.length - before, lessThanOrEqualTo(160));
+        expect((await node(b).read()).devices[a]!.latest!.generation, 133);
+      },
+    );
+
+    test('maintenance reserves requests for the next sync', () async {
+      final writer = node(a);
+      for (var i = 0; i < 5; i++) {
+        await writer.sync();
+      }
+      clock.advance(const Duration(days: 8));
+      final client = DavClient(
+        dav,
+        dav.root,
+        policy: const DavPolicy(maintenanceRequests: 4),
+        sleep: (_) async {},
+        now: () => clock.now,
+      );
+      final store = RemoteStore(client, now: () => clock.now);
+      final read = await writer.read();
+      final stored = dav.snapshot();
+
+      Future<List<String>> collect() =>
+          store.collect(writer.book, read, writer.state, save: () async {});
+      expect(await collect(), isEmpty);
+      expect(client.requests, 4);
+      expect(writer.book.collectionDeferredAt, clock.now);
+      expect(dav.files.keys, unorderedEquals(stored.files.keys));
+      expect(await collect(), isEmpty);
+      expect(client.requests, 4);
+      expect((await store.read(writer.book)).devices[a]!.latest!.generation, 5);
+
+      clock.advance(const Duration(minutes: 30));
+      expect(await writer.collect(await writer.read()), isNotEmpty);
+    });
+
+    test(
+      'an aged chain larger than one budget is collected across rounds',
+      () async {
+        final persisted = SyncStore.create(':memory:');
+        addTearDown(persisted.dispose);
+        final id = persisted.identity.deviceId;
+        final writer = node(id)..book = loadRemoteBook(persisted);
+        for (var i = 0; i < 180; i++) {
+          expect((await writer.sync()).outcome, PublishOutcome.published);
+        }
+        clock.advance(const Duration(days: 8));
+        for (var round = 0; round < 4; round++) {
+          final read = await writer.read();
+          final before = dav.log.length;
+          final deleted = await writer.store.collect(
+            writer.book,
+            read,
+            writer.state,
+            save: () async => saveRemoteBook(persisted, writer.book),
+          );
+          expect(dav.log.length - before, lessThanOrEqualTo(160));
+          writer.book = loadRemoteBook(persisted);
+          if (round == 0) {
+            expect(deleted, isEmpty);
+            expect(writer.book.collectionManifests, isNotEmpty);
+            expect((await writer.sync()).outcome, PublishOutcome.published);
+          }
+          clock.advance(const Duration(minutes: 30));
+        }
+        expect(filesOf(id, 'manifest').length, lessThan(180));
+        expect((await node(b).read()).devices[id]!.latest!.generation, 181);
+      },
+    );
+
+    test(
+      'a resumed collection rechecks the live head before deleting',
+      () async {
+        final writer = node(a);
+        for (var i = 0; i < 170; i++) {
+          await writer.sync();
+        }
+        clock.advance(const Duration(days: 8));
+        final read = await writer.read();
+        expect(await writer.collect(read), isEmpty);
+        final headPath = writer.book.collectionManifests.entries
+            .singleWhere((entry) => entry.value.manifest.generation == 170)
+            .key;
+        // The listed length is unchanged and this server advertises no ETag.
+        dav.files[headPath] = Uint8List(dav.files[headPath]!.length);
+        clock.advance(const Duration(minutes: 30));
+        final deletes = dav.count('DELETE');
+        expect(await writer.collect(read), isEmpty);
+        expect(dav.count('DELETE'), deletes);
+        expect(writer.book.collectionManifests, isEmpty);
+      },
+    );
 
     test(
       'old generations go once acked and a week old; head and two before stay',

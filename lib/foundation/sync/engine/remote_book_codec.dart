@@ -80,7 +80,42 @@ RemoteBook loadRemoteBook(SyncStore store, {String deviceName = ''}) {
       for (var pr in (j['problems'] as List? ?? const [])) Problem.fromJson(pr),
     },
     publishes: (j['publishes'] as int?) ?? 0,
+    collectionDeferredAt: j['collectionDeferredAt'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(j['collectionDeferredAt'] as int),
+    collectionManifests: _collectionManifests(j['collectionManifests']),
   );
+}
+
+Map<String, CollectionManifest> _collectionManifests(Object? value) {
+  final result = <String, CollectionManifest>{};
+  if (value is Map) {
+    for (final entry in value.entries) {
+      final path = entry.key;
+      final saved = entry.value;
+      if (path is! String || saved is! Map) continue;
+      final encoded = saved['manifest'];
+      final size = saved['size'];
+      final etag = saved['etag'];
+      if (encoded is! Map ||
+          (size != null && size is! int) ||
+          (etag != null && etag is! String)) {
+        continue;
+      }
+      try {
+        result[path] = CollectionManifest(
+          Manifest.decode(utf8.encode(canonicalize(encoded))),
+          size: size as int?,
+          etag: etag as String?,
+        );
+      } on FormatException {
+        // A bad maintenance checkpoint is optional and can be rebuilt.
+      } on RemoteFileInvalid {
+        // Likewise if the cached manifest fails its integrity checks.
+      }
+    }
+  }
+  return result;
 }
 
 void saveRemoteBook(SyncStore store, RemoteBook book) {
@@ -114,6 +149,16 @@ void saveRemoteBook(SyncStore store, RemoteBook book) {
       },
       'problems': [for (var pr in book.problems) pr.toJson()],
       'publishes': book.publishes,
+      'collectionDeferredAt': book.collectionDeferredAt?.millisecondsSinceEpoch,
+      if (book.collectionManifests.isNotEmpty)
+        'collectionManifests': {
+          for (final e in book.collectionManifests.entries)
+            e.key: {
+              'manifest': jsonDecode(utf8.decode(e.value.manifest.encode())),
+              'size': e.value.size,
+              'etag': e.value.etag,
+            },
+        },
     }),
   );
 }
