@@ -80,6 +80,9 @@ RemoteBook loadRemoteBook(SyncStore store, {String deviceName = ''}) {
       for (var pr in (j['problems'] as List? ?? const [])) Problem.fromJson(pr),
     },
     publishes: (j['publishes'] as int?) ?? 0,
+    collectionDeferredAt: j['collectionDeferredAt'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(j['collectionDeferredAt'] as int),
   );
 }
 
@@ -114,6 +117,7 @@ void saveRemoteBook(SyncStore store, RemoteBook book) {
       },
       'problems': [for (var pr in book.problems) pr.toJson()],
       'publishes': book.publishes,
+      'collectionDeferredAt': book.collectionDeferredAt?.millisecondsSinceEpoch,
     }),
   );
 }

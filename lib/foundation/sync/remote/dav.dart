@@ -107,6 +107,17 @@ class DavNetworkError implements Exception {
   String toString() => 'DavNetworkError: $message';
 }
 
+/// Best-effort cleanup used its request budget or the server deferred it.
+class DavMaintenanceDeferred implements Exception {
+  const DavMaintenanceDeferred();
+}
+
+class _MaintenanceBudget {
+  _MaintenanceBudget(this.remaining);
+
+  int remaining;
+}
+
 /// A listing that cannot be trusted to be complete (protocol.md §4.1 L1).
 class DavListingUnreliable implements Exception {
   const DavListingUnreliable(this.path, this.reason);
@@ -137,6 +148,7 @@ class DavPolicy {
     this.busyBudget = const Duration(minutes: 5),
     this.minBusyWait = const Duration(seconds: 1),
     this.maxPages = 20,
+    this.maintenanceRequests = 160,
   });
 
   /// Between the starts of two requests.
@@ -157,6 +169,9 @@ class DavPolicy {
 
   /// Pages of one listing (`Link: rel="next"`).
   final int maxPages;
+
+  /// Maximum requests for one cleanup, including pages and retries.
+  final int maintenanceRequests;
 }
 
 /// The WebDAV client of one sync. Requests go one at a time; the [root] is
@@ -191,6 +206,15 @@ class DavClient {
   /// Requests sent, including pages and retries.
   int requests = 0;
 
+  _MaintenanceBudget? get _maintenance =>
+      Zone.current[this] as _MaintenanceBudget?;
+
+  /// Cleanup is optional. Independent foreground requests keep their policy.
+  Future<T> withMaintenanceBudget<T>(Future<T> Function() run) => runZoned(
+    run,
+    zoneValues: {this: _MaintenanceBudget(policy.maintenanceRequests)},
+  );
+
   Uri url(String path) =>
       root.resolve(path.split('/').map(Uri.encodeComponent).join('/'));
 
@@ -209,6 +233,11 @@ class DavClient {
     int? maxBytes,
   }) async {
     isCancelled?.call();
+    final maintenance = _maintenance;
+    if (maintenance != null) {
+      if (maintenance.remaining <= 0) throw const DavMaintenanceDeferred();
+      maintenance.remaining--;
+    }
     var last = _lastStart;
     if (last != null) {
       var gap = _now().difference(last);
@@ -245,7 +274,11 @@ class DavClient {
       DavResponse r;
       try {
         r = await _sendOnce(
-          method, url, headers: headers, body: body, maxBytes: maxBytes,
+          method,
+          url,
+          headers: headers,
+          body: body,
+          maxBytes: maxBytes,
         );
       } on DavNetworkError catch (e) {
         if (attempt >= policy.retries) {
@@ -279,6 +312,7 @@ class DavClient {
             status: 507,
           );
         case 503:
+          if (_maintenance != null) throw const DavMaintenanceDeferred();
           var wait = _retryAfter(r) ?? policy.busyWait;
           // A Retry-After of 0 or in the past still counts as a wait, so
           // repeated 503s always run out of the budget.
@@ -297,6 +331,7 @@ class DavClient {
           continue;
         case 423:
         case 429:
+          if (_maintenance != null) throw const DavMaintenanceDeferred();
           if (attempt >= policy.retries) {
             throw DavException(
               DavErrorKind.busy,
@@ -670,18 +705,33 @@ class HttpDavTransport implements DavTransport {
       final data = BytesBuilder(copy: false);
       final headers = <String, String>{};
       r.headers.forEach((k, v) => headers[k.toLowerCase()] = v.join(', '));
-      await for (final chunk in r.data!.stream) {
-        if (r.statusCode != 200) break;
-        if (data.length + chunk.length > maxBytes) {
-          throw const DavException(DavErrorKind.protocol, 'file is too large');
+      final chunks = StreamIterator(r.data!.stream);
+      Future<bool> nextChunk() async {
+        try {
+          return await chunks.moveNext();
+        } catch (_) {
+          // Dio hands off the stream before the response body finishes.
+          // Transport errors can escape directly from it.
+          throw const DavNetworkError('response body interrupted');
         }
-        data.add(chunk);
       }
-      return DavResponse(
-        r.statusCode ?? 0,
-        data.takeBytes(),
-        headers: headers,
-      );
+
+      try {
+        while (await nextChunk()) {
+          if (r.statusCode != 200) break;
+          final chunk = chunks.current;
+          if (data.length + chunk.length > maxBytes) {
+            throw const DavException(
+              DavErrorKind.protocol,
+              'file is too large',
+            );
+          }
+          data.add(chunk);
+        }
+      } finally {
+        await chunks.cancel();
+      }
+      return DavResponse(r.statusCode ?? 0, data.takeBytes(), headers: headers);
     } on DioException catch (e) {
       throw DavNetworkError(e.type.name);
     }

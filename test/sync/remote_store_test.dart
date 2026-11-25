@@ -771,6 +771,69 @@ void main() {
     }
 
     test(
+      '130 young generations do not consume the sync request quota',
+      () async {
+        final writer = node(a);
+        for (var i = 0; i < 130; i++) {
+          expect((await writer.sync()).outcome, PublishOutcome.published);
+        }
+        var requests = 0;
+        dav.intercept = (_, _, _, _, _) =>
+            ++requests > 600 ? davStatus(503) : null;
+        for (var i = 0; i < 3; i++) {
+          final read = await writer.read();
+          expect(
+            (await writer.publish(read)).outcome,
+            PublishOutcome.published,
+          );
+          final syncRequests = requests;
+          expect(await writer.collect(read), isEmpty);
+          expect(requests, syncRequests, reason: 'no eligible maintenance');
+        }
+        expect((await writer.read()).devices[a]!.latest!.generation, 133);
+
+        dav.intercept = null;
+        clock.advance(const Duration(days: 8));
+        final aged = await writer.read();
+        final before = dav.log.length;
+        expect(await writer.collect(aged), isNotEmpty);
+        expect(dav.log.length - before, lessThanOrEqualTo(160));
+        expect((await node(b).read()).devices[a]!.latest!.generation, 133);
+      },
+    );
+
+    test('maintenance reserves requests for the next sync', () async {
+      final writer = node(a);
+      for (var i = 0; i < 5; i++) {
+        await writer.sync();
+      }
+      clock.advance(const Duration(days: 8));
+      final client = DavClient(
+        dav,
+        dav.root,
+        policy: const DavPolicy(maintenanceRequests: 4),
+        sleep: (_) async {},
+        now: () => clock.now,
+      );
+      final store = RemoteStore(client, now: () => clock.now);
+      final read = await writer.read();
+      final stored = dav.snapshot();
+
+      Future<List<String>> collect() =>
+          store.collect(writer.book, read, writer.state, save: () async {});
+      expect(await collect(), isEmpty);
+      expect(client.requests, 4);
+      expect(writer.book.collectionDeferredAt, clock.now);
+      expect(dav.files.keys, unorderedEquals(stored.files.keys));
+      expect(await collect(), isEmpty);
+      expect(client.requests, 4);
+      expect((await store.read(writer.book)).devices[a]!.latest!.generation, 5);
+
+      clock.advance(const Duration(minutes: 30));
+      expect(await writer.collect(await writer.read()), isNotEmpty);
+    });
+
+    test(
       'old generations go once acked and a week old; head and two before stay',
       () async {
         var x = node(a), y = node(b);

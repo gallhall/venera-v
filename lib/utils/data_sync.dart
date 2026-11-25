@@ -68,6 +68,9 @@ class DataSync with ChangeNotifier {
   /// The user asked to restore the full backup from WebDAV.
   Future<Res<bool>> restore() => (_download ?? downloadData)();
 
+  /// The user asked to upload a full backup to WebDAV.
+  Future<Res<bool>> backup() => (_upload ?? uploadData)();
+
   bool _handleWindowClose() {
     if (_isUploading) {
       _showWindowCloseDialog();

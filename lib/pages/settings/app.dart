@@ -162,7 +162,7 @@ class _AppSettingsState extends State<AppSettings> {
             _CallbackSetting(
               title: "Data Sync".tl,
               callback: () async {
-                showSubPage(context, const _WebdavSetting());
+                showSubPage(context, const WebdavSettings());
               },
               actionTitle: 'Set'.tl,
             ),
@@ -620,23 +620,25 @@ class _PreviousRunLogPage extends StatelessWidget {
   }
 }
 
-class _WebdavSetting extends StatefulWidget {
-  const _WebdavSetting();
+class WebdavSettings extends StatefulWidget {
+  const WebdavSettings({super.key});
 
   @override
-  State<_WebdavSetting> createState() => _WebdavSettingState();
+  State<WebdavSettings> createState() => _WebdavSettingsState();
 }
 
-class _WebdavSettingState extends State<_WebdavSetting> {
+class _WebdavSettingsState extends State<WebdavSettings> {
   String url = "";
   String user = "";
   String pass = "";
   String disableSync = "";
 
-  bool autoSync = true;
+  bool autoSync = false;
 
-  bool isTesting = false;
-  bool upload = true;
+  bool working = false;
+
+  bool get hasAccount =>
+      url.trim().isNotEmpty && user.trim().isNotEmpty && pass.isNotEmpty;
 
   @override
   void initState() {
@@ -654,7 +656,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
     url = configs[0];
     user = configs[1];
     pass = configs[2];
-    autoSync = appdata.implicitData['webdavAutoSync'] ?? true;
+    autoSync = appdata.implicitData['webdavAutoSync'] == true;
   }
 
   /// Turning two-way sync on saves the account first, then explains the
@@ -665,13 +667,14 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       setState(() {});
       return;
     }
-    if (url.trim().isEmpty || user.trim().isEmpty || pass.isEmpty) {
+    if (!hasAccount) {
       context.showMessage(message: "Fill in the WebDAV account first".tl);
       return;
     }
     if (!await showFirstSyncDialog(context)) return;
     appdata.settings['webdav'] = [url, user, pass];
-    appdata.saveData();
+    await appdata.saveData(false);
+    if (!mounted) return;
     SyncController().enable();
     if (mounted) setState(() {});
   }
@@ -682,6 +685,43 @@ class _WebdavSettingState extends State<_WebdavSetting> {
       appdata.implicitData['webdavAutoSync'] = value;
       appdata.writeImplicitData();
     });
+  }
+
+  Future<void> _saveConnection() async {
+    final config = hasAccount ? [url, user, pass] : <String>[];
+    final automatic = hasAccount && autoSync;
+    final saved = appdata.settings['webdav'];
+    if (saved is List &&
+        listEquals(saved, config) &&
+        appdata.settings['disableSyncFields'] == disableSync &&
+        appdata.implicitData['webdavAutoSync'] == automatic) {
+      return;
+    }
+    appdata.settings['webdav'] = config;
+    appdata.settings['disableSyncFields'] = disableSync;
+    appdata.implicitData['webdavAutoSync'] = automatic;
+    appdata.writeImplicitData();
+    await appdata.saveData(false);
+  }
+
+  void _runBackup({required bool restore}) async {
+    if (!mounted || working) return;
+    if (!hasAccount) {
+      context.showMessage(message: "Fill in the WebDAV account first".tl);
+      return;
+    }
+    setState(() => working = true);
+    try {
+      await _saveConnection();
+      final backup = DataSync();
+      final result = restore ? await backup.restore() : await backup.backup();
+      if (!mounted) return;
+      context.showMessage(
+        message: result.error ? result.errorMessage! : "Done".tl,
+      );
+    } finally {
+      if (mounted) setState(() => working = false);
+    }
   }
 
   @override
@@ -739,7 +779,8 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "When sync data, skip certain setting fields, which means these won't be uploaded / override.".tl,
+                              "When sync data, skip certain setting fields, which means these won't be uploaded / override."
+                                  .tl,
                             ),
                             const SizedBox(height: 12),
                             Row(
@@ -755,7 +796,9 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                                     tooltip: 'Open in browser'.tl,
                                     icon: const Icon(Icons.open_in_new),
                                     onPressed: () {
-                                      launchUrlString("https://github.com/gallhall/venera-v/blob/15450cc57130c09879ecd08fbbc7fc77de83ff6a/lib/foundation/appdata.dart#L174");
+                                      launchUrlString(
+                                        "https://github.com/gallhall/venera-v/blob/15450cc57130c09879ecd08fbbc7fc77de83ff6a/lib/foundation/appdata.dart#L174",
+                                      );
                                     },
                                   ),
                                 ),
@@ -778,7 +821,7 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               contentPadding: EdgeInsets.zero,
               trailing: Switch(
                 value: autoSync,
-                onChanged: onAutoSyncChanged,
+                onChanged: working ? null : onAutoSyncChanged,
               ),
             ),
             // Two-way sync is separate from the full backup (spec §2).
@@ -786,12 +829,13 @@ class _WebdavSettingState extends State<_WebdavSetting> {
               leading: const Icon(Icons.sync_alt_outlined),
               title: Text("Two-way Sync".tl),
               subtitle: Text(
-                "Merge History, Watch Later, and local favorites with your other devices".tl,
+                "Merge History, Watch Later, and local favorites with your other devices"
+                    .tl,
               ),
               contentPadding: EdgeInsets.zero,
               trailing: Switch(
                 value: SyncController().enabled,
-                onChanged: onTwoWaySyncChanged,
+                onChanged: working ? null : onTwoWaySyncChanged,
               ),
             ),
             if (SyncController().enabled)
@@ -803,26 +847,37 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                 onTap: () => showSubPage(context, const SyncPage()),
               ),
             const SizedBox(height: 12),
-            RadioGroup<bool>(
-              groupValue: upload,
-              onChanged: (value) {
-                setState(() {
-                  upload = value ?? upload;
-                });
-              },
-              child: Row(
-                children: [
-                  Text("Operation".tl),
-                  Radio<bool>(
-                    value: true,
-                  ),
-                  Text("Upload".tl),
-                  Radio<bool>(
-                    value: false,
-                  ),
-                  Text("Download".tl),
-                ],
-              ),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: working ? null : () => _runBackup(restore: false),
+                  child: Text("Upload Full Backup".tl),
+                ),
+                OutlinedButton(
+                  onPressed: working
+                      ? null
+                      : () {
+                          if (!hasAccount) {
+                            context.showMessage(
+                              message: "Fill in the WebDAV account first".tl,
+                            );
+                            return;
+                          }
+                          showConfirmDialog(
+                            context: context,
+                            title: "Restore Full Backup".tl,
+                            content:
+                                "Replace the data on this device with the full backup on WebDAV?"
+                                    .tl,
+                            onConfirm: () => _runBackup(restore: true),
+                          );
+                        },
+                  child: Text("Restore Full Backup".tl),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             AnimatedSize(
@@ -840,8 +895,9 @@ class _WebdavSettingState extends State<_WebdavSetting> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                                "Once the operation is successful, a full backup is uploaded whenever data changes. Data on this device is only replaced when you download a backup."
-                                    .tl),
+                              "When automatic backup is on, a full backup is uploaded whenever data changes."
+                                  .tl,
+                            ),
                           ),
                         ],
                       ),
@@ -851,63 +907,30 @@ class _WebdavSettingState extends State<_WebdavSetting> {
             const SizedBox(height: 16),
             Center(
               child: FilledButton(
-                onPressed: isTesting ? null : () async {
-                  var oldConfig = appdata.settings['webdav'];
-                  var oldAutoSync = appdata.implicitData['webdavAutoSync'];
-
-                  if (url.trim().isEmpty &&
-                      user.trim().isEmpty &&
-                      pass.trim().isEmpty) {
-                    appdata.settings['webdav'] = [];
-                    appdata.implicitData['webdavAutoSync'] = false;
-                    appdata.writeImplicitData();
-                    appdata.saveData();
-                    context.showMessage(message: "Saved".tl);
-                    App.rootPop();
-                    return;
-                  }
-
-                  appdata.settings['webdav'] = [url, user, pass];
-                  appdata.settings['disableSyncFields'] = disableSync;
-                  appdata.implicitData['webdavAutoSync'] = autoSync;
-                  appdata.writeImplicitData();
-
-                  if (!autoSync) {
-                    appdata.saveData();
-                    context.showMessage(message: "Saved".tl);
-                    App.rootPop();
-                    return;
-                  }
-
-                  setState(() {
-                    isTesting = true;
-                  });
-                  var testResult = upload
-                      ? await DataSync().uploadData()
-                      : await DataSync().downloadData();
-                  if (testResult.error) {
-                    setState(() {
-                      isTesting = false;
-                    });
-                    appdata.settings['webdav'] = oldConfig;
-                    appdata.implicitData['webdavAutoSync'] = oldAutoSync;
-                    appdata.writeImplicitData();
-                    appdata.saveData();
-                    context.showMessage(message: testResult.errorMessage!);
-                    context.showMessage(message: "Saved Failed".tl);
-                  } else {
-                    appdata.saveData();
-                    context.showMessage(message: "Saved".tl);
-                    App.rootPop();
-                  }
-                },
+                onPressed: working
+                    ? null
+                    : () async {
+                        if (!hasAccount &&
+                            (url.trim().isNotEmpty ||
+                                user.trim().isNotEmpty ||
+                                pass.isNotEmpty)) {
+                          context.showMessage(
+                            message: "Fill in the WebDAV account first".tl,
+                          );
+                          return;
+                        }
+                        await _saveConnection();
+                        if (!mounted) return;
+                        context.showMessage(message: "Saved".tl);
+                        App.rootPop();
+                      },
                 child: LoadingButtonChild(
-                  isLoading: isTesting,
+                  isLoading: working,
                   color: context.colorScheme.onPrimary,
-                  child: Text("Continue".tl),
+                  child: Text("Save".tl),
                 ),
               ),
-            )
+            ),
           ],
         ).paddingHorizontal(16),
       ),

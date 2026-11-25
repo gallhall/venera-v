@@ -94,6 +94,10 @@ class VaultDav extends DavClient {
   static String _scoped(String path) => 'venera-source-sync/v1/$path';
 
   @override
+  Future<T> withMaintenanceBudget<T>(Future<T> Function() run) =>
+      _dav.withMaintenanceBudget(run);
+
+  @override
   Future<List<DavEntry>?> list(String path) => _dav.list(_scoped(path));
 
   @override
