@@ -17,6 +17,7 @@ class DavEntry {
     required this.isDir,
     this.size,
     this.sha256,
+    this.etag,
   });
 
   /// The last path segment, decoded.
@@ -27,6 +28,7 @@ class DavEntry {
   /// A SHA-256 the server reports for the content (e.g. `oc:checksums`),
   /// lowercase hex.
   final String? sha256;
+  final String? etag;
 
   @override
   String toString() => isDir ? '$name/' : '$name ($size)';
@@ -376,6 +378,12 @@ class DavClient {
       '<d:resourcetype/><d:getcontentlength/>'
       '</d:prop></d:propfind>';
 
+  static const _propfindCollection =
+      '<?xml version="1.0" encoding="utf-8"?>'
+      '<d:propfind xmlns:d="DAV:"><d:prop>'
+      '<d:resourcetype/><d:getcontentlength/><d:getetag/>'
+      '</d:prop></d:propfind>';
+
   static const _propfindStat =
       '<?xml version="1.0" encoding="utf-8"?>'
       '<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop>'
@@ -391,6 +399,9 @@ class DavClient {
     var next = first;
     var out = <DavEntry>[];
     var seen = <String>{};
+    final body = utf8.encode(
+      _maintenance == null ? _propfindList : _propfindCollection,
+    );
     for (var page = 1; ; page++) {
       if (page > policy.maxPages) {
         throw DavListingUnreliable(path, 'more than ${policy.maxPages} pages');
@@ -402,7 +413,7 @@ class DavClient {
           'Depth': '1',
           'Content-Type': 'application/xml; charset=utf-8',
         },
-        body: utf8.encode(_propfindList),
+        body: body,
       );
       if (r.status == 404 && page == 1) return null;
       if (r.status != 207) {
@@ -574,6 +585,7 @@ class DavClient {
       bool? isDir;
       int? size;
       String? sha;
+      String? etag;
       for (var ps in _children(resp, 'propstat')) {
         var st = _children(ps, 'status').firstOrNull?.innerText ?? '';
         if (_isStatus(st, 404)) continue;
@@ -588,6 +600,9 @@ class DavClient {
                 isDir = p.childElements.any((c) => c.localName == 'collection');
               case 'getcontentlength':
                 size = int.tryParse(p.innerText.trim());
+              case 'getetag':
+                final tag = p.innerText.trim();
+                if (tag.isNotEmpty && tag.length <= 1024) etag = tag;
               case 'checksums':
                 for (var token in p.innerText.split(RegExp(r'\s+'))) {
                   if (token.toUpperCase().startsWith('SHA256:')) {
@@ -614,7 +629,7 @@ class DavClient {
       }
       out.add((
         self,
-        DavEntry(name: name, isDir: isDir, size: size, sha256: sha),
+        DavEntry(name: name, isDir: isDir, size: size, sha256: sha, etag: etag),
       ));
     }
     if (strict && !out.any((e) => e.$1)) {
