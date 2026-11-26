@@ -374,9 +374,7 @@ class SyncController with ChangeNotifier {
     try {
       return await SyncService.withSourceSync(() async {
         final file = '${App.dataPath}/source-sync-${_sourceProfile!}.db';
-        final store =
-            SyncStore.openIfExists(file, verify: true) ??
-            SyncStore.create(file);
+        final store = SourceVault.openStore(file);
         try {
           final issue =
               await SourceVault(

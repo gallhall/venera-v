@@ -122,9 +122,11 @@ class SyncStore {
     this._db, {
     required this.schema,
     required this.readOnly,
+    required JsonLimits versionJsonLimits,
     required int Function() now,
     required void Function(Object, StackTrace) onError,
   }) : _now = now,
+       _versionJsonLimits = versionJsonLimits,
        _onError = onError {
     var id = _readIdentity();
     if (id != null) _hlc = id.hlc.tick(_now());
@@ -142,9 +144,18 @@ class SyncStore {
     @visibleForTesting bool durable = true,
     void Function(Object, StackTrace)? onError,
     bool verify = false,
+    JsonLimits versionJsonLimits = const JsonLimits(),
   }) {
     if (!File(path).existsSync()) return null;
-    var store = _open(path, now, migrations, durable, onError, verify: verify);
+    var store = _open(
+      path,
+      now,
+      migrations,
+      durable,
+      onError,
+      verify: verify,
+      versionJsonLimits: versionJsonLimits,
+    );
     try {
       if (store._readIdentity() != null) return store;
       if (store.readOnly) throw SyncStoreReadOnly(store.schema);
@@ -166,8 +177,16 @@ class SyncStore {
     @visibleForTesting List<void Function(Database)>? migrations,
     @visibleForTesting bool durable = true,
     void Function(Object, StackTrace)? onError,
+    JsonLimits versionJsonLimits = const JsonLimits(),
   }) {
-    var store = _open(path, now, migrations, durable, onError);
+    var store = _open(
+      path,
+      now,
+      migrations,
+      durable,
+      onError,
+      versionJsonLimits: versionJsonLimits,
+    );
     try {
       store._checkWritable();
       store._transaction(() {
@@ -194,6 +213,7 @@ class SyncStore {
     bool durable,
     void Function(Object, StackTrace)? onError, {
     bool verify = false,
+    required JsonLimits versionJsonLimits,
   }) {
     migrations ??= syncMigrations;
     var db = sqlite3.open(path);
@@ -234,6 +254,7 @@ class SyncStore {
         db,
         schema: schema,
         readOnly: readOnly,
+        versionJsonLimits: versionJsonLimits,
         now: now ?? () => DateTime.now().millisecondsSinceEpoch,
         onError: onError ?? (e, s) => Log.error('Sync', e, s),
       );
@@ -260,6 +281,7 @@ class SyncStore {
 
   final Database _db;
   final int Function() _now;
+  final JsonLimits _versionJsonLimits;
   final void Function(Object, StackTrace) _onError;
 
   /// The schema version of the file.
@@ -1280,6 +1302,9 @@ class SyncStore {
     return out;
   }
 
+  Version _version(String body) =>
+      Version.fromJson(parseStrictJson(body, limits: _versionJsonLimits));
+
   /// Names of the tables, for tests and diagnostics.
   @visibleForTesting
   Set<String> get tables => {
@@ -1295,8 +1320,6 @@ List<Version> _sortBranches(List<Version> vs) =>
     vs..sort((a, b) => a.id.compareTo(b.id));
 
 String _vid(Version v) => canonicalize([v.dot.toJson(), v.hash]);
-
-Version _version(String body) => Version.fromJson(parseStrictJson(body));
 
 RegisterKey _keyOf(String key) {
   var parts = parseStrictJson(key) as List;

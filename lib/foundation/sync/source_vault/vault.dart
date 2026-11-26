@@ -217,6 +217,19 @@ VaultFields? _value(Version? version) =>
 class SourceVault {
   SourceVault(this.store, this.local, this.remote, {this.deviceName = ''});
 
+  static SyncStore openStore(String path) {
+    final limits = JsonLimits(
+      maxDepth: vaultStateLimits.depth,
+      maxStringLength: vaultStateLimits.stringLength,
+    );
+    return SyncStore.openIfExists(
+          path,
+          verify: true,
+          versionJsonLimits: limits,
+        ) ??
+        SyncStore.create(path, versionJsonLimits: limits);
+  }
+
   final SyncStore store;
   final VaultLocal local;
   final RemoteStore remote;

@@ -106,10 +106,7 @@ void main() {
     VaultKey? using,
     String deviceName = '',
   }) {
-    final store = SyncStore.create(
-      '${temp.path}/${stores.length}.db',
-      durable: false,
-    );
+    final store = SourceVault.openStore('${temp.path}/${stores.length}.db');
     stores.add(store);
     final webdav = DavClient(dav, dav.root, sleep: (_) async {});
     return SourceVault(
@@ -136,6 +133,22 @@ void main() {
     onStage: (_) {},
     choice: choice,
   );
+
+  test('a source larger than 16 KiB survives SQLite and syncs', () async {
+    final longScript = {...js, 'body': '// ${'x' * (64 * 1024)}'};
+    final publisher = node(_Local()..values[manga] = longScript);
+    final receivingLocal = _Local();
+    final receiver = node(receivingLocal);
+
+    expect(await sync(publisher), isNull);
+    expect(await sync(receiver), isNull);
+    expect(receivingLocal.values[manga], longScript);
+    final reopened = SourceVault.openStore('${temp.path}/0.db');
+    stores.add(reopened);
+    expect(reopened.load().branches(manga).single.fields, longScript);
+    expect(await sync(publisher), isNull);
+    expect(await sync(receiver), isNull);
+  });
 
   test('envelope authenticates content, version and full path', () {
     final plaintext = Uint8List.fromList(utf8.encode('synthetic secret'));
