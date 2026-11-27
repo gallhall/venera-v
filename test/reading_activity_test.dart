@@ -45,11 +45,14 @@ class _Signals implements PlaybackSignals {
 
   void loading() => eventsIn.add(const EpisodeLoading());
 
-  void started() => eventsIn.add(
-    EpisodeSessionEvent(
-      PlaybackStarted(Duration.zero, DateTime(2026), duration),
-    ),
-  );
+  void started({bool advanced = true}) {
+    eventsIn.add(
+      EpisodeSessionEvent(
+        PlaybackStarted(Duration.zero, DateTime(2026), duration),
+      ),
+    );
+    if (advanced) eventsIn.add(EpisodeSessionEvent(PlaybackAdvanced()));
+  }
 
   void kept() => eventsIn.add(const EpisodeKept(null));
 }
@@ -354,7 +357,9 @@ void main() {
       expect(saved, isEmpty);
 
       final prepared = anime();
-      signals.started(); // Media metadata can be available before playback.
+      signals.started(advanced: false);
+      signals.runningIn.add(true);
+      clock.advance(const Duration(seconds: 3));
       prepared.dispose();
       expect(saved, isEmpty);
     });

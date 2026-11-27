@@ -371,6 +371,7 @@ class SyncController with ChangeNotifier {
   ) async {
     final key = _sourceKey;
     if (!sourceSyncUnlocked || key == null) return VaultIssue.locked;
+    final local = AppVaultLocal();
     try {
       return await SyncService.withSourceSync(() async {
         final file = '${App.dataPath}/source-sync-${_sourceProfile!}.db';
@@ -379,7 +380,7 @@ class SyncController with ChangeNotifier {
           final issue =
               await SourceVault(
                 store,
-                AppVaultLocal(),
+                local,
                 RemoteStore(
                   VaultDav(dav, key),
                   stateLimits: vaultStateLimits,
@@ -427,6 +428,8 @@ class SyncController with ChangeNotifier {
       // Source files and data can contain secrets even in exception messages.
       Log.warning('Sync', 'encrypted source sync stopped (${e.runtimeType})');
       return VaultIssue.invalid;
+    } finally {
+      local.notifyAppliedSources();
     }
   }
 }

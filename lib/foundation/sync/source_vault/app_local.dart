@@ -19,6 +19,8 @@ import 'login_cookies.dart';
 import 'vault.dart';
 
 class AppVaultLocal extends VaultLocal {
+  bool _sourcesChanged = false;
+
   static const _suffixes = ['.js', '.kazumi.json', '.animeko.json'];
   static const _localStorage = '_localStorage';
   static const _maxText = 512 * 1024;
@@ -69,7 +71,7 @@ class AppVaultLocal extends VaultLocal {
   static Future<void> migrateSyncedVideoSearch() async {
     if (appdata.settings['syncedVideoSearchMigrated'] == true) return;
     appdata.settings.includeSearchSources([
-      for (final source in ComicSource.enabled())
+      for (final source in ComicSource.all())
         if (source.isVideoSource && source.searchPageData != null)
           if (_suffix(source.filePath) case final String suffix)
             if (path.basename(source.filePath) ==
@@ -394,7 +396,7 @@ class AppVaultLocal extends VaultLocal {
       }
       _write(_dataFile(name), jsonEncode(data));
       if (source != null) source.data = data;
-      _notify();
+      _sourcesChanged = true;
     }
     return true;
   }
@@ -420,7 +422,7 @@ class AppVaultLocal extends VaultLocal {
     if (value == null) {
       oldFile?.deleteSync();
       manager.replaceSyncedSource(name, null);
-      _notify();
+      _sourcesChanged = true;
       return true;
     }
     final suffix = value['suffix'] as String;
@@ -468,7 +470,7 @@ class AppVaultLocal extends VaultLocal {
       source.data = old?.data ?? _diskData(name);
       _write(file, body);
       manager.replaceSyncedSource(name, source);
-      _notify();
+      _sourcesChanged = true;
       return true;
     } catch (_) {
       // Parsing an accepted JS definition can have registered it already.
@@ -478,7 +480,9 @@ class AppVaultLocal extends VaultLocal {
     }
   }
 
-  static void _notify() {
+  void notifyAppliedSources() {
+    if (!_sourcesChanged) return;
+    _sourcesChanged = false;
     DataSync.refreshingSyncedSources = true;
     try {
       ComicSourceManager().notifyStateChange();

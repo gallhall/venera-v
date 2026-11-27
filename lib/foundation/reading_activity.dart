@@ -207,6 +207,8 @@ class ReadingActivity {
           _open(work, episode);
         }
         _session?.playing?.running = _running && _foreground;
+      case EpisodeSessionEvent(event: PlaybackAdvanced()):
+        if (_foreground) _session?.playing?.hasPlayed = true;
       default:
     }
   }
@@ -374,7 +376,6 @@ class _PlayingTimer {
     var time = _now();
     if (_since != null) _counted += time.difference(_since!);
     _since = value ? time : null;
-    if (value) hasPlayed = true;
   }
 
   Duration get elapsed =>

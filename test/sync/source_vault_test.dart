@@ -484,6 +484,7 @@ void main() {
     });
     final local = AppVaultLocal();
     final definition = sourceRegister(entry.key, 'definition');
+    final settings = sourceRegister(entry.key, 'settings');
     final sender = node(
       _Local()..values.addAll({
         ...local.read(),
@@ -492,12 +493,21 @@ void main() {
           'version': entry.version,
           'body': jsonEncode({'source': config}),
         },
+        settings: const {'json': '{"configured":true}'},
       }),
     );
     final receiver = node(local);
     expect(await sync(sender), isNull);
     expect(appSubjectVideoSources(), isEmpty);
+    final notified = <Object?>[];
+    final manager = ComicSourceManager();
+    void observe() => notified.add(manager.find(entry.key)?.data['settings']);
+    manager.addListener(observe);
+    addTearDown(() => manager.removeListener(observe));
     expect(await sync(receiver), isNull);
+    expect(notified, isEmpty);
+    local.notifyAppliedSources();
+    expect(notified, [{'configured': true}]);
     expect(appSubjectVideoSources().map((source) => source.key), [entry.key]);
     expect(appdata.settings['searchSources'], [
       'existing-search-source',

@@ -639,7 +639,11 @@ void main() {
     await start(at: const Duration(seconds: 99));
     engines.media.knownDuration(100);
     engines.media.completions.add(true);
-    expect(events.map((e) => e.runtimeType), [PlaybackStarted, PlaybackEnded]);
+    expect(events.map((e) => e.runtimeType), [
+      PlaybackStarted,
+      PlaybackAdvanced,
+      PlaybackEnded,
+    ]);
   });
 
   test('completion after progress emits Ended and clears recovery', () async {

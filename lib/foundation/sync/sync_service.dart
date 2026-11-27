@@ -123,6 +123,7 @@ abstract final class SyncService {
 
   static bool _restoringBackup = false;
   static bool _syncingSources = false;
+  static bool get syncingSources => _syncingSources;
 
   static SyncStore? _open({required bool create, bool restoring = false}) =>
       openLocalSyncStore(

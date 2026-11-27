@@ -15,6 +15,7 @@ import 'package:venera/foundation/consts.dart';
 import 'package:venera/foundation/bangumi/bangumi.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/image_provider/cached_image.dart';
+import 'package:venera/foundation/sync/sync_service.dart';
 import 'package:venera/foundation/watch_later.dart';
 import 'package:venera/network/cloudflare.dart';
 import 'package:venera/foundation/bangumi/playback_context.dart';
@@ -272,6 +273,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   }
 
   void syncSources() {
+    if (SyncService.syncingSources) return;
     matcher.syncSources(appSubjectVideoSources());
   }
 
