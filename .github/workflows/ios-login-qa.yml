@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - codex/vault-version-read-limit
-    paths:
-      - .github/workflows/ios-login-qa.yml
 
 permissions:
   contents: read

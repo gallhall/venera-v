@@ -149,6 +149,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
     matcher.addListener(onMatcherChanged);
     scrollController.addListener(onScroll);
     appdata.settings.addListener(onSettingsChanged);
+    ComicSourceManager().addListener(onSettingsChanged);
     HistoryManager().addListener(onSettingsChanged);
     LocalFavoritesManager().addListener(onFavoritesChanged);
     WatchLater().addListener(onFavoritesChanged);
@@ -160,6 +161,7 @@ class _BangumiSubjectPageState extends State<BangumiSubjectPage> {
   @override
   void dispose() {
     appdata.settings.removeListener(onSettingsChanged);
+    ComicSourceManager().removeListener(onSettingsChanged);
     HistoryManager().removeListener(onSettingsChanged);
     LocalFavoritesManager().removeListener(onFavoritesChanged);
     WatchLater().removeListener(onFavoritesChanged);

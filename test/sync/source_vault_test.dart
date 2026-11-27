@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:venera/foundation/animeko/animeko_source.dart';
 import 'package:venera/foundation/app.dart';
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/foundation/bangumi/playback_context.dart';
 import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/sync/engine/sync_engine.dart';
 import 'package:venera/foundation/sync/remote/dav.dart';
@@ -462,6 +463,57 @@ void main() {
     );
     expect(() => app.check(manga, js), returnsNormally);
     expect(() => app.check(login, account), returnsNormally);
+  });
+
+  test('first sync makes a synced Animeko source available for matching', () async {
+    App.dataPath = temp.path;
+    Directory('${temp.path}/comic_source').createSync();
+    final previous = appdata.settings['searchSources'];
+    final migrated = appdata.settings['syncedVideoSearchMigrated'];
+    const config = {
+      'id': 'matching-fixture',
+      'factoryId': 'rss',
+      'arguments': {'name': 'Matching fixture'},
+    };
+    final entry = AnimekoSourceConfig(config);
+    appdata.settings['searchSources'] = ['existing-search-source'];
+    addTearDown(() {
+      ComicSourceManager().remove(entry.key);
+      appdata.settings['searchSources'] = previous;
+      appdata.settings['syncedVideoSearchMigrated'] = migrated;
+    });
+    final local = AppVaultLocal();
+    final definition = sourceRegister(entry.key, 'definition');
+    final sender = node(
+      _Local()..values.addAll({
+        ...local.read(),
+        definition: {
+          'suffix': '.animeko.json',
+          'version': entry.version,
+          'body': jsonEncode({'source': config}),
+        },
+      }),
+    );
+    final receiver = node(local);
+    expect(await sync(sender), isNull);
+    expect(appSubjectVideoSources(), isEmpty);
+    expect(await sync(receiver), isNull);
+    expect(appSubjectVideoSources().map((source) => source.key), [entry.key]);
+    expect(appdata.settings['searchSources'], [
+      'existing-search-source',
+      entry.key,
+    ]);
+
+    appdata.settings['searchSources'] = ['existing-search-source'];
+    expect(await sync(receiver), isNull);
+    expect(appSubjectVideoSources(), isEmpty);
+
+    appdata.settings['syncedVideoSearchMigrated'] = false;
+    await AppVaultLocal.migrateSyncedVideoSearch();
+    expect(appSubjectVideoSources().map((source) => source.key), [entry.key]);
+    appdata.settings['searchSources'] = ['existing-search-source'];
+    await AppVaultLocal.migrateSyncedVideoSearch();
+    expect(appSubjectVideoSources(), isEmpty);
   });
 
   test(
