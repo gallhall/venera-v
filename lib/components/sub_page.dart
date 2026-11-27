@@ -27,6 +27,11 @@ class SubPageRoute<T> extends PopupRoute<T> {
 
   bool _barrierSawPointerDown = false;
 
+  bool get _canDismissBarrier =>
+      isCurrent &&
+      animation?.status == AnimationStatus.completed &&
+      navigator?.userGestureInProgress == false;
+
   @override
   Color? get barrierColor => showBarrier ? Colors.black54 : null;
 
@@ -47,27 +52,28 @@ class SubPageRoute<T> extends PopupRoute<T> {
     if (!showBarrier) {
       return const SizedBox.shrink();
     }
-    // Ignore the tap that opened the page, which may end on the barrier.
-    // Fades with the page, so a back swipe uncovers the page below instead
-    // of a fully dimmed one.
-    return FadeTransition(opacity: animation!, child: Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (event) {
-        if (event.position == Offset.zero) {
-          return;
-        }
-        _barrierSawPointerDown = true;
-      },
-      child: ModalBarrier(
-        onDismiss: () {
-          if (_barrierSawPointerDown) {
-            navigator?.maybePop();
-          }
+    // A tap can hit the scrim while the page slides under it. Let only taps
+    // that started on a settled scrim dismiss the current page.
+    return FadeTransition(
+      opacity: animation!,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          _barrierSawPointerDown =
+              event.position != Offset.zero && _canDismissBarrier;
         },
-        color: barrierColor,
-        semanticsLabel: barrierLabel,
+        onPointerCancel: (_) => _barrierSawPointerDown = false,
+        child: ModalBarrier(
+          onDismiss: () {
+            final dismiss = _barrierSawPointerDown && _canDismissBarrier;
+            _barrierSawPointerDown = false;
+            if (dismiss) navigator?.maybePop();
+          },
+          color: barrierColor,
+          semanticsLabel: barrierLabel,
+        ),
       ),
-    ));
+    );
   }
 
   @override

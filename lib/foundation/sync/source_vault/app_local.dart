@@ -61,6 +61,25 @@ class AppVaultLocal extends VaultLocal {
   static String? _suffix(String filename) =>
       _suffixes.where((suffix) => filename.endsWith(suffix)).firstOrNull;
 
+  static String _syncedFilename(String key, String suffix) =>
+      'sync-${sha256.convert(utf8.encode(key))}$suffix';
+
+  /// Older builds installed synced definitions without registering their
+  /// video search. The generated filename identifies those installations.
+  static Future<void> migrateSyncedVideoSearch() async {
+    if (appdata.settings['syncedVideoSearchMigrated'] == true) return;
+    appdata.settings.includeSearchSources([
+      for (final source in ComicSource.enabled())
+        if (source.isVideoSource && source.searchPageData != null)
+          if (_suffix(source.filePath) case final String suffix)
+            if (path.basename(source.filePath) ==
+                _syncedFilename(source.key, suffix))
+              source.key,
+    ]);
+    appdata.settings['syncedVideoSearchMigrated'] = true;
+    await appdata.saveData(false);
+  }
+
   File _definitionFile(ComicSource source) {
     final file = File(source.filePath);
     if (!path.equals(path.dirname(file.absolute.path), _directory) ||
@@ -409,13 +428,7 @@ class AppVaultLocal extends VaultLocal {
       throw const VaultFailure(VaultIssue.conflict);
     }
     final file =
-        oldFile ??
-        File(
-          path.join(
-            _directory,
-            'sync-${sha256.convert(utf8.encode(name))}$suffix',
-          ),
-        );
+        oldFile ?? File(path.join(_directory, _syncedFilename(name, suffix)));
     if (oldFile == null &&
         FileSystemEntity.typeSync(file.path, followLinks: false) !=
             FileSystemEntityType.notFound) {
@@ -437,6 +450,15 @@ class AppVaultLocal extends VaultLocal {
       };
       if (source.key != name || source.version != value['version']) {
         throw const VaultFailure(VaultIssue.invalid);
+      }
+      if (old == null &&
+          source.isVideoSource &&
+          source.searchPageData != null &&
+          appdata.settings['searchSources'] is List) {
+        // Persist search registration before the definition, so replay after
+        // an interrupted install cannot find a source missing from search.
+        appdata.settings.includeSearchSources([source.key]);
+        await appdata.saveData(false);
       }
       if (vaultDigest(_current(key)) != expected ||
           (old?.dataSaveInProgress ?? false)) {

@@ -98,6 +98,8 @@ class Appdata with Init {
     "webdav",
     "disableSyncFields",
     "deviceId",
+    "readingStatisticsEnabled",
+    "syncedVideoSearchMigrated",
   ];
 
   /// Sync data from another device
@@ -215,8 +217,10 @@ class Settings with ChangeNotifier {
     'categories': [],
     'favorites': [],
     'searchSources': null,
+    'syncedVideoSearchMigrated': false,
     'showFavoriteStatusOnTile': true,
     'showHistoryStatusOnTile': false,
+    'readingStatisticsEnabled': true,
     'blockedWords': [],
     'blockedCommentWords': [],
     'defaultSearchTarget': null,
@@ -335,6 +339,15 @@ class Settings with ChangeNotifier {
     if (key != "dataVersion") {
       notifyListeners();
     }
+  }
+
+  /// Registers newly installed sources with this device's search selection.
+  /// An uninitialized selection defaults to all searchable sources at startup.
+  void includeSearchSources(Iterable<String> keys) {
+    final current = this['searchSources'];
+    if (current is! List) return;
+    final updated = {...current, ...keys}.toList();
+    if (!listEquals(current, updated)) this['searchSources'] = updated;
   }
 
   /// The 阅读器设置 of comic [comicId] of [sourceKey], or with neither

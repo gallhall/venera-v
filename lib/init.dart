@@ -11,6 +11,7 @@ import 'package:venera/foundation/comic_source/comic_source.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/foundation/log.dart';
 import 'package:venera/foundation/platform/platform_capabilities.dart';
+import 'package:venera/foundation/sync/source_vault/app_local.dart';
 import 'package:venera/foundation/sync/sync_service.dart';
 import 'package:venera/network/cookie_jar.dart';
 import 'package:venera/foundation/platform/app_channel.dart';
@@ -77,6 +78,8 @@ Future<void> init() async {
   await _step("Sync", SyncService.init).wait();
   CacheManager().setLimitSize(appdata.settings['cacheSize']);
   _checkOldConfigs();
+  await _step('Synced video search', AppVaultLocal.migrateSyncedVideoSearch)
+      .wait();
   if (App.isAndroid) {
     handleLinks();
   }

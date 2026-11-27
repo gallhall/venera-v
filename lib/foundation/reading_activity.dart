@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/video/episode_playback.dart';
@@ -65,7 +66,7 @@ class ReadingActivity {
        _save = save ?? DurationRecords().add,
        _now = now ?? DateTime.now,
        _kind = DurationKind.comic {
-    _listenForeground(foreground);
+    _listenForChanges(foreground);
   }
 
   /// Watching anime from [signals]. [work] and [episode] are asked when an
@@ -88,7 +89,7 @@ class ReadingActivity {
        _now = now ?? DateTime.now,
        _kind = DurationKind.anime,
        idleLimit = Duration.zero {
-    _listenForeground(foreground);
+    _listenForChanges(foreground);
     _subscriptions.addAll([
       signals.events.listen(_onEvent),
       signals.running.listen(_setRunning),
@@ -129,7 +130,14 @@ class ReadingActivity {
   bool _running = false;
   bool _loading = false;
 
-  void _listenForeground(Stream<bool>? foreground) {
+  bool get _recording => appdata.settings['readingStatisticsEnabled'] != false;
+
+  void _recordingChanged() {
+    if (!_recording) _session = null;
+  }
+
+  void _listenForChanges(Stream<bool>? foreground) {
+    appdata.settings.addListener(_recordingChanged);
     if (foreground != null) {
       _subscriptions.add(foreground.listen(_setForeground));
     } else {
@@ -198,12 +206,13 @@ class ReadingActivity {
           _close();
           _open(work, episode);
         }
-        _session!.playing!.running = _running && _foreground;
+        _session?.playing?.running = _running && _foreground;
       default:
     }
   }
 
   void _open(DurationWork work, ({int ep, int? group}) episode) {
+    if (!_recording) return;
     _session = _kind == DurationKind.comic
         ? _Session.reading(
             work: work,
@@ -249,11 +258,11 @@ class ReadingActivity {
     }
   }
 
-  /// Saves the record being kept, if long enough.
+  /// Saves the record being kept.
   void _close() {
     var session = _session;
     _session = null;
-    if (session == null) return;
+    if (session == null || session.playing?.hasPlayed == false) return;
     var episode = _kind == DurationKind.comic ? _episode() : session.episode;
     var record = session.close(
       kind: _kind,
@@ -261,7 +270,7 @@ class ReadingActivity {
       ep: episode.ep,
       group: episode.group,
     );
-    if (record != null) _save(record);
+    _save(record);
   }
 
   /// The reader or player is left.
@@ -269,6 +278,7 @@ class ReadingActivity {
     if (_ended) return;
     _ended = true;
     _close();
+    appdata.settings.removeListener(_recordingChanged);
     for (var s in _subscriptions) {
       s.cancel();
     }
@@ -304,18 +314,13 @@ class _Session {
 
   void finish(String key) => _finished.add(key);
 
-  /// Null for a watching below [DurationRecords.minimum]; a comic opened
-  /// and seen is read, however briefly.
-  DurationRecord? close({
+  DurationRecord close({
     required DurationKind kind,
     required DurationWork work,
     required int ep,
     int? group,
   }) {
     var elapsed = reading?.elapsed ?? playing!.elapsed;
-    if (kind == DurationKind.anime && elapsed < DurationRecords.minimum) {
-      return null;
-    }
     return DurationRecord(
       work: work,
       kind: kind,
@@ -363,11 +368,13 @@ class _PlayingTimer {
   final Now _now;
   DateTime? _since;
   Duration _counted = Duration.zero;
+  bool hasPlayed = false;
 
   set running(bool value) {
     var time = _now();
     if (_since != null) _counted += time.difference(_since!);
     _since = value ? time : null;
+    if (value) hasPlayed = true;
   }
 
   Duration get elapsed =>

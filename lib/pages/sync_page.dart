@@ -172,7 +172,9 @@ IconData statusIcon(SyncUiState s) => switch (s) {
 
 /// The home page's sync card: 立即同步 and the button's states.
 class SyncStatusCard extends StatefulWidget {
-  const SyncStatusCard({super.key});
+  const SyncStatusCard({super.key, this.opensDetails = false});
+
+  final bool opensDetails;
 
   @override
   State<SyncStatusCard> createState() => _SyncStatusCardState();
@@ -201,7 +203,9 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
     var error =
         c.state == SyncUiState.failed || c.state == SyncUiState.needsAttention;
     return AppCard(
-      onTap: () => showSubPage(context, const SyncPage()),
+      onTap: widget.opensDetails
+          ? () => showSubPage(context, const SyncPage())
+          : null,
       child: ListTile(
         leading: AppIconBox(
           statusIcon(c.state),
