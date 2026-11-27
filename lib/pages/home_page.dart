@@ -195,7 +195,9 @@ class _SyncCardState extends State<_SyncCard> {
   @override
   Widget build(BuildContext context) {
     if (SyncController().enabled) {
-      return const SliverToBoxAdapter(child: SyncStatusCard());
+      return const SliverToBoxAdapter(
+        child: SyncStatusCard(opensDetails: true),
+      );
     }
     return const _SyncDataWidget();
   }

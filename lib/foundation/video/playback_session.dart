@@ -31,6 +31,9 @@ class PlaybackStarted extends PlaybackEvent {
   final Duration duration;
 }
 
+/// The current stream advanced or completed after opening.
+class PlaybackAdvanced extends PlaybackEvent {}
+
 class PlaybackSwitched extends PlaybackEvent {
   PlaybackSwitched(this.name);
   final String name;
@@ -226,6 +229,7 @@ class PlaybackSession extends ChangeNotifier {
           _clearPeerHint();
           cancelStartupWatch();
           _markStarted();
+          _emit(PlaybackAdvanced());
         }
         if (!completed || !_started || _isLoading) {
           return;
@@ -240,6 +244,7 @@ class PlaybackSession extends ChangeNotifier {
           _clearPeerHint();
           cancelStartupWatch();
           _markStarted();
+          _emit(PlaybackAdvanced());
         }
         var r = _recovery;
         // A later break starts over once playback is well past this one.

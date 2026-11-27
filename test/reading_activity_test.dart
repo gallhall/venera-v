@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/comic_type.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/reading_activity.dart';
@@ -44,11 +45,14 @@ class _Signals implements PlaybackSignals {
 
   void loading() => eventsIn.add(const EpisodeLoading());
 
-  void started() => eventsIn.add(
-    EpisodeSessionEvent(
-      PlaybackStarted(Duration.zero, DateTime(2026), duration),
-    ),
-  );
+  void started({bool advanced = true}) {
+    eventsIn.add(
+      EpisodeSessionEvent(
+        PlaybackStarted(Duration.zero, DateTime(2026), duration),
+      ),
+    );
+    if (advanced) eventsIn.add(EpisodeSessionEvent(PlaybackAdvanced()));
+  }
 
   void kept() => eventsIn.add(const EpisodeKept(null));
 }
@@ -88,7 +92,7 @@ void main() {
       onWatchLaterRemoved: toasts.add,
       takeOffWatchLater: takeOff,
       save: saved.add,
-      now: clock,
+      now: clock.call,
       foreground: foreground.stream,
     );
 
@@ -179,6 +183,20 @@ void main() {
       b.dispose();
       expect(saved.single.seconds, 0);
     });
+
+    test('turning off statistics drops an open record and keeps 稍后看 behavior', () {
+      final old = appdata.settings['readingStatisticsEnabled'];
+      addTearDown(() => appdata.settings['readingStatisticsEnabled'] = old);
+      appdata.settings['readingStatisticsEnabled'] = true;
+      final activity = comic();
+      activity.pageShown();
+      clock.advance(_minute);
+      appdata.settings['readingStatisticsEnabled'] = false;
+      activity.pageShown();
+      activity.dispose();
+      expect(saved, isEmpty);
+      expect(takenOff, hasLength(1));
+    });
   });
 
   group('anime', () {
@@ -192,7 +210,7 @@ void main() {
       onWatchLaterRemoved: toasts.add,
       takeOffWatchLater: takeOff,
       save: saved.add,
-      now: clock,
+      now: clock.call,
       foreground: foreground.stream,
     );
 
@@ -314,13 +332,57 @@ void main() {
       expect(saved.map((r) => r.finished), [0, 1]);
     });
 
-    test('drops less than 30 seconds', () {
+    test('records short playback and keeps works seen for less than a second', () {
       var a = anime();
       signals.started();
       signals.runningIn.add(true);
-      clock.advance(const Duration(seconds: 29));
+      clock.advance(const Duration(seconds: 5));
       a.dispose();
+      expect(saved.single.seconds, 5);
+      expect(saved.single.finished, 0);
+
+      saved.clear();
+      final b = anime();
+      signals.started();
+      signals.runningIn.add(true);
+      b.dispose();
+      expect(saved.single.seconds, 0);
+    });
+
+    test('keeps the video out of statistics if playback never starts', () {
+      final activity = anime();
+      signals.loading();
+      clock.advance(_minute);
+      activity.dispose();
       expect(saved, isEmpty);
+
+      final prepared = anime();
+      signals.started(advanced: false);
+      signals.runningIn.add(true);
+      clock.advance(const Duration(seconds: 3));
+      prepared.dispose();
+      expect(saved, isEmpty);
+    });
+
+    test('disabling statistics skips watches and enabling it records new ones', () {
+      final old = appdata.settings['readingStatisticsEnabled'];
+      addTearDown(() => appdata.settings['readingStatisticsEnabled'] = old);
+      appdata.settings['readingStatisticsEnabled'] = false;
+      final first = anime();
+      signals.started();
+      signals.runningIn.add(true);
+      clock.advance(_minute);
+      first.dispose();
+      expect(saved, isEmpty);
+      expect(takenOff, hasLength(1));
+
+      appdata.settings['readingStatisticsEnabled'] = true;
+      final second = anime();
+      signals.started();
+      signals.runningIn.add(true);
+      clock.advance(const Duration(seconds: 3));
+      second.dispose();
+      expect(saved.single.seconds, 3);
     });
   });
 }

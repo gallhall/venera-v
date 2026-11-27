@@ -53,6 +53,73 @@ void main() {
     SyncController.instance = null;
   });
 
+  group('sync navigation', () {
+    const home = MaterialApp(
+      home: Scaffold(body: SyncStatusCard(opensDetails: true)),
+    );
+
+    Future<void> showHome(WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SyncController.instance = SyncController.forTest();
+      await tester.pumpWidget(home);
+    }
+
+    testWidgets('the status card inside sync details cannot reopen details', (
+      tester,
+    ) async {
+      await showHome(tester);
+      await tester.tap(find.text('Two-way Sync'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.descendant(
+            of: find.byType(SyncPage),
+            matching: find.byType(SyncStatusCard),
+          ),
+          matching: find.text('Two-way Sync'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SyncPage), findsOneWidget);
+      await tester.tap(find.byTooltip('Back').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.byType(SyncPage), findsNothing);
+      expect(find.text('Two-way Sync'), findsOneWidget);
+    });
+
+    testWidgets('a quick second tap cannot dismiss sync devices mid-open', (
+      tester,
+    ) async {
+      await showHome(tester);
+      await tester.tap(find.text('Two-way Sync'));
+      await tester.pumpAndSettle();
+      final row = find.text('Sync devices').hitTestable();
+      final point = tester.getCenter(row);
+      await tester.tap(row);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(point);
+      await tester.pumpAndSettle();
+      final devices = find.byType(SyncDevicesPage);
+      expect(devices, findsOneWidget);
+      final restingLeft = tester.getTopLeft(devices).dx;
+
+      await tester.tap(find.byTooltip('Back').hitTestable());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      final movingLeft = tester.getTopLeft(devices).dx;
+      expect(movingLeft, greaterThan(restingLeft));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(tester.getTopLeft(devices).dx, greaterThan(movingLeft));
+      await tester.pumpAndSettle();
+      expect(devices, findsNothing);
+      expect(find.byType(SyncPage), findsOneWidget);
+    });
+  });
+
   group('the sync card', () {
     late Completer<SyncReport> pending;
     late List<void Function(SyncStage)> stages;

@@ -42,6 +42,19 @@ void main() {
     );
   });
 
+  test('a started video below one second still appears in statistics', () {
+    final stats = computeStats(
+      [_r(_now, 0)],
+      kind: DurationKind.anime,
+      range: StatsRange.today,
+      now: _now,
+    );
+    expect(stats.works, 1);
+    expect(stats.seconds, 0);
+    expect(stats.finished, 0);
+    expect(stats.ranking.single.work.id, 'a');
+  });
+
   test('totals of one kind in the range', () {
     var records = [
       _r(DateTime(2026, 11, 18, 1), 100, finished: 1),

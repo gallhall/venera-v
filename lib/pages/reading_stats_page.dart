@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:venera/components/components.dart';
 import 'package:venera/foundation/app.dart';
+import 'package:venera/foundation/appdata.dart';
 import 'package:venera/foundation/duration_records.dart';
 import 'package:venera/foundation/reading_stats.dart';
 import 'package:venera/pages/open_work.dart';
@@ -60,6 +61,7 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
   @override
   Widget build(BuildContext context) {
     var stats = DurationRecords().stats(kind, range);
+    final recording = appdata.settings['readingStatisticsEnabled'] != false;
     return Scaffold(
       body: AppContentWidth(
         child: SmoothCustomScrollView(
@@ -74,6 +76,18 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                 ),
               ],
             ),
+            SliverToBoxAdapter(
+              child: SwitchListTile(
+                title: Text('Record reading and watching'.tl),
+                value: recording,
+                onChanged: (value) {
+                  setState(() {
+                    appdata.settings['readingStatisticsEnabled'] = value;
+                  });
+                  appdata.saveData(false);
+                },
+              ),
+            ),
             SliverToBoxAdapter(child: buildFilters(context)),
             if (stats.works == 0)
               SliverFillRemaining(
@@ -81,8 +95,10 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                 child: AppEmptyView(
                   icon: Icons.insights_outlined,
                   text: kinds.isEmpty
-                      ? 'No records yet. Time spent reading and watching is recorded from now on.'
-                            .tl
+                      ? (recording
+                            ? 'No records yet. Time spent reading and watching is recorded from now on.'
+                                  .tl
+                            : 'Statistics recording is off.'.tl)
                       : 'Nothing in this period'.tl,
                 ),
               )

@@ -19,6 +19,8 @@ import 'login_cookies.dart';
 import 'vault.dart';
 
 class AppVaultLocal extends VaultLocal {
+  bool _sourcesChanged = false;
+
   static const _suffixes = ['.js', '.kazumi.json', '.animeko.json'];
   static const _localStorage = '_localStorage';
   static const _maxText = 512 * 1024;
@@ -60,6 +62,25 @@ class AppVaultLocal extends VaultLocal {
 
   static String? _suffix(String filename) =>
       _suffixes.where((suffix) => filename.endsWith(suffix)).firstOrNull;
+
+  static String _syncedFilename(String key, String suffix) =>
+      'sync-${sha256.convert(utf8.encode(key))}$suffix';
+
+  /// Older builds installed synced definitions without registering their
+  /// video search. The generated filename identifies those installations.
+  static Future<void> migrateSyncedVideoSearch() async {
+    if (appdata.settings['syncedVideoSearchMigrated'] == true) return;
+    appdata.settings.includeSearchSources([
+      for (final source in ComicSource.all())
+        if (source.isVideoSource && source.searchPageData != null)
+          if (_suffix(source.filePath) case final String suffix)
+            if (path.basename(source.filePath) ==
+                _syncedFilename(source.key, suffix))
+              source.key,
+    ]);
+    appdata.settings['syncedVideoSearchMigrated'] = true;
+    await appdata.saveData(false);
+  }
 
   File _definitionFile(ComicSource source) {
     final file = File(source.filePath);
@@ -375,7 +396,7 @@ class AppVaultLocal extends VaultLocal {
       }
       _write(_dataFile(name), jsonEncode(data));
       if (source != null) source.data = data;
-      _notify();
+      _sourcesChanged = true;
     }
     return true;
   }
@@ -401,7 +422,7 @@ class AppVaultLocal extends VaultLocal {
     if (value == null) {
       oldFile?.deleteSync();
       manager.replaceSyncedSource(name, null);
-      _notify();
+      _sourcesChanged = true;
       return true;
     }
     final suffix = value['suffix'] as String;
@@ -409,13 +430,7 @@ class AppVaultLocal extends VaultLocal {
       throw const VaultFailure(VaultIssue.conflict);
     }
     final file =
-        oldFile ??
-        File(
-          path.join(
-            _directory,
-            'sync-${sha256.convert(utf8.encode(name))}$suffix',
-          ),
-        );
+        oldFile ?? File(path.join(_directory, _syncedFilename(name, suffix)));
     if (oldFile == null &&
         FileSystemEntity.typeSync(file.path, followLinks: false) !=
             FileSystemEntityType.notFound) {
@@ -438,6 +453,15 @@ class AppVaultLocal extends VaultLocal {
       if (source.key != name || source.version != value['version']) {
         throw const VaultFailure(VaultIssue.invalid);
       }
+      if (old == null &&
+          source.isVideoSource &&
+          source.searchPageData != null &&
+          appdata.settings['searchSources'] is List) {
+        // Persist search registration before the definition, so replay after
+        // an interrupted install cannot find a source missing from search.
+        appdata.settings.includeSearchSources([source.key]);
+        await appdata.saveData(false);
+      }
       if (vaultDigest(_current(key)) != expected ||
           (old?.dataSaveInProgress ?? false)) {
         await manager.reload(notify: false);
@@ -446,7 +470,7 @@ class AppVaultLocal extends VaultLocal {
       source.data = old?.data ?? _diskData(name);
       _write(file, body);
       manager.replaceSyncedSource(name, source);
-      _notify();
+      _sourcesChanged = true;
       return true;
     } catch (_) {
       // Parsing an accepted JS definition can have registered it already.
@@ -456,7 +480,9 @@ class AppVaultLocal extends VaultLocal {
     }
   }
 
-  static void _notify() {
+  void notifyAppliedSources() {
+    if (!_sourcesChanged) return;
+    _sourcesChanged = false;
     DataSync.refreshingSyncedSources = true;
     try {
       ComicSourceManager().notifyStateChange();

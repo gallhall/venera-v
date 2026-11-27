@@ -706,6 +706,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     switch (event) {
       case PlaybackStarted():
         onStarted(event);
+      case PlaybackAdvanced():
+        // ReadingActivity records the first confirmed playback progress.
+        break;
       case PlaybackSwitched():
         context.showMessage(
           message: "Switched to @s".tlParams({'s': event.name}));

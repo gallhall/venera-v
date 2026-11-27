@@ -322,8 +322,10 @@ void main() {
     expect(messages(), ['Resumed from @t'.tlParams({'t': '0:30'})]);
     play();
     expect(playback.started, isTrue);
-    expect(events.whereType<EpisodeSessionEvent>().single.event,
-        isA<PlaybackStarted>());
+    expect(
+      events.whereType<EpisodeSessionEvent>().map((event) => event.event),
+      [isA<PlaybackStarted>(), isA<PlaybackAdvanced>()],
+    );
   });
 
   test('the next episode saves the progress of the one playing', () async {
