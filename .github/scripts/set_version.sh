@@ -24,6 +24,21 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 pubspec="$root/pubspec.yaml"
 app="$root/lib/foundation/app.dart"
 
+# Older Build ALL runs still use their original workflow, but the Release
+# job reads this script from master. Refuse a downgrade before editing files.
+if [[ "${GITHUB_JOB:-}" == "Release" ]]; then
+  current="$(awk '$1 == "version:" {print $2}' "$pubspec" | tr -d '\r')"
+  if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
+    echo "Cannot verify the current version on master" >&2
+    exit 1
+  fi
+  newest="$(printf '%s\n' "$current" "$version+$build" | LC_ALL=C sort -V | tail -n 1)"
+  if [[ "$newest" != "$version+$build" ]]; then
+    echo "Refusing to replace master version $current with $version+$build" >&2
+    exit 1
+  fi
+fi
+
 # perl rather than sed -i, which differs between the macOS and Linux runners.
 perl -pi -e "s/^version: .*/version: $version+$build/" "$pubspec"
 perl -pi -e "s/final version = \"[^\"]*\";/final version = \"$version\";/" "$app"
